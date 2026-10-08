@@ -317,15 +317,23 @@ static int   s_boss_prev;   /* ★ owner 2026-10-05：boss 表 0→1 的**边沿
 #define POFV_HUD_SP_Y  36.0f
 #define POFV_HUD_SP_DX        5.0f   /* ★ 一手：框内数字/字相对框 (+5, +13) ✓（front.anm script9 ✓）*/
 #define POFV_HUD_SP_DY       13.0f
-#define POFV_HUD_SP_STEP      8.0f   /* ★ 一手：每位 8 px ✓ */
+#define POFV_HUD_SP_STEP      6.0f   /* ★★★ 一手：每位 **6 px** ✓（现 dump `front.anm` script9..17：
+                                      *   -139/-133/-127 与 -107/-101/-95/-89/-83/-77 ⇒ 步进 6 ✓；我原写 8 ✗）*/
 /* ★★★ 2026-10-08 owner 给的**格式原文**：「Hit 得是**红色**的，格式不是 000000 而是
  *   **一个红色的 `<3 格右对齐、前导空格>` 数字 + `Hit`**，**后面紧跟着是六位 SP**」✓
  *   ⇒ 框内下行 = `⟨3 格红命中，前导留空⟩` + `Hit` + `⟨6 位 SP，紧接⟩` ✓（都在 80×32 框内 ✓）。*/
 #define POFV_HUD_HIT_SLOTS    3      /* ★ 命中数**固定 3 格**（前导空格 ✓，不是 0 ✗）*/
 #define POFV_HUD_SP_SLOTS     6      /* ★ SP **6 位**（紧接在 Hit 之后 ✓）*/
-#define POFV_HUD_HIT_X       5.0f    /* ★ 红命中 3 格的起点（框内下行 ✓，一手数字起 +5 ✓）*/
-#define POFV_HUD_HITLABEL_DX 29.0f   /* ★ 「Hit」：3 格之后（= 5 + 3×8 ✓）*/
-#define POFV_HUD_SPNUM_DX   45.0f    /* ★ SP 6 位：**紧接**在「Hit」之后（= 29 + 16 ✓，owner 原话 ✓）*/
+/* ★★★ 2026-10-08 一手**逐条**（现 dump `front.anm`，全部相对框 `pos(-144,0)` ✓）：
+ *     script9/10/11  → 命中 **3 格**：+5 / +11 / +17 ✓  color **(192,128,128)**（柔红 ✓）
+ *     script8        → 「Hit」标签：**+23** ✓          color (192,128,128) ✓
+ *     script12..17   → **SP 6 位**：+37/+43/+49/+55/+61/+67 ✓  color **(128,128,128)**（**灰度** ✓ owner 提到 ✓）
+ *   步进一律 **6** ✓；最右 +67+6 = **+73 < 80** ⇒ **全在 `sprite7` 框内** ✓（owner：「宽框就是那个 Spell Point 的框」✓）。*/
+#define POFV_HUD_HIT_X       5.0f    /* ★ 一手：命中 3 格起 +5 ✓ */
+#define POFV_HUD_HITLABEL_DX 23.0f   /* ★ 一手：`script8` 的「Hit」在 +23 ✓ */
+#define POFV_HUD_SPNUM_DX    37.0f   /* ★ 一手：`script12` 的 SP 6 位起 +37 ✓ */
+#define POFV_HUD_COL_HIT    0xFFC08080u   /* ★ 一手 `color(192,128,128)` ✓（命中 + Hit）*/
+#define POFV_HUD_COL_SP     0xFF808080u   /* ★ 一手 `color(128,128,128)` ✓（SP 六位，owner：「乘了一个灰度」✓）*/
 /* ★ 连击条 = 屏幕**最下方**的白色长方形 ✓（参图 ✓）*/
 #define POFV_HUD_BAR_X       132.0f
 #define POFV_HUD_BAR_Y       438.0f
@@ -2188,11 +2196,22 @@ static int on_tick_2(ce_card_t *c)
                     s_hud_hit_digit_vm[i9] = (int32_t)hud_vm_spawn(CE_ANM_ABILITY_SCRIPT_POFV109_HUD_TH09_SP,
                                                                    x, POFV_HUD_SP_Y + POFV_HUD_SP_DY);
                 if (s_hud_hit_digit_vm[i9]) {
+                    /* ★★★ 2026-10-08 owner 的配方（原话）：「Hit 用的是 `front.png` 里的**第一行数字 + Hit**，
+                     *   然后采用 **`color(red)` 把整体的颜色乘上红色，把中间的白色变成红色**，
+                     *   从而出现**外面黑色描边**」✓ ——
+                     *   ⇒ 用**第一行的灰数字**（`front.anm` sprite8..17 → 我们 709–718 ✓，白芯 + 黑描边 ✓）
+                     *     再 `ce_anm_set_color(红)` **乘色**：白 × 红 = **红** ✓、黑 × 红 = **黑**（描边保留 ✓）✓。
+                     *   （先前我用的是 `sprite25..34` 那套**红数字** ✗ —— 字形不同，owner 不用它 ✓。）
+                     *   ★ **颜色值也照一手**：原作 `front.anm` **`script9`**（数字行第一支，现 dump ✓）逐字是
+                     *     `sprite(sprite8); anchorTopLeft(); pos(-139, 13); **color(192, 128, 128)**;
+                     *      alpha(0); +60: alphaTime(60, 0, 255);` ⇒ 乘色 = **(192,128,128) 柔红** ✓
+                     *     —— **不是纯红 (255,0,0)** ✗（我上一版自己挑了个纯红 ✗，owner 纠：「不是高级，是一手」✓）。
+                     *   ⇒ 本处 AARRGGBB = **`0xFFC08080`** ✓（A=255 / R=192 / G=128 / B=128 ✓）。*/
                     ce_anm_set_sprite(CE_ABILITY_ANM(), (uint32_t)s_hud_hit_digit_vm[i9],
-                                      CE_ANM_ABILITY_SPRITE_TH09_SPR_0 + (uint32_t)digit);   /* ★ 红套 ✓ */
-                    /* ★ 前导格**留空**（alpha 0 ⇒ 不画 ✓，不是画 0 ✗）——`ce_anm_set_color` 的 AARRGGBB 高位 ✓ */
+                                      CE_ANM_ABILITY_SPRITE_TH09_SP_0 + (uint32_t)digit);   /* ★ 第一行灰数字 ✓ */
+                    /* 前导格**留空**（alpha 0 ⇒ 不画 ✓，不是画 0 ✗）；其余 = 乘红 ✓（AARRGGBB ✓）*/
                     ce_anm_set_color((uint32_t)s_hud_hit_digit_vm[i9],
-                                     blank ? 0x00000000u : 0xFFFFFFFFu);
+                                     blank ? 0x00000000u : POFV_HUD_COL_HIT);
                     ce_anm_set_pos((uint32_t)s_hud_hit_digit_vm[i9], x, POFV_HUD_SP_Y + POFV_HUD_SP_DY, 0.0f);
                 }
             }
@@ -2206,17 +2225,23 @@ static int on_tick_2(ce_card_t *c)
                                                               POFV_HUD_SP_Y + POFV_HUD_SP_DY);
             if (s_hud_sp_digit_vm[i9]) {
                 ce_anm_set_sprite(CE_ABILITY_ANM(), (uint32_t)s_hud_sp_digit_vm[i9],
-                                  CE_ANM_ABILITY_SPRITE_TH09_SP_0 + (uint32_t)digit);   /* 灰套 ✓ */
-                ce_anm_set_color((uint32_t)s_hud_sp_digit_vm[i9], 0xFFFFFFFFu);
+                                  CE_ANM_ABILITY_SPRITE_TH09_SP_0 + (uint32_t)digit);   /* 同一行数字 ✓ */
+                /* ★★★ owner：「SP 的那些数字也乘了一个**灰度**」✓ —— 一手 `script12..17` 逐支 `color(128,128,128)` ✓ */
+                ce_anm_set_color((uint32_t)s_hud_sp_digit_vm[i9], POFV_HUD_COL_SP);
                 ce_anm_set_pos((uint32_t)s_hud_sp_digit_vm[i9],
                                POFV_HUD_SP_X + POFV_HUD_SPNUM_DX + (float)i9 * POFV_HUD_SP_STEP,
                                POFV_HUD_SP_Y + POFV_HUD_SP_DY, 0.0f);
             }
         }
         if (s_hud_sp_frame_vm) ce_anm_set_pos((uint32_t)s_hud_sp_frame_vm, POFV_HUD_SP_X, POFV_HUD_SP_Y, 0.0f);
-        if (s_hud_sp_hit_vm)  ce_anm_set_pos((uint32_t)s_hud_sp_hit_vm,
-                                             POFV_HUD_SP_X + POFV_HUD_HITLABEL_DX,
-                                             POFV_HUD_SP_Y + POFV_HUD_SP_DY, 0.0f);
+        if (s_hud_sp_hit_vm) {
+            /* ★ owner：「第一行数字 **+ Hit**」都乘红 ✓ ⇒ 这个标签（一手 `front.anm` sprite18 = 同一行的
+             *   「Hit」字形 ✓）也 `color(red)` ⇒ 白芯变红、黑描边保留 ✓。*/
+            ce_anm_set_color((uint32_t)s_hud_sp_hit_vm, POFV_HUD_COL_HIT);   /* ★ 一手 `script8` ✓ */
+            ce_anm_set_pos((uint32_t)s_hud_sp_hit_vm,
+                           POFV_HUD_SP_X + POFV_HUD_HITLABEL_DX,
+                           POFV_HUD_SP_Y + POFV_HUD_SP_DY, 0.0f);
+        }
     }
     {   /* ★★★ 2026-10-08（P1 完成）：TH09 的 **`Bonus!`** 提示 —— 一手原图 ✓
          *   一手（`engine/versus/th09/01-versus-loop.md`）：**SP 满（`999990`）⇒ 提示** ✓；
