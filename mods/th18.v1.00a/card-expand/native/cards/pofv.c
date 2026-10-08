@@ -2322,7 +2322,10 @@ static int on_tick_2(ce_card_t *c)
                               *   ⇒ scale.x 就是**像素长度** ✓，与 `animal.c` 的条同一个口径 ✓）*/
             /* ★ 一手 `script59`：**`scale.x` = 槽比例（0..1 ✓，不是像素长度 ✗）**、`scale.y` 恒 1 ✓
              *   —— 原图 sprite42 就是**满长 72px** 的条，长度靠 scale 缩 ✓（图自带白→灰纵向渐变 ✓）。*/
-            ce_anm_set_scale((uint32_t)s_hud_c2_vm, c2r, 1.0f);
+            /* ★★★ 2026-10-08 owner：「条**向右延申 1 倍**就对了」✓ ⇒ `scale.x` 由 `c2r` 改 **`2×c2r`** ✓
+             *   （精灵 sprite42 满长 72px ✓ ⇒ 翻倍后最长 **144** ✓）。
+             *   ❓ 若要**正好等于框宽**（框可见 160 ✓）⇒ 用 **160/72 = 2.222** 这个系数 ✓（一个数，随时可调）。*/
+            ce_anm_set_scale((uint32_t)s_hud_c2_vm, 2.0f * c2r, 1.0f);
         }
         if (s_hud_c2_fill_vm) { ce_anm_delete((uint32_t)s_hud_c2_fill_vm); s_hud_c2_fill_vm = 0; }
     }
