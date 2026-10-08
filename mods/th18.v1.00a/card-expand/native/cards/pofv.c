@@ -1099,24 +1099,6 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
          *    矛盾的过期文字 ✗，现订正 ✓）*/
             { int32_t i3; for (i3 = POFV_UI_EV_MAX - 1; i3 > 0; --i3) s_ui_ev[i3] = s_ui_ev[i3 - 1];
               s_ui_ev[0].what = POFV_UI_EV_KILL; s_ui_ev[0].ttl = POFV_UI_EV_TTL; }   /* 镜像击破：停 3 s ✓ */
-            pofv_acc_add50(&s_acc, 15);          /* TH19 一手：大块口径（死亡分发）✓ */
-            pofv_acc_add54(&s_acc, 15);          /* TH19 一手 ✓ */
-            /* ★★★ owner 2026-10-06：「**th09 和 th19 独立运行**，按一手 + **真实难度**」⇒
-             *   TH09 是**另一套**（步长 = 一手 `param_2`/`param_3` ✓，阈值吃难度不吃时间 ✓）⇒ **不混用** ✗ */
-            /* ★★★ 2026-10-08 一手（§3.34 ✓）：击破 ⇒ **連擊槽分档加长**（不是「加固定值」✗）：
-             *   `<30 ⇒ +30` / `<50 ⇒ +5` / `<60 ⇒ +2` / `≥60 ⇒ +0` ⇒ **上限 60** ✓。*/
-            {
-                int32_t *ta = &s_acc.a2c;
-                if      (*ta < 30) *ta += 30;
-                else if (*ta < 50) *ta += 5;
-                else if (*ta < 60) *ta += 2;
-                if (*ta > POFV_COMBO_CAP) *ta = POFV_COMBO_CAP;
-                ++s_combo_blasts;                       /* 一手：連爆数 `+0x38` 随击破递增 ✓ */
-                s_sp_life = *ta + 45;                   /* ★ 一手：`tB := tA + 45` ✓ */
-            }
-            pofv_acc_add30(&s_acc, POFV_ACC09_STEP30);
-            s_chain_seen = 1;                    /* ★ 真有连锁了 ⇒ 允许之后清 hits ✓ */
-            pofv_hits_bump(&s_hits, 1);          /* ★ hit（連爆数）＋1（灵侧口径 ✓，owner 图 ✓）*/
             ++s_cnt_kill;                        /* ★ goal ②：击破计数（定位自维持用 ✓）*/
             ++s_send40;                                 /* ★ §8.38：进入状态域 1 的次数 +1 ✓（本侧 ✓）*/
             if (s_ex_cool <= 0) {                       /* ★ 一手：冷却中（`+0x34 != 0`）**不积累** ✓ */
@@ -1325,6 +1307,30 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
             return;                       /* 我们的灵：**不再**走下面那条临时生成口 */
         }
     }
+        /* ★★★★ 2026-10-08 owner 实跑（「你似乎没有给其他所有怪物一个『**启动连击**』的能力；
+         *   测试下来只有灵有这个能力，其他怪物只能在启动之后加入 hit 里面，这肯定不对」✗）——
+         *   根因：这一整段喂食（`+15` / 連擊槽分档 / 連爆数 / hits）原先**放在 1064 那个「灵专属」块里** ✗
+         *   ⇒ **妖精/小怪打死完全不喂** ✓ ⇒ 只有灵能启动连击 ✓。
+         *   ⇒ **上移到「每次真实击破」这一层** ✓（一手 `FUN_0050c1f0` 对妖精死亡同样计数 ✓）。*/
+        pofv_acc_add50(&s_acc, 15);          /* TH19 一手：大块口径（死亡分发）✓ */
+        pofv_acc_add54(&s_acc, 15);          /* TH19 一手 ✓ */
+        /* ★★★ owner 2026-10-06：「**th09 和 th19 独立运行**，按一手 + **真实难度**」⇒
+        *   TH09 是**另一套**（步长 = 一手 `param_2`/`param_3` ✓，阈值吃难度不吃时间 ✓）⇒ **不混用** ✗ */
+        /* ★★★ 2026-10-08 一手（§3.34 ✓）：击破 ⇒ **連擊槽分档加长**（不是「加固定值」✗）：
+        *   `<30 ⇒ +30` / `<50 ⇒ +5` / `<60 ⇒ +2` / `≥60 ⇒ +0` ⇒ **上限 60** ✓。*/
+        {
+        int32_t *ta = &s_acc.a2c;
+        if      (*ta < 30) *ta += 30;
+        else if (*ta < 50) *ta += 5;
+        else if (*ta < 60) *ta += 2;
+        if (*ta > POFV_COMBO_CAP) *ta = POFV_COMBO_CAP;
+        ++s_combo_blasts;                       /* 一手：連爆数 `+0x38` 随击破递增 ✓ */
+        s_sp_life = *ta + 45;                   /* ★ 一手：`tB := tA + 45` ✓ */
+        }
+        pofv_acc_add30(&s_acc, POFV_ACC09_STEP30);
+        s_chain_seen = 1;                    /* ★ 真有连锁了 ⇒ 允许之后清 hits ✓ */
+        pofv_hits_bump(&s_hits, 1);          /* ★ hit（連爆数）＋1（灵侧口径 ✓，owner 图 ✓）*/
+
     if (pofv_spirit_is_ours(ev->id)) {
         if (pofv_storm_spawn_tier(&s_storm, ev->x, ev->y,
                                   POFV_SPIRIT_R_TARGET, POFV_SPIRIT_TWEEN_FRAMES,
