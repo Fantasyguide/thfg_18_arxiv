@@ -290,7 +290,8 @@ static int   s_boss_prev;   /* ★ owner 2026-10-05：boss 表 0→1 的**边沿
 #define POFV_HUD_C2_Y 36.0f   /* ★ TH09 連擊槽（SP 正下方 ✓，一手 §2.1 ✓）*/
 static int32_t s_sp;               /* 本侧 SP（0..999990 ✓）*/
 static ce_hud_number_t s_hud_sp_num;
-static ce_hud_number_t s_hud_c2_num;   /* ★ TH09 連擊槽显示句柄（数字 ❓自定 ✓）*/   /* ★ 由 32 → 44：避让 110/111 信仰块（y≤30）✓ */
+static ce_hud_number_t s_hud_c2_num;   /* ★ TH09 連擊槽显示句柄（数字 ❓自定 ✓）*/
+static ce_hud_number_t s_hud_ag_num;   /* ★ TH19 攻撃ランク数字句柄 ✓ */   /* ★ 由 32 → 44：避让 110/111 信仰块（y≤30）✓ */
 static ce_hud_number_t  s_hud_hits_num;
 static ce_hud_vm_text_t s_hud_hits_lbl;
 /* ★★★ 2026-10-05 owner：**调试 UI** —— ① 镜像事件列表（镜像暴风**延迟**显示；镜像击破/固灵**停 3 s**再消失）
@@ -2016,6 +2017,26 @@ static int on_tick_2(ce_card_t *c)
             ce_anm_set_pos((uint32_t)s_hud_c2_vm, POFV_HUD_SP_X, POFV_HUD_C2_Y + 8.0f, 0.0f);   /* ❓ 位置待实跑校 ✓ */
             ce_anm_set_scale((uint32_t)s_hud_c2_vm, 96.0f * c2r, 1.0f);                        /* 长度 96px × 比例 ✓ */
         }
+    }
+    {   /* ★★ TH19 **アタックゲージ**（一手 `engine/versus/th19/06-aura.md` §8.13/§8.18 ✓：
+         *   `+0x24` = 攻击槽累加器 ✓，**上限 2500 = 0x9c4** ✓（三处互证 ✓））。
+         *   ⚠ 但**四个阶段阈值**（`S+0x28/2c/30/34` ✓）的**具体值未解出** ✗ ⇒ **不发明** ✗：
+         *     本卡改为显示自己已有的「**攻撃ランク**」= `s_ex_gauge`（卡内 **0..200** ✓，
+         *     每级阈值 `s_ex_thr[8]` = 一手 `0x59dcc8` ✓）⇒ **量纲与一手的 2500 不同** ⇒ 标 **❓** ✓。
+         *   条复用脚本 **407**（同一脚本可驱动多个 VM ✓），位置在 SP/連擊槽 之下 ✓（❓待实跑校 ✓）。*/
+        static int32_t s_hud_ag_vm;
+        float agr;
+        if (!s_hud_ag_vm)
+            s_hud_ag_vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_POFV109_HUD_COMBO, 25);
+        agr = (float)s_ex_gauge / 200.0f;                  /* ❓ 本卡量纲 0..200（一手 2500 ✗ 未解出阈值 ✗）*/
+        if (agr > 1.0f) agr = 1.0f;
+        if (agr < 0.0f) agr = 0.0f;
+        if (s_hud_ag_vm) {
+            ce_anm_set_pos((uint32_t)s_hud_ag_vm, POFV_HUD_SP_X, POFV_HUD_C2_Y + 18.0f, 0.0f);
+            ce_anm_set_scale((uint32_t)s_hud_ag_vm, 96.0f * agr, 1.0f);
+        }
+        ce_hud_number_set(&s_hud_ag_num, POFV_HUD_SP_X + 100.0f, POFV_HUD_C2_Y + 18.0f, 6.0f,
+                          (int)s_ex_gauge, 3, 0, "pofv109");   /* 「攻撃ランク」数字 ✓（字母画不出 ✗ ⇒ 纯数字 ✓）*/
     }
     if (pofv_hits_visible(&s_hits)) {
         uint32_t col = pofv_hits_is_gray(&s_hits) ? 0xFF808080u : 0xFFFFFF00u;
