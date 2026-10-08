@@ -1,0 +1,11 @@
+script script412 {
+    // 109 的 TH19 **攻击槽·阈值标记** —— 贴图**切自原作** ✓
+    //   原作 `front/lifebar.png` 的 sprite167（6×12 ✓）；原作的标记由 `FUN_004e95c0` 驱动
+    //   （位置 = `thr×224/2500 − 224/2` ✓ 一手）⇒ 本脚本只画标记本身 ✓，位置由卡侧给 ✓。
+    sprite(@HUD_GAUGE_DOT@);
+    layer(25);
+    stop();
+    interruptLabel(1);
++20: // 20
+    delete();
+}

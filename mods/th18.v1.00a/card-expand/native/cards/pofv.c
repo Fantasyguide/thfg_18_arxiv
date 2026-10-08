@@ -2048,7 +2048,9 @@ static int on_tick_2(ce_card_t *c)
          *   条复用脚本 **407**（同一脚本可驱动多个 VM ✓），位置在 SP/連擊槽 之下 ✓（❓待实跑校 ✓）。*/
         float agr;
         if (!s_hud_ag_vm)
-            s_hud_ag_vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_POFV109_HUD_COMBO, 25);
+            /* == ORIGINAL ART ==  (was: self-drawn geometry bar; now TH19 front/lifebar sprite165,
+             *    script copies the original recipe script330: scale(8,112) + rotate Z=-pi/2) */
+            s_hud_ag_vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_POFV109_HUD_GAUGE_BODY, 25);
         agr = (float)s_ex_gauge / 200.0f;                  /* ❓ 本卡量纲 0..200（一手 2500 ✗ 未解出阈值 ✗）*/
         if (agr > 1.0f) agr = 1.0f;
         if (agr < 0.0f) agr = 0.0f;

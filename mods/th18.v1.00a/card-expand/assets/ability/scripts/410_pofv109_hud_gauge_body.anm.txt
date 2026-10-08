@@ -1,0 +1,17 @@
+script script410 {
+    // 109 的 TH19 **攻击槽·槽体** —— **照抄原作配方** ✓
+    //   原作：`front.anm` 的 `script330`（`local/_scratch/hud-cut/front_ext/front.anm` ✓）：
+    //     ins_300(sprite165) / ins_304(22) / ins_313(2) / ins_100([10000],38) / ins_100([10001],1)
+    //     / ins_602([10000]) / ins_402(8.0f,112.0f) / ins_401(-6.2831855f,0.0f,-1.5707964f)
+    //   ⇒ 语义 = `sprite165` ＋ **scale(8,112)** ＋ **rotate Z=−π/2**（竖条 ⇒ 横向槽 ✓）
+    //   贴图 = **切自原作** `front/lifebar.png` 的 sprite165（8×32 ✓）
+    //   （`ins_100/602` 是图集/uv 选择 ⇒ 我们用 `sprite(占位名) 表达 ✓）
+    sprite(@HUD_GAUGE_BODY@);
+    layer(25);
+    scale(8.0f, 112.0f);
+    rotate(-6.2831855f, 0.0f, -1.5707964f);
+    stop();
+    interruptLabel(1);
++20: // 20
+    delete();
+}

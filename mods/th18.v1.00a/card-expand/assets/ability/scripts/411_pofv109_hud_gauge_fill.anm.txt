@@ -1,0 +1,13 @@
+script script411 {
+    // 109 的 TH19 **攻击槽·内芯（充能）** —— **照抄原作配方** ✓
+    //   原作 `script331`：`sprite166` ＋ `ins_402(2.0f,116.0f)`（= `scale(2,116)` ✓）
+    //   贴图 = **切自原作** `front/lifebar.png` 的 sprite166（4×32 ✓）
+    sprite(@HUD_GAUGE_FILL@);
+    layer(25);
+    scale(2.0f, 116.0f);
+    rotate(-6.2831855f, 0.0f, -1.5707964f);
+    stop();
+    interruptLabel(1);
++20: // 20
+    delete();
+}
