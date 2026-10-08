@@ -442,7 +442,7 @@ typedef struct {
     int32_t life;     /* 剩余寿命帧（一手 `+0x2290`，初值 120）*/
     int32_t active;   /* 一手 `+0x227c`（<1 ⇒ 闪灰）*/
 } pofv_hits_t;
-#define POFV_HITS_LIFE 240   /* ★ owner 2026-10-08：「门控都 ×2」⇒ 一手 120 ×2 ✓（显示淡出约 4 s ✓）*/
+#define POFV_HITS_LIFE 120   /* ★ 一手值 ✓（owner：「窗口就回退」✓；显示淡出约 2 s ✓）*/
 void pofv_hits_init(pofv_hits_t *h);
 void pofv_hits_bump(pofv_hits_t *h, int32_t n);   /* 累加当前 hits（一手：由破坏/連撃累加 ✓）*/
 void pofv_hits_tick(pofv_hits_t *h);              /* 每帧：锁存判定 + 寿命递减 ✓ */

@@ -303,7 +303,7 @@ static int32_t s_sp_life;       /* = 一手 SP 寿命 tB `+0x14`（漏空 ⇒ SP
  *       `Sub0/1/2` 的 `anm_death_effects(0/1/2)` ✓）
  *     · **動物霊** 狼/獺/鷲 class **2** ⇒ **44 帧** ✓（owner「像幽灵的感觉 ⇒ 按 level 2」✓ = **❓自定** ✓）
  *   ⚠ **别和充能等级混** ✗：那是 `(enemy[0x3380]>>6)&7`（决定投喂块 `+0x2c` 的量 ✓），两个轴 ✓。*/
-#define POFV_HITS_CHAIN_X_DEFAULT 72   /* ★ owner 2026-10-08：「门控都 ×2」⇒ 36×2 ✓ */
+#define POFV_HITS_CHAIN_X_DEFAULT 36   /* ★ 一手值 ✓（owner：「那么窗口就回退就行」✓ —— ×2 是为绕 bug，真因已修 ✓）*/
 static int32_t s_chain_storm_age;
 static int32_t s_chain_window = POFV_HITS_CHAIN_X_DEFAULT;
 /* ★★★ 2026-10-08（owner 判断 ✓）：「**当根本没有连击条的时候，它也认为我连击条没了**」✗ ——
@@ -318,8 +318,7 @@ static int32_t pofv_hits_chain_x_for(int32_t kind, int32_t level)
     if (kind == POFV_SPIRIT_KIND_GHOST_TH09)      cls = (level >= 1 && level <= 3) ? (level - 1) : 0;  /* 绿/黄/红 ✓ */
     else if (kind == POFV_SPIRIT_KIND_PURE)       cls = 0;                                            /* 妖精位 ✓ */
     else                                         cls = 2;                                            /* 動物霊 ❓自定 ✓ */
-    /* ★ owner：「门控都 ×2」⇒ 一手 `(class+9)×4` 的结果**翻倍**（36/40/44 → 72/80/88 ✓）*/
-    return (cls + 9) * 4 * 2;
+    return (cls + 9) * 4;   /* ★ 一手值 ✓（owner：「窗口就回退」✓ ⇒ 36/40/44 ✓）*/
 }
 /* ★ HUD「hits」（一手 §9.8）：当前值 `+0x22b4` / 锁存 `+0x22b8` / 寿命 120 / `+0x227c<1` 时 6 帧闪灰 ✓
  *   ⚠ 按 owner 结论：**只接 hit 这一条**（两作同源 ✓），**SP 不并进 Hits** ✗ ⇒ 这里不碰 SP ✓ */
