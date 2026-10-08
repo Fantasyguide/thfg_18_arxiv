@@ -274,6 +274,13 @@ static float pofv_top_y(void) { return 16.0f + (float)(ce_rand() % 33); }
 
 /* ★ 連撃/破坏累积（owner 一手：两档阈值 + 保余数）＋「最近一次破坏位置」（一手 `+0x58`/`+0x60` ✓）*/
 static pofv_acc_t s_acc;
+/* ★★★ 2026-10-08（owner 转来的核查 ✓）：TH09 的「**時間衰减**」在卡里完全不存在 ✗ ——
+ *   一手（`engine/versus/th09/02-ghost-and-seal.md` §2.5 ✓）：連擊槽的 `+0x14` **Timer 满 105 帧** ⇒
+ *   連擊槽**漏空** ⇒ **SP 归零** ✓（「漏空 ⇒ SP 归零」这条一手无争议 ✓；**怎么漏**的指令仍未定位 🟡）。
+ *   ⇒ 本卡实现：**距上次命中的帧数** ≥ 105 ⇒ `a2c = 0`（⇒ 既有的「a2c ≤ 0 ⇒ SP 归零」自然生效 ✓）。
+ *   ❓ 一手的「逐帧漏」vs「到点清空」未逐字核 ⇒ **本处取「到点清空」＝❓自定** ✓（不许写成复刻 ✗）。*/
+#define POFV_COMBO_TIMEOUT_FRAMES 105
+static int32_t s_combo_idle;
 /* ★ HUD「hits」（一手 §9.8）：当前值 `+0x22b4` / 锁存 `+0x22b8` / 寿命 120 / `+0x227c<1` 时 6 帧闪灰 ✓
  *   ⚠ 按 owner 结论：**只接 hit 这一条**（两作同源 ✓），**SP 不并进 Hits** ✗ ⇒ 这里不碰 SP ✓ */
 static pofv_hits_t s_hits;
@@ -1056,7 +1063,7 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
             pofv_acc_add54(&s_acc, 15);          /* TH19 一手 ✓ */
             /* ★★★ owner 2026-10-06：「**th09 和 th19 独立运行**，按一手 + **真实难度**」⇒
              *   TH09 是**另一套**（步长 = 一手 `param_2`/`param_3` ✓，阈值吃难度不吃时间 ✓）⇒ **不混用** ✗ */
-            pofv_acc_add2c(&s_acc, POFV_ACC09_STEP2C);
+            pofv_acc_add2c(&s_acc, POFV_ACC09_STEP2C); s_combo_idle = 0;   /* ★ 命中 ⇒ 連擊计时器重置 ✓ */
             pofv_acc_add30(&s_acc, POFV_ACC09_STEP30);
             pofv_hits_bump(&s_hits, 1);          /* ★ hit（連爆数）＋1（灵侧口径 ✓，owner 图 ✓）*/
             ++s_cnt_kill;                        /* ★ goal ②：击破计数（定位自维持用 ✓）*/
@@ -1073,6 +1080,9 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
                 const int32_t diff = ce_difficulty();   /* ★ 真实难度（一手 `CE_ADDR_DIFFICULTY 0x4ccd00`，`engine.h:14`：0=E/1=N/2=H/3=L/4=EX）*/
             if (pofv_spirit_spill_stop()) { /* ★ 安全阀：不送 ✓（也不消费累计器 ✓）*/
             } else if (pofv_acc_take54(&s_acc, s_card_frames / 60)) {
+                /* ★★★ 2026-10-08（核查 ✓）：`pofv_acc_take50` 同样**全仓零调用** ✗ ⇒ a50 只涨不掉 ✓。
+                 *   一手：TH19 在**开火/送大招**时扣 ✓ ⇒ 在此接上 ✓（与 take54 同一送出点 ✓）。*/
+                pofv_acc_take50(&s_acc, s_card_frames / 60);
                 ++s_cnt_send54;
                 ce_log("pofv: 連撃累积过阈值（破坏时判）⇒ 送出（a50=%d a54=%d t=%d）",
                        (int)s_acc.a50, (int)s_acc.a54, (int)s_card_frames);
@@ -1090,6 +1100,9 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
                         if (s_sp + gain > POFV_SP_MAX) s_sp = POFV_SP_MAX; else s_sp += gain;
                         s_sp = (s_sp / 10) * 10;                       /* 取整到 10 的倍数 ✓ */
                     }
+                    /* ★★★ 2026-10-08（核查 ✓）：`pofv_acc_take2c` **全仓零调用** ✗ ⇒ a2c 只涨不掉 ✓。
+                     *   一手：TH09 越阈值**送**时扣（**保余数** ✓，函数本体已是这个语义 ✓）⇒ 在此接上 ✓。*/
+                    pofv_acc_take2c(&s_acc, diff);
                     ce_log("pofv: 【TH09】越阈值（a2c=%d a30=%d 難度=%d）⇒ 送出**幽灵** level 1（收件门 <25 ✓）",
                            (int)s_acc.a2c, (int)s_acc.a30, (int)diff);
                     pofv_foe_spawn_gated(pofv_top_x(), pofv_top_y(),
@@ -2146,6 +2159,14 @@ static int on_tick_2(ce_card_t *c)
          *   「連擃槽**æ¶失（清空）⇒ **SP 归零**」â
          *   ï¼一手的**衰减律**写作 `+= 難度×4 â 120` â 量纲可疑 ❓ â **本卡不实现衰减律** â，
          *    但「清空⇒SP 归零」这条**无争议** â ⇒ 本处落地 â。）*/
+        /* ★★★ 2026-10-08 一手衰减（見 `s_combo_idle` 的注释 ✓）：105 帧没命中 ⇒ 連擊槽漏空 ✓ */
+        if (++s_combo_idle >= POFV_COMBO_TIMEOUT_FRAMES) {
+            if (s_acc.a2c != 0) {
+                ce_log("pofv: 【TH09】連擊槽漏空（%d 帧无命中）⇒ a2c %d → 0（❓自定：一手漏法未定位 ✓）",
+                       POFV_COMBO_TIMEOUT_FRAMES, (int)s_acc.a2c);
+            }
+            s_acc.a2c = 0;
+        }
         if (s_acc.a2c <= 0 && s_sp != 0) {
             s_sp = 0;                                  /* ★ 連擃槽清空 â SP 归零 â */
             if (!(s_card_frames % 60)) ce_log("pofv: [SP] 連擃槽清空 â SP 归零 â（一手 §2.1）");
@@ -2468,16 +2489,28 @@ static int on_tick_2(ce_card_t *c)
              *     一手 `engine.h`：「生成时可由 `CE_SPAWN_ECL_F` 填初值」✓），
              *     由 **ECL 的 `moveVel($F0, 1.0f)`** 消费 —— 角度交给**引擎的初速通道** ✓（不是卡侧自己那套速度 ✓）。*/
             {
-                float ang = 1.5707964f;                  /* 默认 = 一手三色 ECL 的基角 π/2 ✓ */
+                /* ★★★ 2026-10-08（owner：「幽灵 1/5 概率斜着飞似乎我没有看到」✗ ⇒ 现在真做 ✓）：
+                 *   一手 = 出生抽一次角度（约 1/5 朝自机 ±22.5°、其余正下方 ±0.9° ✓）。
+                 *   ⚠ `moveVel` 的**参数只吃立即数** ✗（格式表 `404 ff` ✓）⇒ 变量进不去 ✗，
+                 *     先前用 `$F0` 的路子还被 thecl 往返破坏 ✗ ⇒ 改为**量化成 16 档**（π/8 = 22.5° ✓
+                 *     —— 正好是一手的粒度 ✓）：卡侧算好方向，写 `$I2`（`CE_SPAWN_ECL_I + 8` ✓），
+                 *     ECL 用 16 个**定点分支**消费 ✓。索引 = `round(角度 / (2π/16)) mod 16` ✓，
+                 *     其中 4 = 正下方（π/2 ✓）。*/
+                int32_t dir = 4;                         /* 默认 4 = π/2 = 正下方 ✓ */
                 if (kc == POFV_SPIRIT_KIND_GHOST_TH09) {
                     const float *pp = ce_player_pos();
-                    float tx = pp ? pp[0] : 0.0f;
-                    float ty = pp ? pp[1] : 0.0f;
+                    float ang = 1.5707964f;
+                    float idx;
                     pofv_ghost_spawn_angle(*(const float *)(sp + CE_SPAWN_POS),
                                            *(const float *)(sp + CE_SPAWN_POS + 4),
-                                           tx, ty, (uint32_t)ce_rand(), (uint32_t)ce_rand(), &ang);
+                                           pp ? pp[0] : 0.0f, pp ? pp[1] : 0.0f,
+                                           (uint32_t)ce_rand(), (uint32_t)ce_rand(), &ang);
+                    idx = ang / 0.39269908f;             /* 2π/16 = π/8 = 0.3926991 ✓ */
+                    idx = (idx < 0.0f) ? (idx - 0.5f) : (idx + 0.5f);
+                    dir = (int32_t)idx;
+                    dir %= 16; if (dir < 0) dir += 16;
                 }
-                *(float *)(sp + CE_SPAWN_ECL_F) = ang;   /* $F0 ✓ */
+                *(int32_t *)(sp + CE_SPAWN_ECL_I + 8) = dir;   /* $I2 = 方向档 ✓ */
             }
         }
         /* ★★★ owner 2026-10-06：「**满了就别创建了**」✓ ⇒ 账本没空格就**根本不生成这只灵** ✓

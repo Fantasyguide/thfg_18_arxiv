@@ -117,22 +117,89 @@ CESpirit109_eagle:
     moveVelTime(60, 0, 1.5707964f, 3.5f);
     goto CESpirit109_100 @ 0;
 CESpirit109_ghost:
-    // ★★★ 目标 ②：**TH09 的幽灵**（一手 `enemy.ecl Sub0`）：
-    //   `move_velocity(1.5707964f, 1.0f)` ⇒ 从上方落下、速度 **1.0**（≠ 纯灵的 1.5 ✓）
-    //   + `anm_set_main(20/21/22)` = 绿/黄/红（level 1/2/3）—— 本卡**不搬脚本号**（TH18 `enemy.anm` 只有 0..260 ✓），
-    //     外观仍由**卡侧跟随 VM**（图集 105 的 G/Y/R）负责 ✓
-    //   + `+5000: enemy_delete()`（一手寿命 5000 帧）❓ 本卡暂由灵账寿命口径统一；沈静化/离场同样走 `$I0` ✓
-    //   ❓ 一手「沈静化后变火焰形 + 超时三发自机狙」**未做**（火焰形要另切图；自机狙 owner 已定最终会去掉 ✓）
-    // ★★★ 2026-10-08（owner 给一手 §3.31 ✓）：**角度由卡侧在生成口抽好、写在 `$F0`** ✓ ——
-    //   一手「斜不是幽灵自己的运动，是出生那一刻引擎给它抽的角度」✓：
-    //     `u = rng % (4或5)`；`u == 0`（约 1/5）⇒ `atan2(自机 − 幽灵) ± π/8`（斜飞、朝自机拐 ✓）；
-    //     其余 ⇒ `π/2 ± π/200`（≈正下方 ✓）。
-    //   ⇒ 本支**消费引擎的初速通道** `$F0`（`CE_SPAWN_ECL_F` ✓），速度照一手 **1.0** ✓（≠ 纯灵的 1.5 ✓）。
-    // ⚠⚠ 2026-10-08 **撤回 `$F0`** ✗：thecl 的**往返**（编回→再编）把它反编译成 `[-nanf]` ✗ ⇒
-    //   `make dist` 的 `ecl-ufo` **一直失败** ✓ ⇒ dist/anm 全成旧件 ⇒ owner 报「没有区别」✓。
-    //   ⇒ `moveVel` 的**角度操作数不吃变量** ✗（或往返不忠实 ✗）⇒ 恢复**字面量**（一手 = π/2 ✓）。
-    //   ❓ 出生角改走**卡侧**：需要 TH18 敌机的**速度字段**（`engine.h` 尚未映射 ✗，待挖一手 ✓）。
-    moveVel(1.5707964f, 1.0f);
+    // ★★★ 2026-10-08：**出生角量化成 16 档**（一手：约 1/5 朝自机 ±22.5°、其余正下方 ✓）——
+    //   卡侧算好方向写 `$I2`（`CE_SPAWN_ECL_I + 8` ✓）；`moveVel` 只吃立即数 ✗ ⇒ 16 个定点分支 ✓。
+    //   档位步长 = 2π/16 = **π/8 = 22.5°** ✓（正好是一手的粒度 ✓）；4 档 = π/2 = 正下方 ✓。
+    unless ($I2 != 0) goto CESpirit109_ghost_d0 @ 0;
+    unless ($I2 != 1) goto CESpirit109_ghost_d1 @ 0;
+    unless ($I2 != 2) goto CESpirit109_ghost_d2 @ 0;
+    unless ($I2 != 3) goto CESpirit109_ghost_d3 @ 0;
+    unless ($I2 != 4) goto CESpirit109_ghost_d4 @ 0;
+    unless ($I2 != 5) goto CESpirit109_ghost_d5 @ 0;
+    unless ($I2 != 6) goto CESpirit109_ghost_d6 @ 0;
+    unless ($I2 != 7) goto CESpirit109_ghost_d7 @ 0;
+    unless ($I2 != 8) goto CESpirit109_ghost_d8 @ 0;
+    unless ($I2 != 9) goto CESpirit109_ghost_d9 @ 0;
+    unless ($I2 != 10) goto CESpirit109_ghost_d10 @ 0;
+    unless ($I2 != 11) goto CESpirit109_ghost_d11 @ 0;
+    unless ($I2 != 12) goto CESpirit109_ghost_d12 @ 0;
+    unless ($I2 != 13) goto CESpirit109_ghost_d13 @ 0;
+    unless ($I2 != 14) goto CESpirit109_ghost_d14 @ 0;
+    unless ($I2 != 15) goto CESpirit109_ghost_d15 @ 0;
+    moveVel(1.5707964f, 1.0f);   // 兜底（$I2 越界）⇒ 正下方 ✓
+    goto CESpirit109_100 @ 0;
+CESpirit109_ghost_d0:
+    moveVel(0.0000000f, 1.0f);
+    goto CESpirit109_100 @ 0;
+
+CESpirit109_ghost_d1:
+    moveVel(0.3926991f, 1.0f);
+    goto CESpirit109_100 @ 0;
+
+CESpirit109_ghost_d2:
+    moveVel(0.7853982f, 1.0f);
+    goto CESpirit109_100 @ 0;
+
+CESpirit109_ghost_d3:
+    moveVel(1.1780972f, 1.0f);
+    goto CESpirit109_100 @ 0;
+
+CESpirit109_ghost_d4:
+    moveVel(1.5707963f, 1.0f);
+    goto CESpirit109_100 @ 0;
+
+CESpirit109_ghost_d5:
+    moveVel(1.9634954f, 1.0f);
+    goto CESpirit109_100 @ 0;
+
+CESpirit109_ghost_d6:
+    moveVel(2.3561945f, 1.0f);
+    goto CESpirit109_100 @ 0;
+
+CESpirit109_ghost_d7:
+    moveVel(2.7488936f, 1.0f);
+    goto CESpirit109_100 @ 0;
+
+CESpirit109_ghost_d8:
+    moveVel(3.1415926f, 1.0f);
+    goto CESpirit109_100 @ 0;
+
+CESpirit109_ghost_d9:
+    moveVel(3.5342917f, 1.0f);
+    goto CESpirit109_100 @ 0;
+
+CESpirit109_ghost_d10:
+    moveVel(3.9269908f, 1.0f);
+    goto CESpirit109_100 @ 0;
+
+CESpirit109_ghost_d11:
+    moveVel(4.3196899f, 1.0f);
+    goto CESpirit109_100 @ 0;
+
+CESpirit109_ghost_d12:
+    moveVel(4.7123890f, 1.0f);
+    goto CESpirit109_100 @ 0;
+
+CESpirit109_ghost_d13:
+    moveVel(5.1050880f, 1.0f);
+    goto CESpirit109_100 @ 0;
+
+CESpirit109_ghost_d14:
+    moveVel(5.4977871f, 1.0f);
+    goto CESpirit109_100 @ 0;
+
+CESpirit109_ghost_d15:
+    moveVel(5.8904862f, 1.0f);
     goto CESpirit109_100 @ 0;
 CESpirit109_pure:
     // kind 3：正下方 1.5（一手 `GhostPureEnable`）
