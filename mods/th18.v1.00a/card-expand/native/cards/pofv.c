@@ -2089,8 +2089,7 @@ static int on_tick_2(ce_card_t *c)
             }
             ce_anm_set_scale((uint32_t)s_hud_ag_vm, 192.0f * agr, 1.0f);
         }
-        ce_hud_number_set(&s_hud_ag_num, POFV_HUD_SP_X, POFV_HUD_C2_Y + 16.0f, 6.0f,
-                          (int)s_ex_gauge, 3, 0, "pofv109");   /* 「攻撃ランク」数字 ✓（字母画不出 ✗ ⇒ 纯数字 ✓）*/
+   /* 「攻撃ランク」数字 ✓（字母画不出 ✗ ⇒ 纯数字 ✓）*/
     }
     /* == TH09 Bonus indicator: REMOVED ==
      *   owner: "Bonus 不是 th09 的吗" -> yes: the SP-full "Bonus!" is TH09's
@@ -2123,18 +2122,16 @@ static int on_tick_2(ce_card_t *c)
         if (s_hud_sp_hit_vm)  ce_anm_set_pos((uint32_t)s_hud_sp_hit_vm,  (POFV_HUD_SP_X + 104.0f) * 2.0f, POFV_HUD_SP_Y * 2.0f, 0.0f);
     }
     if (pofv_hits_visible(&s_hits)) {
+        /* old ce_hud_number_set pile REMOVED (owner: "左上角的那一堆数字还在") --
+         * HUD now uses TH09/TH19 original-art sprite VMs instead. */
         uint32_t col = pofv_hits_is_gray(&s_hits) ? 0xFF808080u : 0xFFFFFF00u;
-        ce_hud_number_set(&s_hud_sp_num, POFV_HUD_SP_X, POFV_HUD_SP_Y, 8.0f,
-                           (s_sp >= POFV_SP_MAX) ? POFV_SP_MAX : s_sp,
-                           6, 0, "pofv109");   /* ★ TH09 SP（一手 §4.4 ✓；满 999990 ⇒ `Bonus!` ❓待贴图 ✓）*/
+   /* ★ TH09 SP（一手 §4.4 ✓；满 999990 ⇒ `Bonus!` ❓待贴图 ✓）*/
         /* ★★ TH09 **連擊槽**（一手 `01-versus-loop.md` §2.1：SP **正下方的白色长条** ✓，击破时增长、否则衰减、
          *   清空 ⇒ SP 归零 ✓）。⚠ 一手的**条怎么画未定位** 🟡（`FUN_0041cf30` 已证伪 ✗）
          *   ⇒ 本条显示层为 **❓自定**：先用**数字**把已有的 `s_acc.a2c`（TH09 連擊计数器 ✓）画在 SP 正下方 ✓，
          *     条形美术（`drawRectGrad` 类元素或 VM 的 `scale.x` ✓）留作下一步 ✓ —— 已登记 `TUNING` ✓。*/
-        ce_hud_number_set(&s_hud_c2_num, POFV_HUD_SP_X, POFV_HUD_C2_Y, 7.0f,
-                           (int)s_acc.a2c, 5, 0, "pofv109");
-        ce_hud_number_set(&s_hud_hits_num, POFV_HUD_HITS_X, POFV_HUD_HITS_Y, 7.0f,
-                          (int)s_hits.latch, 4, 0, "pofv109");
+
+
         /* ★ 诊断（每 30 帧一条，owner 实跑「看不见 HUD」用）：照出这条路径是否走到、口是否成功
          *   （`id[0] != 0` = 数字 VM 起成功了 ✓；`lbl.id[0]` 同理 ✓）*/
         if ((s_card_frames % 30) == 0) {
