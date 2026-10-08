@@ -1321,6 +1321,16 @@ static int on_tick_2(ce_card_t *c)
             if (!s_spirit_vm[z] && !s_spirit_body[z]) continue;
             e = (em && s_spirit_id[z]) ? ce_enemy_by_id(em, (int32_t)s_spirit_id[z]) : 0;
             if (e) { s_spirit_miss[z] = 0; }
+            /* ★★★ 2026-10-08 诊断（owner：「现在没有横着飞的，但也没有斜着飞的」✗）：
+             *   与其继续猜 e `+0x14c8` 是不是 `%F0` ✗，**直接打幽灵的位置随时间怎么变** ✓
+             *   （`CE_ENEMY_POS_X/Y` 是**已知**字段 ✓ ⇒ 位置增量就是真实速度方向 ✓），
+             *   顺带打**我们写进去的 charge level**（bits 6–8 ✓）确认连锁闸门有值 ✓。*/
+            if (e && s_spirit_kind[z] == POFV_SPIRIT_KIND_GHOST_TH09 && !(s_card_frames % 15)) {
+                ce_log("pofv: [GHOSTPOS] z=%d pos=(%.1f,%.1f) lvl=%d",
+                       z, (double)*(const float *)(e + CE_ENEMY_POS_X),
+                       (double)*(const float *)(e + CE_ENEMY_POS_Y),
+                       (int)(((*(const int32_t *)(e + 0x3380)) >> 6) & 7));
+            }
             if (e) {
                 /* ★ 入场运动：按 kind / age 取速度并推进（一手 `ins_404` + `ins_405`）*/
                 if (!s_spirit_dis[z]) {   /* ★ EX 不再免疫结界 ✗（我发明的那套已拆 ✓）*/   /* ★ 免疫己方系统：EX 不吃固灵结界 */
@@ -2538,6 +2548,19 @@ static int on_tick_2(ce_card_t *c)
         {   uint8_t *e = (uint8_t *)ce_spawn_enemy("CESpirit109", sp);
             if (e) {
                 uint32_t id = *(const uint32_t *)(e + CE_ENEMY_ID);
+                /* ★★★★ 2026-10-08（owner：「幽灵见不到 level2/3 了，概率上讲不可能」✗ ⇒ 找到真因 ✓）：
+                 *   一手（`02-ghost-and-seal.md:126-131` ✓）：**击破连锁**的闸门读的是
+                 *   **被击破幽灵自己的 charge level** = `(enemy+0x3380 >> 6) & 7` ✓（bits 6–8 ✓）。
+                 *   而本卡**从来没给幽灵写过这个字段** ✗ ⇒ 恒为 0 ⇒ 闸门 `gl ∈ {1,2}` 永不通过 ✗
+                 *   ⇒ **level 2/3 的幽灵永远不出现** ✓（正是 owner 报的现象 ✓）。
+                 *   ⇒ 生成时**照它被生成的 level 写进去** ✓（绿 = 1 ⇒ 打它 ⇒ 黄 = 2 ⇒ 打它 ⇒ 红 = 3 ✓）。*/
+                {
+                    int32_t lv = (s_spirit_q_level[0] > 0) ? s_spirit_q_level[0] : 1;   /* 本卡生成口用下标 0 ✓ */
+                    (void)s_spirit_q_kind[0];
+                    uint8_t *fb = (uint8_t *)e + 0x3380;
+                    if (lv > 3) lv = 3;
+                    *(int32_t *)fb = (*(int32_t *)fb & ~(7 << 6)) | (lv << 6);
+                }
                 /* ★★★ 2026-10-08 诊断（owner 建议 ✓）：**读回敌机侧的 ECL 浮点全局**，看 spawn 的
                  *   `+0x40` 到底有没有落进运行时的 `%F0`（`CE_ENEMY_ECL_F0` = `+0x14c8` ✓）。
                  *   同时**直写一次**（双保险：即便 spawn 通道不通，ECL 的 `moveVel(%F0,…)` 在首帧才跑 ✓，
