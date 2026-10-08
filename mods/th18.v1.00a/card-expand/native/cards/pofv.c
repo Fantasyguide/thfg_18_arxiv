@@ -295,7 +295,8 @@ static ce_hud_number_t s_hud_sp_num;
 static ce_hud_number_t s_hud_c2_num;   /* ★ TH09 連擊槽显示句柄（数字 ❓自定 ✓）*/
 static ce_hud_number_t s_hud_ag_num;   /* ★ TH19 攻撃ランク数字句柄 ✓ */   /* ★ 由 32 → 44：避让 110/111 信仰块（y≤30）✓ */
 static ce_hud_number_t  s_hud_hits_num;
-static int32_t s_hud_c2_vm, s_hud_ag_vm;   /* ★ TH09 連擊槽条 / TH19 攻击槽条（卡自建 VM ⇒ 必须在 clear_card 里真删 ✓ 铁律）*/
+static int32_t s_hud_c2_vm, s_hud_ag_vm;
+static int32_t s_hud_hits_vm;   /* ★ TH19 hits 标签（**切自原作字体** ✓ ascii.png y=56 行 ✓）*/   /* ★ TH09 連擊槽条 / TH19 攻击槽条（卡自建 VM ⇒ 必须在 clear_card 里真删 ✓ 铁律）*/
 static ce_hud_vm_text_t s_hud_hits_lbl;
 /* ★★★ 2026-10-05 owner：**调试 UI** —— ① 镜像事件列表（镜像暴风**延迟**显示；镜像击破/固灵**停 3 s**再消失）
  *   ② 镜像幽灵列表（**只写「有什么」**，不涉及位置 ✓）。文字一律走**切贴图**（`ce_hud_vm_text_set` ✓，owner 规矩 ✓）*/
@@ -823,6 +824,7 @@ static void clear_card(ce_card_t *c)
      *   ⚠ 我先前把句柄写成**块内 static** ✗ ⇒ `clear_card` 看不到 ⇒ 会泄漏 ✗ ⇒ 已提到文件作用域 ✓。*/
     if (s_hud_c2_vm) { ce_anm_delete((uint32_t)s_hud_c2_vm); s_hud_c2_vm = 0; }
     if (s_hud_ag_vm) { ce_anm_delete((uint32_t)s_hud_ag_vm); s_hud_ag_vm = 0; }
+    if (s_hud_hits_vm) { ce_anm_delete((uint32_t)s_hud_hits_vm); s_hud_hits_vm = 0; }
     ce_hud_vm_text_clear(&s_hud_hits_lbl);
     pofv_foe_spirit_init(s_foe, POFV_FOE_SPIRIT_MAX);
     pofv_foe_incoming_init(s_inc, POFV_FOE_INCOMING_MAX);
@@ -2029,6 +2031,12 @@ static int on_tick_2(ce_card_t *c)
             ce_anm_set_pos((uint32_t)s_hud_c2_vm, (POFV_HUD_SP_X + 84.0f) * 2.0f, POFV_HUD_C2_Y * 2.0f, 0.0f);   /* ★ 表面 px = 640×2 ✓ */   /* ❓ 位置待实跑校 ✓ */
             ce_anm_set_scale((uint32_t)s_hud_c2_vm, 192.0f * c2r, 1.0f);   /* ★ 表面 px ✓（640 的 96 ×2）*/                        /* 长度 96px × 比例 ✓ */
         }
+    }
+    {   /* ââ TH19 **hits æ ç­¾**ÿ08**åèªåä½å­ä½** âï¼TH19 `ascii.png` ç 14Ã14 å­å½¢ âï¼å·²ç®è§ç¡®è®¤ y=56 è¡ = `hijklmnopqrstuvwxy` â）*/
+        if (!s_hud_hits_vm)
+            s_hud_hits_vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_POFV109_HUD_HITS, 25);
+        if (s_hud_hits_vm)
+            ce_anm_set_pos((uint32_t)s_hud_hits_vm, (POFV_HUD_HITS_X + 30.0f) * 2.0f, POFV_HUD_HITS_Y * 2.0f, 0.0f);
     }
     {   /* ★★ TH19 **アタックゲージ**（一手 `engine/versus/th19/06-aura.md` §8.13/§8.18 ✓：
          *   `+0x24` = 攻击槽累加器 ✓，**上限 2500 = 0x9c4** ✓（三处互证 ✓））。

@@ -1172,3 +1172,5 @@ SPIRIT_DISP4_3         ability/spirit/SPIRIT_DISP4_3.png            @96,0,32x32
 SPIRIT_DISP4_4         ability/spirit/SPIRIT_DISP4_4.png            @128,0,32x32
 ATLAS ATLAS_SAKUYA_FIELD 32x128
 SAKUYA_FIELD_STRIP      ability/spirit/SAKUYA_FIELD_STRIP.png   @0,0,32x128
+ATLAS ATLAS_HUD_HITS 56x14
+HUD_HITS_STRIP          ability/spirit/HUD_HITS_STRIP.png            @0,0,56x14

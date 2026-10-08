@@ -1,0 +1,15 @@
+script script408 {
+    // 109 的 TH19 **「hits」标签** —— **切自原作字体** ✓（不放自己画的 ✗）：
+    //   来源 = `local/th19.v1.10c/anm/ascii/ascii/ascii.png`（TH19 的 ascii 字体图集 ✓，14×14 字形网格 ✓）
+    //   取 y=56 那一行 = `hijklmnopqrstuvwxy` ✓（已裁图目视确认 ✓）
+    //   ⇒ 按阅读顺序拼 "h i t s" = 列 0 / 1 / 12 / 11 ✓ ⇒ 56×14 条 ✓
+    //   （一手：TH19 的 hits 是引擎用 **vsprintf + 这张字体**画的文本 ✓ —— 子智能体 `a63b2131` 结论 ✓
+    //     ⇒ 图集里的字形**就是**它的样子 ⇒ 切图 = 复刻 ✓，不是我自定 ✓）
+    //   layer 25 = HUD 层 ✓（在暂停模糊罩之上 ✓）
+    sprite(@HUD_HITS_STRIP@);
+    layer(25);
+    stop();
+    interruptLabel(1);
++20: // 20
+    delete();
+}
