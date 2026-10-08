@@ -1992,6 +1992,23 @@ static int on_tick_2(ce_card_t *c)
     }
     /* ★ HUD 绘制（只本侧 ✓）：一手 —— 只有 `latch != 0` 才画 ✓；数字 + `hits` 标签 ✓；
      *   `active < 1` 时按寿命 %6 在**黄 ↔ 灰**切换（6 帧周期 ✓）*/
+    {   /* ââ TH09 **連擃槽**（一手 §2.1 ✓：SP 正下方的白色长条 ✓）—— VM ＋ 每帧写 `scale.x` 表达长度 ✓
+         *   （与本卡 `404/405` 同手法 ✓，已实跑证明可渲染 ✓）。
+         *   ❓ 一手的"条怎么画"未定位 ð¡ ⇒ 本处 = **❓自定**（纯几何白条 ✓）；位置/锚点也标 ❓，待实跑校正 ✓。
+         *   比例 = `a2c / thr2c(難度)` ✓（难度取法照本卡现有写法 `s_card_frames/60` ✓ ❓）。*/
+        static int32_t s_hud_c2_vm;
+        int32_t c2thr = pofv_acc_thr2c(s_card_frames / 60);
+        float c2r;
+        if (!s_hud_c2_vm)
+            s_hud_c2_vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_POFV109_HUD_COMBO, 25);
+        c2r = (c2thr > 0) ? ((float)s_acc.a2c / (float)c2thr) : 0.0f;
+        if (c2r > 1.0f) c2r = 1.0f;
+        if (c2r < 0.0f) c2r = 0.0f;
+        if (s_hud_c2_vm) {
+            ce_anm_set_pos((uint32_t)s_hud_c2_vm, POFV_HUD_SP_X, POFV_HUD_C2_Y + 8.0f, 0.0f);   /* ❓ 位置待实跑校 ✓ */
+            ce_anm_set_scale((uint32_t)s_hud_c2_vm, 96.0f * c2r, 1.0f);                        /* 长度 96px × 比例 ✓ */
+        }
+    }
     if (pofv_hits_visible(&s_hits)) {
         uint32_t col = pofv_hits_is_gray(&s_hits) ? 0xFF808080u : 0xFFFFFF00u;
         ce_hud_number_set(&s_hud_sp_num, POFV_HUD_SP_X, POFV_HUD_SP_Y, 8.0f,
