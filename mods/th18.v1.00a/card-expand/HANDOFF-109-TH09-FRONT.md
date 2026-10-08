@@ -4,6 +4,18 @@
 > 地址/矩形出自一手：`engine/versus/th09/01-versus-loop.md` §2.9–§2.11（本文只重复「怎么切/怎么画」要用的部分）。
 > 交给**负责切图的 agent**；卡侧代码不在本文范围。
 
+## ★ 先看这里：**画 HUD 本身只要两行**（下面§1 的切图是"要 TH09 外观"才需要）
+
+卡里**已经有**能用的件（别的卡在跑 ✓，不需要切任何图 ✓）：
+
+| 想要 | 现成做法（一手：别的卡的实际调用 ✓）|
+| --- | --- |
+| **数字** | `ce_hud_number_set(&n, x, y, spacing, value, digits, right_align, "109")` ✓（脚本 `CE_ANM_ABILITY_SCRIPT_HUD_NUMBER` = 105 ✓）<br>实例：`native/cards/stock.c:182` ✓ |
+| **框** | 脚本 `CE_ANM_ABILITY_SCRIPT_SEASON_GAUGE_FRAME` = **123** 是 **1×1 白矩形** ⇒ **四条边 = 起 4 台 VM + `ce_anm_set_scale`** ✓<br>实例：`native/cards/season.c:1667`（注释原文：「外框：四条边各一个 1×1 矩形 VM（脚本 123），尺寸用 scale 给」✓）|
+
+⇒ **不切图版**：`ce_anm_spawn_ui(...SEASON_GAUGE_FRAME, 0)` ×4 ＋ `ce_anm_set_scale(边宽, 边长)` ＋ `ce_hud_number_set(...)` ⇒ **HUD 就出来了** ✓。
+⇒ **要 TH09「Spell Point」那个框的样子**：只需切 **1 张** PNG（§1 的 `spellbox.png` = sprite7 `320,0,80,32` ✓），起一台 VM ＋ `ce_anm_set_sprite` ✓（§3 给几何 ✓）。§1 里其余 sprite 是**可选**（整块 HUD / 其它行）✓。
+
 ## 0. 素材来源（两条路，等价 ✓）
 
 | 路 | 位置 |
