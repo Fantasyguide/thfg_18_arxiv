@@ -317,13 +317,13 @@ static int   s_boss_prev;   /* ★ owner 2026-10-05：boss 表 0→1 的**边沿
  *   一手（`HUD-LAYOUT.md` §1.2）：**锚点 = 左下角内缩 = 表面 (257, 924) = 640 空间 (128.5, 462)** ✓
  *     「116 季节 / 117 动物灵 **两张卡独立推出**的同一条线：**左 257**」✓
  *   ⇒ 本卡 HUD 的 x 也取 **128.5**（**不再内缩 8** ✗ —— 先前 136 是我自己加的 ✗）。*/
-#define POFV_HUD_SP_X 128.5f   /* ★ 2026-10-08 owner：「太靠左上了」✗ ⇒ 在 112/116/117 那条左边界(128.5)
+#define POFV_HUD_SP_X 136.5f   /* ★ 2026-10-08 owner：「太靠左上了」✗ ⇒ 在 112/116/117 那条左边界(128.5)
                                 *   基础上**内缩 11.5 单位** ✓（参照图里框左侧是有留白的 ✓）。*/
                                /* （128.5 = 一手锚点线，保留在注释里作为基准 ✓）*/
-#define POFV_HUD_SP_Y  36.0f   /* ★ owner：「太靠左上」✗ ⇒ 纵向内缩到 32+16 ✓（❓自定）*/
+#define POFV_HUD_SP_Y  50.0f   /* ★ owner：「太靠左上」✗ ⇒ 纵向内缩到 32+16 ✓（❓自定）*/
 #define POFV_HUD_SP_DX        5.0f   /* ★ 一手：框内数字/字相对框 (+5, +13) ✓（front.anm script9 ✓）*/
-#define POFV_HUD_SP_DY       13.0f
-#define POFV_HUD_SP_STEP      6.0f   /* ★ 一手原值（`front.anm` script9..17 步进 6 ✓）*/   /* ★★★ 一手：每位 **6 px** ✓（现 dump `front.anm` script9..17：
+#define POFV_HUD_SP_DY        9.0f
+#define POFV_HUD_SP_STEP      7.0f   /* ★ 一手原值（`front.anm` script9..17 步进 6 ✓）*/   /* ★★★ 一手：每位 **6 px** ✓（现 dump `front.anm` script9..17：
                                       *   -139/-133/-127 与 -107/-101/-95/-89/-83/-77 ⇒ 步进 6 ✓；我原写 8 ✗）*/
 /* ★★★ 2026-10-08 owner 给的**格式原文**：「Hit 得是**红色**的，格式不是 000000 而是
  *   **一个红色的 `<3 格右对齐、前导空格>` 数字 + `Hit`**，**后面紧跟着是六位 SP**」✓
@@ -335,9 +335,9 @@ static int   s_boss_prev;   /* ★ owner 2026-10-05：boss 表 0→1 的**边沿
  *     script8        → 「Hit」标签：**+23** ✓          color (192,128,128) ✓
  *     script12..17   → **SP 6 位**：+37/+43/+49/+55/+61/+67 ✓  color **(128,128,128)**（**灰度** ✓ owner 提到 ✓）
  *   步进一律 **6** ✓；最右 +67+6 = **+73 < 80** ⇒ **全在 `sprite7` 框内** ✓（owner：「宽框就是那个 Spell Point 的框」✓）。*/
-#define POFV_HUD_HIT_X       5.0f    /* ★ 一手：命中 3 格起 +5 ✓ */
-#define POFV_HUD_HITLABEL_DX 23.0f   /* ★ 一手原值：script8 的「Hit」在 +23 ✓ */
-#define POFV_HUD_SPNUM_DX    37.0f   /* ★ 一手原值：script12 的 SP 起 +37 ✓ */
+#define POFV_HUD_HIT_X       2.0f    /* ★ 2026-10-08 owner 标定：「文字整体向左」⇒ 5 → 2 ✓（一手为 +5 ✗ 按实跑调 ✓）*/
+#define POFV_HUD_HITLABEL_DX 23.0f   /* 2+3×7 = +23 ✓ */   /* ★ 一手原值：script8 的「Hit」在 +23 ✓ */
+#define POFV_HUD_SPNUM_DX    39.0f   /* 23+16 = +39 ✓ */   /* ★ 一手原值：script12 的 SP 起 +37 ✓ */
 #define POFV_HUD_COL_HIT    0xFFC08080u   /* ★ 一手 `color(192,128,128)` ✓（命中 + Hit）*/
 #define POFV_HUD_COL_SP     0xFF808080u   /* ★ 一手 `color(128,128,128)` ✓（SP 六位，owner：「乘了一个灰度」✓）*/
 /* ★ 连击条 = 屏幕**最下方**的白色长方形 ✓（参图 ✓）*/
