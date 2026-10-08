@@ -799,6 +799,8 @@ CE_ANM_ABILITY_ATLAS_ATLAS_HUD_BONUS   # 109 TH19「Bonus」标签条（**切自
 CE_ANM_ABILITY_ATLAS_ATLAS_HUD_GAUGE   # 109 TH19 攻击槽（**切自原作 front.anm / front/lifebar.png** ✓ 32x32：8x32 槽体/4x32 填充/6x12 标记 ✓）
 CE_ANM_ABILITY_ATLAS_ATLAS_HUD_HITS_BIG   # 109 TH19 hits 大字（**切自原作 ascii_big(.f)** ✓ 128x32：实心/f 描边 ✓）
 CE_ANM_ABILITY_ATLAS_ATLAS_HUD_HITS_BIGF   # 109 TH19 hits 大字（**切自原作 ascii_big(.f)** ✓ 128x32：实心/f 描边 ✓）
+CE_ANM_ABILITY_ATLAS_ATLAS_TH09_HUD   # 109 TH09 SP 数字 0-9（8x11）/ Hit+SpellPoint（**切自 th09 front.anm/front.png sprite8..17,18,7** ✓）
+CE_ANM_ABILITY_ATLAS_ATLAS_TH09_SP_DIGIT   # 109 TH09 SP 数字 0-9（8x11）/ Hit+SpellPoint（**切自 th09 front.anm/front.png sprite8..17,18,7** ✓）
 CE_ANM_ABILITY_ATLAS_ATLAS_TH13ASCII
 CE_ANM_ABILITY_ATLAS_ATLAS_TRANCE_ASTRAL
 CE_ANM_ABILITY_ATLAS_ATLAS_TRANCE_GAUGE

@@ -1,0 +1,9 @@
+script script417 {
+    // 109 的 TH09 **SpellPoint 标题** —— **切自原作** ✓（th09 front.png sprite7 (320,0,80x32) ✓）
+    sprite(@TH09_SPELLPOINT@);
+    layer(25);
+    stop();
+    interruptLabel(1);
++20: // 20
+    delete();
+}

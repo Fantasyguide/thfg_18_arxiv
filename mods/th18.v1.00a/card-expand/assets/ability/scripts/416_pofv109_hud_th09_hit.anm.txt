@@ -1,0 +1,9 @@
+script script416 {
+    // 109 的 TH09 **Hit 标签** —— **切自原作** ✓（th09 front.png sprite18 (400,32,16x10) ✓，对照图确认字面 = Hit ✓）
+    sprite(@TH09_HIT@);
+    layer(25);
+    stop();
+    interruptLabel(1);
++20: // 20
+    delete();
+}

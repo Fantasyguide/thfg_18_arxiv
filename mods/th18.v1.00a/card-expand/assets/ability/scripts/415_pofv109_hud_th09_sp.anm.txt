@@ -1,0 +1,11 @@
+script script415 {
+    // 109 的 TH09 **SP 数字** —— **切自原作** ✓（th09 front.anm/front.png 的 sprite8..17 ✓，
+    //   位置 (320+8d, 32, 8x11) ✓，对照图目视确认 = 0..9 ✓）。
+    //   一条脚本画一个数字位 ✓；卡侧用 ce_anm_set_sprite(vm, 709+d) 换字 ✓（不必 10 条脚本 ✓）。
+    sprite(@TH09_SP_0@);
+    layer(25);
+    stop();
+    interruptLabel(1);
++20: // 20
+    delete();
+}
