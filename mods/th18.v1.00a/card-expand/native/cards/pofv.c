@@ -405,8 +405,8 @@ static int   s_boss_prev;   /* ★ owner 2026-10-05：boss 表 0→1 的**边沿
  *   ⚠ 关键：**框的 VM 是「中心锚」** ✗ ⇒ 它的**可见矩形** = `[SP_X−80, SP_X+80] × [SP_Y−32, SP_Y+32]`
  *     （精灵 80×32 ✓ × `scale 2.0` ✓ ⇒ 160×64 ✓，半宽/半高 = 80/32 ✓）。
  *   ⇒ 条必须按**可见矩形**对齐（先前我按 SP_X/SP_Y 直接对齐 ⇒ 恰好偏右 80、偏上 60 ✓）。*/
-#define POFV_HUD_BAR_X       (POFV_HUD_SP_X - 80.0f)   /* = 框的**可见左边缘** ✓ */
-#define POFV_HUD_BAR_Y       (POFV_HUD_SP_Y + 40.0f)
+#define POFV_HUD_BAR_X       (POFV_HUD_SP_X - 88.0f)   /* ★ owner：「再向左」⇒ −8（❓数值待给 px ✓）*/   /* = 框的**可见左边缘** ✓ */
+#define POFV_HUD_BAR_Y       (POFV_HUD_SP_Y + 32.0f)   /* ★ owner：「再向上」⇒ 40 → 32（❓同上 ✓）*/
 #define POFV_HUD_BAR_W       160.0f                    /* = 框的**可见宽度** ✓（80px 精灵 × scale2 ✓）*/   /* = 框**正下方** ✓（半高 32 + 8 间距 ✓）*/
 /* ★ 事件文本行（连爆/生成 提示 ✓）—— 沿用旧名字，锚点归到 SP 框下方 ✓（❓自定）*/
 #define POFV_HUD_HITS_X      POFV_HUD_BAR_X
@@ -1320,6 +1320,12 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
          *   ⇒ **上移到「每次真实击破」这一层** ✓（一手 `FUN_0050c1f0` 对妖精死亡同样计数 ✓）。*/
         /* ★★★ 2026-10-08 诊断（owner：「现在好像变成只有**固化灵**才能开了」✗ ⇒ 先确认真值 ✓）：
          *   打在喂食点 ⇒ 每次真实击破都该出现；kind 字段顺带告诉我们**是哪条路走到这** ✓。*/
+        /* ★★★★ 2026-10-08 修 bug（owner：「1s 的长度也大部分是 0hit，**肯定有 bug**」✓）：
+         *   怀疑点：`s_chain_storm_age` 的归零原先只放在**起暴风的那几处**✗，而妖精等路径未必经过
+         *   ⇒ 计时器一路涨到 ≥ 窗口 ⇒ **每次击破后立刻就被清** ✓（正是「每行 cur=0」✓）。
+         *   ⇒ **在喂食点直接归零** ✓ —— 这里**每次真实击破都必然到达**（`[FEED]` 日志 69 行已证明 ✓）。*/
+        s_chain_storm_age = 0;
+        s_chain_seen = 1;
         ce_log("pofv: [FEED] 击破喂连击：id=%u flags=%#x ours=%d a2c=%d cur=%d",
                (unsigned)ev->id, (unsigned)ev->flags,
                (int)pofv_spirit_is_ours(ev->id), (int)s_acc.a2c, (int)s_hits.cur);
