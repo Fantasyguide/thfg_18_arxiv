@@ -290,6 +290,14 @@ static pofv_acc_t s_acc;
 static int32_t s_combo_blasts;  /* = 一手連爆数 `+0x38`（送量来源 ✓，清空时归零 ✓）*/
 static int32_t s_sp_life;       /* = 一手 SP 寿命 tB `+0x14`（漏空 ⇒ SP = 0 ✓）*/
 #define POFV_COMBO_CAP 60
+/* ★★★ 2026-10-08 订正（owner 转来 §3.41 ✓）：**hits 的接续窗口 X = 36 帧** ✓ ——
+ *   一手：那是**敌人连锁击破的暴风**（`FUN_004102b0` ⇒ `FUN_0041d110(…, 类别+8 阶段, 每阶段 4 帧 ✓)`）
+ *   ⇒ 窗口 = **`(cVar2 + 9) × 4`** 帧 ✓（类别 0 ⇒ **36** ✓，显著短于連擊槽 60 ✓）。
+ *   ⚠ 我上一版拿「玩家蓄力暴风」那族（48/64/128/90/120 ✗）当 X ⇒ **作废** ✗（结案已标为另一个系统 ✓）。
+ *   「断」的判定（一手 `FUN_004102b0` 入口 ✓）：`param_1 != 0`（这一击**不属于当前连锁**）⇒ 清連爆数 +
+ *   归零槽 Timer ✓ ⇒ 代码层等价物 = **距上次连锁暴风 > X** ✓（就是我们这条计时器 ✓）。*/
+#define POFV_HITS_CHAIN_X 36
+static int32_t s_chain_storm_age;
 /* ★ HUD「hits」（一手 §9.8）：当前值 `+0x22b4` / 锁存 `+0x22b8` / 寿命 120 / `+0x227c<1` 时 6 帧闪灰 ✓
  *   ⚠ 按 owner 结论：**只接 hit 这一条**（两作同源 ✓），**SP 不并进 Hits** ✗ ⇒ 这里不碰 SP ✓ */
 static pofv_hits_t s_hits;
@@ -1235,6 +1243,8 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
             { int32_t i3; for (i3 = POFV_UI_EV_MAX - 1; i3 > 0; --i3) s_ui_ev[i3] = s_ui_ev[i3 - 1];
               s_ui_ev[0].what = POFV_UI_EV_STORM;
               s_ui_ev[0].ttl = POFV_UI_EV_TTL + POFV_UI_STORM_DELAY; }   /* ★ 镜像暴风：**延迟** ✓（先等 delay 再显示）*/
+            s_chain_storm_age = 0;   /* ★ 连锁暴风 ⇒ hits 窗口计时器归零 ✓（X=36 ✓）*/
+            s_chain_storm_age = 0;
             if (pofv_storm_spawn_tier(&s_storm, ev->x, ev->y,
                                       POFV_SPIRIT_R_TARGET, POFV_SPIRIT_TWEEN_FRAMES,
                                       POFV_SPIRIT_HIT_DMG) < 0) {
@@ -1289,7 +1299,9 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
         if (pofv_storm_spawn_tier(&s_storm, ev->x, ev->y,
                                   POFV_SPIRIT_R_TARGET, POFV_SPIRIT_TWEEN_FRAMES,
                                   POFV_SPIRIT_HIT_DMG) < 0) { /* 池满：下面是统一的日志 */ }
-    } else if (pofv_storm_spawn(&s_storm, ev->x, ev->y, POFV_STORM_LIFE_FRAMES) < 0) {
+    s_chain_storm_age = 0;   /* ★ 连锁暴风 ⇒ hits 窗口计时器归零 ✓（X=36 ✓）*/
+            s_chain_storm_age = 0;
+            } else if (pofv_storm_spawn(&s_storm, ev->x, ev->y, POFV_STORM_LIFE_FRAMES) < 0) {
         if (!s_cap_logged) {
             ce_log("pofv: storm pool full (%d) — storm dropped", POFV_STORM_MAX);
             s_cap_logged = 1;
@@ -2115,15 +2127,15 @@ static int on_tick_2(ce_card_t *c)
     } else if (s_aura_vm && s_aura_kind != 2) {                   /* ★ 咲夜不在此处删 ✗（脚本 rotateTime 收束后自删 ✓） ✓（一手 `+20: delete()` ✓）*/
         ce_anm_delete((uint32_t)s_aura_vm); s_aura_vm = 0;
     }
-    /* ★★★ 2026-10-08（结案 ✓）：**hits 的第二条归零路 = 暴风结束** ✓ ——
-     *   一手没有直接「读暴风窗口去清 hits」的指令 ✗（结案已诚实标注 ✓）⇒ 代码层等价物 =
-     *   「**暴风已经不存在**」✓（观感窗口 ≈ 30 帧 ✓ 一手归一化 ✓）。*/
-    {   int q; int any = 0;
-        for (q = 0; q < POFV_STORM_MAX; ++q) if (s_storm.s[q].active) { any = 1; break; }
-        if (!any && s_hits.cur != 0) {
-            ce_log("pofv: 【TH09】暴风结束 ⇒ hits %d 归零（结案：等价物 = 暴风不存在 ✓）", (int)s_hits.cur);
-            s_hits.cur = 0; s_hits.latch = 0; s_hits.life = 0;
-        }
+    /* ★★★ 2026-10-08 **hits 的第二条归零路 = 连锁暴风窗口 X = 36 帧** ✓（订正后 ✓）——
+     *   「距上次连锁暴风 > X」⇒ hits 归零 ✓（一手 `FUN_004102b0` 入口的「不属于当前连锁」等价物 ✓）。
+     *   ⚠ 上一版我用的「暴风池为空」是**近似** ✗ ⇒ 已换成**计时器 + X** ✓。*/
+    if (s_chain_storm_age < POFV_HITS_CHAIN_X) {
+        ++s_chain_storm_age;
+    } else if (s_hits.cur != 0) {
+        ce_log("pofv: 【TH09】连锁暴风窗口过（%d 帧 > X=%d）⇒ hits %d 归零 ✓",
+               (int)s_chain_storm_age, POFV_HITS_CHAIN_X, (int)s_hits.cur);
+        s_hits.cur = 0; s_hits.latch = 0; s_hits.life = 0;
     }
     pofv_hits_tick(&s_hits);                     /* ★ HUD hits：锁存 + 寿命递减（一手 120 帧 ✓）*/
     /* ★★ 调试 UI（owner）：事件列表（暴风延迟 ✓ / 击破·固灵 3 s ✓）+ 幽灵列表（只有内容、无位置 ✓）*/
