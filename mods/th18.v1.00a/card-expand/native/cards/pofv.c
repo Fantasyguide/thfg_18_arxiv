@@ -277,7 +277,7 @@ static int   s_boss_prev;   /* ★ owner 2026-10-05：boss 表 0→1 的**边沿
  * ❓ 位置：一手 `y = 32.0`、`x = …(296 比例) + 16.0`（**引擎坐标系** ⇒ 本卡 UI 空间换算未核 ⇒ 先取 32/… 近似，登记 TUNING）
  * ❓ 颜色字节序：一手是 `0xffffff00`(黄)/`0xff808080`(灰)；本口参数名是 `bgra` ⇒ 先按同字节序传，实跑若反了调换 ✓ */
 #define POFV_HUD_HITS_X 16.0f
-#define POFV_HUD_HITS_Y 32.0f
+#define POFV_HUD_HITS_Y   44.0f   /* ★ 由 32 → 44：避让 110/111 信仰块（y≤30）✓ */
 static ce_hud_number_t  s_hud_hits_num;
 static ce_hud_vm_text_t s_hud_hits_lbl;
 /* ★★★ 2026-10-05 owner：**调试 UI** —— ① 镜像事件列表（镜像暴风**延迟**显示；镜像击破/固灵**停 3 s**再消失）
@@ -1943,7 +1943,7 @@ static int on_tick_2(ce_card_t *c)
                 for (q = nm[s_ui_ev[i2].what & 3]; *q && L < 38; ++q) buf[L++] = *q;
                 buf[L] = 0;
                 ce_hud_vm_text_set(&s_ui_ev_vm[i2], POFV_HUD_HITS_X, POFV_HUD_HITS_Y + 24.0f + (float)i2 * 16.0f,
-                                   0xFFFFFFFFu, 1, 1.0f, buf, "pofv109");
+                                   0xFFFFFFFFu, 1, 1.0f, "", "pofv109");   /* ★ owner：字母画不出 ✗ ⇒ 不再画英文（只留 ce_log ✓）*/
             } else {
                 ce_hud_vm_text_set(&s_ui_ev_vm[i2], 0.0f, 0.0f, 0, 1, 1.0f, "", "pofv109");
             }
@@ -1968,7 +1968,7 @@ static int on_tick_2(ce_card_t *c)
             { int32_t v = c[POFV_SPIRIT_KIND_GHOST_TH09]; buf[L++] = (char)('0' + (v > 9 ? 9 : v)); }
             buf[L] = 0;
             ce_hud_vm_text_set(&s_ui_gh_vm, POFV_HUD_HITS_X, POFV_HUD_HITS_Y + 24.0f + (float)POFV_UI_EV_MAX * 16.0f,
-                               0xFF80FFFFu, 1, 1.0f, buf, "pofv109");
+                               0xFF80FFFFu, 1, 1.0f, "", "pofv109");   /* ★ owner：字母画不出 ✗ ⇒ 不再画英文（只留 ce_log ✓）*/
         }
     }
     /* ★ HUD 绘制（只本侧 ✓）：一手 —— 只有 `latch != 0` 才画 ✓；数字 + `hits` 标签 ✓；
