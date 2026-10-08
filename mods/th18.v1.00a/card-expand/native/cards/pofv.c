@@ -292,19 +292,28 @@ static int   s_boss_prev;   /* ★ owner 2026-10-05：boss 表 0→1 的**边沿
  *       ⚠ 叠图验证过：**+23 会压在数字中间** ✗ ⇒ 这一行的 +5..+53 是给**数字**的 ✓，
  *       单位改放**数字之后**（框宽 80 ✓ 5+48+16 = 69 < 80 ✓ 仍在框内 ✓）。**该 x 属 ❓自定**（已登记 TUNING ✓）。
  *   ⇒ 所以 `SP_X/SP_Y` 现在是**框的左上角**（不再是我先前那个 +28/-8 的错位 ✗）。*/
-#define POFV_HUD_SP_X 136.0f   /* ★ 游玩区左上 (128,32) + 内缩 8 ✓（一手：04-warp-yukari-gap.md:89-93）*/
-#define POFV_HUD_SP_Y  56.0f   /* ★ 连擊槽(蓄力条) 下一行 ✓ */
-#define POFV_HUD_SP_DX        5.0f   /* ★ 一手：数字相对框 (+5, +13) ✓ */
+/* ★★★ 2026-10-08 第三轮（owner 给了 **TH09 实机参照图** ✓，一切以它为准 ✓）：
+ *   TH09 真实版式 = 左上角一个小框，**框内**是：「Spell Point」标题（框图自带 ✓）＋
+ *   下一行「**<红色命中数>Hit**」✓；**框的右侧**另有两个数字（SP 值 ✓）。
+ *   而**连击条 = 屏幕最下方一个白色长方形** ✓（owner 原话：「其中连击条就是一个白色长方形」✓）
+ *   —— ⚠ 我上一轮把 `sprite40/41`（红/绿分段图）当成连击条 ✗ **是错的** ✓；
+ *     上一位写的 `POFV109_HUD_COMBO`（`drawRectGrad` 纯白矩形 ✓）才是对的 ✓ ⇒ 恢复用它 ✓。*/
+#define POFV_HUD_SP_X 136.0f   /* 框左上（640 空间 ✓，游玩区左上 (128,32) + 内缩 8 ✓）*/
+#define POFV_HUD_SP_Y  36.0f
+#define POFV_HUD_SP_DX        5.0f   /* ★ 一手：框内数字/字相对框 (+5, +13) ✓（front.anm script9 ✓）*/
 #define POFV_HUD_SP_DY       13.0f
 #define POFV_HUD_SP_STEP      8.0f   /* ★ 一手：每位 8 px ✓ */
-#define POFV_HUD_SP_UNIT_DX  58.0f   /* ❓自定：单位「Hit」放数字之后（一手 +23 会压数字 ✗）*/
-#define POFV_HUD_HITS_NUM_DX 92.0f   /* ❓自定：**红色 hits 数字**放框右侧 ✓（owner：Hits 得是红色的 ✓）*/
-#define POFV_HUD_BAR_X       136.0f  /* ★ 连擊槽=owner 说的「蓄力条」—— 左上角第一行 ✓ */
-#define POFV_HUD_BAR_Y        40.0f
+#define POFV_HUD_SP_UNIT_DX  58.0f   /* ★ 框内「Hit」标签（参图：命中数在它**左边** ✓）*/
+#define POFV_HUD_HITS_DIGITS  6      /* 命中数位数（参图显示 1–2 位 ✓；补零由卡侧裁 ✓）*/
+#define POFV_HUD_SPNUM_DX    92.0f   /* ★ 参图：SP 数字在**框右侧** ✓ */
+/* ★ 连击条 = 屏幕**最下方**的白色长方形 ✓（参图 ✓）*/
+#define POFV_HUD_BAR_X       132.0f
+#define POFV_HUD_BAR_Y       438.0f
+#define POFV_HUD_BAR_W       376.0f   /* 游玩区宽 384 − 内缩 ✓ */
 /* ★ 事件文本行（连爆/生成 提示 ✓）—— 沿用旧名字，锚点归到 SP 框下方 ✓（❓自定）*/
 #define POFV_HUD_HITS_X      POFV_HUD_BAR_X
 #define POFV_HUD_HITS_Y      (POFV_HUD_SP_Y + 40.0f)
-#define POFV_HUD_C2_Y 44.0f   /* ★ SP 下一行 ✓ */   /* ★ 重排：連擊槽行 y=46 ✓（原 36 ⇒ 条在 44 与 hits 撞 ✗）*/   /* ★ TH09 連擊槽（SP 正下方 ✓，一手 §2.1 ✓）*/
+#define POFV_HUD_C2_Y 438.0f   /* 连击条所在行（底部 ✓，参图 ✓）*/   /* ★ SP 下一行 ✓ */   /* ★ 重排：連擊槽行 y=46 ✓（原 36 ⇒ 条在 44 与 hits 撞 ✗）*/   /* ★ TH09 連擊槽（SP 正下方 ✓，一手 §2.1 ✓）*/
 static int32_t s_sp;               /* 本侧 SP（0..999990 ✓）*/
 /* ★★★ 2026-10-08（交接 HANDOFF-109-HUD-STATE §3 的唯一 P0）：**HUD 的 VM 必须起在「UI 列表」** ✓
  *   —— 世界列表版（`ce_anm_spawn`）是给**场上效果**的 ✗；我原先用错了 ⇒ 整组 HUD 落在**屏幕中间** ✗
@@ -869,7 +878,7 @@ static void clear_card(ce_card_t *c)
      *   ⇒ 与 `s_storm_vm` 同法**真删** ✓（`on_delete` / `on_run_reset` 共用本函数 ✓）；
      *   ⚠ 我先前把句柄写成**块内 static** ✗ ⇒ `clear_card` 看不到 ⇒ 会泄漏 ✗ ⇒ 已提到文件作用域 ✓。*/
     if (s_hud_c2_vm) { ce_anm_delete((uint32_t)s_hud_c2_vm); s_hud_c2_vm = 0; }
-    if (s_hud_c2_fill_vm) { ce_anm_delete((uint32_t)s_hud_c2_fill_vm); s_hud_c2_fill_vm = 0; }
+    if (s_hud_c2_fill_vm) { ce_anm_delete((uint32_t)s_hud_c2_fill_vm); s_hud_c2_fill_vm = 0; }   /* 上一轮那对条已不用 ✓ */
     if (s_hud_ag_vm) { ce_anm_delete((uint32_t)s_hud_ag_vm); s_hud_ag_vm = 0; }
     if (s_hud_ag_fill_vm) { ce_anm_delete((uint32_t)s_hud_ag_fill_vm); s_hud_ag_fill_vm = 0; }
     { int i9; for (i9 = 0; i9 < 4; ++i9) if (s_hud_ag_dot_vm[i9]) { ce_anm_delete((uint32_t)s_hud_ag_dot_vm[i9]); s_hud_ag_dot_vm[i9] = 0; } }
@@ -2069,12 +2078,14 @@ static int on_tick_2(ce_card_t *c)
          *   比例 = `a2c / thr2c(難度)` ✓（难度取法照本卡现有写法 `s_card_frames/60` ✓ ❓）。*/
         int32_t c2thr = pofv_acc_thr2c(s_card_frames / 60);
         float c2r;
+        /* ★★★ 连击条 = **屏幕最下方的白色长方形** ✓（owner：「其中连击条就是一个白色长方形」✓
+         *   + TH09 参照图：两栏底部都有一条白色长条 ✓）⇒ 恢复上一位写的 `POFV109_HUD_COMBO`
+         *   （脚本 407：`drawRectGrad` 纯白 1×6 ✓，本仓能跑的条形写法 ✓）。
+         *   ⚠ 我上一轮换成的 `418/419`（`sprite40/41` 红/绿分段图）**是错的** ✗ ——
+         *     那两张不是连击条 ✓（脚本与贴图**留着不删** ✓：删会平移 sprite 号 ✗）。*/
         if (!s_hud_c2_vm)
-            s_hud_c2_vm = (int32_t)hud_vm_spawn(CE_ANM_ABILITY_SCRIPT_POFV109_TH09_BAR_FRAME,
+            s_hud_c2_vm = (int32_t)hud_vm_spawn(CE_ANM_ABILITY_SCRIPT_POFV109_HUD_COMBO,
                                                 POFV_HUD_BAR_X, POFV_HUD_BAR_Y);
-        if (!s_hud_c2_fill_vm)
-            s_hud_c2_fill_vm = (int32_t)hud_vm_spawn(CE_ANM_ABILITY_SCRIPT_POFV109_TH09_BAR_FILL,
-                                                     POFV_HUD_BAR_X + 16.0f, POFV_HUD_BAR_Y);
         c2r = (c2thr > 0) ? ((float)s_acc.a2c / (float)c2thr) : 0.0f;
         /* ââ ä¸æï¼`01-versus-loop.md` §2.1 â，æ äºè®®çé£æ¡）：
          *   「連擃槽**æ¶失（清空）⇒ **SP 归零**」â
@@ -2086,13 +2097,12 @@ static int on_tick_2(ce_card_t *c)
         }
         if (c2r > 1.0f) c2r = 1.0f;
         if (c2r < 0.0f) c2r = 0.0f;
-        if (s_hud_c2_vm) {   /* 框：一手原图，静态 ✓ */
+        if (s_hud_c2_vm) {   /* ★ 白色长方形：长度 = 满宽 × 比例 ✓（脚本是 1×6 的纯几何矩形 ✓
+                              *   ⇒ scale.x 就是**像素长度** ✓，与 `animal.c` 的条同一个口径 ✓）*/
             ce_anm_set_pos((uint32_t)s_hud_c2_vm, POFV_HUD_BAR_X, POFV_HUD_BAR_Y, 0.0f);
+            ce_anm_set_scale((uint32_t)s_hud_c2_vm, POFV_HUD_BAR_W * c2r, 1.0f);
         }
-        if (s_hud_c2_fill_vm) {   /* ★ 内芯：一手原图 **256 px** ⇒ scale.x = 256 × 比例 ✓（不再自定 96/192 ✗）*/
-            ce_anm_set_pos((uint32_t)s_hud_c2_fill_vm, POFV_HUD_BAR_X + 16.0f, POFV_HUD_BAR_Y, 0.0f);
-            ce_anm_set_scale((uint32_t)s_hud_c2_fill_vm, c2r, 1.0f);   /* ★ 一手：scale = 精灵的**倍数** ✓（内芯原图 256 px ⇒ 1.0 = 满 ✓）*/
-        }
+        if (s_hud_c2_fill_vm) { ce_anm_delete((uint32_t)s_hud_c2_fill_vm); s_hud_c2_fill_vm = 0; }
     }
     /* == TH19 的 `hits` 大字标签：**已撤下** ✗ ================================
      *   owner（2026-10-08 实跑截图）：「**那个巨大无比的 HITS 是 th19 的东西**就摆在那个地方」✗。
@@ -2133,7 +2143,7 @@ static int on_tick_2(ce_card_t *c)
             int digit;
             if (!s_hud_sp_digit_vm[i9])
                 s_hud_sp_digit_vm[i9] = (int32_t)hud_vm_spawn(CE_ANM_ABILITY_SCRIPT_POFV109_HUD_TH09_SP,
-                                                              POFV_HUD_SP_X + POFV_HUD_SP_DX + (float)i9 * POFV_HUD_SP_STEP,
+                                                              POFV_HUD_SP_X + POFV_HUD_SPNUM_DX + (float)i9 * POFV_HUD_SP_STEP,
                                                               POFV_HUD_SP_Y + POFV_HUD_SP_DY);
             digit = (s_sp / (int)ipow10(5 - i9)) % 10;
             if (s_hud_sp_digit_vm[i9]) {
@@ -2146,7 +2156,7 @@ static int on_tick_2(ce_card_t *c)
                                 : CE_ANM_ABILITY_SPRITE_TH09_SP_0;      /* 灰套 709..718 ✓ */
                 ce_anm_set_sprite(CE_ABILITY_ANM(), (uint32_t)s_hud_sp_digit_vm[i9], base + (uint32_t)digit);
                 ce_anm_set_pos((uint32_t)s_hud_sp_digit_vm[i9],
-                               POFV_HUD_SP_X + POFV_HUD_SP_DX + (float)i9 * POFV_HUD_SP_STEP,
+                               POFV_HUD_SP_X + POFV_HUD_SPNUM_DX + (float)i9 * POFV_HUD_SP_STEP,
                                POFV_HUD_SP_Y + POFV_HUD_SP_DY, 0.0f);
             }
         }
@@ -2166,13 +2176,13 @@ static int on_tick_2(ce_card_t *c)
                 int digit = (hv / (int)ipow10(5 - i9)) % 10;
                 if (!s_hud_hit_digit_vm[i9])
                     s_hud_hit_digit_vm[i9] = (int32_t)hud_vm_spawn(CE_ANM_ABILITY_SCRIPT_POFV109_HUD_TH09_SP,
-                                                                   POFV_HUD_SP_X + POFV_HUD_HITS_NUM_DX + (float)i9 * POFV_HUD_SP_STEP,
+                                                                   POFV_HUD_SP_X + POFV_HUD_SP_UNIT_DX - 2.0f - (float)(POFV_HUD_HITS_DIGITS - i9) * POFV_HUD_SP_STEP,
                                                                    POFV_HUD_SP_Y + POFV_HUD_SP_DY);
                 if (s_hud_hit_digit_vm[i9]) {
                     ce_anm_set_sprite(CE_ABILITY_ANM(), (uint32_t)s_hud_hit_digit_vm[i9],
                                       CE_ANM_ABILITY_SPRITE_TH09_SPR_0 + (uint32_t)digit);   /* ★ 红套 ✓ */
                     ce_anm_set_pos((uint32_t)s_hud_hit_digit_vm[i9],
-                                   POFV_HUD_SP_X + POFV_HUD_HITS_NUM_DX + (float)i9 * POFV_HUD_SP_STEP,
+                                   POFV_HUD_SP_X + POFV_HUD_SP_UNIT_DX - 2.0f - (float)(POFV_HUD_HITS_DIGITS - i9) * POFV_HUD_SP_STEP,
                                    POFV_HUD_SP_Y + POFV_HUD_SP_DY, 0.0f);
                 }
             }
