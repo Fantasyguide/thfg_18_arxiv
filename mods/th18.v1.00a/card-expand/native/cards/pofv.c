@@ -276,8 +276,8 @@ static int   s_boss_prev;   /* ★ owner 2026-10-05：boss 表 0→1 的**边沿
  *   标签 `hits` 走 `ce_hud_vm_text_set`（原生 font2 字形 + 可带颜色 ⇒ 黄/灰闪 ✓）
  * ❓ 位置：一手 `y = 32.0`、`x = …(296 比例) + 16.0`（**引擎坐标系** ⇒ 本卡 UI 空间换算未核 ⇒ 先取 32/… 近似，登记 TUNING）
  * ❓ 颜色字节序：一手是 `0xffffff00`(黄)/`0xff808080`(灰)；本口参数名是 `bgra` ⇒ 先按同字节序传，实跑若反了调换 ✓ */
-#define POFV_HUD_HITS_X 16.0f
-#define POFV_HUD_HITS_Y   70.0f   /* ★ 重排：让开"連擊槽/攻击槽"两行 ✓（原 44 与条撞 ✗）*/
+#define POFV_HUD_HITS_X 144.0f   /* ★ 游玩区左上 (128,32) + 内缩 16 ✓（一手：04-warp-yukari-gap.md:89-93）*/
+#define POFV_HUD_HITS_Y   100.0f  /* ★ 32+68 ✓（四行最低那行）*/   /* ★ 重排：让开"連擊槽/攻击槽"两行 ✓（原 44 与条撞 ✗）*/
 
 /* ★★ TH09 **SP**（一手 `engine/versus/th09/01-versus-loop.md` §2.1/§4.4 ✓；子智能体 `0b3af965` 清单 ✓）：
  *   一手 = 左上角大数字 ✓，满 **`0xf4236` = 999990** ⇒ 一手显示 `Bonus!` ✓（`!` 画不出 ✗ ⇒ 待贴图 ❓）。
@@ -285,11 +285,11 @@ static int   s_boss_prev;   /* ★ owner 2026-10-05：boss 表 0→1 的**边沿
  *   ❓ 一手的系数（`0x4a7e44`）是**常量读取** ⇒ 具体值未解出 ✗ ⇒ 这里用具名 ❓常量 `POFV_SP_RATE`（默认 1.0 ✓）。*/
 #define POFV_SP_MAX   999990
 #define POFV_SP_RATE  1.0f    /* ❓ 一手 `0x4a7e44` 常量值未解出 ⇒ 暂取 1.0 并登记 TUNING ✓ */
-#define POFV_HUD_SP_X 16.0f
-#define POFV_HUD_SP_Y 34.0f   /* ★ 重排说明（订正 ✓）：110/111 是**左下角**块（`HUD-LAYOUT.md:1/13`：整套是"左下角系统卡"、锚点表面 (257,924)）
+#define POFV_HUD_SP_X 144.0f
+#define POFV_HUD_SP_Y 64.0f   /* ★ 32(游玩区上边) + 32(内缩) ✓ */   /* ★ 重排说明（订正 ✓）：110/111 是**左下角**块（`HUD-LAYOUT.md:1/13`：整套是"左下角系统卡"、锚点表面 (257,924)）
                               *   ⇒ **不是左上** ✗ ⇒ 原本"避让 110/111"的理由**不成立** ✓（owner 指出 ✓）；
                               *   本值仅用于**我自己四行的间距** ✓（原 24 与 SP/連擊槽 行距太挤 ✓）。*/
-#define POFV_HUD_C2_Y 46.0f   /* ★ 重排：連擊槽行 y=46 ✓（原 36 ⇒ 条在 44 与 hits 撞 ✗）*/   /* ★ TH09 連擊槽（SP 正下方 ✓，一手 §2.1 ✓）*/
+#define POFV_HUD_C2_Y 76.0f   /* ★ SP 下一行 ✓ */   /* ★ 重排：連擊槽行 y=46 ✓（原 36 ⇒ 条在 44 与 hits 撞 ✗）*/   /* ★ TH09 連擊槽（SP 正下方 ✓，一手 §2.1 ✓）*/
 static int32_t s_sp;               /* 本侧 SP（0..999990 ✓）*/
 static ce_hud_number_t s_hud_sp_num;
 static ce_hud_number_t s_hud_c2_num;   /* ★ TH09 連擊槽显示句柄（数字 ❓自定 ✓）*/
@@ -2026,8 +2026,8 @@ static int on_tick_2(ce_card_t *c)
         if (c2r > 1.0f) c2r = 1.0f;
         if (c2r < 0.0f) c2r = 0.0f;
         if (s_hud_c2_vm) {
-            ce_anm_set_pos((uint32_t)s_hud_c2_vm, POFV_HUD_SP_X + 84.0f, POFV_HUD_C2_Y + 4.0f, 0.0f);   /* ❓ 位置待实跑校 ✓ */
-            ce_anm_set_scale((uint32_t)s_hud_c2_vm, 96.0f * c2r, 1.0f);                        /* 长度 96px × 比例 ✓ */
+            ce_anm_set_pos((uint32_t)s_hud_c2_vm, (POFV_HUD_SP_X + 84.0f) * 2.0f, POFV_HUD_C2_Y * 2.0f, 0.0f);   /* ★ 表面 px = 640×2 ✓ */   /* ❓ 位置待实跑校 ✓ */
+            ce_anm_set_scale((uint32_t)s_hud_c2_vm, 192.0f * c2r, 1.0f);   /* ★ 表面 px ✓（640 的 96 ×2）*/                        /* 长度 96px × 比例 ✓ */
         }
     }
     {   /* ★★ TH19 **アタックゲージ**（一手 `engine/versus/th19/06-aura.md` §8.13/§8.18 ✓：
@@ -2043,8 +2043,8 @@ static int on_tick_2(ce_card_t *c)
         if (agr > 1.0f) agr = 1.0f;
         if (agr < 0.0f) agr = 0.0f;
         if (s_hud_ag_vm) {
-            ce_anm_set_pos((uint32_t)s_hud_ag_vm, POFV_HUD_SP_X + 84.0f, POFV_HUD_C2_Y + 16.0f, 0.0f);
-            ce_anm_set_scale((uint32_t)s_hud_ag_vm, 96.0f * agr, 1.0f);
+            ce_anm_set_pos((uint32_t)s_hud_ag_vm, (POFV_HUD_SP_X + 84.0f) * 2.0f, (POFV_HUD_C2_Y + 12.0f) * 2.0f, 0.0f);
+            ce_anm_set_scale((uint32_t)s_hud_ag_vm, 192.0f * agr, 1.0f);
         }
         ce_hud_number_set(&s_hud_ag_num, POFV_HUD_SP_X, POFV_HUD_C2_Y + 16.0f, 6.0f,
                           (int)s_ex_gauge, 3, 0, "pofv109");   /* 「攻撃ランク」数字 ✓（字母画不出 ✗ ⇒ 纯数字 ✓）*/
