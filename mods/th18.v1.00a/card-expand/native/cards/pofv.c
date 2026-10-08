@@ -2244,8 +2244,10 @@ static int on_tick_2(ce_card_t *c)
                 ce_log("pofv: 【TH09】連擊槽漏空 ⇒ 連爆数 %d → 0（一手 `+0x38` 清零 ✓）", (int)s_combo_blasts);
                 s_combo_blasts = 0;
             }
-            /* ★★★ 2026-10-08（结案 ✓）：**hits 也在此归零** ✓（hits 的两条归零路之一 ✓）。*/
-            s_hits.cur = 0; s_hits.latch = 0; s_hits.life = 0;
+            /* ⚠ 2026-10-08 撤回「槽漏空 ⇒ hits 清 0」✗：owner 实跑「hit 值几乎一直固定在 0」✗ ——
+             *   連擊槽 60 帧就漏空（一手 ✓），而玩家击破是间断的 ⇒ 这条一挂上，hits 几乎总是被清 ✓。
+             *   ⇒ 改回：**槽漏空只清連爆数**（一手 `0x41d798` ✓），**hits 只由「连锁暴风窗口过」清** ✓
+             *     （= 结案的 (A) ✓；(B) 只作用于連爆数/SP ✓）。❓ 若观感要更"紧"，再把这条挂回来 ✓。*/
         }
         if (s_sp_life > 0 && --s_sp_life == 0 && s_sp != 0) {
             ce_log("pofv: 【TH09】SP 寿命漏空 ⇒ SP %d → 0（一手 `0x41d7cf` 清 `+0x10` ✓）", (int)s_sp);
@@ -2340,10 +2342,15 @@ static int on_tick_2(ce_card_t *c)
                      *   ❓ 灰色的具体值与闪烁的两色未逐字给 ⇒ 取灰 `(128,128,128)`（= 一手 SP 用的灰度 ✓）
                      *     与柔红 `(192,128,128)` ↔ 白 交替 ✓，标 **❓自定**（待 owner 按观感校 ✓）。*/
                     {
+                        /* ★★★ 2026-10-08 订正（owner：「变成**黑白**了，而不是以前的红**黑**」✗）：
+                         *   贴图自带**黑描边** ✓，`color` 只乘**芯** ⇒ 一乘白 ⇒ **白芯 + 黑描边 = 黑白** ✗。
+                         *   ⇒ **闪烁的两个色都必须保持"红"** ✓：柔红 `(192,128,128)`（= 一手原色 ✓）
+                         *     ↔ 稍亮红 `(230,150,150)` ✓（仍是红系 ⇒ 描边照旧是黑 ✓）。
+                         *   槽 `<20` / 消失 ⇒ **灰** `(128,128,128)` ✓（一手 ✓）。*/
                         uint32_t tint;
-                        if (s_acc.a2c < 20)      tint = 0xFF808080u;                     /* 槽低/消失 ⇒ 灰 ✓ */
-                        else if (s_card_frames & 1) tint = POFV_HUD_COL_HIT;             /* 奇帧 ⇒ 柔红 ✓ */
-                        else                     tint = 0xFFFFFFFFu;                     /* 偶帧 ⇒ 白 ✓ */
+                        if (s_acc.a2c < 20)         tint = 0xFF808080u;        /* 槽低/消失 ⇒ 灰 ✓ */
+                        else if (s_card_frames & 1) tint = POFV_HUD_COL_HIT;   /* 奇帧 ⇒ 柔红 ✓ */
+                        else                        tint = 0xFFE69696u;        /* 偶帧 ⇒ 亮红 ✓（❓自定）*/
                         ce_anm_set_color((uint32_t)s_hud_hit_digit_vm[i9],
                                          blank ? 0x00000000u : tint);
                     }
