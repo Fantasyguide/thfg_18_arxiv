@@ -353,9 +353,9 @@ static int   s_boss_prev;   /* ★ owner 2026-10-05：boss 表 0→1 的**边沿
 #define POFV_HUD_COL_HIT    0xFFC08080u   /* ★ 一手 `color(192,128,128)` ✓（命中 + Hit）*/
 #define POFV_HUD_COL_SP     0xFF808080u   /* ★ 一手 `color(128,128,128)` ✓（SP 六位，owner：「乘了一个灰度」✓）*/
 /* ★ 连击条 = 屏幕**最下方**的白色长方形 ✓（参图 ✓）*/
-#define POFV_HUD_BAR_X       132.0f
-#define POFV_HUD_BAR_Y       438.0f
-#define POFV_HUD_BAR_W       376.0f   /* 游玩区宽 384 − 内缩 ✓ */
+#define POFV_HUD_BAR_X       144.5f   /* ★ 与 SP 框同一 x ✓（左上 ✓）*/
+#define POFV_HUD_BAR_Y        36.0f   /* ★ owner：「位置在左下角而不是左上角」✗ ⇒ 移到**左上**（SP 框上方 ✓）*/
+#define POFV_HUD_BAR_W       188.0f   /* ★ owner：「长度比正确长度长了一倍」✗ ⇒ 376 → 188 ✓ */   /* 游玩区宽 384 − 内缩 ✓ */
 /* ★ 事件文本行（连爆/生成 提示 ✓）—— 沿用旧名字，锚点归到 SP 框下方 ✓（❓自定）*/
 #define POFV_HUD_HITS_X      POFV_HUD_BAR_X
 #define POFV_HUD_HITS_Y      (POFV_HUD_SP_Y + 40.0f)
@@ -2139,7 +2139,9 @@ static int on_tick_2(ce_card_t *c)
          *     `GuiSide::on_tick` `0x418a90` 用 `scale.x = 值 × 0.0025f` 各画一条 ✓）。
          *   而我先前吃的是 `a2c`（**連擊计数器** ✓：只被击破喂大 ✗、**没有每帧衰减** ✗）⇒ **只涨不掉** ✓。
          *   ⇒ 改吃**充能量**：本卡的 `s_aura_charge`（0..200 ✓，Shift 蓄力 ✓；松手自然衰减 ✓）✓。*/
-        c2r = s_aura_charge / POFV_AURA_CHARGE_MAX;
+        /* ★★★ 2026-10-08 owner 订正：「我要的白色条是**连击条**，而不是按 shift 的**蓄力条**指示」✗⇒✓
+         *   ⇒ 驱动源回到 **TH09 連擊计数器** `s_acc.a2c / thr2c`（我先前误改成 Shift 蓄力 ✗）。*/
+        c2r = (c2thr > 0) ? ((float)s_acc.a2c / (float)c2thr) : 0.0f;
         /* ââ ä¸æï¼`01-versus-loop.md` §2.1 â，æ äºè®®çé£æ¡）：
          *   「連擃槽**æ¶失（清空）⇒ **SP 归零**」â
          *   ï¼一手的**衰减律**写作 `+= 難度×4 â 120` â 量纲可疑 ❓ â **本卡不实现衰减律** â，
