@@ -2087,19 +2087,13 @@ static int on_tick_2(ce_card_t *c)
         ce_hud_number_set(&s_hud_ag_num, POFV_HUD_SP_X, POFV_HUD_C2_Y + 16.0f, 6.0f,
                           (int)s_ex_gauge, 3, 0, "pofv109");   /* 「攻撃ランク」数字 ✓（字母画不出 ✗ ⇒ 纯数字 ✓）*/
     }
-    {   /* == TH19 "Bonus" label: CUT FROM ORIGINAL ART ==
-         *    source: TH19 ascii.png, the five 14x14 tiles listed in the original anm sprite table
-         *            (ascii.anm.txt entry0: x=0/14/28/42/56, y=238) => 70x14 strip.
-         *    shown only when SP is full (999990); otherwise parked off-screen (VM kept). */
-        if (!s_hud_bonus_vm)
-            s_hud_bonus_vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_POFV109_HUD_BONUS, 25);
-        if (s_hud_bonus_vm) {
-            const int sp_full = (s_sp >= POFV_SP_MAX);
-            ce_anm_set_pos((uint32_t)s_hud_bonus_vm,
-                           sp_full ? (POFV_HUD_SP_X + 60.0f) * 2.0f : -2000.0f,
-                           sp_full ? (POFV_HUD_SP_Y + 12.0f) * 2.0f : -2000.0f, 0.0f);
-        }
-    }
+    /* == TH09 Bonus indicator: REMOVED ==
+     *   owner: "Bonus 不是 th09 的吗" -> yes: the SP-full "Bonus!" is TH09's
+     *   (one-hand: SP full -> FUN_0040f860(...,5000)). TH19 has NO such indicator,
+     *   and I had wrongly cut it from TH19 ascii.png (and cut the wrong pixels too).
+     *   => unhooked here; TH09 art to be located in TH09 front.png (owner pointer:
+     *      first big row, right part = TH09 hit + SP UI).
+     */
     if (pofv_hits_visible(&s_hits)) {
         uint32_t col = pofv_hits_is_gray(&s_hits) ? 0xFF808080u : 0xFFFFFF00u;
         ce_hud_number_set(&s_hud_sp_num, POFV_HUD_SP_X, POFV_HUD_SP_Y, 8.0f,
