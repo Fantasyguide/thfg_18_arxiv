@@ -801,6 +801,8 @@ CE_ANM_ABILITY_ATLAS_ATLAS_HUD_HITS_BIG   # 109 TH19 hits 大字（**切自原�
 CE_ANM_ABILITY_ATLAS_ATLAS_HUD_HITS_BIGF   # 109 TH19 hits 大字（**切自原作 ascii_big(.f)** ✓ 128x32：实心/f 描边 ✓）
 CE_ANM_ABILITY_ATLAS_ATLAS_TH09_HUD   # 109 TH09 SP 数字 0-9（8x11）/ Hit+SpellPoint（**切自 th09 front.anm/front.png sprite8..17,18,7** ✓）
 CE_ANM_ABILITY_ATLAS_ATLAS_TH09_SP_DIGIT   # 109 TH09 SP 数字 0-9（8x11）/ Hit+SpellPoint（**切自 th09 front.anm/front.png sprite8..17,18,7** ✓）
+CE_ANM_ABILITY_ATLAS_ATLAS_TH09_ICON   # 109 TH09 红数字 0-9（sprite25-34 ✓）/ 图标×5（sprite35-39 ✓）——**切自 th09 front.png** ✓
+CE_ANM_ABILITY_ATLAS_ATLAS_TH09_SP_DIGIT_R   # 109 TH09 红数字 0-9（sprite25-34 ✓）/ 图标×5（sprite35-39 ✓）——**切自 th09 front.png** ✓
 CE_ANM_ABILITY_ATLAS_ATLAS_TH13ASCII
 CE_ANM_ABILITY_ATLAS_ATLAS_TRANCE_ASTRAL
 CE_ANM_ABILITY_ATLAS_ATLAS_TRANCE_GAUGE
