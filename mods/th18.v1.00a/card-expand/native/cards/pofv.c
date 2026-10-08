@@ -287,8 +287,10 @@ static int   s_boss_prev;   /* ★ owner 2026-10-05：boss 表 0→1 的**边沿
 #define POFV_SP_RATE  1.0f    /* ❓ 一手 `0x4a7e44` 常量值未解出 ⇒ 暂取 1.0 并登记 TUNING ✓ */
 #define POFV_HUD_SP_X 16.0f
 #define POFV_HUD_SP_Y 24.0f
+#define POFV_HUD_C2_Y 36.0f   /* ★ TH09 連擊槽（SP 正下方 ✓，一手 §2.1 ✓）*/
 static int32_t s_sp;               /* 本侧 SP（0..999990 ✓）*/
-static ce_hud_number_t s_hud_sp_num;   /* ★ 由 32 → 44：避让 110/111 信仰块（y≤30）✓ */
+static ce_hud_number_t s_hud_sp_num;
+static ce_hud_number_t s_hud_c2_num;   /* ★ TH09 連擊槽显示句柄（数字 ❓自定 ✓）*/   /* ★ 由 32 → 44：避让 110/111 信仰块（y≤30）✓ */
 static ce_hud_number_t  s_hud_hits_num;
 static ce_hud_vm_text_t s_hud_hits_lbl;
 /* ★★★ 2026-10-05 owner：**调试 UI** —— ① 镜像事件列表（镜像暴风**延迟**显示；镜像击破/固灵**停 3 s**再消失）
@@ -1995,6 +1997,12 @@ static int on_tick_2(ce_card_t *c)
         ce_hud_number_set(&s_hud_sp_num, POFV_HUD_SP_X, POFV_HUD_SP_Y, 8.0f,
                            (s_sp >= POFV_SP_MAX) ? POFV_SP_MAX : s_sp,
                            6, 0, "pofv109");   /* ★ TH09 SP（一手 §4.4 ✓；满 999990 ⇒ `Bonus!` ❓待贴图 ✓）*/
+        /* ★★ TH09 **連擊槽**（一手 `01-versus-loop.md` §2.1：SP **正下方的白色长条** ✓，击破时增长、否则衰减、
+         *   清空 ⇒ SP 归零 ✓）。⚠ 一手的**条怎么画未定位** 🟡（`FUN_0041cf30` 已证伪 ✗）
+         *   ⇒ 本条显示层为 **❓自定**：先用**数字**把已有的 `s_acc.a2c`（TH09 連擊计数器 ✓）画在 SP 正下方 ✓，
+         *     条形美术（`drawRectGrad` 类元素或 VM 的 `scale.x` ✓）留作下一步 ✓ —— 已登记 `TUNING` ✓。*/
+        ce_hud_number_set(&s_hud_c2_num, POFV_HUD_SP_X, POFV_HUD_C2_Y, 7.0f,
+                           (int)s_acc.a2c, 5, 0, "pofv109");
         ce_hud_number_set(&s_hud_hits_num, POFV_HUD_HITS_X, POFV_HUD_HITS_Y, 7.0f,
                           (int)s_hits.latch, 4, 0, "pofv109");
         /* ★ 诊断（每 30 帧一条，owner 实跑「看不见 HUD」用）：照出这条路径是否走到、口是否成功
