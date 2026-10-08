@@ -813,6 +813,11 @@ static void clear_card(ce_card_t *c)
         ce_hud_vm_text_clear(&s_ui_ev_vm[i3]); }
       ce_hud_vm_text_clear(&s_ui_gh_vm); }
     ce_hud_number_clear(&s_hud_hits_num);
+    /* ★★ 2026-10-08（铁律 ✓）：我新加的 3 个 HUD 数字句柄也必须清 ✗ ⇒ 否则删卡/换局后
+     *   数字会**留在屏幕上**（与上面两条 HUD 条 VM 同类 ✓；owner 报过"重叠数字"⇒ 不要再留残影 ✗）。*/
+    ce_hud_number_clear(&s_hud_sp_num);
+    ce_hud_number_clear(&s_hud_c2_num);
+    ce_hud_number_clear(&s_hud_ag_num);
     /* ★★ 2026-10-08（铁律「长持续效果必须交代删掉会怎样」✓）：新增的两条 HUD 条是**卡自建 VM** ✓
      *   ⇒ 与 `s_storm_vm` 同法**真删** ✓（`on_delete` / `on_run_reset` 共用本函数 ✓）；
      *   ⚠ 我先前把句柄写成**块内 static** ✗ ⇒ `clear_card` 看不到 ⇒ 会泄漏 ✗ ⇒ 已提到文件作用域 ✓。*/
