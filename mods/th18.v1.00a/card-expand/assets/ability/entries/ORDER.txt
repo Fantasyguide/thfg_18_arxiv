@@ -1176,3 +1176,7 @@ ATLAS ATLAS_HUD_HITS 56x14
 HUD_HITS_STRIP          ability/spirit/HUD_HITS_STRIP.png            @0,0,56x14
 ATLAS ATLAS_HUD_BONUS 70x14
 HUD_BONUS_STRIP         ability/spirit/HUD_BONUS_STRIP.png          @0,0,70x14
+ATLAS ATLAS_HUD_GAUGE 20x32
+HUD_GAUGE_BODY         ability/spirit/HUD_GAUGE_BODY.png          @0,0,8x32
+HUD_GAUGE_FILL         ability/spirit/HUD_GAUGE_FILL.png          @8,0,4x32
+HUD_GAUGE_DOT          ability/spirit/HUD_GAUGE_DOT.png           @14,0,6x12
