@@ -1231,3 +1231,8 @@ POFV109_TH09_BAR_FILL   ability/th09bars/BAR_FILL.png   256x8
 #   （前人在 **TH19** 的 ascii 里找 ✗ ⇒ 找不到 ✓；TH09 的 ascii 里它是**第 107 号**、紧跟 `Boss`(108) ✓）。
 #   原图自带金褐色 ⇒ 一手的「闪白↔红 / 常态灰 (0x80,0x80,0xd0)」由**卡侧染色** ✓。
 POFV109_TH09_BONUS  ability/th09bars/BONUS.png  40x8
+# ★★★★ 2026-10-08 一手（§3.44）：**连击槽的条** = th09 `front.anm` **sprite42**
+#   （`front.png` @ (322,60)，**72×4** ✓；逐行取样 = 白→灰**纵向**渐变，横向无渐变 ✓）。
+#   画它的脚本 = `script59`：`sprite(42); scale(0.0,1.0); pos(-141,30)` ⇒ **长度由游戏写 scale.x** ✓、
+#   **渐变在图里** ✓ ⇒ 卡侧不写渐变代码 ✓。框 `script7 pos(-144,0)` 80×32 ⇒ 条贴框**下沿内侧** ✓。
+POFV109_TH09_BAR_COMBO  ability/th09front/TH09_HUD_BAR_COMBO.png  72x4

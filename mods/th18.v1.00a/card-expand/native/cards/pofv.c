@@ -404,9 +404,14 @@ static int   s_boss_prev;   /* ★ owner 2026-10-05：boss 表 0→1 的**边沿
  *   ⚠ 关键：**框的 VM 是「中心锚」** ✗ ⇒ 它的**可见矩形** = `[SP_X−80, SP_X+80] × [SP_Y−32, SP_Y+32]`
  *     （精灵 80×32 ✓ × `scale 2.0` ✓ ⇒ 160×64 ✓，半宽/半高 = 80/32 ✓）。
  *   ⇒ 条必须按**可见矩形**对齐（先前我按 SP_X/SP_Y 直接对齐 ⇒ 恰好偏右 80、偏上 60 ✓）。*/
-#define POFV_HUD_BAR_X       (POFV_HUD_SP_X - 88.0f)   /* ★ owner：「再向左」⇒ −8（❓数值待给 px ✓）*/   /* = 框的**可见左边缘** ✓ */
-#define POFV_HUD_BAR_Y       (POFV_HUD_SP_Y + 32.0f)   /* ★ owner：「再向上」⇒ 40 → 32（❓同上 ✓）*/
-#define POFV_HUD_BAR_W       160.0f                    /* = 框的**可见宽度** ✓（80px 精灵 × scale2 ✓）*/   /* = 框**正下方** ✓（半高 32 + 8 间距 ✓）*/
+/* ★★★ 2026-10-08 一手（§3.44 ✓）：条 = `front.anm` sprite42（72×4 ✓，图自带纵向白→灰渐变 ✓），
+ *   原版画在 `pos(-141, 30)`，而框（script7）在 `pos(-144, 0)`、80×32 ✓ ⇒ 条相对框 = **(+3, +30)** ✓，
+ *   即**贴框下沿内侧** ✓。我们的框是「中心锚 × scale2」（可见 160×64 ✓）⇒ 换算：
+ *     x = SP_X − 80 + 3×2 = **SP_X − 74** ✓   y = SP_Y − 32 + 30×2 = **SP_Y + 28** ✓。*/
+#define POFV_HUD_BAR_X       (POFV_HUD_SP_X - 74.0f)   /* ★ owner：「再向左」⇒ −8（❓数值待给 px ✓）*/   /* = 框的**可见左边缘** ✓ */
+#define POFV_HUD_BAR_Y       (POFV_HUD_SP_Y + 28.0f)   /* ★ owner：「再向上」⇒ 40 → 32（❓同上 ✓）*/
+/* ⚠ `POFV_HUD_BAR_W` 已不需要（一手用 scale.x = **比例** ✓，不是像素长度 ✗）—— 保留常量不删 ✓ */
+#define POFV_HUD_BAR_W       160.0f   /* = 框**正下方** ✓（半高 32 + 8 间距 ✓）*/
 /* ★ 事件文本行（连爆/生成 提示 ✓）—— 沿用旧名字，锚点归到 SP 框下方 ✓（❓自定）*/
 #define POFV_HUD_HITS_X      POFV_HUD_BAR_X
 #define POFV_HUD_HITS_Y      (POFV_HUD_SP_Y + 40.0f)
@@ -2266,7 +2271,7 @@ static int on_tick_2(ce_card_t *c)
          *   ⚠ 我上一轮换成的 `418/419`（`sprite40/41` 红/绿分段图）**是错的** ✗ ——
          *     那两张不是连击条 ✓（脚本与贴图**留着不删** ✓：删会平移 sprite 号 ✗）。*/
         if (!s_hud_c2_vm)
-            s_hud_c2_vm = (int32_t)hud_vm_spawn(CE_ANM_ABILITY_SCRIPT_POFV109_HUD_COMBO,
+            s_hud_c2_vm = (int32_t)hud_vm_spawn(CE_ANM_ABILITY_SCRIPT_POFV109_TH09_BAR_COMBO,
                                                 POFV_HUD_BAR_X, POFV_HUD_BAR_Y);
         /* ★★★ 2026-10-08 owner：「底下的白色横线（连击条）**不随时间降低**，为什么？」✗
          *   ⇒ 因为驱动源用错了 ✗：那条**一手本来就是「充能槽」**（`engine/versus/th09/01-versus-loop.md` §2.1 ✓）——
@@ -2315,7 +2320,9 @@ static int on_tick_2(ce_card_t *c)
         }
         if (s_hud_c2_vm) {   /* ★ 白色长方形：长度 = 满宽 × 比例 ✓（脚本是 1×N 的纯几何矩形 ✓
                               *   ⇒ scale.x 就是**像素长度** ✓，与 `animal.c` 的条同一个口径 ✓）*/
-            ce_anm_set_scale((uint32_t)s_hud_c2_vm, POFV_HUD_BAR_W * c2r, 1.0f);
+            /* ★ 一手 `script59`：**`scale.x` = 槽比例（0..1 ✓，不是像素长度 ✗）**、`scale.y` 恒 1 ✓
+             *   —— 原图 sprite42 就是**满长 72px** 的条，长度靠 scale 缩 ✓（图自带白→灰纵向渐变 ✓）。*/
+            ce_anm_set_scale((uint32_t)s_hud_c2_vm, c2r, 1.0f);
         }
         if (s_hud_c2_fill_vm) { ce_anm_delete((uint32_t)s_hud_c2_fill_vm); s_hud_c2_fill_vm = 0; }
     }

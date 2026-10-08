@@ -1,0 +1,19 @@
+script script421 {
+    /* ★★★★ 2026-10-08 一手（§3.44）：**连击槽的条**用原图 ——
+     *   th09 `front.anm` **sprite42**（`front.png` @ (322,60)，**72×4** ✓，
+     *   图自带**纵向白→灰**渐变 ✓），由 `script59` 绘制：
+     *     `sprite(sprite42); scale(0.0f, 1.0f); op_24(1); op_22(); pos(-141, 30); stop();`
+     *   ⇒ **长度由游戏写 `scale.x`**（0..1 的比例 ✓ —— 不是像素长度 ✗），`scale.y` 恒 1 ✓；
+     *     **渐变在图里** ✓ ⇒ 这里不写任何颜色/渐变代码 ✓。
+     *   锚点：左端固定（owner 口径 ✓）⇒ `anchor(1, 1)` ✓。 */
+    sprite(@POFV109_TH09_BAR_COMBO);
+    anchor(1, 1);
+    layer(25);
+    resolutionMode(2);
+    scale(0.0f, 1.0f);
+    resampleMode(1);
+    stop();
+    interruptLabel(1);
++20: // 20
+    delete();
+}
