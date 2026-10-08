@@ -2173,12 +2173,17 @@ static int on_tick_2(ce_card_t *c)
      *   ⚠ 上一版我用的「暴风池为空」是**近似** ✗ ⇒ 已换成**计时器 + X** ✓。*/
     if (s_chain_storm_age < s_chain_window) {
         ++s_chain_storm_age;
-    } else if (s_chain_seen && s_hits.cur != 0) {   /* ★ 门：**只有起过连锁才清** ✓（owner 判断 ✓）*/
-        ce_log("pofv: 【TH09】连锁暴风窗口过（%d 帧 > X=%d）⇒ hits %d 归零 ✓",
-               (int)s_chain_storm_age, (int)s_chain_window, (int)s_hits.cur);
-        s_hits.cur = 0; s_hits.latch = 0; s_hits.life = 0;
-        s_chain_seen = 0;                            /* 清一次就撤门 ✓ */
     }
+    /* ★★★★ 2026-10-08 **日志定案后的修法**（owner：「我搞不懂了，大部分情况下都是 0」✗）：
+     *   日志证据：① `[FEED]` 每次击破都有 ✓（妖精也能启动 ✓）；② **每行 `cur=0`** ✗；
+     *   ③ `连锁暴风窗口过（36 帧）⇒ hits 1 归零` **反复出现** ✗。
+     *   ⇒ 机制忠实地在跑 ✓，但 **X = 36 帧（0.6 s）对"我们的击杀节奏（≈每 1 秒一只）"太紧** ✗
+     *     —— TH09 里每秒几十只、hits 一路涨 ✓；我们这边就变成 **0↔1 反复闪** ✓。
+     *   ⇒ **撤回「连锁暴风窗口清 hits」** ✗，改让 **hits 自己的 120 帧寿命**淡出 ✓
+     *     （= 一手 **HUD 显示层**的口径 ✓：「值变大重设 119/120 帧、**不动计数** ✓」⇒ 停手后约 2 s 才消失 ✓）。
+     *   ⚠ 这是 **owner 口径 > 一手细节** 的又一次取舍 ✓（X 与 class 表仍留在 `s_chain_window` ✓，
+     *     ❓ 若之后要"紧"的手感，把上面那个 else 分支恢复即可 ✓ —— 已在 TUNING 登记 ✓）。*/
+    if (s_chain_seen && s_hits.cur == 0) s_chain_seen = 0;   /* 只在值已自然归零时撤门 ✓ */
     /* ★★★★ 2026-10-08（owner：「即使有暴风，这个值也固定是 0」✗ ⇒ 真因 ✓）：
      *   `pofv_hits_tick` 的锁存门里有 **`0 < h->active`** ✓，而 **`active` 从来没人置 1** ✗
      *   ⇒ **latch 永远不更新** ⇒ HUD 显示（读 `latch` ✓）**恒 0** ✓。
