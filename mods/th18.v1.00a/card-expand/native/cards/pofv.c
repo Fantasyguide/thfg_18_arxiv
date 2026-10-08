@@ -293,6 +293,7 @@ static ce_hud_number_t s_hud_sp_num;
 static ce_hud_number_t s_hud_c2_num;   /* ★ TH09 連擊槽显示句柄（数字 ❓自定 ✓）*/
 static ce_hud_number_t s_hud_ag_num;   /* ★ TH19 攻撃ランク数字句柄 ✓ */   /* ★ 由 32 → 44：避让 110/111 信仰块（y≤30）✓ */
 static ce_hud_number_t  s_hud_hits_num;
+static int32_t s_hud_c2_vm, s_hud_ag_vm;   /* ★ TH09 連擊槽条 / TH19 攻击槽条（卡自建 VM ⇒ 必须在 clear_card 里真删 ✓ 铁律）*/
 static ce_hud_vm_text_t s_hud_hits_lbl;
 /* ★★★ 2026-10-05 owner：**调试 UI** —— ① 镜像事件列表（镜像暴风**延迟**显示；镜像击破/固灵**停 3 s**再消失）
  *   ② 镜像幽灵列表（**只写「有什么」**，不涉及位置 ✓）。文字一律走**切贴图**（`ce_hud_vm_text_set` ✓，owner 规矩 ✓）*/
@@ -810,6 +811,11 @@ static void clear_card(ce_card_t *c)
         ce_hud_vm_text_clear(&s_ui_ev_vm[i3]); }
       ce_hud_vm_text_clear(&s_ui_gh_vm); }
     ce_hud_number_clear(&s_hud_hits_num);
+    /* ★★ 2026-10-08（铁律「长持续效果必须交代删掉会怎样」✓）：新增的两条 HUD 条是**卡自建 VM** ✓
+     *   ⇒ 与 `s_storm_vm` 同法**真删** ✓（`on_delete` / `on_run_reset` 共用本函数 ✓）；
+     *   ⚠ 我先前把句柄写成**块内 static** ✗ ⇒ `clear_card` 看不到 ⇒ 会泄漏 ✗ ⇒ 已提到文件作用域 ✓。*/
+    if (s_hud_c2_vm) { ce_anm_delete((uint32_t)s_hud_c2_vm); s_hud_c2_vm = 0; }
+    if (s_hud_ag_vm) { ce_anm_delete((uint32_t)s_hud_ag_vm); s_hud_ag_vm = 0; }
     ce_hud_vm_text_clear(&s_hud_hits_lbl);
     pofv_foe_spirit_init(s_foe, POFV_FOE_SPIRIT_MAX);
     pofv_foe_incoming_init(s_inc, POFV_FOE_INCOMING_MAX);
@@ -1997,7 +2003,6 @@ static int on_tick_2(ce_card_t *c)
          *   （与本卡 `404/405` 同手法 ✓，已实跑证明可渲染 ✓）。
          *   ❓ 一手的"条怎么画"未定位 ð¡ ⇒ 本处 = **❓自定**（纯几何白条 ✓）；位置/锚点也标 ❓，待实跑校正 ✓。
          *   比例 = `a2c / thr2c(難度)` ✓（难度取法照本卡现有写法 `s_card_frames/60` ✓ ❓）。*/
-        static int32_t s_hud_c2_vm;
         int32_t c2thr = pofv_acc_thr2c(s_card_frames / 60);
         float c2r;
         if (!s_hud_c2_vm)
@@ -2024,7 +2029,6 @@ static int on_tick_2(ce_card_t *c)
          *     本卡改为显示自己已有的「**攻撃ランク**」= `s_ex_gauge`（卡内 **0..200** ✓，
          *     每级阈值 `s_ex_thr[8]` = 一手 `0x59dcc8` ✓）⇒ **量纲与一手的 2500 不同** ⇒ 标 **❓** ✓。
          *   条复用脚本 **407**（同一脚本可驱动多个 VM ✓），位置在 SP/連擊槽 之下 ✓（❓待实跑校 ✓）。*/
-        static int32_t s_hud_ag_vm;
         float agr;
         if (!s_hud_ag_vm)
             s_hud_ag_vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_POFV109_HUD_COMBO, 25);
