@@ -277,7 +277,18 @@ static int   s_boss_prev;   /* ★ owner 2026-10-05：boss 表 0→1 的**边沿
  * ❓ 位置：一手 `y = 32.0`、`x = …(296 比例) + 16.0`（**引擎坐标系** ⇒ 本卡 UI 空间换算未核 ⇒ 先取 32/… 近似，登记 TUNING）
  * ❓ 颜色字节序：一手是 `0xffffff00`(黄)/`0xff808080`(灰)；本口参数名是 `bgra` ⇒ 先按同字节序传，实跑若反了调换 ✓ */
 #define POFV_HUD_HITS_X 16.0f
-#define POFV_HUD_HITS_Y   44.0f   /* ★ 由 32 → 44：避让 110/111 信仰块（y≤30）✓ */
+#define POFV_HUD_HITS_Y   44.0f
+
+/* ★★ TH09 **SP**（一手 `engine/versus/th09/01-versus-loop.md` §2.1/§4.4 ✓；子智能体 `0b3af965` 清单 ✓）：
+ *   一手 = 左上角大数字 ✓，满 **`0xf4236` = 999990** ⇒ 一手显示 `Bonus!` ✓（`!` 画不出 ✗ ⇒ 待贴图 ❓）。
+ *   累加：`SP += (等级 × 送量)/10 + 送量`、送量 = `min(連爆数,100) × 10`、**取整到 10 的倍数** ✓。
+ *   ❓ 一手的系数（`0x4a7e44`）是**常量读取** ⇒ 具体值未解出 ✗ ⇒ 这里用具名 ❓常量 `POFV_SP_RATE`（默认 1.0 ✓）。*/
+#define POFV_SP_MAX   999990
+#define POFV_SP_RATE  1.0f    /* ❓ 一手 `0x4a7e44` 常量值未解出 ⇒ 暂取 1.0 并登记 TUNING ✓ */
+#define POFV_HUD_SP_X 16.0f
+#define POFV_HUD_SP_Y 24.0f
+static int32_t s_sp;               /* 本侧 SP（0..999990 ✓）*/
+static ce_hud_number_t s_hud_sp_num;   /* ★ 由 32 → 44：避让 110/111 信仰块（y≤30）✓ */
 static ce_hud_number_t  s_hud_hits_num;
 static ce_hud_vm_text_t s_hud_hits_lbl;
 /* ★★★ 2026-10-05 owner：**调试 UI** —— ① 镜像事件列表（镜像暴风**延迟**显示；镜像击破/固灵**停 3 s**再消失）
@@ -945,6 +956,12 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
             }
                 if (pofv_spirit_spill_stop()) { ++s_cnt_send30; /* ★ 安全阀：TH09 也不送 ✓ */
                 } else if (pofv_acc_take30(&s_acc, diff)) {    /* ★ TH09 那套（独立 ✓）*/
+                    {   /* ★ TH09 SP 累加（一手 §4.4 ✓）：送量 = min(連爆数,100)×10 ✓、取整到 10 的倍数 ✓ */
+                        int32_t sendv = (s_acc.a2c > 100) ? 1000 : (int32_t)(s_acc.a2c * 10);
+                        int32_t gain  = (int32_t)((POFV_SP_RATE * (float)sendv) / 10.0f) + sendv;
+                        if (s_sp + gain > POFV_SP_MAX) s_sp = POFV_SP_MAX; else s_sp += gain;
+                        s_sp = (s_sp / 10) * 10;                       /* 取整到 10 的倍数 ✓ */
+                    }
                     ce_log("pofv: 【TH09】越阈值（a2c=%d a30=%d 難度=%d）⇒ 送出**幽灵** level 1（收件门 <25 ✓）",
                            (int)s_acc.a2c, (int)s_acc.a30, (int)diff);
                     pofv_foe_spawn_gated(pofv_top_x(), pofv_top_y(),
@@ -1975,6 +1992,9 @@ static int on_tick_2(ce_card_t *c)
      *   `active < 1` 时按寿命 %6 在**黄 ↔ 灰**切换（6 帧周期 ✓）*/
     if (pofv_hits_visible(&s_hits)) {
         uint32_t col = pofv_hits_is_gray(&s_hits) ? 0xFF808080u : 0xFFFFFF00u;
+        ce_hud_number_set(&s_hud_sp_num, POFV_HUD_SP_X, POFV_HUD_SP_Y, 8.0f,
+                           (s_sp >= POFV_SP_MAX) ? POFV_SP_MAX : s_sp,
+                           6, 0, "pofv109");   /* ★ TH09 SP（一手 §4.4 ✓；满 999990 ⇒ `Bonus!` ❓待贴图 ✓）*/
         ce_hud_number_set(&s_hud_hits_num, POFV_HUD_HITS_X, POFV_HUD_HITS_Y, 7.0f,
                           (int)s_hits.latch, 4, 0, "pofv109");
         /* ★ 诊断（每 30 帧一条，owner 实跑「看不见 HUD」用）：照出这条路径是否走到、口是否成功
