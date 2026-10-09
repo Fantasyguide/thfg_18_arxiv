@@ -178,7 +178,17 @@ static int32_t s_aura_vm;            /* ★ 固灵结界的**可视 VM**（一�
 #define POFV_AURA_PIECES 7
 static int32_t  s_aura_piece[POFV_AURA_PIECES];
 static float   s_aura_r;              /* ★ 本帧的结界半径（= 缩放 ✓，一手「槽 3 写缩放=半径」✓）*/
-static float   s_aura_charge;         /* ★ Shift 蓄力（0..200 ✓ = 结界动态的唯一驱动 ✓）*/
+static float   s_aura_charge;         /* ★ **蓄力**（= 一手 `AuraCtrlInf+0x94/+0x98` 的等价物 ✓；按 **C** 涨、
+                                       *   松手归零 ✓）—— **只给「蓄力条 / A 组」用** ✓，并被 `s_reiryoku`
+                                       *   （= 上限量）封顶 ✓（见其赋值处 ✓）。*/
+static float   s_aura_size;           /* ★★★★ 2026-10-10 owner（**确实是两个量，只是游戏设计一个键管** ✓）：
+                                       *   **结界尺寸** = 一手 `S+0x8c` 的等价物 —— **只有它**驱动结界半径/判定
+                                       *   （`s_aura_r` 由它算 ✓）。一手 `S+0x8c` 是**独立量**（0..200，默认恒定；
+                                       *   全 exe **唯一写点** `0x4085cc` = `@AUN2` 卡写 **125** ✓，见 `06-aura.md`）。
+                                       *   ★ owner 定案「**蓄力与张开是同时发生的**」「**目前的手感应当是一手**」✓
+                                       *   ⇒ 本卡让它与**蓄力同曲线/同值**（**C** ⇒ 同时推蓄力 + 尺寸 ✓；
+                                       *     **Shift** ⇒ **只推尺寸**、不推蓄力 ✓）—— 相对一手的两个独立量，这是
+                                       *     **❓自定**（数值/观感与改前完全一致 ✓），已登记 `TUNING.md` ✓。*/
 static float   s_aura_k;              /* ★ 本帧的 K（灵梦 64 / 魔理沙 14 / 咲夜 ? / 早苗 128 ✓）*/
 /* ★ #2 追赶动画层（TUNING 判「原版有 ⇒ 建议补」✓，一手 `06-aura.md` §10 ✓）：
  *   `半径(f) = 初值 + (目标 − 初值) × ease(模式, f)`，`f = 已过帧 / 时长`；走完保持目标 ✓；
@@ -239,8 +249,13 @@ static int32_t s_ex_level;           /* ★ §8.24 订正 ✓：`DAT_0062b250` *
  *     ① 击破动物灵 **+15**（`pofv.c` 的 `on_enemy_death`）、② 发 EX **−100**、③ **每帧 −1** 衰减
  *     ⇒ 若直接拿它当「灵力」会**边涨边掉**、与 owner「积蓄到哪」相冲 ✗ ⇒ 故本卡新增这本**只进不出**的
  *     账（`s_reiryoku`）。它的**满值**直接取本卡既有的蓄力满值常量 `POFV_AURA_TARGET_CHARGE`
- *     （= 100 ✓，owner 实跑定）—— **没有新造数值** ✓；是否再把「灵力」真的接成蓄力的上限
- *     （owner 口径「蓄力被灵力上限封顶」）**留待 owner 定**，本轮不动（登记 `TUNING.md`）。*/
+ *     （= 100 ✓，owner 实跑定）—— **没有新造数值** ✓。
+ *   ★★★★ 2026-10-10 owner 追加（**照一手 `S+0x24` 接上** ✓，`engine/versus/th19/05-four-mechanics.md` §1 ✓）：
+ *     · **初值 = C1（不是 0 ✓）**（一手：`S+0x24` 初值 = `clamp(S+0x28,0,2500)` = C1 阈值 ✓）
+ *       ⇒ 开局就有基础灵力 ⇒ 结界不会"开局为 0" ✓；C1 数值一手未解出 ⇒ **❓自定** `POFV_REI_C1` ✓；
+ *     · **拾道具** = `+= 15 × clamp(当前蓄力,0,100)/100` 的**同式**（一手 `S+0x24 += 15 × clamp(S+0x98,0,100)/100`
+ *       ✓，每颗 ✓，cap 2500 ✓）—— 本卡在既有入账口 `got_pts`/`got_n` 处按**颗数**换算 ✓；
+ *     · **当前蓄力被它封顶**（一手：`charge < clamp(S+0x24)` 才涨 ✓）⇒ 见 `s_aura_charge` 赋值处 ✓。*/
 static float s_reiryoku;
 
 static int pofv_spirit_spill_stop(void)
@@ -492,7 +507,19 @@ static int   s_boss_prev;   /* ★ owner 2026-10-05：boss 表 0→1 的**边沿
  *   ⇒ 用本仓标准画法：**框 = 一块比底大的实心矩形**，底/填充盖上去 ⇒ 露出这一圈 = 框 ✓（先例 118/123/157 ✓）。*/
 #define POFV_HUD_CHG_BORDER      2.0f
 #define POFV_HUD_CHG_BLOCK_W_SURF (POFV_HUD_CHG_FILL_W + POFV_HUD_CHG_BORDER * 2.0f)   /* 452 表面 px（认领用外表 ✓）*/
-#define POFV_HUD_CHG_BLOCK_H_SURF (POFV_HUD_CHG_FILL_H + POFV_HUD_CHG_BORDER * 2.0f)   /*  12 表面 px（认领用外表 ✓）*/
+#define POFV_HUD_CHG_BLOCK_H_SURF (POFV_HUD_CHG_FILL_H + POFV_HUD_CHG_BORDER * 2.0f)   /*  12 表面 px（单根外表 ✓）*/
+/* ★★★★ 2026-10-10 owner：「**灵力条分两个 UI，一个是灵力的积攒条，一个是蓄力的条**」✓
+ *   ⇒ 本卡这一条槽**拆成两根**（同一套一手段位色 / 框底片结构 ✓）：
+ *     · **灵力积攒条**（新增 `s_hud_rei_*`）= `s_reiryoku / POFV_AURA_TARGET_CHARGE` ✓；
+ *     · **蓄力条**（原 `s_hud_chg_*`）= `s_aura_charge / POFV_AURA_TARGET_CHARGE`（按 C 才从 0 开始 ✓）。
+ *   ★ **排列关系一手未给** ⇒ **❓自定**：同一锚点（货架槽左下角）**上下相邻**，
+ *     **灵力条在上、蓄力条在下**，中间留 `POFV_HUD_BAR_GAP` ✓。
+ *   ⇒ 整个认领块的**外表**高 = 2 × 12（两根框）+ 2（间隙）= **26 表面 px**（宽不变 452 ✓）。
+ *   ⚠ **不与 B 组避让冲突**：B 组挂在**自机上方**（`POFV_HUD_SURF_Y` ✓，随自机移动），
+ *     本块走**底部货架**（`CE_HUD_SIDE_LEFT` ✓）⇒ 两者不在同一区域 ✓（见 `POFV_HUD_LV_AVOID_DY` 处注释 ✓）。
+ *   已登记 `TUNING.md`。*/
+#define POFV_HUD_BAR_GAP             2.0f   /* ❓自定：两根条之间的空隙（表面 px）✓ */
+#define POFV_HUD_BLOCK_H_TOTAL_SURF  (POFV_HUD_CHG_BLOCK_H_SURF * 2.0f + POFV_HUD_BAR_GAP)   /* 26 ✓ */
 /* ★ 一手 `aura.anm` script5..12 的 `color2`（外发光；相邻两片同色）—— 段位色序，卡侧每帧照抄 ✓。
  *   索引 0..7 ↔ script5/6/7/8/9/10/11/12 = 蓝 蓝 紫 紫 红 红 黄 黄。 */
 static const uint32_t POFV_HUD_CHG_SEG_COL2[POFV_HUD_CHG_SEGMENTS] = {
@@ -564,17 +591,21 @@ static int32_t s_hud_chg_hold;      /* 蓄力键（C ✓）连续按住的帧数
  *     ★ 2026-10-09：同上，一手的这三组偏移是 **640×480 空间** ⇒ 落 UI 列表时 **×2 到表面 px** ✓；
  *   动画：淡入 `alphaTime(3,0,192)` ✓；`Gauge Filled` 灰(224,224,224)↔白、`level` 与数字 灰(160,160,160)↔白，
  *         周期 **30 帧** ✓（一手 script72/73/74 的 `ins_37(计时器, 30)` ✓ —— 与 A 组的 10 帧不同 ✓）。
- *   ★★★★ 2026-10-10 owner 订正（**显隐与内容都改** ✓，原话）：
- *     「gauge level 那个应当是**提醒你灵力积蓄到哪了**，是一个**无条件显示的**」
- *     「gauge level 是你**只在挡位上涨无条件出现**，目前似乎是**你按 shift 出现、不按 shift 消失**，
- *       感觉跟所谓**蓄力上限挡位增长**没关系」✓
- *     ⇒ ① **显隐 = 无条件**（只要本卡在场 / 本 HUD 帧跑到 ⇒ 每帧显示 ✓；**两把键都不跟** ✗）；
- *        ② **内容 = 灵力**（`s_reiryoku`，吸收灵力道具累积 ✓）**相对满值的档位** ——
- *           满值取本卡既有的 `POFV_AURA_TARGET_CHARGE`（不新造数值 ✓）；
- *     ⚠ 「上涨沿才弹 60 帧」那套（`POFV_HUD_LV_SHOW` / `s_hud_lv_left`）**已废** ✗（owner 要无条件 ✓）；
- *       一手 `FUN_0041bc90 ⇒ 0x41a320` 的"档位变才重装"只是一手的**刷新时机**，与本卡的常显不冲突 ✓。*/
+ *   ★★★★ 2026-10-10 owner 口径（**回到一手：档位变化那一帧触发的一次性弹出** ✓，原话：
+ *     「gauge level 是你**只在挡位上涨**出现」✓）：
+ *     · **触发** = **档位数值变化的那一帧**（一手 `FUN_0041bc90` 内 `0x41bd1e cmp edi,eax; je skip`
+ *       ⇒ 相等就跳过、**只有变了**才调 `0x41a320` 组 3 台 VM（script 72/73/74 ✓））；
+ *       ★ 判的是**档位**（`(int)上限量/100`），**不是**"原始值变了就弹" ✓；
+ *     · **内容** = **灵力**（`s_reiryoku`，吸收灵力道具累积 ✓）÷ 满值 × 4 档
+ *       （满值 = 本卡既有 `POFV_AURA_TARGET_CHARGE` ✓；4 = A 组同一个 `POFV_HUD_CHG_MAX_TIER` ✓）；
+ *     · **生命周期 = 78 帧**（一手 script72/73/74 自带 `ins_34(3,0,0xc0)` **3 帧淡入** ⇒ **60 帧**颜色闪
+ *       ⇒ `ins_34(15,0,0)` **15 帧淡出** ⇒ `ins_1()` 自删 ⇒ 3+60+15 = **78** ✓）；
+ *       到期前再跨档 ⇒ **重放**（重设 78 帧 ✓）；期间**没有** hide/interrupt 路径 ✓。
+ *   ⚠ 上一版「无条件常显」✗ 已废（owner 订正 ✓）；A/B 的避让（A 显示 ⇒ B 上移 48）**与显隐条件无关** ✓ 不变。*/
+#define POFV_HUD_LV_POP_FRAMES 78   /* ★ 一手：3 淡入 + 60 闪 + 15 淡出 ✓ */
 static int32_t s_hud_lv_gf_vm, s_hud_lv_label_vm, s_hud_lv_digit_vm;
-static int32_t s_hud_lv_last_tier;  /* 上次的灵力档位（**只用于日志** ✓；显隐不再看它 ✓）*/
+static int32_t s_hud_lv_last_tier;  /* ★ 上升沿判据：上次的**档位数值**（不是原始值 ✓）*/
+static int32_t s_hud_lv_left;       /* ★ 弹出剩余帧（>0 = 正在弹；到 0 ⇒ 收掉 3 台 VM ✓）*/
 
 /* ★★★★ 2026-10-09 HUD 坐标空间（owner 实跑：「A/B 两组 TH09 指示 UI 位置十分靠左上、尺寸偏小
  *   ⇒ 坐标没有 ×2、大小也没有 ×2」✗）—— **UI 列表 VM 的坐标 = 表面 px**：
@@ -635,6 +666,14 @@ static ce_hud_vm_text_t s_hud_hits_lbl;
 static int32_t s_hud_chg_frame_vm;
 static int32_t s_hud_chg_track_vm;
 static int32_t s_hud_chg_seg_vm[POFV_HUD_CHG_SEGMENTS];
+/* ★★★★ 2026-10-10 owner（**拆两根条** ✓）：「**灵力条分两个 UI，一个是灵力的积攒条，
+ *   一个是蓄力的条，按 C 蓄力的条才从 0 开始长**」✓
+ *   ⇒ 上面那组 `s_hud_chg_*` = **蓄力条**（驱动 `s_aura_charge` ✓，语义/名字都对得上 ✓）；
+ *     下面这组 `s_hud_rei_*` = **灵力积攒条**（驱动 `s_reiryoku` ✓，**同一套**一手框/底/8 片结构 + 一手段位色 ✓）。
+ *   ⚠ 两根都在**同一个货架块**里（块高已加到 26 ✓），排布见 `POFV_HUD_BAR_GAP` 处注释 ✓。*/
+static int32_t s_hud_rei_frame_vm;
+static int32_t s_hud_rei_track_vm;
+static int32_t s_hud_rei_seg_vm[POFV_HUD_CHG_SEGMENTS];
 /* HUD 管理器（`ce_hud_slot_claim_card`）发给这块的槽：`x/y` = **块左下角**（表面 px ✓，`HUD-LAYOUT.md` §3）。 */
 static ce_hud_slot_t s_hud_chg_slot;
 static int s_hud_chg_slot_ok;      /* 本关是否已认领到（0 ⇒ 每帧补认领一次 ✓）*/
@@ -650,15 +689,77 @@ static void pofv_hud_chg_claim(void)
     /* ★★ 2026-10-10：认领的是**外表**（框）尺寸，不是底/填充的 224×4 ✗ ——
      *   一手 `aura.anm` 是 640×480 空间（`drawRectGrad(224,4)` + `drawRectBorder(224,4)`）
      *   ⇒ 表面尺寸 = 填充 448×8 ＋ 框每边 `POFV_HUD_CHG_BORDER`(2) ⇒ **452×12** ✓（推法见常量处注释 ✓）。*/
-    blk.w = POFV_HUD_CHG_BLOCK_W_SURF;   /* 452 = 448（一手 224×2）+ 2×2 框 ✓ */
-    blk.h = POFV_HUD_CHG_BLOCK_H_SURF;   /*  12 =   8（一手   4×2）+ 2×2 框 ✓ */
+    blk.w = POFV_HUD_CHG_BLOCK_W_SURF;       /* 452 = 448（一手 224×2）+ 2×2 框 ✓ */
+    /* ★ 2026-10-10：块高 12 → **26**（**两根**条：两根 12 高 + 2 间隙 ✓，推法见该宏处注释 ✓）*/
+    blk.h = POFV_HUD_BLOCK_H_TOTAL_SURF;     /*  26 = 12 + 2 + 12 ✓ */
     blk.side = CE_HUD_SIDE_LEFT;       /* 走底部货架（owner：「冲突是已知问题，就这么做」⇒ 不为避让改位置 ✓）*/
     s_hud_chg_slot_ok = ce_hud_slot_claim_card(109, &blk, &s_hud_chg_slot);
     if (!s_hud_chg_slot_logged) {
         s_hud_chg_slot_logged = 1;
-        ce_log("pofv: HUD 灵力槽块 %.0fx%.0f claimed=%d at surface (%.1f, %.1f) side=%d",
+        ce_log("pofv: HUD 灵力/蓄力两根条块 %.0fx%.0f claimed=%d at surface (%.1f, %.1f) side=%d",
                (double)blk.w, (double)blk.h, s_hud_chg_slot_ok,
                (double)s_hud_chg_slot.x, (double)s_hud_chg_slot.y, (int)blk.side);
+    }
+}
+
+/* ★★★★ 2026-10-10 卡 109 的「TH19 一条槽」= 框 + 底 + 8 片（脚本 422 ✓）——
+ *   两根条（**灵力** / **蓄力**）**共用**本函数（比例由调用方给 ✓），不做两份逐字重复 ✗。
+ *   入参：三组句柄指针 / **框左上角**（表面 px ✓）/ 填充比例 0..1 ✓。
+ *   内部自带「**部分死 ⇒ 整组重建**（保生成序：框 → 底 → 8 片 ✓）」（照搬到函数里 ✓）；
+ *   句柄全 0（首次 / 全被收走）⇒ 直接按同一顺序新建 ✓。 */
+static void pofv_hud_one_bar(int32_t *frame_vm, int32_t *track_vm, int32_t *seg_vm,
+                             float fx, float fy, float ratio)
+{
+    const float bx = fx + POFV_HUD_CHG_BORDER;
+    const float by = fy + POFV_HUD_CHG_BORDER;
+    int i, alive = 0, missing = 0;
+    if (*frame_vm) ++alive; else ++missing;
+    if (*track_vm) ++alive; else ++missing;
+    for (i = 0; i < POFV_HUD_CHG_SEGMENTS; ++i) { if (seg_vm[i]) ++alive; else ++missing; }
+    if (alive > 0 && missing > 0) {                    /* ★ 部分死 ⇒ 整组重建（保生成序 ✓）*/
+        if (*frame_vm) { ce_anm_delete((uint32_t)*frame_vm); *frame_vm = 0; }
+        if (*track_vm) { ce_anm_delete((uint32_t)*track_vm); *track_vm = 0; }
+        for (i = 0; i < POFV_HUD_CHG_SEGMENTS; ++i)
+            if (seg_vm[i]) { ce_anm_delete((uint32_t)seg_vm[i]); seg_vm[i] = 0; }
+    }
+    if (!*frame_vm)                    /* ★ 先框（生成序 = 画在最下 ✓）*/
+        *frame_vm = (int32_t)hud_vm_spawn(CE_ANM_ABILITY_SCRIPT_POFV109_HUD_CHARGE, fx, fy);
+    if (!*track_vm)                    /* ★ 再底 */
+        *track_vm = (int32_t)hud_vm_spawn(CE_ANM_ABILITY_SCRIPT_POFV109_HUD_CHARGE, bx, by);
+    for (i = 0; i < POFV_HUD_CHG_SEGMENTS; ++i)   /* ★ 最后 8 片 */
+        if (!seg_vm[i])
+            seg_vm[i] = (int32_t)hud_vm_spawn(CE_ANM_ABILITY_SCRIPT_POFV109_HUD_CHARGE,
+                                              bx + POFV_HUD_CHG_SEG_W * (float)i, by);
+    /* ① **框**：一手 script2（框）+ script3/4（高亮，每 8 帧色互换 ✓）*/
+    if (*frame_vm) {
+        const int hi8 = ((s_card_frames / 8) & 1) ? 1 : 0;      /* 一手：`+8:` 互换 ✓ */
+        const uint32_t fc  = hi8 ? 0xFFE0C08Cu : 0xFF2060A8u;
+        const uint32_t fc2 = hi8 ? 0xFFE0C096u : 0xFF2060A8u;
+        ce_anm_set_pos((uint32_t)*frame_vm, fx, fy, 0.0f);
+        ce_anm_set_scale((uint32_t)*frame_vm,
+                         POFV_HUD_CHG_BLOCK_W_SURF / POFV_HUD_CHG_SEG_W_NATIVE,
+                         POFV_HUD_CHG_BLOCK_H_SURF / POFV_HUD_CHG_BLOCK_H);
+        ce_anm_set_color((uint32_t)*frame_vm, fc);
+        ce_anm_set_color2((uint32_t)*frame_vm, fc2);
+    }
+    /* ② **底**：满宽（8 片 ×2）+ 一手 script1 的底/框色 ✓ */
+    if (*track_vm) {
+        ce_anm_set_pos((uint32_t)*track_vm, bx, by, 0.0f);
+        ce_anm_set_scale((uint32_t)*track_vm,
+                         (float)POFV_HUD_CHG_SEGMENTS * POFV_HUD_CHG_X2, POFV_HUD_CHG_X2);
+        ce_anm_set_color((uint32_t)*track_vm, POFV_HUD_CHG_BASE_COL1);
+        ce_anm_set_color2((uint32_t)*track_vm, POFV_HUD_CHG_BASE_COL2);
+    }
+    /* ③ 8 个段位片：第 i 片 `scale.x` = 该片填充比例（0..1）× 2 ✓ + 一手段位色 ✓ */
+    for (i = 0; i < POFV_HUD_CHG_SEGMENTS; ++i) {
+        float seg = ratio * (float)POFV_HUD_CHG_SEGMENTS - (float)i;
+        if (seg < 0.0f) seg = 0.0f;
+        if (seg > 1.0f) seg = 1.0f;
+        if (!seg_vm[i]) continue;
+        ce_anm_set_pos((uint32_t)seg_vm[i], bx + POFV_HUD_CHG_SEG_W * (float)i, by, 0.0f);
+        ce_anm_set_scale((uint32_t)seg_vm[i], seg * POFV_HUD_CHG_X2, POFV_HUD_CHG_X2);
+        ce_anm_set_color((uint32_t)seg_vm[i], POFV_HUD_CHG_SEG_COL1);
+        ce_anm_set_color2((uint32_t)seg_vm[i], POFV_HUD_CHG_SEG_COL2[i]);
     }
 }
 
@@ -796,6 +897,14 @@ static int pofv_aura_key(void)
 #define POFV_AURA_K_SAKUYA   64.0f   /* ★ owner：「半径感觉不够大」⇒ K 32 → **64**（R=64 ⇒ 直径 128 ✓）*/
 #define POFV_AURA_CHARGE_MAX   200.0f
 #define POFV_AURA_TARGET_CHARGE 100.0f   /* ★ owner 实跑定：满值取 100 ⇒ 灵梦 64（= 原 128 的一半 ✓）、早苗 128 ✓ */
+/* ★★★★ 2026-10-10 owner（**上限量 = 灵力**，一手 `S+0x24` 的等价物 ✓）：一手 `S+0x24` 的**初值**
+ *   = `clamp(S+0x28,0,2500)` = **C1 阈值**（不是 0 ✗）；拾道具 `+= 15 × clamp(S+0x98,0,100)/100`；
+ *   当前蓄力 `AuraCtrlInf+0x94/+0x98` 的**上限**就是它 ✓。
+ *   ❓ **C1 的具体数值一手未解出**（在 `plXX.sht` 的角色参数表里，未 dump 到）⇒ **自定 50.0f**
+ *     （= 本卡满值 `POFV_AURA_TARGET_CHARGE` 的**一半** ⇒ 开局有基础半径、又留得下成长空间 ✓）。
+ *   已登记 `TUNING.md`。*/
+#define POFV_REI_C1   50.0f    /* ❓自定：初值（一手 = clamp([sht+0x2c]×10, 0, 2500)，逐角色不同）*/
+#define POFV_REI_MAX  2500.0f  /* ★ 一手量纲 ✓（`0x9c4` = 2500；此前拿 100 当上限是错的 ✗）*/
 /* ⚠ 2026-10-06 核实订正（我上一版把两处出处标错 ✗）：
  *   · 一手**蓄力槽**是 `AuraCtrlInf+0x94`（**另一个结构体的同偏移** ✗），速率 = `clamp(S+0x88,0,200) × 10 / 100`
  *     （`06-aura.md:37` ✓；满 `S+0x88=200` ⇒ **20/帧**）⇒ 本卡取 `5.0f`（等价 `S+0x88=50`，≈40 帧蓄满）
@@ -1541,7 +1650,22 @@ static void clear_card(ce_card_t *c)
      *     —— 删卡发生在商店里、`on_draw` 不跑 ⇒ 只能靠这里（与 `s_storm_vm` / `s_aura_piece` 同一支）。*/
     pofv_aura_tint_restore_all();
     s_aura_charge = 0.0f; s_aura_r = 0.0f;   /* ★ 蓄力（C ✓）随卡清零 ✓ */
-    s_reiryoku = 0.0f;                       /* ★ 灵力（吸收道具累积 ✓）随卡清零 ✓ */
+    s_aura_size = 0.0f;                      /* ★ 结界尺寸（一手 `S+0x8c` 等价物 ✓）随卡清零 ✓ */
+    /* ★★★★ 2026-10-10 owner：灵力（上限量 = 一手 `S+0x24`）**初值 = C1（不是 0 ✗）**
+     *   ⇒ 开局有基础灵力 ⇒ 蓄力/结界不会被封到 0 ✓（C1 数值 = ❓自定，见 `POFV_REI_C1` ✓）。*/
+    s_reiryoku = POFV_REI_C1;
+    /* ★ B 组的**上升沿判据**要从 C1 对应的档位起步 —— 否则开局第一帧「档位 0 → C1 的档位」
+     *   会被当成一次变化 ⇒ **假弹 78 帧** ✗（一手开局也不会弹 ✓）。*/
+    {   float r0 = s_reiryoku / POFV_AURA_TARGET_CHARGE;
+        int32_t t0;
+        if (r0 < 0.0f) r0 = 0.0f;
+        if (r0 > 1.0f) r0 = 1.0f;
+        t0 = (int32_t)(r0 * (float)POFV_HUD_CHG_MAX_TIER);
+        if (t0 < 0) t0 = 0;
+        if (t0 > POFV_HUD_CHG_MAX_TIER) t0 = POFV_HUD_CHG_MAX_TIER;
+        s_hud_lv_last_tier = t0;
+    }
+    s_hud_lv_left = 0;                       /* ★ B 组弹出态清零（换局/删卡不残留 ✓）*/
     s_aura_role_logged = 0;                  /* ★ 下次激活再打一次角色日志 ✓ */
     s_cnt_send54 = s_cnt_send30 = s_cnt_arrive = s_cnt_gift = s_cnt_kill = 0;   /* ★ goal ②：计数随卡清零 ✓ */
     s_ex_gauge = 0; s_ex_level = 0; s_ex_cool = 0; s_send40 = 0;   /* ★ EX/送灵计数：随卡清零 ✓（铁律 ✓）*/
@@ -1586,6 +1710,11 @@ static void clear_card(ce_card_t *c)
     if (s_hud_chg_track_vm) { ce_anm_delete((uint32_t)s_hud_chg_track_vm); s_hud_chg_track_vm = 0; }
     { int i9; for (i9 = 0; i9 < POFV_HUD_CHG_SEGMENTS; ++i9)
         if (s_hud_chg_seg_vm[i9]) { ce_anm_delete((uint32_t)s_hud_chg_seg_vm[i9]); s_hud_chg_seg_vm[i9] = 0; } }
+    /* ★ 2026-10-10：**灵力积攒条**（新增那根）同样必须真删 ✓（铁律；与上面蓄力条同款 ✓）。*/
+    if (s_hud_rei_frame_vm) { ce_anm_delete((uint32_t)s_hud_rei_frame_vm); s_hud_rei_frame_vm = 0; }
+    if (s_hud_rei_track_vm) { ce_anm_delete((uint32_t)s_hud_rei_track_vm); s_hud_rei_track_vm = 0; }
+    { int i9; for (i9 = 0; i9 < POFV_HUD_CHG_SEGMENTS; ++i9)
+        if (s_hud_rei_seg_vm[i9]) { ce_anm_delete((uint32_t)s_hud_rei_seg_vm[i9]); s_hud_rei_seg_vm[i9] = 0; } }
     /* ⚠ 槽位**本身**的释放不在这里做：SDK 的 `ce_layer_drop_card()` 在 `on_run_reset`/`on_delete`
      *   进入本回调**之前**已经调过 `ce_hud_slot_release(109)`（`sdk.h:1123`）✓。*/
     s_hud_chg_slot_ok = 0;
@@ -1678,6 +1807,38 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
             if (!s_power_logged) {
                 ce_log("pofv: power pool full (%d) — kill drop lost", POFV_POWER_MAX);
                 s_power_logged = 1;
+            }
+        }
+        /* ★★★★ 2026-10-10 owner：**连击额外灵力道具**（一手 `FUN_0050c1f0` `0x50c1f0` ✓）——
+         *   一手逐字（`05-four-mechanics.md` §2 / `0x50c4ba` ✓）：
+         *     `if (combo > 5) { n = combo/12 + 1; if (n > 3) n = 3;
+         *                      if (enemy[+0x63a0] & 0x8000000) n = 1;
+         *                      do { FUN_00521c60(pos); } while (--n); }`
+         *   ⇒ 本卡照抄**额外**撒 `min(combo/12+1, 3)` 颗（**主掉落之外** ✓，用既有 `pofv_power_spawn_dir` ✓，
+         *     位置走与主掉落**同一条规则**：敌机坐标 + `faith_scatter_from_enemy()` 的 ZUN 爆道具散布偏移 ✓，
+         *     角度/速度同 `POFV_POWER_DROP_ANGLE/_SPEED` ✓；每次调用取**新的一份散布** ⇒ 与主掉落同分布 ✓）。
+         *   ⚠ 一手那条 `enemy[+0x63a0] & 0x8000000 ⇒ n = 1` 的**例外未接** ✗：那是 TH19 敌机 flags 的
+         *     bit27，TH18 的敌机 flags 在 `+0x635c`（`CE_ENEMY_FLAGS` ✓）且**没有**已知同义位
+         *     ⇒ 无法照抄 ⇒ 登记 `TUNING.md` ❓（本卡就不做这条例外 ✓）。
+         *   ❓ **`combo` 来源**：一手 = TH19 `PlayerInf+0x22bc`（HUD 連爆/队列计数，cap 19）；
+         *     本卡**没有**这本账 ⇒ 用**同侧、同一 Hits 子对象、同语义**的现成连击计数 `s_hits.cur`
+         *     （= 一手 `+0x22b4` HUD Hits 当前值 ✓，同样「每次击破 +1、断链归零」✓，
+         *      见 `pofv_hits_tick` / `s_chain_storm_age` 的清零路 ✓）作为**近似** ⇒ 登记 `TUNING.md` ❓。
+         *     ⚠ 时序：本处读到的是**本次击破入账之前**的 `s_hits.cur`（喂食 `pofv_hits_bump` 在
+         *       本回调更后面 ⇒ 相当于 `combo` **少 1**；一手 `0x50c464` 的读取时序未逐字核 🟡）。*/
+        {
+            const int32_t combo = s_hits.cur;          /* ❓近似：见上（一手是 `+0x22bc`，本卡用 `+0x22b4`）*/
+            if (combo > 5) {
+                int32_t n = combo / 12 + 1;
+                if (n > 3) n = 3;                      /* 一手：`if (n > 3) n = 3` ✓ */
+                while (n-- > 0) {
+                    float dx2 = 0.0f, dy2 = 0.0f;
+                    faith_scatter_from_enemy((const uint8_t *)ev->enemy, &dx2, &dy2);   /* 与主掉落同规则 ✓ */
+                    if (pofv_power_spawn_dir(&s_power, ev->x + dx2, ev->y + dy2,
+                                             POFV_POWER_PTS_KILL, POFV_POWER_SRC_KILL,
+                                             POFV_POWER_DROP_ANGLE, POFV_POWER_DROP_SPEED) < 0)
+                        break;                         /* 池满 ⇒ 停（面值丢一颗，与主掉落同口径 ✓）*/
+                }
             }
         }
     }   /* ★ 2026-10-09：本块是「加散布偏移」新包的外层 `{`（照 mof.c:755 同式）✓ */
@@ -2487,7 +2648,10 @@ static int on_tick_2(ce_card_t *c)
          *     电荷 **200**（clamp 上限，一手理论最大）⇒ 灵梦 128 / 魔理沙 28 / 早苗 256 —— **我先前误取它** ✗（就是你看到的「大一倍」✓）；
          *     电荷 **125**（一手**唯一实际写入值**，Aun 两张卡 ✓）⇒ 灵梦 **80** / 魔理沙 **17.5** / 早苗 **160** ✓；
          *     电荷 **100**（**owner 实跑裁定** ✓）⇒ 灵梦 **64** / 魔理沙 **14** / 早苗 **128** —— **现源码取这个** ✓。*/
-        s_aura_charge = POFV_AURA_TARGET_CHARGE;               /* = 100 ✓ ⇒ 半径减半 ✓ */
+        /* ★★★★ 2026-10-10 owner：**蓄力被上限量（灵力 `s_reiryoku`）封顶** ✓
+         *   （一手：`charge < clamp(S+0x24)` 才涨 ⇒ `S+0x24`（= 灵力）就是当前蓄力 `AuraCtrlInf+0x94` 的上限 ✓）。
+         *   ⇒ `s_aura_charge = min(满值, 灵力)`；灵力初值 = C1 > 0 ⇒ **永远不会开局为 0** ✓。*/
+        s_aura_charge = (s_reiryoku < POFV_AURA_TARGET_CHARGE) ? s_reiryoku : POFV_AURA_TARGET_CHARGE;
     } else if (aura_held && s_aura_charge > 0.0f) {
         /* ★ 2026-10-10 新增（**结界键还在按**）：Shift 仍按着 ⇒ **保持**当前蓄力值、**不收束**
          *   —— 这是 owner 早前「**两个 key 可以接续**」（按住 C 再按 Shift ⇒ 续同一个蓄力 ✓）的落地：
@@ -2541,10 +2705,19 @@ static int on_tick_2(ce_card_t *c)
     /* ★★ 2026-10-10 结界半径用的"有效蓄力"：见上面两把键的分工注释 ——
      *   有蓄力 ⇒ 用蓄力；没蓄力但**结界键按着**（Shift 单开）⇒ 兜底**满蓄力**（❓自定，旧观感不回退 ✓）；
      *   否则 0（不张、不生成 ✓）。*/
-    const float aura_eff_charge = (s_aura_charge > 0.0f) ? s_aura_charge
-                                : (pofv_aura_key() ? POFV_AURA_TARGET_CHARGE : 0.0f);
+    /* ★★★★ 2026-10-10 owner（**两个量、一个键管** ✓）：见 `s_aura_size` 声明处 —— 尺寸在蓄力 >0 时
+     *   **等于蓄力**（⇒ 数值/曲线与改前**完全一致** = owner「手感应当是一手」✓）；Shift 单开（无蓄力）⇒
+     *   取满值兜底（= 改前观感 ✓）。两根量都**被 `s_reiryoku`（上限量）封顶** ✓（一手 `S+0x24` ✓）。*/
+    /* ★★★★ 2026-10-10 owner 订正（我上一版又错了 ✗）：
+     *   「**结界展开和蓄力没有半毛钱关系，跟灵力没有任何关系**，那个标志着展开的所谓量，
+     *     **只是服务于动画效果的**！」✓
+     *   ⇒ 本量 = **纯动画量** ✓：**只看结界键** ✓（`C ∨ Shift` ✓）——★ 不再取蓄力值 ✗、★ 不再被灵力封顶 ✗。
+     *     张开动画本身仍由下面的 `s_aura_anim_*` 逐帧推进 ✓（= 现有观感 ✓，owner「手感应当是一手」✓）。*/
+    /* ★ 纯动画量：只看结界键（C∨Shift）✓ —— 不取蓄力 ✗、不被灵力封顶 ✗（owner 一手口径 ✓）。
+     * ⚠ owner：**它不是"半径"** ✓，只是大多数角色的画法看起来像半径 ⇒ 逐角色形态见 TUNING ✓。*/
+    s_aura_size = pofv_aura_key() ? POFV_AURA_TARGET_CHARGE : 0.0f;
     {
-        const float target = aura_eff_charge * s_aura_k / 100.0f;   /* ★ 一手 `clamp(S+0x8c,0,200) × K / 100` ✓（目标；有效蓄力见上 ✓）*/
+        const float target = s_aura_size * s_aura_k / 100.0f;   /* ★ 一手 `clamp(S+0x8c,0,200) × K / 100` ✓（目标；有效蓄力见上 ✓）*/
         const float dur = (s_aura_kind == 3) ? 60.0f : 20.0f;      /* ★ 逐类时长：早苗 60 ✓ / 其余 20 ✓（咲夜 TH09 另算 ✓）*/
         float f, e;
         /* ★★★ 2026-10-06 owner 实跑：「**灵梦的张开缺少张开动画，变成瞬间张开**」✗ ⇒ 根因：
@@ -2556,14 +2729,14 @@ static int on_tick_2(ce_card_t *c)
          *     （灵梦靠 R 的初值 1.0 侥幸能生 ✓ —— 日志里正是 `kind=0 … R=1.0` ✓）。
          *   ⇒ 改成**按"有没有蓄力"推进** ✓：无蓄力（= 没按 Shift，结界关着）⇒ 计数归零 ✓；
          *     有蓄力 ⇒ 每帧推进 ✓ ⇒ **第一帧就能算出 R>0 ⇒ 生成** ✓（细缝仍不会出现：没蓄力时 R 由下面那行强制为 0 ✓）。*/
-        if (aura_eff_charge <= 0.0f) { s_aura_anim_f = 0; s_aura_anim_cur = 1.0f; }
+        if (s_aura_size <= 0.0f) { s_aura_anim_f = 0; s_aura_anim_cur = 1.0f; }
         else                       { ++s_aura_anim_f; }
         f = (dur > 0.0f) ? (float)s_aura_anim_f / dur : 1.0f;
         if (f > 1.0f) f = 1.0f;                                    /* ★ 走完保持在目标 ✓ */
         e = (s_aura_kind == 3) ? (f * f * f)                       /* ★ 模式 2 = f³ ✓（早苗、先慢后快）*/
                                : (1.0f - (1.0f - f) * (1.0f - f)); /* ★ 模式 4 = 1−(1−f)² ✓（灵梦/魔理沙）*/
         s_aura_anim_cur = 1.0f + (target - 1.0f) * e;              /* ★ 一手定律（逐字）✓ */
-        if (s_aura_kind == 2 && aura_eff_charge > 0.0f) {
+        if (s_aura_kind == 2 && s_aura_size > 0.0f) {
             /* ★★★ owner 2026-10-06 裁定：「**咲夜半径走一手 —— 她是 TH09 模型，和其他的不一样**」✓
              *   一手（`th09/02` §3.9–§3.14 ✓）：半径 `+0x7c` 由**每角色 anm 脚本**给 ——
              *     · 咲夜 = **3.0**（`etama.anm` sid17 的 `ins_7(3.0, 3.0)` ✓）；
@@ -2609,7 +2782,8 @@ static int on_tick_2(ce_card_t *c)
     /* ★ 诊断心跳（2026-10-06）：把「Shift 有没有被读到 / R 是多少」每 60 帧曝光一次 ✓
      *   —— 与「结界出生」那行合用，可分开判断「没按到键 ✗」与「按到了但没生成/看不见 ✗」。*/
     if (s_aura_charge > 0.0f && !(s_card_frames % 60)) {
-        ce_log("pofv: **结界心跳** kind=%d charge=%.0f R=%.1f vm=%d", (int)s_aura_kind, (double)s_aura_charge, (double)s_aura_r, (int)s_aura_vm);
+        ce_log("pofv: **结界心跳** kind=%d charge=%.0f size=%.0f R=%.1f vm=%d",
+               (int)s_aura_kind, (double)s_aura_charge, (double)s_aura_size, (double)s_aura_r, (int)s_aura_vm);
         }
         {   /* â 2026-10-08 ownerï¼版顶一只朝右的狼灵、无碰撞箱、只是 VM â
              *   ⇒ 对账日志无「残留」â ⇒ 把**所有活的 body VM**逐个列出 ⇒ 一眼看出它属谁 ✓。*/
@@ -2694,7 +2868,7 @@ static int on_tick_2(ce_card_t *c)
                 }
             }
         }
-    if (aura_eff_charge <= 0.0f) { s_aura_r = 0.0f; s_aura_anim_f = 0; }
+    if (s_aura_size <= 0.0f) { s_aura_r = 0.0f; s_aura_anim_f = 0; }
     if (s_aura_r > 0.0f) {
         const float *pp4 = ce_player_pos();
         if (pp4) {
@@ -2951,14 +3125,9 @@ static int on_tick_2(ce_card_t *c)
     }
 
     /* ★★★★ 2026-10-08 B 组「Gauge Filled / level」（一手 script72–74 ✓）
-     * ★★★★ 2026-10-10 owner 订正 ⇒ **无条件常显 + 内容 = 灵力**（见变量处那段注释 ✓）：
-     *   · 显隐：**不看任何键**（`pofv_charge_key()` / `pofv_aura_key()` 都不调 ✓）—— 本 HUD 帧跑到就显示 ✓；
-     *   · 内容：档位 = **灵力**（`s_reiryoku`）÷ **满值**（`POFV_AURA_TARGET_CHARGE`，本卡既有常量 ✓）× 4 档
-     *     （4 = A 组同一个 `POFV_HUD_CHG_MAX_TIER` ⇒ **不新造数值** ✓）；
-     *     一手那边 B 组的数字就是 `(int)charge/100`（`th09:0x41bc90` 的 `FUN_0041a320(...,iVar2)` ✓，
-     *     满 400 ⇒ 0..4 ⇒ 一手也是 **0..4 档** ✓）。
-     *   · 位置：A/B 两组共同的左移常量 `POFV_HUD_TH09_DX` ✓ ＋ **一手的自动避让**
-     *     `POFV_HUD_LV_AVOID_DY`（A 组显示时 B 组上移 48 表面 px ✓，出处见该常量注释 ✓）。*/
+     * ★★★★ 2026-10-10 owner 口径 ⇒ **档位变化那一帧触发的一次性 78 帧弹出**（见变量处注释 + 一手出处 ✓）：
+     *   · 触发 = `s_reiryoku` 的**档位数值变化**（不是"原始值变了就弹" ✓）；
+     *   · 内容 = 档位（`clamp(灵力/满值 × 4)` ✓）；位置 = A/B 共同的左移 + 一手的自动避让 ✓。*/
     {
         float rl_ratio = s_reiryoku / POFV_AURA_TARGET_CHARGE;
         int32_t tier;
@@ -2967,22 +3136,37 @@ static int on_tick_2(ce_card_t *c)
         tier = (int32_t)(rl_ratio * (float)POFV_HUD_CHG_MAX_TIER);
         if (tier < 0) tier = 0;
         if (tier > POFV_HUD_CHG_MAX_TIER) tier = POFV_HUD_CHG_MAX_TIER;
-        if (tier != s_hud_lv_last_tier) {   /* ★ 只为日志（显隐不再看它 ✓）；档位变一次打一行 ✓ */
+        /* ★ 上升沿 = **档位数值变化**（一手 `0x41bd1e cmp edi,eax; je skip` ⇒ 相等不触发 ✓）；
+         *   到期前再变 ⇒ **重放**（重设 78 帧 ✓，照一手"重设脚本/重建状态" ✓）。*/
+        if (tier != s_hud_lv_last_tier) {
             s_hud_lv_last_tier = tier;
-            ce_log("pofv: 【灵力】档位 %d/%d（灵力 %.0f/%.0f，道具累积 ✓，与蓄力/按键无关 ✓）",
-                   (int)tier, POFV_HUD_CHG_MAX_TIER, (double)s_reiryoku, (double)POFV_AURA_TARGET_CHARGE);
+            s_hud_lv_left = POFV_HUD_LV_POP_FRAMES;
+            ce_log("pofv: 【灵力】档位 %d/%d ⇒ 弹一次（%d 帧 ✓；灵力 %.0f/%.0f）",
+                   (int)tier, POFV_HUD_CHG_MAX_TIER, POFV_HUD_LV_POP_FRAMES,
+                   (double)s_reiryoku, (double)POFV_AURA_TARGET_CHARGE);
         }
-        {
+        if (s_hud_lv_left > 0) {
             const float *pp = ce_player_pos();
+            /* ★ 78 帧的**相位**（一手：3 淡入 / 60 闪 / 15 淡出 ✓）；`elapsed = 78 − left` ✓。
+             *   α 上限 = 一手 `ins_34(3,0,0xc0)` 的 **0xc0 = 192** ✓。*/
+            const int32_t elapsed = POFV_HUD_LV_POP_FRAMES - s_hud_lv_left;
+            uint32_t a;
+            if (elapsed < 3)        a = (uint32_t)(192 * elapsed / 3);                             /* 3 帧淡入 ✓ */
+            else if (elapsed >= 63) a = (uint32_t)(192 * (POFV_HUD_LV_POP_FRAMES - elapsed) / 15); /* 15 帧淡出 ✓ */
+            else                    a = 192u;                                                      /* 60 帧保持 ✓ */
+            if (a > 192u) a = 192u;
+            --s_hud_lv_left;   /* ★ 每帧只减一次 ✓ */
             /* ★★★ 2026-10-09（同 A 组：owner「位置十分靠左上、尺寸偏小」✗）：自机坐标 → **表面 px**
              *   （`POFV_HUD_SURF_*` 的推导 / 117 先例见那两行宏的注释 ✓），偏移全部 **×2** ✓。*/
             float bx = POFV_HUD_SURF_X(pp ? pp[0] : 0.0f) + POFV_HUD_TH09_DX;
             /* ★ 一手避让（**复刻** ✓）：A 组在显示 ⇒ B 组整体上移 48 表面 px。
              *   判据与 A 组**完全一致**（`s_hud_chg_hold >= 10 && s_aura_charge > 0` ✓，
-             *   `s_hud_chg_hold` 在上面那块刚更新过 ⇒ 同帧取值一致 ✓）。*/
+             *   `s_hud_chg_hold` 在上面那块刚更新过 ⇒ 同帧取值一致 ✓）；与 B 的显隐条件**无关** ✓。*/
             float by = POFV_HUD_SURF_Y(pp ? pp[1] : 0.0f)
                      + (((s_hud_chg_hold >= 10 && s_aura_charge > 0.0f) ? POFV_HUD_LV_AVOID_DY : 0.0f));
             const int flash = ((s_card_frames / 30) & 1) ? 1 : 0;          /* 一手：30 帧一轮 ✓ */
+            const uint32_t c_gf    = (a << 24) | (flash ? 0x00FFFFFFu : 0x00E0E0E0u);
+            const uint32_t c_label = (a << 24) | (flash ? 0x00FFFFFFu : 0x00A0A0A0u);
             if (!s_hud_lv_gf_vm)       /* 标签 (0,−40) → 表面 (0,−80) ✓ ×2 */
                 s_hud_lv_gf_vm    = (int32_t)hud_vm_spawn(CE_ANM_ABILITY_SCRIPT_HUD_GLYPH, bx, by - 80.0f);
             if (!s_hud_lv_label_vm)    /* 标签 (−8,−28) → 表面 (−16,−56) ✓ ×2 */
@@ -2994,24 +3178,31 @@ static int on_tick_2(ce_card_t *c)
                 ce_anm_set_scale((uint32_t)s_hud_lv_gf_vm, 2.0f, 2.0f);      /* ★ 一手 640 空间 1:1 → 表面 ×2 ✓ */
                 ce_anm_set_sprite(CE_ABILITY_ANM(), (uint32_t)s_hud_lv_gf_vm,
                                   CE_ANM_ABILITY_SPRITE_POFV109_TH09_UI_GAUGEFILLED);
-                ce_anm_set_color((uint32_t)s_hud_lv_gf_vm, flash ? 0xFFFFFFFFu : 0xFFE0E0E0u);
+                ce_anm_set_color((uint32_t)s_hud_lv_gf_vm, c_gf);
             }
             if (s_hud_lv_label_vm) {
                 ce_anm_set_pos((uint32_t)s_hud_lv_label_vm, bx - 16.0f, by - 56.0f, 0.0f);
                 ce_anm_set_scale((uint32_t)s_hud_lv_label_vm, 2.0f, 2.0f);   /* ★ 同上 ×2 ✓ */
                 ce_anm_set_sprite(CE_ABILITY_ANM(), (uint32_t)s_hud_lv_label_vm,
                                   CE_ANM_ABILITY_SPRITE_POFV109_TH09_UI_LEVELLABEL);
-                ce_anm_set_color((uint32_t)s_hud_lv_label_vm, flash ? 0xFFFFFFFFu : 0xFFA0A0A0u);
+                ce_anm_set_color((uint32_t)s_hud_lv_label_vm, c_label);
             }
             if (s_hud_lv_digit_vm) {
                 ce_anm_set_pos((uint32_t)s_hud_lv_digit_vm, bx + 36.0f, by - 56.0f, 0.0f);
                 ce_anm_set_scale((uint32_t)s_hud_lv_digit_vm, 2.0f, 2.0f);   /* ★ 同上 ×2 ✓ */
                 ce_anm_set_sprite(CE_ABILITY_ANM(), (uint32_t)s_hud_lv_digit_vm,
                                   CE_ANM_ABILITY_SPRITE_POFV109_TH09_UI_DIGIT_0 + (uint32_t)tier);
-                ce_anm_set_color((uint32_t)s_hud_lv_digit_vm, flash ? 0xFFFFFFFFu : 0xFFA0A0A0u);
+                ce_anm_set_color((uint32_t)s_hud_lv_digit_vm, c_label);
             }
+        } else {
+            /* ★ 78 帧走完 ⇒ 一手 `ins_1()` 自删的等价：卡侧真删 3 台 VM + 清句柄 ✓
+             *   （期间**没有** hide/interrupt 路径 ✓）。*/
+            if (s_hud_lv_gf_vm)    { ce_anm_delete((uint32_t)s_hud_lv_gf_vm);    s_hud_lv_gf_vm = 0; }
+            if (s_hud_lv_label_vm) { ce_anm_delete((uint32_t)s_hud_lv_label_vm); s_hud_lv_label_vm = 0; }
+            if (s_hud_lv_digit_vm) { ce_anm_delete((uint32_t)s_hud_lv_digit_vm); s_hud_lv_digit_vm = 0; }
         }
     }
+
 
     /* ★ HUD hits：锁存 + 寿命递减（一手 120 帧 ✓）*/
     /* ★★ 调试 UI（owner）：事件列表（暴风延迟 ✓ / 击破·固灵 3 s ✓）+ 幽灵列表（只有内容、无位置 ✓）*/
@@ -3160,118 +3351,61 @@ static int on_tick_2(ce_card_t *c)
          *   （owner 要求：「把这台也加进去」✓；本块只**清 0**，重建在下面那节里 ✓ ⇒ 撞弹/复活后自愈 ✓）。
          *   ⚠ 顺带修一处**既有越界写**：本数组原声明为 `hs[16]`，而上面已经 push 了 19 个指针
          *   （3 + 4 + 3 + 6 + 3 = 19 ⇒ `hs[16..18]` 越界 ✗，写坏栈上相邻变量）⇒ 这里 16 → **32**。
-         *   现在 19 + 1 框 + 1 底 + 8 片 = **29 ≤ 32** ✓（2026-10-10 加框那台后仍够 ✓）。 */
-        int32_t *hs[32]; int nh = 0, ih;
+         *   19 + （蓄力条 1 框 + 1 底 + 8 片）+（灵力条 1 框 + 1 底 + 8 片）= **39** ✓
+         *   ⇒ 2026-10-10 拆两根条后再 32 → **40** ✓。 */
+        int32_t *hs[40]; int nh = 0, ih;
         hs[nh++] = &s_hud_c2_vm; hs[nh++] = &s_hud_sp_frame_vm; hs[nh++] = &s_hud_sp_hit_vm;
         hs[nh++] = &s_hud_chg_label_vm; hs[nh++] = &s_hud_chg_cur_vm;
         hs[nh++] = &s_hud_chg_slash_vm; hs[nh++] = &s_hud_chg_max_vm;
         hs[nh++] = &s_hud_lv_gf_vm; hs[nh++] = &s_hud_lv_label_vm; hs[nh++] = &s_hud_lv_digit_vm;
         for (ih = 0; ih < 6; ++ih) hs[nh++] = &s_hud_sp_digit_vm[ih];
         for (ih = 0; ih < 3; ++ih) hs[nh++] = &s_hud_hit_digit_vm[ih];
-        hs[nh++] = &s_hud_chg_frame_vm;                                                  /* ★ 灵力槽：框（2026-10-10 ✓）*/
-        hs[nh++] = &s_hud_chg_track_vm;                                                  /* ★ 灵力槽：底 */
-        for (ih = 0; ih < POFV_HUD_CHG_SEGMENTS; ++ih) hs[nh++] = &s_hud_chg_seg_vm[ih];  /* ★ 灵力槽：8 片 */
+        hs[nh++] = &s_hud_chg_frame_vm;                                                  /* ★ 蓄力条：框（2026-10-10 ✓）*/
+        hs[nh++] = &s_hud_chg_track_vm;                                                  /* ★ 蓄力条：底 */
+        for (ih = 0; ih < POFV_HUD_CHG_SEGMENTS; ++ih) hs[nh++] = &s_hud_chg_seg_vm[ih];  /* ★ 蓄力条：8 片 */
+        hs[nh++] = &s_hud_rei_frame_vm;                                                  /* ★ 灵力条：框（2026-10-10 ✓）*/
+        hs[nh++] = &s_hud_rei_track_vm;                                                  /* ★ 灵力条：底 */
+        for (ih = 0; ih < POFV_HUD_CHG_SEGMENTS; ++ih) hs[nh++] = &s_hud_rei_seg_vm[ih];  /* ★ 灵力条：8 片 */
         for (ih = 0; ih < nh; ++ih)
             if (*hs[ih] && !ce_anm_get_vm((uint32_t)*hs[ih])) *hs[ih] = 0;
     }
-    /* ★★★★ 2026-10-08 卡 109 的「**灵力 = 蓄力槽**」HUD（owner：「照 TH19 一手」✓）——
+    /* ★★★★ 2026-10-08 卡 109 的「TH19 一条槽」HUD（owner：「照 TH19 一手」✓）——
      *   复刻 `aura.anm` script0 起那套（脚本 422 = 一个段位片；见其头注）。
-     *   ★★★★ 2026-10-10 **两处订正**（owner：「**灵力条似乎也是没有 ×2？我只能看见一个蓝色的条，
-     *     看不见任何的附加结构**」✗）：
-     *   ① **×2**：一手 `aura.anm` 的这几条在 **640×480 空间**（12 支脚本都不写 `resolutionMode` ⇒ 引擎
-     *      整体 ×倍率 ✓，一手全文 `local/th19.v1.10c/_ext/aura.txt` ✓），而本卡的脚本 422 是
-     *      `resolutionMode(2)`（1 单位 = 1 表面 px ✓，`HUD-LAYOUT.md` §4.1b ✓）
-     *      ⇒ 满宽 224→**448**、高 4→**8**、每片 28→**56**、位置/缩放全按 `POFV_HUD_CHG_X2` 写 ✓；
-     *   ② **「看不见附加结构」的根因（找到了 ✓）与修**：一手这套需要**多层**（每层一台 VM）：
-     *      script1 = **底**（`drawRectGrad(224,4)`，`color(0,0,0)`/`color2(0,0,64)` ✓）、
-     *      script2 = **框**（**`drawRectBorder(224,4)`** 白 ✓）、
-     *      script3/4 = **底/框高亮**（`drawRectGrad(224,4)`，色每 **8 帧** `(32,96,168) ↔ (224,192,140)` 互换 ✓）、
-     *      script5..12 = **8 片** ✓（一手逐条见上引 aura.txt ✓）。
-     *      ⇒ 我先前**「底/框」与 8 片共用同一支脚本 422**（422 里只有一个 `drawRectGrad` ✗）
-     *        ⇒ ①「框」根本不是框，它只是**同一块渐变矩形**、被 8 片完全盖住；8 片 `scale.x=0`（没蓄力）时
-     *        就**只剩它一条** = owner 看到的「一个蓝色的条」✓；② 一手的**框 + 高亮这两层在本卡根本不存在** ✓。
-     *      ⇒ 修：**新增 1 台「框」VM** = 比底大 `BORDER` px 的实心矩形（TH18 的 anm **没有** `drawRectBorder`
-     *        —— opcode 612 一用就崩，见 `123_season_gauge_frame.anm.txt` 头注 ⇒ 用本仓标准画法 ✓），
-     *        色取一手 script3/4 的**高亮交替**（每 8 帧 ✓）；底与 8 片盖上去 ⇒ 露出一圈 = 框 ✓
-     *        （先例 118/123/157 ✓）。⇒ 现在无论有没有蓄力，框/底都在；蓄力时 8 片按段位色填 ✓。
-     *   ★ 自愈：上面的体检块已把 10 个句柄都查过 ⇒ 「部分死」就**整组重建**（框先、底后、片最后
-     *     ⇒ 同层生成序 = 框在下、底在中、片在上 ✓），同时兜住**碰撞/复活**收走 HUD VM 那一路 ✓。 */
+     *   ★★★★ 2026-10-10 owner：「**灵力条分两个 UI，一个是灵力的积攒条，一个是蓄力的条，
+     *     按 C 蓄力的条才从 0 开始长**」✓ ⇒ 这一条**拆成两根**（同一套一手框/底/8 片 + 一手段位色 ✓）：
+     *     · **灵力积攒条**（`s_hud_rei_*`，**上方**那根）= `s_reiryoku / POFV_AURA_TARGET_CHARGE` ✓；
+     *     · **蓄力条**（`s_hud_chg_*`，**下方**那根 = 原位置 ✓）= `s_aura_charge / POFV_AURA_TARGET_CHARGE`
+     *       —— ★ 只由**蓄力**驱动：按 **C** 才涨、松手归零（`s_aura_charge` ✓）⇒ 与灵力条互不相干 ✓。
+     *   两根统一走 `pofv_hud_one_bar()`（框先 / 底后 / 片最后 = 生成序 ⇒ 画序 ✓；
+     *   部分死 ⇒ 整组重建 ✓，同时兜住**碰撞/复活**收走 HUD VM 那一路 ✓）。
+     *   ❓ 排布（一手未给两根的位置关系）见 `POFV_HUD_BAR_GAP` 处注释 ✓（已登记 TUNING ✓）。*/
     {
         /* ★★★ 2026-10-08 订正（子智能体标的 ❓C7 ✓）：一手 TH19 的槽范围是 `clamp(S+0x8c,0,200)` ✓，
-         *   但**本卡**的蓄力现值只到 `POFV_AURA_TARGET_CHARGE` = **100**（owner 实跑定，`pofv.c:2112` ✓）
-         *   ⇒ 除数必须用**本卡自己的满值** ✓，否则条永远只到 **50 %** ✗。*/
-        const float ratio = (s_aura_charge > 0.0f) ? (s_aura_charge / POFV_AURA_TARGET_CHARGE) : 0.0f;
-        float fx, fy;            /* **框**的左上角（= 货架块的左上角，表面 px ✓）*/
-        float bx, by;            /* **底/填充区**的左上角（= 框内缩 `BORDER` px ✓）*/
-        int i9, alive = 0, missing = 0;
+         *   但**本卡**的蓄力现值只到 `POFV_AURA_TARGET_CHARGE` = **100**（owner 实跑定 ✓）
+         *   ⇒ 除数必须用**本卡自己的满值** ✓，否则条永远只到 **50 %** ✗（两根同此 ✓）。*/
+        const float ratio_chg = (s_aura_charge > 0.0f) ? (s_aura_charge / POFV_AURA_TARGET_CHARGE) : 0.0f;
+        const float ratio_rei = (s_reiryoku   > 0.0f) ? (s_reiryoku   / POFV_AURA_TARGET_CHARGE) : 0.0f;
+        float fx;                 /* 货架块的左上角（表面 px ✓）；两根左边界相同 ✓ */
+        float fy_chg;             /* **蓄力条**（下方那根，= 原位置 ✓）的框左上角 ✓ */
+        float fy_rei;             /* **灵力条**（上方那根）的框左上角 ✓ */
 
         if (!s_hud_chg_slot_ok) pofv_hud_chg_claim();                       /* 幂等补认领（纪元清空/认领失败）*/
         if (s_hud_chg_slot_ok && !ce_hud_slot_get(109, &s_hud_chg_slot)) s_hud_chg_slot_ok = 0;
 
         if (s_hud_chg_slot_ok) {
-            if (s_hud_chg_frame_vm) ++alive; else ++missing;
-            if (s_hud_chg_track_vm) ++alive; else ++missing;
-            for (i9 = 0; i9 < POFV_HUD_CHG_SEGMENTS; ++i9) {
-                if (s_hud_chg_seg_vm[i9]) ++alive; else ++missing;
-            }
-            if (alive > 0 && missing > 0) {                                 /* ★ 部分死 ⇒ 整组重建（保生成序）*/
-                if (s_hud_chg_frame_vm) { ce_anm_delete((uint32_t)s_hud_chg_frame_vm); s_hud_chg_frame_vm = 0; }
-                if (s_hud_chg_track_vm) { ce_anm_delete((uint32_t)s_hud_chg_track_vm); s_hud_chg_track_vm = 0; }
-                for (i9 = 0; i9 < POFV_HUD_CHG_SEGMENTS; ++i9)
-                    if (s_hud_chg_seg_vm[i9]) { ce_anm_delete((uint32_t)s_hud_chg_seg_vm[i9]); s_hud_chg_seg_vm[i9] = 0; }
-                missing = POFV_HUD_CHG_SEGMENTS + 2;
-            }
-            /* 货架槽 `(x,y)` = **块左下角**（表面 px ✓）；脚本 422 用 `anchor(1,1)`（左·顶 ✓）
-             * ⇒ 框 VM 落在**块左上角**（y = 块底 − 块高 ✓），底/片各内缩 `BORDER` px ✓。 */
-            fx = s_hud_chg_slot.x;
-            fy = s_hud_chg_slot.y - POFV_HUD_CHG_BLOCK_H_SURF;
-            bx = fx + POFV_HUD_CHG_BORDER;
-            by = fy + POFV_HUD_CHG_BORDER;
-            if (missing > 0) {
-                if (!s_hud_chg_frame_vm)                    /* ★ 先框（生成序 = 画在最下 ✓）*/
-                    s_hud_chg_frame_vm = (int32_t)hud_vm_spawn(CE_ANM_ABILITY_SCRIPT_POFV109_HUD_CHARGE, fx, fy);
-                if (!s_hud_chg_track_vm)                    /* ★ 再底 */
-                    s_hud_chg_track_vm = (int32_t)hud_vm_spawn(CE_ANM_ABILITY_SCRIPT_POFV109_HUD_CHARGE, bx, by);
-                for (i9 = 0; i9 < POFV_HUD_CHG_SEGMENTS; ++i9)   /* ★ 最后 8 片 */
-                    if (!s_hud_chg_seg_vm[i9])
-                        s_hud_chg_seg_vm[i9] = (int32_t)hud_vm_spawn(CE_ANM_ABILITY_SCRIPT_POFV109_HUD_CHARGE,
-                                                                     bx + POFV_HUD_CHG_SEG_W * (float)i9, by);
-            }
-            /* ① **框**：一手 script2（框）+ script3/4（高亮，每 8 帧色互换 ✓）
-             *    —— 尺寸 = 块外表（452×12 表面 px；脚本原生 28×4 ⇒ scale = 外表 ÷ 原生 ✓）。*/
-            if (s_hud_chg_frame_vm) {
-                const int hi8 = ((s_card_frames / 8) & 1) ? 1 : 0;      /* 一手：`+8:` 互换 ✓ */
-                /* 一手 script3：color/color2 (32,96,168) ↔ (224,192,140)/(224,192,150) ✓（AARRGGBB ✓）*/
-                const uint32_t fc  = hi8 ? 0xFFE0C08Cu : 0xFF2060A8u;
-                const uint32_t fc2 = hi8 ? 0xFFE0C096u : 0xFF2060A8u;
-                ce_anm_set_pos((uint32_t)s_hud_chg_frame_vm, fx, fy, 0.0f);
-                ce_anm_set_scale((uint32_t)s_hud_chg_frame_vm,
-                                 POFV_HUD_CHG_BLOCK_W_SURF / POFV_HUD_CHG_SEG_W_NATIVE,
-                                 POFV_HUD_CHG_BLOCK_H_SURF / POFV_HUD_CHG_BLOCK_H);
-                ce_anm_set_color((uint32_t)s_hud_chg_frame_vm, fc);
-                ce_anm_set_color2((uint32_t)s_hud_chg_frame_vm, fc2);
-            }
-            /* ② **底**：满宽（8 片 ×2）+ 一手 script1 的底/框色 ✓ */
-            if (s_hud_chg_track_vm) {
-                ce_anm_set_pos((uint32_t)s_hud_chg_track_vm, bx, by, 0.0f);
-                ce_anm_set_scale((uint32_t)s_hud_chg_track_vm,
-                                 (float)POFV_HUD_CHG_SEGMENTS * POFV_HUD_CHG_X2, POFV_HUD_CHG_X2);
-                ce_anm_set_color((uint32_t)s_hud_chg_track_vm, POFV_HUD_CHG_BASE_COL1);
-                ce_anm_set_color2((uint32_t)s_hud_chg_track_vm, POFV_HUD_CHG_BASE_COL2);
-            }
-            /* ③ 8 个段位片：第 i 片 `scale.x` = 该片填充比例（0..1）× 2（= 0..56 表面 px ✓）+ 一手段位色 ✓ */
-            for (i9 = 0; i9 < POFV_HUD_CHG_SEGMENTS; ++i9) {
-                float seg = ratio * (float)POFV_HUD_CHG_SEGMENTS - (float)i9;
-                if (seg < 0.0f) seg = 0.0f;
-                if (seg > 1.0f) seg = 1.0f;
-                if (!s_hud_chg_seg_vm[i9]) continue;
-                ce_anm_set_pos((uint32_t)s_hud_chg_seg_vm[i9], bx + POFV_HUD_CHG_SEG_W * (float)i9, by, 0.0f);
-                ce_anm_set_scale((uint32_t)s_hud_chg_seg_vm[i9], seg * POFV_HUD_CHG_X2, POFV_HUD_CHG_X2);
-                ce_anm_set_color((uint32_t)s_hud_chg_seg_vm[i9], POFV_HUD_CHG_SEG_COL1);
-                ce_anm_set_color2((uint32_t)s_hud_chg_seg_vm[i9], POFV_HUD_CHG_SEG_COL2[i9]);
-            }
+            /* 货架槽 `(x,y)` = **块左下角**（表面 px ✓）；块高 = 26（两根 12 + 间隙 2 ✓）
+             * ⇒ 下根框左上角 = 块底 − 12（= 原先单根时的公式 ✓ **位置不变** ✓）；
+             *    上根框左上角 = 下根之上再 − 12 − 间隙 ✓。*/
+            fx     = s_hud_chg_slot.x;
+            fy_chg = s_hud_chg_slot.y - POFV_HUD_CHG_BLOCK_H_SURF;
+            fy_rei = fy_chg - POFV_HUD_CHG_BLOCK_H_SURF - POFV_HUD_BAR_GAP;
+            pofv_hud_one_bar(&s_hud_rei_frame_vm, &s_hud_rei_track_vm, s_hud_rei_seg_vm,
+                             fx, fy_rei, ratio_rei);      /* ★ 灵力积攒条（上）✓ */
+            pofv_hud_one_bar(&s_hud_chg_frame_vm, &s_hud_chg_track_vm, s_hud_chg_seg_vm,
+                             fx, fy_chg, ratio_chg);      /* ★ 蓄力条（下）✓ */
         }
     }
+
     {   /* ★★★ TH09 SP 行 —— **owner 给的格式原文**（2026-10-08）✓：
          *   「Hit 得是**红色**的，格式不是 000000 而是**一个红色的 `<3 格右对齐、前导空格>` 数字 + `Hit`**，
          *     **后面紧跟着是六位 SP**」✓
@@ -3763,20 +3897,39 @@ static int on_tick_2(ce_card_t *c)
             s_ex_gauge += got_pts;
             if (s_ex_gauge > POFV_EX_GAUGE_MAX) s_ex_gauge = POFV_EX_GAUGE_MAX;
             /* ★★★★ 2026-10-10 owner：「**灵力 = 吸收灵力道具涨的 = 蓄力上限**」✓
-             *   ⇒ **同一笔收入**（`got_pts`）也喂本卡的**灵力**账 `s_reiryoku` ✓
-             *     （**不新开计分**：面值 / 收取口 / 音效全沿用上面这几行 ✓；灵力只是一本**只进不出**的账，
+             *   ⇒ **同一个收取口/音效**（上面的 `got_pts` 那几行 ✓）**顺带**喂本卡的**灵力**账
+             *     `s_reiryoku` ✓（**不新开计分**：面值照旧只进 `s_ex_gauge` ✓；灵力只是一本**只进不出**的账，
              *      与 `s_ex_gauge`（会被 EX 花掉、每帧 −1 ✓）分开 —— 原因见 `s_reiryoku` 声明处注释 ✓）。
              *   满值 = `POFV_AURA_TARGET_CHARGE`（本卡既有常量 ✓，不新造数值 ✓）。*/
-            s_reiryoku += (float)got_pts;
-            if (s_reiryoku > POFV_AURA_TARGET_CHARGE) s_reiryoku = POFV_AURA_TARGET_CHARGE;
+            /* ★★★★ 2026-10-10 owner：**照一手 `S+0x24` 的同式**（`05-four-mechanics.md` §1 ✓）——
+             *   一手 = `S+0x24 += 15 × clamp(S+0x98,0,100)/100`（**每颗道具** ✓、cap 2500 ✓）。
+             *   ⇒ 本卡按**颗数** `got_n` 逐颗累加同一式：
+             *     `s_reiryoku += 15 × clamp(s_aura_charge,0,100)/100 × got_n` ✓
+             *     （`got_n` = 本次收取的**颗数** = 一手那个"每颗"的等价物 ✓；
+             *      面值 `got_pts` 照旧只喂 `s_ex_gauge` ✓，不重复计分 ✓）。
+             *   ⚠ 本卡 `s_aura_charge` 是 **0/满 二值**（按下 C 即到 `min(满值, 灵力)` ✗无逐帧累加 ✓）
+             *     ⇒ 系数是 0 或 ≤1 的**阶跃**（一手 `S+0x98` 是按帧涨的连续量 ⇒ 系数连续 🟡）
+             *     —— 该差异已登记 `TUNING.md`。*/
+            /* ★★★★ 2026-10-10 owner 订正（我上一版语义错了 ✗）：
+             *   「**按 C 涨的是蓄力，蓄力最大值 = 灵力，一定是涨的**」✓ ⇒
+             *   **灵力与蓄力无关** ✓、**每捡到一颗都涨** ✓（**不再乘"当前蓄力"** ✗ ——
+             *   一手那个 `× clamp(S+0x98,0,100)/100` 的读法被 owner 否掉了 ✓）。*/
+            /* ★ 一手真公式（`FUN_00520d40` case 9..0xe ✓）：
+             *   `S+0x24 += (clamp(S+0x98, 0, 100) × 15) / 100` ✓。
+             *   ⚠ `S+0x98` **不是** `AuraCtrlInf+0x98`（蓄力）✗，而是**玩家记录 `S` 上一个 0..100 的
+             *     int「增益基数」**（与上限量 `S+0x24` **同结构** ✓）⇒ 平时 ≥1 ⇒ **绝不可能是 +0** ✓
+             *     （owner：「绝对不可能是不蓄力时捡到的道具 +0」✓）。
+             *   ⇒ 本卡与蓄力**完全无关**、每颗都涨 ✓；基数暂取 clamp 上限 100 ⇒ **每颗 +15** ✓。*/
+            s_reiryoku += 15.0f * (float)got_n;
+            if (s_reiryoku > POFV_REI_MAX) s_reiryoku = POFV_REI_MAX;   /* ★ 一手夹到 2500 ✓ */
             /* ★ 一手：**升档**另有音（TH16 季节道具升档播 `0x3f`）—— 本卡的对照事件 = **EX 就绪**
              *   （`s_ex_gauge` 首次到 `POFV_EX_FIRE_AT`）；❓ 这只是「本卡哪个事件算升档」的适配，
              *   音本身与触发方式都是一手（登记 `TUNING.md`）。*/
             if (gauge0 < POFV_EX_FIRE_AT && s_ex_gauge >= POFV_EX_FIRE_AT)
                 ce_play_sound(POFV_POWER_SE_LEVEL, ce_player_x());
             s_power_got += got_n;
-            ce_log("pofv: power +%d (%d items, gauge %d/%d)", (int)got_pts, got_n,
-                   (int)s_ex_gauge, POFV_EX_GAUGE_MAX);
+            ce_log("pofv: power +%d (%d items, gauge %d/%d, 灵力 %.0f/%.0f)", (int)got_pts, got_n,
+                   (int)s_ex_gauge, POFV_EX_GAUGE_MAX, (double)s_reiryoku, (double)POFV_AURA_TARGET_CHARGE);
         }
         /* ★★ 每帧同步可视 VM（**照 116 `points_tick()`**）：建（延时结束）/ 跟随 / 删
          *   （收取 / 出界 / 寿命到期的槽在 tick 里被清 `active`）⇒ 必须在 `pofv_power_tick()`
