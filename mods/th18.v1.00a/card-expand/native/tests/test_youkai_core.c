@@ -1476,6 +1476,14 @@ int main(void)
         CHECK(yk_spell_name_is_time(other, 8) == 0);
         CHECK(yk_spell_name_is_time(0, 8) == 0);
         CHECK(yk_spell_name_is_time(u16_t, 3) == 0);      /* 太短 ⇒ 不判 */
+        /* ★★★ 2026-10-01（owner：「一面到关底之前一点使魔不该有」）：**发射点离本体 ≥ 32 px 才算使魔**。*/
+        CHECK(YK_EMIT_SHELL_MIN_DIST == 32.0f);
+        CHECK(yk_emit_far_enough(0.0f, 0.0f, YK_EMIT_SHELL_MIN_DIST) == 0);      /* 本体口 ⇒ 不建壳 */
+        CHECK(yk_emit_far_enough(10.0f, 0.0f, YK_EMIT_SHELL_MIN_DIST) == 0);
+        CHECK(yk_emit_far_enough(31.9f, 0.0f, YK_EMIT_SHELL_MIN_DIST) == 0);
+        CHECK(yk_emit_far_enough(32.0f, 0.0f, YK_EMIT_SHELL_MIN_DIST) == 1);     /* 阈值本身算够远 */
+        CHECK(yk_emit_far_enough(24.0f, 24.0f, YK_EMIT_SHELL_MIN_DIST) == 1);    /* 斜向（33.9 px）*/
+        CHECK(yk_emit_far_enough(-40.0f, 0.0f, YK_EMIT_SHELL_MIN_DIST) == 1);    /* 方向无关 */
         /* ★★★ 2026-10-01（owner 真判据）：「**超时不算 bonus failed**」= `zSpellcard+0x78` **bit3**
          *   （耐久符卡；一手 `0x42efb0`–`0x42f039`：bit3 ⇒ 不置 bit7、不清 `+0x7c`）⇒ 优先于名字。*/
         CHECK(yk_spell_xfer_block(0, 0, 0) == YK_XFER_BLOCK_NONE);

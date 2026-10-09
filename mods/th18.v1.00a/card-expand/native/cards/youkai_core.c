@@ -928,6 +928,14 @@ int yk_emit_gap_is_new_wave(int eton_gap, int gap_ref)
 
 /* ★★★★ 2026-10-01（owner 硬约束 ②）：符卡名是不是「时符」（详注见头文件）。纯字节比较、无浮点。*/
 /* ★★★★ 2026-10-01（owner 真判据）：`bit3`（耐久符卡 / 超时不算 bonus failed）优先，名字兜底。*/
+/* ★★★★ 2026-10-01（owner：「一面到关底之前一点使魔不该有」）：发射点离本体够远才算「独立使魔」。
+ *   纯函数、无浮点返回；用平方比较 ⇒ 不调 sqrt。*/
+int yk_emit_far_enough(float dx, float dy, float min_dist)
+{
+    float d2 = dx * dx + dy * dy;
+    return (d2 >= min_dist * min_dist) ? 1 : 0;
+}
+
 int yk_spell_xfer_block(int spell_flags, int name_is_time, int boss_no_damage)
 {
     int r = YK_XFER_BLOCK_NONE;

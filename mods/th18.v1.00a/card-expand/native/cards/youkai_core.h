@@ -1358,6 +1358,15 @@ int  yk_spell_name_is_time(const uint8_t *name, int maxlen);
 #define YK_XFER_BLOCK_NAME   2     /* 名字以 時符/时符 开头（兜底）*/
 #define YK_XFER_BLOCK_INVULN 4     /* 母机 `enemy+0x635c` bit24（无敌/免伤）*/
 int  yk_spell_xfer_block(int spell_flags, int name_is_time, int boss_no_damage);
+/* ★★★★ 2026-10-01（owner 硬口径）：「**从一开始就出现了奇怪的使魔 … 至少一面到关底之前是一点使魔不该有的**」
+ *   ⇒ 建壳判据错了：**小怪本体口**（发射点就在身上）也被我们当成 TH08 式使魔。
+ *   真口径（TH08 侧）：**只有 `familiarCreate*` 建出来的独立实体才算使魔** ⇒ 我们的代理判据 =
+ *   **发射点（定格 `offset_final`）离敌机本体足够远**（本体口 ⇒ 距离 ≈ 0）。
+ *   `YK_EMIT_SHELL_MIN_DIST = 32.0f`（❓ 自定，理由：TH08 使魔作为独立实体在 boss 周围可见地悬停，
+ *   典型半径 ≥ 数十 px；而本体炮口的视觉偏移只 ≤ ~16 px ⇒ 32 px 是两者之间的下限；实跑会打出
+ *   每条 `etOn` 的实测距离，下一轮按数据校准）。**只读**（硬约束不变：不写发弹参数/位置）。*/
+#define YK_EMIT_SHELL_MIN_DIST 32.0f
+int  yk_emit_far_enough(float dx, float dy, float min_dist);
 /* ★★★ 2026-10-01（#209 · **主功能**：打死使魔 ⇒ 关闭该发射口）：**「这一条 `etOn` 算不算新一波」**（纯函数）。
  *   判据 = 间隔 ≥ `YK_EMIT_WAVE_GAP`(24) **且** 间隔 ≥ `4 × gap_ref`（该槽自己的波内间隔最小值；
  *   `gap_ref <= 0` = 还没观测到 ⇒ 只用绝对阈值）。⇒ **缓发敌人（波内间隔就有 30/60 帧）不会被误放行**，

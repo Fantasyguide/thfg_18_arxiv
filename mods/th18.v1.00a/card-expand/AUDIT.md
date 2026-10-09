@@ -30101,3 +30101,44 @@ hud: coord-space ui_scale=%.3f (2.000 = 1280x960 设计空间 ✓) surface=%dx%d
 
 **验证**：`make check` **rc=0**（`test_sdk_core` 1430 / `dllx87` 0 / `check-docs` 449 全绿）；
 scratch 八张真实尺寸 + 卡面在场 ⇒ **68..824、无重叠、110 落在卡面上方（782..842 vs 卡面 864..924）** ✓。
+
+## §BE 详录 #215（2026-10-01）：**建壳判据重定 = 发射点离本体 ≥ 32 px**（owner：「一面到关底之前一点使魔不该有」）
+
+**日志证据（`d70f0417…` 那一版）**：24 行 `CREATE shell #n` **全部 `stage=1`**、`slot 0`、
+`fired_age=1`、`life=100`，`enemy_id` 3..28（一面小怪），位置就是小怪出场点 ⇒
+**小怪的本体口被当成了 TH08 式使魔**。台账 `create 36→40 / phantom 30→33`。
+（⚠ 那些行里的 `type/color/count` 是**误读我们自己那只惰性壳**得来的恒 0 —— 本批已改为读**源敌机**。）
+
+**为什么以前的判据是错的**：我们只判「槽活跃（`props.type != 0`）」+「本波开过火」；
+而 TH08 的使魔是 **`familiarCreate*` 建出来的独立实体**，本体炮口**不是**使魔 ⇒ 判据必须能把
+「本体口」与「独立使魔」分开。
+
+**新判据（代理）**：发射点的**定格 `offset_final` 世界坐标**与敌机本体坐标的距离 ≥
+`YK_EMIT_SHELL_MIN_DIST = 32.0f` 才建壳（`yk_emit_far_enough()`，core 纯函数，平方比较不调 sqrt）。
+**只读**：不写发弹参数/位置（owner 硬约束不变）。
+
+**32 px 的依据**：❓ 自定下限 —— TH08 使魔在 boss 周围可见地悬停（典型半径 ≥ 数十 px），
+本体炮口视觉偏移 ≤ ~16 px ⇒ 取 32 px；实跑会打出每条被拒槽的实测距离，下一轮按数据校准。
+
+**判据（回归样本）**：① **一面到关底之前 = 0 壳**（`bodyport=N` 涨、`create` 不涨）；
+② 已知有使魔的场景**仍有壳**：4 面大妖精 / 4 面道中 boss / 5–6 面道中 boss 非符 / 米斯蒂亚。
+
+**TH08 侧反查（供校准）**：`local/_scratch/th08f/ecldata1*.txt` 里 `familiarCreate` 各 33/21 次、
+4 面 4a/4b 各 36/96 次 ⇒ **TH08 一面确实有 `familiarCreate`**（多半在关底/特定 subs 里）
+⇒ 「一面 0 壳」这条**来自 owner 的产品口径**（关底之前不许有），不是「TH08 一面没有使魔」；
+下一轮会把 `familiarCreate` 的**所在 sub**（`Sub0_252`/`Sub9_12`/`Sub16_3144`… 共 11 个 sub）
+与我们的实际建壳点对照，找出更精确的对应关系。
+
+### #214 追加（2026-10-01 晚）：无体术**未生效**排查（owner「似乎也还有体术」）
+
+**已加运行期验证**（`yk_pin_familiar()`，前 8 只壳）：
+· `youkai: body_flags fam_id=… WRITE before=0x… after=0x… (bit1 set=…, gate_mask&0x22=0x…)`；
+· `youkai: body_flags fam_id=… NEXT-FRAME before=0x… (bit1 still set=…; previous after=0x…) => engine did NOT clobber bit1 / ENGINE CLOBBERED bit1 (write too late/too early)`。
+
+**时机分析（静态）**：我们的 pin 在卡 tick（`on_tick_2`，优先级 `0x16`），敌人逐帧逻辑 `0x42ed40`
+由敌人在 `0x1b` 跑 ⇒ 我们在它之前，本帧闸应读到新值。若日志出现 `ENGINE CLOBBERED` ⇒ 该假设错。
+
+**若 bit1 不是那条闸（备选，均只对壳）**：(a) 在 `0x42ed40` 接触段**只对我们壳**跳过（`0x45f0f0` 家族重叠调用）；
+(b) 自机侧碰撞入口跳过 ⇒ **属共享件，先报**；(c) 清零 `enemy+0x110 hurtbox_size` ⇒ 会连带打不到，**不用**，仅记录。
+
+**判据（未过）**：自机贴上去撞（含 shift）不掉命/不被击退/火力与无敌时间不变。

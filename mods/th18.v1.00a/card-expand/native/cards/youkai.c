@@ -621,6 +621,13 @@ static int yk_emit_fired_recently(uint32_t enemy_id, int slot)
 }
 
 static uint8_t  g_fam_nobody_state;   /* ★ 无体术位只记一次日志 */
+/* ★ 运行期验证环（owner：「似乎也还有体术」）：写后 / 下一帧各核一次。*/
+#define YK_BODYCHK_N 4
+static uint32_t s_bodychk_fam[YK_BODYCHK_N];
+static uint32_t s_bodychk_after[YK_BODYCHK_N];
+static uint8_t  s_bodychk_done[YK_BODYCHK_N];
+static unsigned s_bodychk_head;
+static unsigned s_bodywrite_logged;
 /* ★ 距该槽最近一次 `etOn` 过了多少帧（诊断用；没记录过 ⇒ 返回 0xffff）。*/
 static unsigned yk_emit_fired_age(uint32_t enemy_id, int slot)
 {
@@ -632,6 +639,27 @@ static unsigned yk_emit_fired_age(uint32_t enemy_id, int slot)
             return (unsigned)(now - L->frame);
     }
     return 0xffffu;
+}
+
+static unsigned s_emit_bodyport;   /* ★ 本体口（距离 < 阈值）⇒ 不建壳的槽数 */
+#define YK_EMIT_BODYPORT_LOG_N 8
+static uint32_t s_bodyport_enemy[YK_EMIT_BODYPORT_LOG_N];
+static int16_t  s_bodyport_slot[YK_EMIT_BODYPORT_LOG_N];
+static unsigned s_bodyport_head;
+
+/* 距离（诊断/日志用；无浮点返回值 ⇒ 返回 float 会过 x87，这里只给「平方」辅助）。*/
+static float yk_emit_dist(float dx, float dy) { return dx * dx + dy * dy; }  /* 平方，日志里说明 */
+
+static int yk_emit_bodyport_seen(uint32_t enemy_id, int slot)
+{
+    unsigned k;
+    for (k = 0; k < YK_EMIT_BODYPORT_LOG_N; ++k)
+        if (s_bodyport_enemy[k] == enemy_id && s_bodyport_slot[k] == (int16_t)slot) return 1;
+    {   unsigned idx = s_bodyport_head % YK_EMIT_BODYPORT_LOG_N;
+        s_bodyport_head = (s_bodyport_head + 1u) % YK_EMIT_BODYPORT_LOG_N;
+        s_bodyport_enemy[idx] = enemy_id; s_bodyport_slot[idx] = (int16_t)slot;
+    }
+    return 0;
 }
 
 static unsigned s_emit_phantom;   /* ★ phantom 修复判据：**配了但从没开火 ⇒ 不建壳** 的槽数（去重后）*/
@@ -884,7 +912,43 @@ static void yk_pin_familiar(uint8_t *f, float x, float y)
          *     · 它**不在**伤害闸 `test 0x21`（bits 0/5）里 ⇒ 使魔**照旧可被打掉**（人侧口径不变）；
          *     · 它**不在**最近敌搜索的跳过掩码 `0xc000021`（bits 0/5/30/31）里 ⇒ 照旧可被锁定/判定；
          *   ⇒ 只关「体术」这一件事，副作用为零。**只对我们的壳**写（本函数只作用于 `yk_spawn_familiar` 建的敌人）。*/
-        *fl |= YK_ENEMY_FLAG_NO_BODY;
+        /* ★★★ 2026-10-01 晚（owner：「似乎也还有体术」）——**运行期验证**（owner 要求先看数据）：
+         *   写入**前后**各读一次，并在**下一帧**再读（判断引擎有没有把它盖回去）；只对前 8 只壳打。*/
+        {
+            uint32_t before = *fl, after;
+            *fl |= YK_ENEMY_FLAG_NO_BODY;
+            after = *fl;
+            if (s_bodywrite_logged < 8u) {
+                ++s_bodywrite_logged;
+                ce_log("youkai: body_flags fam_id=%u WRITE before=0x%08x after=0x%08x "
+                       "(bit1 set=%d, gate_mask&0x22=0x%02x)",
+                       *(const uint32_t *)(f + CE_ENEMY_ID), (unsigned)before, (unsigned)after,
+                       (after & YK_ENEMY_FLAG_NO_BODY) ? 1 : 0,
+                       (unsigned)(after & 0x22u));
+            }
+            /* 上一帧我们写过的值，这一帧还在不在？（不在 = 被引擎盖回 ⇒ 我们的时机不对）*/
+            {
+                unsigned k;
+                uint32_t fid = *(const uint32_t *)(f + CE_ENEMY_ID);
+                for (k = 0; k < YK_BODYCHK_N; ++k) {
+                    if (s_bodychk_fam[k] == fid && s_bodychk_done[k] == 0u) {
+                        s_bodychk_done[k] = 1u;
+                        ce_log("youkai: body_flags fam_id=%u NEXT-FRAME before=0x%08x (bit1 still set=%d; "
+                               "previous after=0x%08x) => %s",
+                               fid, (unsigned)before, (before & YK_ENEMY_FLAG_NO_BODY) ? 1 : 0,
+                               (unsigned)s_bodychk_after[k],
+                               (before & YK_ENEMY_FLAG_NO_BODY) ? "engine did NOT clobber bit1"
+                                                                : "ENGINE CLOBBERED bit1 (write too late/too early)");
+                        break;
+                    }
+                }
+                /* 记下这一帧的值，供下一帧核对 */
+                {   unsigned idx = s_bodychk_head % YK_BODYCHK_N;
+                    s_bodychk_head = (s_bodychk_head + 1u) % YK_BODYCHK_N;
+                    s_bodychk_fam[idx] = fid; s_bodychk_after[idx] = after; s_bodychk_done[idx] = 0u;
+                }
+            }
+        }
         if (g_fam_nobody_state != 1) {
             g_fam_nobody_state = 1;
             ce_log("youkai: familiar BODY ATTACK disabled (owner 2026-10-01: all familiars must have no "
@@ -2410,14 +2474,17 @@ static void yk_run_action(yk_card_t *s, const yk_action_t *act)   /* s 可为 NU
          *   `etOn` 过了多少帧）、`stage`、以及建壳用的坐标 ⇒ 用来判「配了没发出 / 激光槽 / `etCopy` / 别类」。
          *   ⚠ 计数用静态值，跨局累加（只作定位用）。*/
         if (s_shell_logged < 24u) {
+            /* ⚠ 2026-10-01 订正：`type/color/count` 必须读**源敌机**（以前误读了我们自己那只惰性壳 ⇒ 全 0）。*/
+            const uint8_t *srcprops = 0;
+            {   uint8_t *se = ce_enemy_by_id(CE_ENEMY_MGR(), act->enemy_id);
+                if (se) srcprops = se + YK_EMIT_PROPS + (size_t)act->slot * YK_EMIT_PROP_STRIDE;
+            }
             ++s_shell_logged;
             ce_log("youkai/emit: CREATE shell #%u for (enemy_id %u, slot %d) type=%d color=%d "
                    "count_1=%d count_2=%d fired_age=%u stage=%d pos=(%.1f,%.1f) life=%d",
                    s_shell_logged, act->enemy_id, act->slot,
-                   *(const int32_t *)((const uint8_t *)f + YK_EMIT_PROPS + (size_t)act->slot * YK_EMIT_PROP_STRIDE + 0x00),
-                   *(const int32_t *)((const uint8_t *)f + YK_EMIT_PROPS + (size_t)act->slot * YK_EMIT_PROP_STRIDE + 0x04),
-                   *(const int32_t *)((const uint8_t *)f + YK_EMIT_PROPS + (size_t)act->slot * YK_EMIT_PROP_STRIDE + 0x14),
-                   *(const int32_t *)((const uint8_t *)f + YK_EMIT_PROPS + (size_t)act->slot * YK_EMIT_PROP_STRIDE + 0x18),
+                   *(const int32_t *)(srcprops + 0x00), *(const int32_t *)(srcprops + 0x04),
+                   *(const int32_t *)(srcprops + 0x14), *(const int32_t *)(srcprops + 0x18),
                    (unsigned)yk_emit_fired_age(act->enemy_id, act->slot),
                    (int)CE_CURRENT_STAGE(), (double)act->x, (double)act->y, (int)life);
         }
@@ -2626,6 +2693,20 @@ static void yk_familiars_tick(yk_card_t *s)
              *   第一条判据日志给出 `(enemy_id, slot)`、`type`、`color`、`count_1/2`（`props+0x14/+0x18`；
              *   ❓ 偏移来自 `etNew` 默认 `+0x14=0`，见 `engine/enemy/th18/07`），
              *   用来区分「配了没发」/「激光槽」/「`etCopy` 的槽」。同一 `(敌人,槽)` 只打一次。*/
+            /* ★★★★ 2026-10-01（owner 硬口径：「一面到关底之前一点使魔不该有」）：
+             *   **只有「发射点离本体 ≥ `YK_EMIT_SHELL_MIN_DIST`」的槽才算 TH08 式独立使魔**；
+             *   本体口（距离 ≈ 0，小怪身上那种）⇒ **不建壳**。**只读**（硬约束不变）。*/
+            if (active && !yk_emit_far_enough(wxy[0] - epos[0], wxy[1] - epos[1], YK_EMIT_SHELL_MIN_DIST)) {
+                if (!yk_emit_bodyport_seen(id, i)) {
+                    ++s_emit_bodyport;
+                    ce_log("youkai/emit: slot %d of enemy_id %u is a BODY PORT (distance %.1f px < %.0f) "
+                           "=> NO familiar (owner 2026-10-01: nothing before the stage boss; TH08 counts "
+                           "only `familiarCreate*` entities as familiars)",
+                           i, id, (double)yk_emit_dist(wxy[0] - epos[0], wxy[1] - epos[1]),
+                           (double)YK_EMIT_SHELL_MIN_DIST);
+                }
+                ++i; continue;
+            }
             if (active && !yk_emit_fired_recently(id, i) && !yk_emit_phantom_seen(id, i)) {
                 const uint8_t *pr0 = e + YK_EMIT_PROPS + (size_t)i * YK_EMIT_PROP_STRIDE;
                 ++s_emit_phantom;
@@ -7547,11 +7628,11 @@ static int on_tick_2(ce_card_t *c)
             float lz[3];
             int have = yk_emit_latch_get(0u, 0, lz);       /* 只为日志占位；下面打「最近一次定格」*/
             (void)have;
-            ce_log("youkai/emit: move %u create %u withdraw %u hp_reset %u latched=%u dist0=%u phantom=%u "
+            ce_log("youkai/emit: move %u create %u withdraw %u hp_reset %u latched=%u dist0=%u phantom=%u bodyport=%u "
                    "(position-only pinning: offset changes never rebuild the shell nor reset its HP; "
                    "shell targets the FROZEN offset_final from the etOn site; AUDIT §BE #208/#210)",
                    s_emit_move, s->spawns, s->lost + s->silent, s_emit_hp_reset, s_emit_latch_logged,
-                   s_emit_dist0, s_emit_phantom);
+                   s_emit_dist0, s_emit_phantom, s_emit_bodyport);
         }
     }
     focused = yk_focused();                               /* ★ owner ④：本卡眼中的侧（锁期间钉住）*/
