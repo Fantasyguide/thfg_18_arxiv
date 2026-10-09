@@ -577,7 +577,7 @@ static void yk_slot_offsets(uint8_t *e, int i, float off3[3], float org3[3])
  *   修法（**0 新站点**）：在**已在用**的站点 `th18:0x433ffa`（`yk_on_shot_slot`）里，把 `etOn` 刚写好的
  *   `props[i]+0x08/+0x0c/+0x10`（**offset_final**）抄一份到卡侧**每槽小缓存**；壳的目标位置优先用它。
  *   缓存按 `(enemy_id, slot)` 存（`s_emit_latch[]`，8 组环形；同一个 `(enemy,槽)` 只保留最新一份）。*/
-typedef struct { uint32_t enemy_id; int16_t slot; uint8_t used; float x, y, z; } yk_emit_latch_t;
+typedef struct { uint32_t enemy_id; int16_t slot; uint8_t used; uint32_t frame; float x, y, z; } yk_emit_latch_t;
 #define YK_EMIT_LATCH_N 8
 static yk_emit_latch_t s_emit_latch[YK_EMIT_LATCH_N];
 static unsigned s_emit_latch_head;
@@ -591,14 +591,52 @@ static void yk_emit_latch_put(uint32_t enemy_id, int slot, float x, float y, flo
         yk_emit_latch_t *L = &s_emit_latch[k];
         if (L->used && L->enemy_id == enemy_id && L->slot == (int16_t)slot) {
             L->x = x; L->y = y; L->z = z;             /* 同一槽 ⇒ 覆盖成最新 */
+            L->frame = ce_sdk_frame();                /* ★ phantom 修复：记帧号 = 「本波开过火」的时间戳 */
             return;
         }
     }
     {   yk_emit_latch_t *L = &s_emit_latch[s_emit_latch_head];
         s_emit_latch_head = (s_emit_latch_head + 1u) % YK_EMIT_LATCH_N;
         L->enemy_id = enemy_id; L->slot = (int16_t)slot; L->used = 1;
-        L->x = x; L->y = y; L->z = z;
+        L->x = x; L->y = y; L->z = z; L->frame = ce_sdk_frame();
     }
+}
+
+/* ★★★★ 2026-10-01（owner 实跑：一面道中 boss 出现「不是发弹点的使魔」）：
+ *   **该槽最近有没有真的 `etOn` 过**（判据 = 站点 `0x433ffa` 写入的 latch 时间戳）。
+ *   `window` 帧内算「开过火」——卡 tick（优先级 `0x16`）跑在敌人 ECL（`0x1b`）**之前**，
+ *   所以首帧开火要下一帧我们才看得见 ⇒ 取一个小窗口（`YK_EMIT_FIRED_WINDOW`）。*/
+#define YK_EMIT_FIRED_WINDOW 3
+static int yk_emit_fired_recently(uint32_t enemy_id, int slot)
+{
+    unsigned k;
+    uint32_t now = ce_sdk_frame();
+    for (k = 0; k < YK_EMIT_LATCH_N; ++k) {
+        const yk_emit_latch_t *L = &s_emit_latch[k];
+        if (L->used && L->enemy_id == enemy_id && L->slot == (int16_t)slot &&
+            (uint32_t)(now - L->frame) <= (uint32_t)YK_EMIT_FIRED_WINDOW)
+            return 1;
+    }
+    return 0;
+}
+
+static unsigned s_emit_phantom;   /* ★ phantom 修复判据：**配了但从没开火 ⇒ 不建壳** 的槽数（去重后）*/
+#define YK_EMIT_PHANTOM_LOG_N 8
+static uint32_t s_phantom_enemy[YK_EMIT_PHANTOM_LOG_N];
+static int16_t  s_phantom_slot[YK_EMIT_PHANTOM_LOG_N];
+static unsigned s_phantom_head;
+
+/* 同一个 `(敌人, 槽)` 的 phantom 诊断只打一次。*/
+static int yk_emit_phantom_seen(uint32_t enemy_id, int slot)
+{
+    unsigned k;
+    for (k = 0; k < YK_EMIT_PHANTOM_LOG_N; ++k)
+        if (s_phantom_enemy[k] == enemy_id && s_phantom_slot[k] == (int16_t)slot) return 1;
+    {   unsigned idx = s_phantom_head % YK_EMIT_PHANTOM_LOG_N;
+        s_phantom_head = (s_phantom_head + 1u) % YK_EMIT_PHANTOM_LOG_N;
+        s_phantom_enemy[idx] = enemy_id; s_phantom_slot[idx] = (int16_t)slot;
+    }
+    return 0;
 }
 
 /* 取该 `(敌人, 槽)` 的定格 offset；返回 0 = 还没发过弹（调用方回落到活偏移）。*/
@@ -2505,6 +2543,10 @@ static void yk_familiars_tick(yk_card_t *s)
                     off3[0] = lo[0]; off3[1] = lo[1]; off3[2] = lo[2];
                 }
             }
+            /* ★ phantom 修复：把「站点上最近真开过火」翻成表里的 `fired` 位（`yk_note_slot` 用它决定建壳）。
+             *   `type != 0` 只说明**被配置过**；配了却整波不发弹的槽（`count=0` / 被 `etDelay` 压制 /
+             *   只在某分支 `etOn`）⇒ **不建壳**（owner 报的「不是发弹点的使魔」）。*/
+            if (active) yk_map_set_fired(&s_map, id, i, yk_emit_fired_recently(id, i));
             yk_emit_world_pos(epos, off3, org3, wxy);
             /* ★★★ 2026-09-26（owner #37，两次实跑同一条：「**发射口与敌人重合不应该建立使魔**」/
              *   「依旧能看见敌人的身上有魔法阵」）：**体上炮口直接跳过整格**。
@@ -2530,6 +2572,20 @@ static void yk_familiars_tick(yk_card_t *s)
                            "turns body emitters into familiars either", i, (unsigned)id);
                 }
                 continue;
+            }
+            /* ★★★ 2026-10-01（owner 实跑：一面道中 boss 出现「不是发弹点的使魔」）——**诊断**：
+             *   配了但本波**从没 `etOn`** 的槽 ⇒ 不建壳（`yk_note_slot` 的 `fired` 门）。
+             *   第一条判据日志给出 `(enemy_id, slot)`、`type`、`color`、`count_1/2`（`props+0x14/+0x18`；
+             *   ❓ 偏移来自 `etNew` 默认 `+0x14=0`，见 `engine/enemy/th18/07`），
+             *   用来区分「配了没发」/「激光槽」/「`etCopy` 的槽」。同一 `(敌人,槽)` 只打一次。*/
+            if (active && !yk_emit_fired_recently(id, i) && !yk_emit_phantom_seen(id, i)) {
+                const uint8_t *pr0 = e + YK_EMIT_PROPS + (size_t)i * YK_EMIT_PROP_STRIDE;
+                ++s_emit_phantom;
+                ce_log("youkai/emit: slot %d of enemy_id %u is CONFIGURED but has NOT fired (type=%d "
+                       "color=%d count_1=%d count_2=%d) => NO familiar (this is owner's "
+                       "'not-a-fire-point' ghost; shell is created only after a real etOn)",
+                       i, id, *(const int32_t *)(pr0 + 0x00), *(const int32_t *)(pr0 + 0x04),
+                       *(const int32_t *)(pr0 + 0x14), *(const int32_t *)(pr0 + 0x18));
             }
             if (yk_note_slot(&s_map, id, i, active, wxy, &act)) yk_run_action(s, &act);
             yk_emitkey_note(id, i, active, act.fam_id, s_ledger_frame);   /* ★ 诊断：序号稳不稳 */
@@ -7422,11 +7478,11 @@ static int on_tick_2(ce_card_t *c)
             float lz[3];
             int have = yk_emit_latch_get(0u, 0, lz);       /* 只为日志占位；下面打「最近一次定格」*/
             (void)have;
-            ce_log("youkai/emit: move %u create %u withdraw %u hp_reset %u latched=%u dist0=%u "
+            ce_log("youkai/emit: move %u create %u withdraw %u hp_reset %u latched=%u dist0=%u phantom=%u "
                    "(position-only pinning: offset changes never rebuild the shell nor reset its HP; "
                    "shell targets the FROZEN offset_final from the etOn site; AUDIT §BE #208/#210)",
                    s_emit_move, s->spawns, s->lost + s->silent, s_emit_hp_reset, s_emit_latch_logged,
-                   s_emit_dist0);
+                   s_emit_dist0, s_emit_phantom);
         }
     }
     focused = yk_focused();                               /* ★ owner ④：本卡眼中的侧（锁期间钉住）*/

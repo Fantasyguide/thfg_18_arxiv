@@ -569,8 +569,12 @@ int yk_note_slot(yk_map_t *m, uint32_t enemy_id, int slot, int active, const flo
     /* 发射口被 ECL 重新武装（`etNew(i)` 清零 → `etSprite(i)` 写 type，spec §6.3）⇒ 「打破」复位。
      * 「下一波要重开」这条就是这么自动成立的（review §6.3 末）。
      * ★ 2026-10-01（P1）：这是**主复位口 ①**。 */
+    if (!active) e->fired = 0;                        /* 槽不再被配置 ⇒ 「本波开过火」作废 */
     if (active && !was_active) {
         e->broken = 0; e->fam_seen = 0; e->no_fam_frames = 0;
+        /* ⚠ 这里**不**清 `fired`：重新武装（type 0→1）与首次 `etOn` 常在同一帧序列里，
+         *   清掉会把站点刚打上的「开过火」抹掉（实测会让首只壳永远建不出来）。
+         *   清 `fired` 只在两处：① 槽变不活跃（`!active`，见函数上段）② 波次边沿（`yk_fam_wave_clear`）。*/
         e->eton_gap = 0;                                  /* ★ owner ②：重开 = 新的 etOn 间隔起算 */
         e->gap_ref = 0;
         {   unsigned idx = (unsigned)(e - m->e);
@@ -619,7 +623,8 @@ int yk_note_slot(yk_map_t *m, uint32_t enemy_id, int slot, int active, const flo
         return 1;
     }
     /* 活跃、没有使魔、也没被打死过 ⇒ 建。*/
-    if (active && yk_shell_needs_rebuild(e->fam_id ? 1 : 0, e->broken ? 1 : 0)) {
+    /* ★ phantom 修复：**只有真的开过火的槽才建壳**（`type != 0` 只说明「被配置过」）。*/
+    if (active && e->fired && yk_shell_needs_rebuild(e->fam_id ? 1 : 0, e->broken ? 1 : 0)) {
         yk_fill_action(act, YK_ACT_CREATE, e);
         return 1;
     }
@@ -826,6 +831,7 @@ int yk_fam_wave_clear(yk_map_t *m, uint32_t fam_id)
     if (!e) return 0;
     e->fam_id = 0;
     e->fam_seen = 0;                 /* 闸放行 */
+    e->fired = 0;                    /* 波次边沿（enmKillAll）= 新一波 ⇒ 重新等 `etOn` */
     e->broken = 0;                   /* 允许重建 */
     e->no_fam_frames = 0;
     e->eton_gap = 0;
@@ -952,6 +958,19 @@ int yk_spell_name_is_time(const uint8_t *name, int maxlen)
     for (i = 0; i < 6; ++i) if (name[i] != P_UTF8_S[i]) break;
     if (i == 6) return 1;
     return 0;
+}
+
+/* ★ 2026-10-01（phantom 修复）：卡侧把「站点上见过 `etOn`」翻成这一格。*/
+void yk_map_set_fired(yk_map_t *m, uint32_t enemy_id, int slot, int fired)
+{
+    yk_slot_t *e;
+    if (!m) return;
+    e = yk_map_find(m, enemy_id, slot);
+    if (!e && fired) {                                       /* 首帧就开火：条目还没建 ⇒ 现建一个 */
+        e = yk_map_alloc(m, enemy_id, slot);
+        if (e) e->active = 1;                                /* 它刚 `etOn` 过 ⇒ 必然是被配置的活跃槽 */
+    }
+    if (e) e->fired = (uint8_t)(fired ? 1 : 0);
 }
 
 int yk_shell_needs_rebuild(int have_shell, int broken)

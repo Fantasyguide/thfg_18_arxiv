@@ -900,6 +900,7 @@ int main(void)
     CHECK(yk_note_slot(&m, 200, 0, 1, p1, &a) == 0);
     CHECK(yk_note_slot(&m, 200, 1, 1, p1, &a) == 0);
     CHECK(yk_note_slot(&m, 200, 3, 1, p1, &a) == 0);
+    yk_map_set_fired(&m, 200, 2, 1);   /* ★ phantom 修复：只有开过火的槽才建壳 */
     CHECK(yk_note_slot(&m, 200, 2, 1, p1, &a) == 1 && a.kind == YK_ACT_CREATE);
     yk_fam_created(&m, 200, 2, 8009);
     CHECK(yk_map_fam_count(&m) == 5);
@@ -923,6 +924,7 @@ int main(void)
     CHECK(yk_note_slot(&m, 200, 2, 1, p1, &a) == 0);
     CHECK(yk_note_slot(&m, 200, 3, 1, p1, &a) == 0);
     CHECK(yk_note_slot(&m, 200, 1, 0, p1, &a) == 0); /* 不活跃、没有使魔 ⇒ 无动作 */
+    yk_map_set_fired(&m, 200, 1, 1);   /* ★ phantom 修复：只有开过火的槽才建壳 */
     CHECK(yk_note_slot(&m, 200, 1, 1, p1, &a) == 1 && a.kind == YK_ACT_CREATE);  /* inactive→active = 下一波 */
     yk_fam_created(&m, 200, 1, 8010);
     CHECK(yk_map_fam_count(&m) == 4);
@@ -939,6 +941,7 @@ int main(void)
     CHECK(yk_note_slot(&m, 200, 0, 1, p1, &a) == 0);
     CHECK(yk_note_slot(&m, 200, 1, 1, p1, &a) == 0); /* 槽 1 仍「被打破」：还是那只 8010 刚被打死 */
     CHECK(yk_note_slot(&m, 200, 2, 1, p1, &a) == 0);
+    yk_map_set_fired(&m, 200, 3, 1);   /* ★ phantom 修复：只有开过火的槽才建壳 */
     CHECK(yk_note_slot(&m, 200, 3, 1, p1, &a) == 1 && a.kind == YK_ACT_CREATE);
     yk_fam_created(&m, 200, 3, 8011);
     CHECK(yk_map_fam_count(&m) == 3);
@@ -999,8 +1002,10 @@ int main(void)
 
     /* ★ 缓冲区不够时**不许丢条目**（原来无条件 yk_map_reset ⇒ 剩下的敌人变孤儿）：
      *   表里放 2 个条目、只给 1 格缓冲 ⇒ 撤 1 个、**表里还剩 1 个**（下一帧接着撤）。*/
+    yk_map_set_fired(&m, 400, 0, 1);   /* ★ phantom 修复：只有开过火的槽才建壳 */
     CHECK(yk_note_slot(&m, 400, 0, 1, p1, &a) == 1 && a.kind == YK_ACT_CREATE);
     yk_fam_created(&m, 400, 0, 9100);
+    yk_map_set_fired(&m, 401, 0, 1);   /* ★ phantom 修复：只有开过火的槽才建壳 */
     CHECK(yk_note_slot(&m, 401, 0, 1, p1, &a) == 1 && a.kind == YK_ACT_CREATE);
     yk_fam_created(&m, 401, 0, 9101);
     CHECK(yk_map_fam_count(&m) == 2);
@@ -1114,6 +1119,7 @@ int main(void)
     CHECK(yk_shot_slot_suppressed(0, 500, 0, 0) == 0);
     /* ③ 活跃、条目已建、但使魔还没建出来（broken == 0）⇒ 放行（建被排到下一个 on_tick_2）*/
     yk_frame_begin(&m);
+    yk_map_set_fired(&m, 500, 0, 1);   /* ★ phantom 修复：只有开过火的槽才建壳 */
     CHECK(yk_note_slot(&m, 500, 0, 1, p1, &a) == 1 && a.kind == YK_ACT_CREATE);
     CHECK(yk_shot_slot_suppressed(&m, 500, 0, 0) == 0);          /* ★ 关键：不能掐，否则永远建不出来 */
     /* 建好了、活着 ⇒ 放行 */
@@ -1132,6 +1138,7 @@ int main(void)
     /* ECL 重新武装（inactive → active 边沿）复位 broken ⇒ 闸放开 */
     yk_frame_begin(&m);
     CHECK(yk_note_slot(&m, 500, 0, 0, p1, &a) == 0);             /* 变不活跃：已打破 ⇒ 不撤也不建 */
+    yk_map_set_fired(&m, 500, 0, 1);   /* ★ phantom 修复：只有开过火的槽才建壳 */
     CHECK(yk_note_slot(&m, 500, 0, 1, p1, &a) == 1 && a.kind == YK_ACT_CREATE);
     CHECK(yk_shot_slot_suppressed(&m, 500, 0, 0) == 0);          /* ★ 边沿复位 ⇒ 放行，准备重建 */
     yk_fam_created(&m, 500, 0, 9002);
@@ -1142,6 +1149,7 @@ int main(void)
     yk_fam_gone(&m, 9002);
     CHECK(yk_shot_slot_suppressed(&m, 500, 0, 0) == 1);
     yk_frame_begin(&m);
+    yk_map_set_fired(&m, 500, 0, 1);   /* ★ phantom 修复：只有开过火的槽才建壳 */
     CHECK(yk_note_slot(&m, 500, 0, 1, p1, &a) == 1 && a.kind == YK_ACT_CREATE); /* 1:1 补建 */
     yk_fam_created(&m, 500, 0, 9003);
     CHECK(yk_shot_slot_suppressed(&m, 500, 0, 9003) == 0);       /* ★ 补建回来 ⇒ 闸放开 */
@@ -1160,6 +1168,7 @@ int main(void)
     CHECK(YK_EMIT_REBUILD_TTL > 0);
     yk_map_reset(&m);
     yk_frame_begin(&m);
+    yk_map_set_fired(&m, 700, 2, 1);   /* ★ phantom 修复：只有开过火的槽才建壳 */
     CHECK(yk_note_slot(&m, 700, 2, 1, p1, &a) == 1 && a.kind == YK_ACT_CREATE);
     yk_fam_created(&m, 700, 2, 7001);
     CHECK(yk_fam_broken(&m, 7001) == 1);                         /* 使魔被打死 */
@@ -1176,6 +1185,7 @@ int main(void)
         CHECK(yk_map_heals(&m) == base);                         /* 还没到期 ⇒ 没自愈 */
         /* 第 TTL 帧：到期 ⇒ 闸放开 + 本帧就重建（CREATE 动作）*/
         yk_frame_begin(&m);
+        yk_map_set_fired(&m, 700, 2, 1);   /* ★ phantom 修复：只有开过火的槽才建壳 */
         CHECK(yk_note_slot(&m, 700, 2, 1, p1, &a) == 1 && a.kind == YK_ACT_CREATE);
         CHECK(yk_shot_slot_suppressed(&m, 700, 2, 0) == 0);      /* ★ 闸放开（关键断言）*/
         CHECK(yk_map_heals(&m) == base + 1);                     /* ★ 记了一次账 */
@@ -1191,6 +1201,7 @@ int main(void)
     /* 到期之前 ECL 若重新武装过 ⇒ 立刻复位、**不计**自愈账（走的是边沿那条路）*/
     yk_map_reset(&m);
     yk_frame_begin(&m);
+    yk_map_set_fired(&m, 701, 0, 1);   /* ★ phantom 修复：只有开过火的槽才建壳 */
     CHECK(yk_note_slot(&m, 701, 0, 1, p1, &a) == 1 && a.kind == YK_ACT_CREATE);
     yk_fam_created(&m, 701, 0, 7101);
     CHECK(yk_fam_broken(&m, 7101) == 1);
@@ -1198,6 +1209,7 @@ int main(void)
         unsigned base = yk_map_heals(&m);
         yk_frame_begin(&m);
         CHECK(yk_note_slot(&m, 701, 0, 0, p1, &a) == 0);         /* etNew：清零 type */
+        yk_map_set_fired(&m, 701, 0, 1);   /* ★ phantom 修复：只有开过火的槽才建壳 */
         CHECK(yk_note_slot(&m, 701, 0, 1, p1, &a) == 1 && a.kind == YK_ACT_CREATE); /* etSprite：写回 */
         CHECK(yk_shot_slot_suppressed(&m, 701, 0, 0) == 0);
         CHECK(yk_map_heals(&m) == base);                         /* 边沿复位**不**记账 */
@@ -1216,6 +1228,7 @@ int main(void)
     CHECK(YK_EMIT_REBUILD_TTL == 600u);               /* ★ owner 2026-10-01：≈10 s 的自动重建 */
     yk_map_reset(&m);
     yk_frame_begin(&m);
+    yk_map_set_fired(&m, 800, 0, 1);   /* ★ phantom 修复：只有开过火的槽才建壳 */
     CHECK(yk_note_slot(&m, 800, 0, 1, p1, &a) == 1 && a.kind == YK_ACT_CREATE);
     yk_fam_created(&m, 800, 0, 8001);
     CHECK(yk_shot_slot_gate(&m, 800, 0, 8001) == 0);            /* 使魔活着 ⇒ 放行，不记账 */
@@ -1253,6 +1266,7 @@ int main(void)
         CHECK(yk_note_slot(&m, 800, 0, 1, p1, &a) == 0);        /* 仍夹着 ⇒ 不建 */
         yk_map_reset(&m);
         yk_frame_begin(&m);
+        yk_map_set_fired(&m, 800, 0, 1);   /* ★ phantom 修复：只有开过火的槽才建壳 */
         CHECK(yk_note_slot(&m, 800, 0, 1, p1, &a) == 1 && a.kind == YK_ACT_CREATE);
         yk_fam_created(&m, 800, 0, 8002);
         CHECK(yk_fam_wave_clear(&m, 8002u) == 1);               /* ★ 波次边沿：放行 */
@@ -1260,6 +1274,7 @@ int main(void)
         CHECK(yk_shot_slot_suppressed(&m, 800, 0, 0) == 0);     /* ★ 闸已放开（关键断言）*/
         CHECK(yk_frame_end(&m, s_acts, (int)YK_FAM_MAX) == 0);
         yk_frame_begin(&m);
+        yk_map_set_fired(&m, 800, 0, 1);   /* ★ phantom 修复：只有开过火的槽才建壳 */
         CHECK(yk_note_slot(&m, 800, 0, 1, p1, &a) == 1 && a.kind == YK_ACT_CREATE);  /* 1:1 映射重建 */
         CHECK(yk_map_heals(&m) == hbase);                       /* ★ 没走长期 TTL 兜底 */
         yk_fam_created(&m, 800, 0, 8003);
@@ -1270,6 +1285,7 @@ int main(void)
         CHECK(yk_fam_wave_clear(&m, 8003u) == 1);               /* 清场直接命中（fam_id 还在）*/
         CHECK(yk_map_releases(&m) == lbase + 2);
         yk_frame_begin(&m);
+        yk_map_set_fired(&m, 800, 0, 1);   /* ★ phantom 修复：只有开过火的槽才建壳 */
         CHECK(yk_note_slot(&m, 800, 0, 1, p1, &a) == 1 && a.kind == YK_ACT_CREATE);
         yk_fam_created(&m, 800, 0, 8004);
     }
@@ -1280,6 +1296,7 @@ int main(void)
     unsigned rbase = yk_map_rearms(&m);
     yk_map_reset(&m);
     yk_frame_begin(&m);
+    yk_map_set_fired(&m, 801, 0, 1);   /* ★ phantom 修复：只有开过火的槽才建壳 */
     CHECK(yk_note_slot(&m, 801, 0, 1, p1, &a) == 1 && a.kind == YK_ACT_CREATE);
     CHECK(yk_shot_slot_gate(&m, 801, 0, 0) == 0);               /* 还没建完：放行（第一道保险） */
     CHECK(yk_shot_slot_gate(&m, 801, 1, 0) == 0);               /* 别的槽 / 从没管过 */
@@ -1292,6 +1309,7 @@ int main(void)
     CHECK(yk_shot_slot_gate(&m, 801, 0, 0) == 1);
     yk_map_reset(&m);
     yk_frame_begin(&m);
+    yk_map_set_fired(&m, 801, 0, 1);   /* ★ phantom 修复：只有开过火的槽才建壳 */
     CHECK(yk_note_slot(&m, 801, 0, 1, p1, &a) == 1 && a.kind == YK_ACT_CREATE);  /* 新条目、无残留 */
     CHECK(yk_shot_slot_suppressed(&m, 801, 0, 0) == 0);
     }
@@ -1314,6 +1332,7 @@ int main(void)
     CHECK(yk_emit_gap_is_new_wave(300, 0) == 1);     /* 还没观测到节奏 ⇒ 只用绝对阈值 */
     yk_map_reset(&m);
     yk_frame_begin(&m);
+    yk_map_set_fired(&m, 850, 0, 1);   /* ★ phantom 修复：只有开过火的槽才建壳 */
     CHECK(yk_note_slot(&m, 850, 0, 1, p1, &a) == 1 && a.kind == YK_ACT_CREATE);
     yk_fam_created(&m, 850, 0, 8501);
     CHECK(yk_fam_broken(&m, 8501) == 1);                        /* 玩家打死了它（本波从此哑火）*/
@@ -1348,6 +1367,7 @@ int main(void)
         CHECK(yk_map_last_release_vetoed(&m) >= 4);             /* 夹持期里确实被否决过多条 */
         CHECK(yk_shot_slot_suppressed(&m, 850, 0, 0) == 0);     /* 夹持态已清 ⇒ 闸恒放 */
         /* 使魔在下一帧被 1:1 映射重建；重建后再打死 ⇒ 新一波照旧从 0 起算 */
+        yk_map_set_fired(&m, 850, 0, 1);   /* ★ phantom 修复：只有开过火的槽才建壳 */
         CHECK(yk_note_slot(&m, 850, 0, 1, p1, &a) == 1 && a.kind == YK_ACT_CREATE);
         yk_fam_created(&m, 850, 0, 8502);
         CHECK(yk_fam_broken(&m, 8502) == 1);
@@ -1361,6 +1381,7 @@ int main(void)
         unsigned gbase = yk_map_gap_releases(&m);
         yk_map_reset(&m);
         yk_frame_begin(&m);
+        yk_map_set_fired(&m, 851, 0, 1);   /* ★ phantom 修复：只有开过火的槽才建壳 */
         CHECK(yk_note_slot(&m, 851, 0, 1, p1, &a) == 1 && a.kind == YK_ACT_CREATE);
         yk_fam_created(&m, 851, 0, 8511);
         {   int i; for (i = 0; i < YK_EMIT_WAVE_GAP + 5; ++i) yk_frame_begin(&m); }

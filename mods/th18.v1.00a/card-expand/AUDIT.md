@@ -29850,3 +29850,30 @@ P2-3 108 的声明 y 偏上 16px（改就会让画法下移 4px，与 owner 第�
 `check-docs` 449 文件全绿 ✓、`dllx87` 在上一轮全绿时 0 条 ✓。
 ⚠ **本轮 `make check` 整体红**：`test_youkai_core` 有 **10 条失败**（`yk_note_slot`），
 来源 = **另一个会话正在改的 `youkai_core.{c,h}`**（mtime 03:13，统筹未动这两个文件）⇒ 依纪律**只提交我这批**。
+
+## §BE 详录 #213（2026-10-01）：**幽灵壳修复 —— 壳只在「该槽真的开过火」后出现**
+
+**现象（owner 实跑）**：一面道中 boss 出现「不是发弹点」的使魔。
+**根因**：我们把「槽活跃」判成 `props[i]+0x00 != 0`（`yk_slot_type()`），而那只是**被配置过**
+（`etNew`/`etSprite`/`etCount` 写过）；有些槽配了却整波不发弹（`count=0`、被 `etDelay` 压制、
+只在某分支 `etOn`）⇒ 我们照样建壳 ⇒ 幽灵壳。
+
+**修法（0 新站点 · 0 链表动作）**：站点 `0x433ffa` 是 `etOn` 汇聚点、本来就会经过 ⇒ 给每个
+`(enemy_id, slot)` 记**开火帧号**（复用 `s_emit_latch` 条目，新增 `frame` 字段）；扫描时把
+「最近 `YK_EMIT_FIRED_WINDOW = 3` 帧内开过火」（卡 tick 优先级 `0x16` 早于敌人 ECL `0x1b` ⇒ 首帧
+开火要下一帧才看得见）翻成表里的 `yk_slot_t.fired`；**建壳条件加 `fired`**（core 的 `yk_note_slot`）
+⇒ 配了没发的槽**不建壳、也不进闸**（没火可掐）。
+· **清位**：① 槽变不活跃（`!active`）② 波次边沿（`yk_fam_wave_clear`）。
+  ⚠ **重新武装边沿不清**（`active && !was_active`）——实测它与首次 `etOn` 同帧序列，清了会让首只壳永远建不出来。
+· **为什么不用「先建后撤」**：建了再撤会多一次 `ce_spawn_enemy`（往敌人链表插对象）+ 多一条被玩家打掉的寿命路径；不建最干净。
+· 硬约束「只允许否决、不改发弹位置」**未动**；激光槽（`type` 非 0 但无弹的 5 处）**未纳入**（诊断行会显示它们的 `type`）。
+
+**诊断（判据 1）**：同一 `(敌人, 槽)` 只打一次
+`youkai/emit: slot i of enemy_id N is CONFIGURED but has NOT fired (type=… color=… count_1=… count_2=…) => NO familiar`
+（`count_1/2` = `props+0x14/+0x18`，偏移依据 `etNew` 默认 `+0x14=0`，见 `engine/enemy/th18/07`）；
+台账行多一格 **`phantom=N`**。
+
+**判据（判据 2）**：一面道中 boss 打完 ⇒ **壳数 = 真正开过火的槽数**（`create` 与诊断行一一对应）。
+
+**单测**：`yk_note_slot` 的建壳门新增 `fired` ⇒ 现有 21 处建壳断言改为**先 `yk_map_set_fired()`**；
+另覆盖「首帧就开火（条目还没建）⇒ `yk_map_set_fired` 现建条目并标 `active`」。

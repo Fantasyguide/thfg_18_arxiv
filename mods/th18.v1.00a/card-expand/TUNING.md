@@ -16067,3 +16067,14 @@ else if (s_aura_charge > 0.0f)                 { ★ 收束（含 interrupt / �
 （`CE_HUD_ANCHOR_X/Y` 的断言 ✗）—— ★ 那是**另一个会话**正在改的 `sdk_core.c` / `season.c` / `ufo.c` ✓
 （`c0d390cf`「全卡 HUD 审计」那批的半成品 ✓）。★ 我的 `cards/pofv.o` **单独编得过（0 error）** ✓
 ⇒ ★ **等那份改动落定、`make check` 回绿后再发布** ✓（并补 `thcrap/bin` 那份被游戏占着的 DLL ✓）。
+
+### 2.1ccc-45 ★★ 2026-10-01（卡 108 · owner 实跑 bug）：**壳只在「该槽真的开过火」后出现**
+
+| 项 | 说明 |
+| --- | --- |
+| 现象 | 一面道中 boss 出现了一个**不是发弹点**的使魔（幽灵壳）；根因 = 我们把「槽活跃」判成 `props[i]+0x00 != 0`，而那只是**被配置过**（`etNew/etSprite/etCount`），**不等于开过火** |
+| 修法 | 站点 `0x433ffa`（`etOn` 汇聚点）本来就会经过 ⇒ 给每个 `(enemy_id, slot)` 记一个**开火时间戳**（复用 `s_emit_latch`）；扫描时把「最近 `YK_EMIT_FIRED_WINDOW=3` 帧内开过火」翻成表里的 `yk_slot_t.fire …（详见 `AUDIT.md` §BE #213）|
+| 为什么不是「先建后撤」| 建了再撤会**多一次 `ce_spawn_enemy`**（往敌人链表插对象）＋ 可能被玩家打掉 ⇒ 多一条寿命/掉落路径；**不建**最干净（0 新站点、0 链表动作）|
+| 清位 | 只有两处：① 槽变**不活跃**（`!active`）② **波次边沿**（`yk_fam_wave_clear`/`enmKillAll`）。⚠ **重新武装边沿不清**（它与首次 `etOn` 常在同帧序列里，清了会让首只壳永远建不出来）|
+| 判据 | 诊断行 `youkai/emit: slot i of enemy_id N is CONFIGURED but has NOT fired (type=.. color=.. count_1=.. count_2=..) => NO familiar`；台账多一格 **`phantom=N`**；实跑**壳数 = 真正开过火的槽数** |
+| 登记 | `AUDIT.md` §BE #213；`HANDOFF-108.md` §3 第 101 行 |

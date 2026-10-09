@@ -1130,6 +1130,12 @@ typedef struct {
                           *   它的前提「卡 tick 只在聚焦时跑」早已不成立（tick 两侧都跑）⇒ 两边各 ++ 会
                           *   让 600 帧的计时器在**每帧都有 `etOn`** 时以 2× 速度走（≈5 s），
                           *   与 owner 要的「相对长（≈10 s）」不符。*/
+    uint8_t  fired;      /* ★★★ 2026-10-01（owner 实跑：一面道中 boss 出现「不是发弹点的使魔」）：
+                          *   **本波该槽真的 `etOn` 过吗**（0 = 只是被 `etNew/etSprite/etCount` 配过，
+                          *   从没开火）⇒ **壳只在开过火之后才建**（`yk_shell_needs_rebuild` 之外再加这一条）。
+                          *   由卡侧在 `0x433ffa` 站点看到 `etOn` 时置上（`yk_map_set_fired()`），
+                          *   在「槽不再活跃 / 波次边沿 / 重新武装」时清掉。位置 = `gap_ref` 之后的对齐空洞
+                          *   ⇒ **`sizeof(yk_slot_t)` 仍 32 B**。*/
     uint8_t  gap_ref;    /* ★★★ 2026-10-01（owner 主需求「打死使魔 ⇒ 关闭发射口」：#209）：
                           *   **本夹持期内观察到的最小「波内 `etOn` 间隔」**（饱和到 255；0 = 还没观测到）。
                           *   用来把 `YK_EMIT_WAVE_GAP` 变成**自适应**判据：只有当间隔 ≥
@@ -1322,6 +1328,7 @@ void yk_follow_step(float *xy, float sx, float sy, float tx, float ty, int age, 
  *   语义 = 1:1 映射那条：**只有当这一格没有壳、且它没被打死(`broken`)** 才建新的；
  *   **位置/目标变化完全不参与** —— 本函数**没有**位置参数，这就是「瞬移不重建」的结构性证明
  *   （沿 `yk_pin_familiar()` 那条路只写位置字段，见 `AUDIT.md` §BE #208 的逐行表）。*/
+void yk_map_set_fired(yk_map_t *m, uint32_t enemy_id, int slot, int fired);   /* 见 `yk_slot_t.fired` */
 int  yk_shell_needs_rebuild(int have_shell, int broken);
 /* ★★★★ 2026-10-01（owner 硬约束 ②）：**时符期间，使魔受到的伤害不得转嫁给敌人**。
  *   owner 逐字：「另外，**对于时符**，应该程序内可能有定义，**这个使魔的伤害肯定不能返回到敌人身上**」。
