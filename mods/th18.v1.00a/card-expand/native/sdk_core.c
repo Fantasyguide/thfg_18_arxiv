@@ -1397,10 +1397,31 @@ static struct {
     int    side;
     int    priority;        /* ★ 2026-10-03k：大的先摆（⇒ 落在更下面的行）*/
     int    own_row;         /* ★ 2026-10-03k：独占一行（宽块用）*/
+    int    fell_back;       /* ★ 2026-10-03l：pinned 撞了 ⇒ 已降级成货架成员（幂等要它）*/
     float  x, y;
 } s_hud[CE_SDK_CARD_ID_MAX + 1];
 static int s_hud_near_corner;
 static int s_hud_card_present;      /* 原生「当前卡」那块 UI 在不在（`ce_hud_card_set()`，见 sdk_core.h）*/
+
+/* ★★★ 2026-10-03l（owner：「**理论上，包含左下角 HUD 的都应当进这个系统**」）——
+ *   **PINNED 也进系统**：登记后拿它自己的矩形与**已占位**块做碰撞检测：
+ *     · **不相交** ⇒ 用它自己的锚点（**保真**：各卡复刻的是各自原作的 HUD 位置）；
+ *     · **相交**   ⇒ **回退货架**（把这一块降级成 `LEFT` 参与排布）⇒ **两张卡同装时不压在一起**。
+ *   语义：**后认领的那张让开**。认领顺序 = 卡组顺序（同一次开局 / 同一次读档恒定）
+ *   ⇒ 同样的卡组永远得到同样的结果（replay 安全）；`s_hud_fallbacks` 是诊断计数。
+ *   ⚠ `reserved`（局中删卡后的保留位）**不算在场** ⇒ 不能因为它把新卡赶走。*/
+static int s_hud_fallbacks;
+int ce_hud_slot_fallbacks(void) { return s_hud_fallbacks; }
+
+/* 矩形相交：块的 `(x, y)` = **左下角**（y = 下边缘，TH 坐标 y 向下增长）⇒ 占 `x..x+w` × `y-h..y`。*/
+static int hud_rect_hit(float ax, float ay, float aw, float ah,
+                        float bx, float by, float bw, float bh)
+{
+    int xo = (ax < bx + bw) && (bx < ax + aw);
+    int yo = (ay - ah < by) && (by - bh < ay);
+    return xo && yo;
+}
+
 
 void ce_hud_card_set(int present) { s_hud_card_present = present ? 1 : 0; }
 
@@ -1500,17 +1521,20 @@ void ce_hud_slots_reset(void)
         s_hud[id].side = CE_HUD_SIDE_LEFT;
         s_hud[id].priority = 0;
         s_hud[id].own_row = 0;
+        s_hud[id].fell_back = 0;
         s_hud[id].x = s_hud[id].y = 0.0f;
     }
     s_hud_near_corner = 0;
+    s_hud_fallbacks = 0;
 }
-
 /* 把一块登记进表（不动锚点），再按 side 决定要不要重排。返回 0 = 参数非法。
  * `anchor_x/y` 只在 pinned 时用；`do_relayout` 由调用方给（pinned 不动别的位置）。*/
 static int hud_register(uint32_t card_id, const ce_hud_block_t *blk,
                         float anchor_x, float anchor_y, int pinned, int priority, int own_row,
                         ce_hud_slot_t *out)
 {
+    const int was_used = (card_id <= (uint32_t)CE_SDK_CARD_ID_MAX && s_hud[card_id].used &&
+                          !s_hud[card_id].reserved);      /* ★ 幂等判据要在改表之前取 */
     if (card_id > (uint32_t)CE_SDK_CARD_ID_MAX || !blk || !out) return 0;
     if (blk->w <= 0.0f || blk->h <= 0.0f) return 0;
     if (pinned) {
@@ -1533,8 +1557,40 @@ static int hud_register(uint32_t card_id, const ce_hud_block_t *blk,
     s_hud[card_id].w = blk->w;
     s_hud[card_id].h = blk->h;
     s_hud[card_id].side = blk->side;
-    if (pinned) { s_hud[card_id].x = anchor_x; s_hud[card_id].y = anchor_y; }
-    else        { hud_relayout(); }
+    if (pinned) {
+        /* ★ PINNED 的**碰撞回退**（见 `hud_rect_hit` 的注）：撞了就把这一块降级成货架成员。
+         * ⚠ **幂等**（§4.4「同一关内不重排」）：**已经认领过**的卡**不重算** ——
+         *   上次落哪儿就还在哪儿（否则「on_load 每关重认领」会把位置来回抖，`
+         *   也会被后来插进来的块"顶走"）。*/
+        if (was_used) {
+            if (s_hud[card_id].fell_back) {
+                s_hud[card_id].side = CE_HUD_SIDE_LEFT;
+                hud_relayout();
+            } else {
+                s_hud[card_id].x = anchor_x;
+                s_hud[card_id].y = anchor_y;
+            }
+        } else {
+            int hit = 0;
+            for (int id2 = 0; id2 <= CE_SDK_CARD_ID_MAX && !hit; ++id2) {
+                if (id2 == (int)card_id || !s_hud[id2].used || s_hud[id2].reserved) continue;
+                if (hud_rect_hit(anchor_x, anchor_y, blk->w, blk->h,
+                                 s_hud[id2].x, s_hud[id2].y, s_hud[id2].w, s_hud[id2].h)) hit = 1;
+            }
+            if (hit) {                                   /* 回退：降级成 LEFT 参与排布 */
+                s_hud[card_id].side = CE_HUD_SIDE_LEFT;
+                s_hud[card_id].priority = 0;
+                s_hud[card_id].own_row = 0;
+                s_hud[card_id].fell_back = 1;
+                ++s_hud_fallbacks;
+                hud_relayout();
+            } else {
+                s_hud[card_id].fell_back = 0;
+                s_hud[card_id].x = anchor_x;
+                s_hud[card_id].y = anchor_y;
+            }
+        }
+    } else { hud_relayout(); }
     out->x = s_hud[card_id].x;
     out->y = s_hud[card_id].y;
     out->x640 = s_hud[card_id].x * CE_HUD_640_SCALE;

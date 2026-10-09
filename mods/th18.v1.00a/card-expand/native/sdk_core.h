@@ -772,6 +772,10 @@ int  ce_hud_stage_current(void);                                /* 记住的关�
 /* 认领（幂等）。成功返回 1 并填 *out；卡 id 非法 / blk 非法返回 0。
  * `blk->side == CE_HUD_SIDE_PINNED` 时本函数返回 0（要用下面那个带锚点的入口）。*/
 int  ce_hud_slot_claim(uint32_t card_id, const ce_hud_block_t *blk, ce_hud_slot_t *out);
+
+/* ★ 2026-10-03l：**PINNED 碰撞回退**的诊断计数（本次会话累计；`ce_hud_slots_reset()` 清零）。
+ * 语义见 `sdk_core.c` 的 `hud_rect_hit()` 注：pinned 块与已占位块相交 ⇒ 降级成货架成员。*/
+int  ce_hud_slot_fallbacks(void);
 int  ce_hud_slot_claim_ex(uint32_t card_id, const ce_hud_block_t *blk,
                           int priority, int own_row, ce_hud_slot_t *out);
 /* ★ **自带锚点认领**（`blk->side == CE_HUD_SIDE_PINNED`）：按用户按截图量过的固定位置登记。

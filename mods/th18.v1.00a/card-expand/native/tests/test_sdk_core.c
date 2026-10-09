@@ -618,6 +618,26 @@ static void test_hud_slots(void)
     ce_hud_slots_reset();
     CHECK(!ce_hud_slot_claimed(108) && !ce_hud_slot_claimed(109) && !ce_hud_slot_claimed(111));
 
+    /* ★★★ 2026-10-03l（owner：「包含左下角 HUD 的都应当进这个系统」）：
+     *   **PINNED 碰撞回退** —— 不撞 ⇒ 用原位（保真）；撞了 ⇒ 降级成货架成员（不压住先来的那张）。*/
+    {
+        ce_hud_slot_t p_first, p_far, p_hit;
+        ce_hud_block_t pinblk = { 100.0f, 40.0f, CE_HUD_SIDE_PINNED };
+        ce_hud_slots_reset();
+        CHECK(ce_hud_slot_claim_pinned(116, &pinblk, 68.0f, 924.0f, &p_first));
+        CHECK(p_first.x == 68.0f && p_first.y == 924.0f);            /* ① 原位 */
+        CHECK(ce_hud_slot_fallbacks() == 0);
+        CHECK(ce_hud_slot_claim_pinned(117, &pinblk, 600.0f, 924.0f, &p_far));
+        CHECK(p_far.x == 600.0f && p_far.y == 924.0f);               /* ② 不相交 ⇒ 原位 */
+        CHECK(ce_hud_slot_fallbacks() == 0);
+        CHECK(ce_hud_slot_claim_pinned(118, &pinblk, 100.0f, 924.0f, &p_hit));
+        CHECK(ce_hud_slot_fallbacks() == 1);                         /* ③ 相交 ⇒ 回退 */
+        CHECK(p_hit.side == CE_HUD_SIDE_LEFT && p_hit.x == CE_HUD_ANCHOR_X);
+        CHECK(ce_hud_slot_get(117, &p_far) && p_far.x == 600.0f);    /* ⚠ 不动别的块 */
+        ce_hud_slots_reset();
+        CHECK(ce_hud_slot_fallbacks() == 0);
+    }
+
     /* 硬约束（§4.2）：块右边缘不许越过 1040 ⇒ 声明宽度超限直接拒绝 */
     ce_hud_block_t too_wide = { CE_HUD_X_HARD_MAX - CE_HUD_ANCHOR_X + 1.0f, 36.0f, CE_HUD_SIDE_LEFT };
     CHECK(!ce_hud_slot_claim(110, &too_wide, &a));
