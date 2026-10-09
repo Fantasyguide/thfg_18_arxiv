@@ -101,10 +101,14 @@ typedef void (__attribute__((thiscall)) *pofv_fn_bullet_cancel_t)(void *bullet, 
  *   · 两个**生成口**（owner 2026-10-08 定案）：① 击破敌人 ⇒ 1 颗（位置 = 敌机位置）；
  *     ② 固灵结界碰到敌方弹幕 ⇒ 从**该弹的原位**撒（**必定掉、不做概率模型** ✗）；
  *   · 每帧推进 + 收取入账（本卡的「攻击槽」= `s_ex_gauge`）；
+ *   · 每颗的**可视 VM**（`power_vm_sync()`：延时结束建 / 每帧跟随 / 所有移除路径删）；
  *   · `clear_card()` 收干净（铁律：长持续效果删卡要交代）。
- * ⚠ 视觉：**没有跟随 VM** —— 被删前那份用的是 `ability.anm` 脚本（当时的 374），
- *   现在那个脚本号已被别的卡占用，而本批**不许改 `assets/`（任何资源）/ `sdk.h`** ⇒ 先只做逻辑，
- *   视觉留到脚本号到位（❓ 未接，见 `TUNING.md` 登记）。*/
+ * ★ 视觉：**照 116（季节道具）的做法**（`season.c` 的 `point_spawn_vm()` / `points_tick()`）——
+ *   复用现成的 `CE_ANM_ABILITY_SCRIPT_SEASON_POINT`（`ability.anm` script115）+ 配套贴图
+ *   `CE_ANM_ABILITY_SPRITE_PT_SPRING` + 层 `POFV_POWER_VM_LAYER`（= 116 的 13）。
+ *   ⚠ 这是**借 116 的现成美术**，**不是**一手 TH19 的灵力道具美术（TH19 原贴图未取到；
+ *     被删前那份借的是当时的 374，那个号现在已被别的卡占用）⇒ 美术身份**待定 ❓**，
+ *     已登记 `TUNING.md`（N5 处理 + 新增 ❓ 自定项）。*/
 #define POFV_POWER_SE_GET       0x25   /* ★ 一手：收取音（TH16 季节道具的拾取音 `0x25`）*/
 #define POFV_POWER_SE_LEVEL     0x3f   /* ★ 一手：**升档音** —— TH16 季节道具升档（`item_collect_season`）
                                         *   播 `0x3f`（116 `season.c` 的 `SEASON_SE_LEVEL` 同源；
@@ -1031,6 +1035,55 @@ static void do_storm_frame(const pofv_storm_t *bl)
         }
 }
 
+/* ============================================================ 灵力道具的**可视 VM**
+ * ★★ 照 **116 季节道具**的做法（`season.c` 的 `point_spawn_vm()` `:594` / `points_tick()`）：
+ *   `ce_anm_spawn(CE_ABILITY_ANM(), <脚本>, <层>)` → `ce_anm_set_pos` / `set_sprite` / `set_color`
+ *   → 每帧 `ce_anm_set_pos` 跟随 → 移除时 `ce_anm_delete(id)` 并把句柄清 0。
+ *   复用**现成**的脚本与贴图（**不新增脚本 / 不切图**）：
+ *     · 脚本 = `CE_ANM_ABILITY_SCRIPT_SEASON_POINT`（= `ability.anm` script115，`anm_ids.h:1398`）；
+ *     · 贴图 = `CE_ANM_ABILITY_SPRITE_PT_SPRING`（**春季**那张，`anm_ids.h:141`；
+ *       `season.c:500` 的 `season_sprite()` 就是这么挑的 —— 这里**固定挑春**）；
+ *     · 层   = `POFV_POWER_VM_LAYER`（= **13**，照 116 `season.c:118` 的 `SEASON_POINT_LAYER`：
+ *             世界层 13 = 相机 3（游玩区），与原生道具同层）。
+ *   ⚠ 这是**借 116 的美术**（脚本/贴图/层号都是 116 的），**不是**一手 TH19 的灵力道具美术
+ *     ⇒ 美术身份**待定 ❓**（已登记 `TUNING.md`）。句柄存在 `pofv_core.h` 的 `pofv_power_t.vm`。*/
+#define POFV_POWER_VM_SCRIPT   CE_ANM_ABILITY_SCRIPT_SEASON_POINT
+#define POFV_POWER_VM_SPRITE   CE_ANM_ABILITY_SPRITE_PT_SPRING
+#define POFV_POWER_VM_LAYER    13
+
+/* 内部：删一台道具 VM 并把句柄清 0 —— **唯一**的删法（所有移除路径 / `clear_card()` 共用）。*/
+static void power_vm_drop(pofv_power_t *it)
+{
+    if (it && it->vm) { ce_anm_delete((uint32_t)it->vm); it->vm = 0; }
+}
+
+/* ★ 每帧同步（在 `pofv_power_tick()` **之后**调；116 的 `points_tick()` 同形）：
+ *   · **建**：`delay` 减到 0（= 待发射延时结束、真正开始飞散那一刻）才建 —— 与 116
+ *     「延时结束才建 VM」同口径（`season.c:590-604` 的注释 + `:826` 的 `if (!point_spawn_vm(...))`）；
+ *   · **跟随**：`ce_anm_set_pos(vm, x, y, 0)`（116 `season.c:949/:951`）；
+ *   · **删**：core 的移除路径（**收取 / 出界 / 寿命到期**）都只是把 `active` 清 0 ⇒
+ *     这里统一按「`active == 0` 而句柄还在 ⇒ 删 + 清 0」收干净（铁律：不许留幽灵 VM）。
+ *   ⚠ script115 只 `stop()`、**不自己 `delete()`**（`115_season_point.anm.txt`：`interruptLabel(1)`
+ *     之后才 delete，本卡**不触发**那个 label，收/出界一律由我们删）⇒ 不需要 116 那种
+ *     「`!ce_anm_get_vm(id)` ⇒ 槽回收」的探测支。*/
+static void power_vm_sync(void)
+{
+    int i;
+    for (i = 0; i < POFV_POWER_MAX; ++i) {
+        pofv_power_t *it = &s_power.s[i];
+        if (!it->active) { power_vm_drop(it); continue; }
+        if (!it->vm && it->delay <= 0) {
+            uint32_t id = ce_anm_spawn(CE_ABILITY_ANM(), POFV_POWER_VM_SCRIPT, POFV_POWER_VM_LAYER);
+            if (!id) continue;          /* 建失败 ⇒ 逻辑照走（下一帧再试），不丢道具 */
+            ce_anm_set_pos(id, it->x, it->y, 0.0f);
+            ce_anm_set_sprite(CE_ABILITY_ANM(), id, POFV_POWER_VM_SPRITE);
+            ce_anm_set_color(id, 0xffffffffu);   /* 出生无染色（116 同：`0xffffffff`）*/
+            it->vm = (int32_t)id;
+        }
+        if (it->vm) ce_anm_set_pos((uint32_t)it->vm, it->x, it->y, 0.0f);
+    }
+}
+
 /* ============================ 清理（删卡 / 换关 / 重开） ============================ */
 static void clear_card(ce_card_t *c)
 {
@@ -1042,13 +1095,19 @@ static void clear_card(ce_card_t *c)
     pofv_storm_pool_init(&s_storm);
     /* ★★ 2026-10-01（口径 5）+ 铁律「长持续效果删卡要交代」：**灵力道具池**也是卡自建的实体
      *   （不在引擎道具池里 ⇒ 没人替我们清）⇒ 删卡 / 换关 / 重开都在这里清干净。
-     *   ⚠ 与暴风不同：道具**没有跟随 VM**（本批没接视觉，见文件头的说明）⇒ 清了池就没有残留。*/
+     *   ★ 每颗道具现在还有一台**跟随 VM**（照 116，见文件头与 `power_vm_sync()`）
+     *     ⇒ 下面先真删 VM、再清池。*/
     if (s_power.spawned || s_power_got || s_power.expired || s_power.dropped)
         ce_log("pofv: power run done - %d made, %d picked (+%d pts), %d gone, %d packed away (pool %d)",
                (int)s_power.spawned, (int)s_power.absorbed, (int)s_power_got,
                (int)s_power.expired, (int)s_power.dropped, POFV_POWER_MAX);
     if (s_aura_bullets)
         ce_log("pofv: aura run done - %d enemy bullets touched by the barrier", (int)s_aura_bullets);
+    /* ★ 铁律「长持续效果删卡要交代」：**灵力道具的可视 VM** 必须先真删再清池 ✗ ——
+     *   句柄在 core 的 `pofv_power_t.vm` 里、而 `pofv_power_clear()` 只 `memset`（core 不依赖
+     *   anm API ⇒ 删不了）⇒ 不先删就是**幽灵 VM 泄漏**（与 `s_storm_vm` / `s_spirit_vm` 同款坑）。
+     *   `on_delete` / `on_run_reset` / `on_ctor` 都走本函数 ⇒ 三条路都收得到 ✓。*/
+    { int z5; for (z5 = 0; z5 < POFV_POWER_MAX; ++z5) power_vm_drop(&s_power.s[z5]); }
     pofv_power_clear(&s_power);
     s_power_got = 0; s_power_logged = 0; s_aura_bullets = 0;
     {   int z9; for (z9 = 0; z9 < CE_BM_BULLET_COUNT; ++z9) s_aura_bullet_done[z9] = 0; }
@@ -3114,6 +3173,10 @@ static int on_tick_2(ce_card_t *c)
             ce_log("pofv: power +%d (%d items, gauge %d/%d)", (int)got_pts, got_n,
                    (int)s_ex_gauge, POFV_EX_GAUGE_MAX);
         }
+        /* ★★ 每帧同步可视 VM（**照 116 `points_tick()`**）：建（延时结束）/ 跟随 / 删
+         *   （收取 / 出界 / 寿命到期的槽在 tick 里被清 `active`）⇒ 必须在 `pofv_power_tick()`
+         *   **之后**调，这样同一帧就能看到「刚出生（delay 刚减到 0）」与「刚消失」两种状态。*/
+        power_vm_sync();
     }
 
     return 0;

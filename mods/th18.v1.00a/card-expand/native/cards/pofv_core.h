@@ -528,6 +528,12 @@ typedef struct {
     int32_t delay;       /* 待发射的延时（> 0 时本帧不动）*/
     float   dx, dy;      /* 飞散方向的单位向量（= TH16 `item+0xc24` 那个角）*/
     float   lr;          /* ★ 剩余速度（= TH16 `item+0xc20`，每帧 −`POFV_POWER_DECEL`）*/
+    /* ★★ 可视 VM 句柄（**归卡侧所有**；core 是纯逻辑 ⇒ **不碰、也不依赖 anm API**）。
+     *   0 = 还没建（待发射延时中）/ 已删。三条所有权约定：
+     *     · `power_take_slot()` / `pofv_power_pool_init()` 会 `memset` 本结构 ⇒ 出生即 0 ✓；
+     *     · 卡侧每帧同步（`pofv.c` 的 `power_vm_sync()`）负责**建 / 跟随 / 删** ✓；
+     *     · `pofv_power_clear()` 也是 `memset` ⇒ **看不见 VM** ⇒ 卡侧必须先遍历删掉再调 ✓。*/
+    int32_t vm;
 } pofv_power_t;
 
 typedef struct {

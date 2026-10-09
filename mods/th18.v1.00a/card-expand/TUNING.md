@@ -14840,3 +14840,28 @@ moveVel(%F0, %F1)      ← %F0/%F1 = **浮点全局**；卡侧写、ECL 消费 �
 | N8 | 出界判据 | `y > 472` / **`abs(x) >= 200`**（x 取**闭**区间）| ★ 数值一手（472 / 200）；`abs(x)` 取闭区间 = 本任务口径（被删前那份是严格 `>`，两者只差边界那一帧）|
 | N9 | 击破掉落**含 boss** | 撒道具的位置在 boss 早退**之前** | owner 口径字面 = 「击破**敌人**」；被删前那份也没有 boss 门 ⇒ 保持同口径（boss 死了也只多这一颗）|
 
+
+### ★★ 109 灵力道具**可视 VM 已接**（2026-10-08，照 116 季节道具）—— **N5 结案** + 新增 ❓ 自定
+
+> 上表 **N5「灵力道具没有跟随 VM」⇒ 已解决 ✅**。做法 = **照 116（季节道具）**（`season.c` 的 `point_spawn_vm()`
+> `:594` / `points_tick()`），**复用现成的脚本与贴图**（本批不新增脚本 / 不切图）：
+
+| 项 | 落值 | 出处 / 理由 |
+| --- | --- | --- |
+| VM 脚本 | `CE_ANM_ABILITY_SCRIPT_SEASON_POINT`（= `ability.anm` **script115**）| `anm_ids.h:1398`；116 季节道具**本体**那支（`season.c:596` 同款）|
+| 贴图 | `CE_ANM_ABILITY_SPRITE_PT_SPRING`（sprite 184，春）| `anm_ids.h:141`；`season.c:500` 的 `season_sprite()` 就是在这 5 张里挑（这里**固定挑春**）|
+| 层 | **13** | 照 116 `season.c:118` 的 `SEASON_POINT_LAYER`（世界层 13 = 相机 3，游玩区，与原生道具同层）|
+| 建 VM 时机 | **待发射延时结束（`delay` 减到 0）那一刻** | 116 同口径（`season.c:590-604` 注释 + `:826`）；一手 = TH16「延时里 `item+0xc50 = 6`，结束才建 VM」|
+| 跟随 | 每帧 `ce_anm_set_pos(vm, x, y, 0)` | 116 `season.c:949/:951` |
+| 删 VM | **收取 / 出界 / 寿命到期** 三条移除路径 + `clear_card()`（`on_delete`/`on_run_reset`/`on_ctor`）全部真删并清 0 | 铁律「长持续效果删卡要交代」；句柄在 `pofv_power_t.vm`（`pofv_core.h`），卡侧 `power_vm_drop()` / `power_vm_sync()`（`pofv.c`）|
+
+**❓ 自定 / 未定（本次新增）**：
+
+| # | 项 | 现状 | 为什么 |
+| --- | --- | --- | --- |
+| N10 | 灵力道具的**美术身份** | 借 116 的季节道具贴图（春 `PT_SPRING`）| ❓ **不是**一手 TH19 的灵力道具美术（TH19 原贴图未切出）；被删前那份借的是当时的 `ability.anm` **374**，该号现已被别的卡（`374_zenith_trail.anm.txt`）占用。美术身份**待 owner 定**；换真美术时只动 `POFV_POWER_VM_SPRITE`（必要时连 `_SCRIPT` / `_LAYER`）|
+| N11 | 固定挑**春**（sprite 184）而非按季节/来源变 | `POFV_POWER_VM_SPRITE = CE_ANM_ABILITY_SPRITE_PT_SPRING` | ❓ 116 是按副季节换图；本卡没有「季节」这个量 ⇒ 固定一张。挑哪张纯美术口味，**无一手依据** |
+
+注：本卡**不**接 116 那条「脚本自删 ⇒ 槽回收」探测支（`ce_anm_get_vm()`）—— 事实依据：
+script115 只 `stop()`、**不自己 `delete()`**（`assets/ability/scripts/115_season_point.anm.txt`：
+`interruptLabel(1)` 之后才 delete，本卡不触发那个 label）⇒ 不存在「VM 先于逻辑消失」这条路径。
