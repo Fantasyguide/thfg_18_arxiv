@@ -700,6 +700,19 @@ static void test_hud_slots(void)
         CHECK(ce_hud_band_dim_alpha() == HUD_DIM_ALPHA_FULL);
     }
 
+    /* ★★★ 2026-10-03z4（owner：「109 的蓄力槽**应当申领整个剩余宽度**」）：
+     *   `ce_hud_row_remaining_w()` = `X_MAX − 货架起点`；起点随「有没有主动卡」变（68 / 124）。*/
+    ce_hud_slots_reset();
+    ce_hud_card_set(0);
+    {   float rw = 0.0f;
+        ce_hud_row_remaining_w(&rw);
+        CHECK(rw == CE_HUD_X_MAX - CE_HUD_ANCHOR_X);                                /* 无卡面：1024−68 */
+        ce_hud_card_set(1);
+        ce_hud_row_remaining_w(&rw);
+        CHECK(rw == CE_HUD_X_MAX - (HUD_CARD_POS_X + HUD_CARD_W + CE_HUD_GAP));
+    }
+    ce_hud_card_set(0);
+
     /* 硬约束（§4.2）：块右边缘不许越过 1040 ⇒ 声明宽度超限直接拒绝 */
     ce_hud_block_t too_wide = { CE_HUD_X_HARD_MAX - CE_HUD_ANCHOR_X + 1.0f, 36.0f, CE_HUD_SIDE_LEFT };
     CHECK(!ce_hud_slot_claim(110, &too_wide, &a));

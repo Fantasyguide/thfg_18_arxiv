@@ -1514,6 +1514,15 @@ int32_t ce_hud_band_dim_alpha(void)
 static int s_hud_fallbacks;
 int ce_hud_slot_fallbacks(void) { return s_hud_fallbacks; }
 
+void ce_hud_row_remaining_w(float *out)
+{
+    float left0, w;
+    if (!out) return;
+    hud_card_shelf_x0(&left0, CE_HUD_ANCHOR_X, CE_HUD_GAP, s_hud_card_present);
+    w = CE_HUD_X_MAX - left0;
+    *out = (w > 0.0f) ? w : 0.0f;
+}
+
 /* 矩形相交：块的 `(x, y)` = **左下角**（y = 下边缘，TH 坐标 y 向下增长）⇒ 占 `x..x+w` × `y-h..y`。*/
 static int hud_rect_hit(float ax, float ay, float aw, float ah,
                         float bx, float by, float bw, float bh)

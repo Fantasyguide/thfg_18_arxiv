@@ -787,6 +787,15 @@ int  ce_hud_slot_claim(uint32_t card_id, const ce_hud_block_t *blk, ce_hud_slot_
  * 语义见 `sdk_core.c` 的 `hud_rect_hit()` 注：pinned 块与已占位块相交 ⇒ 降级成货架成员。*/
 int  ce_hud_slot_fallbacks(void);
 
+/* ★★★ 2026-10-03z4（owner：「**109 的蓄力槽应当申领整个剩余宽度**」）——
+ *   **底边那一行还剩多宽**（表面 px）= `CE_HUD_X_MAX − 货架起点`；货架起点由
+ *   `hud_card_shelf_x0()` 给（有主动卡时让到 124、没有时是 68）⇒ 返回值随之变。
+ *   用途：宽条类 HUD（109 的蓄力槽）**按它声明块宽** ⇒ 整条底边都归它，
+ *   别的块自然被排到上面（宽度是声明常量 ⇒ 只在认领那一刻算一次）。
+ *   ⚠ **必须是 out 参数、不许返回 float**：i686 Windows ABI 的 float 返回值走 x87 `st(0)`，
+ *     而本仓不变式是「我们的 object 里 0 条 x87 指令」（`make dllx87`）—— 先例 `hud_card_shelf_x0()`。*/
+void ce_hud_row_remaining_w(float *out);
+
 /* ★★★ 2026-10-03q（owner：「这么说，**所有左下角 HUD 应当是"一块 HUD"**」）——
  *   **左下角那条带 = 一块**：矩形 = **所有已认领块的并集** ∪（有主动卡时）**原生卡面**；
  *   淡化（「自机侵入就压暗」）= **一份共享状态**（不再每块各淡各的）。

@@ -3943,8 +3943,18 @@ static void trance_hud_tick(const trance_card_t *s)
     int hidden;
     {
         hud_dim_rect_t r;
-        hud_dim_rect_surface(&r, TRANCE_HUD_BASE_X + TRANCE_HUD_DX, TRANCE_HUD_BLOCK_BOTTOM + TRANCE_HUD_DY,
-                             TRANCE_HUD_BLOCK_W, TRANCE_HUD_BLOCK_H);
+        /* ★★★ 2026-10-03z4（owner：「**113 没有接入统一隐去**」）——
+         *   原来喂的是**自己那块**矩形 ⇒ 自机压到别块时它不跟着淡。
+         *   现在与其余五张卡同款：矩形改用**整条带**（`ce_hud_band_rect()`）；空带兜底回本块。*/
+        float bx, by, bw, bh;
+        ce_hud_band_rect(&bx, &by, &bw, &bh);
+        if (bw <= 0.0f || bh <= 0.0f) {
+            bx = TRANCE_HUD_BASE_X + TRANCE_HUD_DX;
+            by = TRANCE_HUD_BLOCK_BOTTOM + TRANCE_HUD_DY;
+            bw = TRANCE_HUD_BLOCK_W;
+            bh = TRANCE_HUD_BLOCK_H;
+        }
+        hud_dim_rect_surface(&r, bx, by, bw, bh);
         hidden = hud_dim_gate(s_hud_dim, &r, pp);
         s_hud_dim = hidden;
     }
