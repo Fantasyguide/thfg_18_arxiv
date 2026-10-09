@@ -992,6 +992,189 @@ static int aura_scan_bullets(const float *center, int cap, float *ox, float *oy)
     return n;
 }
 
+/* ================================================================================
+ * ★★★★ 固灵结界碰敌弹的**视觉**：**染色 + 抖动**（一手 = TH19，2026-10-09）
+ * ================================================================================
+ * 一手来源：TH19 `FUN_004f5130`（`0x4f5130`–`0x4f55b4`，**`BulletInf` 每帧**；全链见
+ *   `engine/versus/th19/05-four-mechanics.md` §8 的 aura 判定那一段 + `06-aura.md` §8）：
+ *
+ *   ① **染色**：给**该弹的 VM** 的颜色覆盖字段写 **RGB(255, G, 128)**。
+ *      本仓对应字段 = **`bullet + 0x28`（`zBullet.vm`，= `lolk.c` 的 `CE_BULLET_VM`）取 VM，
+ *      再写 `CE_ANM_VM_COLOR1`（`engine.h:307`，= `vm + 0x524`）**。
+ *      写法 = **一个 AARRGGBB dword**：`0xFF << 24 | R=255 << 16 | G << 8 | B=128` ⇒ `0xFFFF??80`。
+ *   ② **G 的公式（一手 ✓）**：`G = clamp(2 * (0x68 − n), 0x60, 0xff)`，
+ *      其中 **`n` = 这颗弹「连续被结界碰到的帧数」**（一手：`[esi+0xff0]`，每帧 +1、离开就复位 0）。
+ *      ⇒ n=0 时 `G = 0xd0`（= `RGB(255,208,128)`，正好等于卡 115 的 `LOLK_GRAZED_COLOR`）；
+ *        n≥56（`0x68 − 0x30`）后钳在 `0x60`。
+ *   ③ **模型（一手 ✓，重要）**：**每帧无条件重写、不建快照表、不还原** —— 一手里弹出结界后的回落
+ *      靠**引擎自己的 anm color 插值**。⚠ 本仓**没有**这套机制 ⇒ 本卡必须自己「**记住染过谁 +
+ *      离开时写回原色**」；这就是下面这张私有小表的**唯一**理由（不是一手的模型）。
+ *   ④ **抖动**：一手每帧重掷两个 float（`bullet+0x48` / `+0x4c`，量级 ≈±1、z=0）。
+ *      ❓ **那两个字段的语义在 TH19 侧未定位**（`+0x48`/`+0x4c` 在 `zBullet` 上到底是什么没核）
+ *      ⇒ 先做成默认关的开关 `POFV_AURA_BULLET_SHAKE`（**= 0**），见下面的注释。
+ *
+ * ⚠ 与卡 115 / 111 / 108 的**门字段冲突**（❓ **已知未解决**，已如实登记 `TUNING.md`，**不声称已解决**）：
+ *   同一个 `bullet+0x28 + CE_ANM_VM_COLOR1` 115（`lolk.c:512` 染橙）、111（`signal.c` 染红）、108 也写。
+ *   本卡采取「**每帧重写、退出即还原**」；**111 也写在 `on_draw` 里**（`signal.c:2013-2015` 明文：
+ *   写 `on_tick_2` 会被 115 覆盖），而卡按 id 顺序跑 ⇒ **111（id=111 > 109）的 `on_draw` 在本卡之后跑**
+ *   ⇒ 同一颗弹同帧都被写时**它的红仍可能压住本卡**。
+ *   ⚠ 与 115 的关系：本表的做法**有意不照抄 `lolk.c:434-457` 的 `tint_mark`/`tint_restore_all`**
+ *     （那是 115 私有的两张 256 格表）；本卡自带一张**只记「本卡染过、且还在我染色期内」的弹**的小表，
+ *     115 与本表互不引用、互不还原对方的弹。
+ *
+ * ⚠ **A 也写 `0xff`**（一手那条 dword 就是 `0xFFFF??80`）—— 与 115/111「**只改 RGB、保留 alpha**」
+ *   不同（它们的理由是「弹的 alpha 由脚本逐帧插值，连 alpha 一起写会按掉淡入淡出」）。本卡照一手
+ *   整条写、还原时把**整条快照**写回；若实跑发现淡入弹被钉成不透明，改成「只写 RGB」只需动
+ *   `pofv_aura_tint_color()` 一处（❓ 已登记）。
+ */
+#define POFV_BULLET_VM_OFF      0x28    /* `zBullet.vm` = zAnmVm（与 `lolk.c` 的 `CE_BULLET_VM` 同格）*/
+#define POFV_AURA_TINT_R        0xffu
+#define POFV_AURA_TINT_B        0x80u
+
+/* ★ 抖动开关：**默认关**（一手 `FUN_004f5130` 每帧重掷 `bullet+0x48` / `+0x4c` 两个 float，
+ *   量级 ≈±1、z=0）。❓ **语义未定位**（字段在 `zBullet` 上代表什么没核出来；115/111/108 都没有抖动）
+ *   ⇒ 先关着；开它只写 `+0x48`/`+0x4c`/`+0x50` 三个 float，别的字段一概不碰。*/
+#define POFV_AURA_BULLET_SHAKE  0
+
+typedef struct {
+    uint8_t *b;         /* 弹池槽地址（槽地址稳定 ⇒ 用它当「这颗弹」的身份）*/
+    uint32_t orig;      /* 本卡第一次染它之前那一帧的**整条** `color_1`（离开时写回）*/
+    uint16_t n;         /* 连续被结界碰到的帧数（一手 `[esi+0xff0]`）*/
+} pofv_aura_tint_t;
+
+/* 表容量 = **弹池槽数**（`CE_BM_BULLET_COUNT` = 2000）：表内**每槽至多一条**（下面有 dup 闸）
+ * ⇒ **结构上不可能溢出**。保底：万一真满，只是「本帧不再染新弹」（还原照旧跑），不影响正确性。
+ * ⚠ 表必须放**文件作用域**（`clear_card()` 要能还原 ⇒ 否则删卡/换局留下染色弹 ✗，铁律）。*/
+#define POFV_AURA_TINT_MAX   CE_BM_BULLET_COUNT
+static pofv_aura_tint_t s_aura_tint[POFV_AURA_TINT_MAX];
+static int s_aura_tint_n;
+
+/* G = clamp(2 * (0x68 − n), 0x60, 0xff) —— 一手公式（n 见上）。*/
+static uint32_t pofv_aura_tint_g(uint16_t n)
+{
+    int32_t v = 2 * (0x68 - (int32_t)n);
+    if (v < 0x60) v = 0x60;
+    if (v > 0xff) v = 0xff;
+    return (uint32_t)v;
+}
+
+/* 一条 AARRGGBB dword（一手写法；A=0xff、R=0xff、B=0x80、G 见上）。*/
+static uint32_t pofv_aura_tint_color(uint16_t n)
+{
+    return 0xff000000u | (POFV_AURA_TINT_R << 16) | (pofv_aura_tint_g(n) << 8) | POFV_AURA_TINT_B;
+}
+
+/* 还原整张表（删卡 / 换关 / 重开 —— `clear_card()` 里调，**不依赖 tick** ✓ 铁律「长持续效果要交代」）。
+ * ⚠ 照 `lolk.c:437-455` 的**教训**：**无条件还原**（不做「颜色被别人改过就跳过」的守卫 —— 那个守卫
+ *   会让弹一直留色）。*/
+static void pofv_aura_tint_restore_all(void)
+{
+    int i;
+    if (!CE_BULLET_MGR()) { s_aura_tint_n = 0; return; }
+    for (i = 0; i < s_aura_tint_n; ++i) {
+        volatile uint32_t *col =
+            (volatile uint32_t *)(s_aura_tint[i].b + POFV_BULLET_VM_OFF + CE_ANM_VM_COLOR1);
+        *col = s_aura_tint[i].orig;
+    }
+    s_aura_tint_n = 0;
+}
+
+#if POFV_AURA_BULLET_SHAKE
+/* 一手那两个字段（`+0x48`/`+0x4c`）量级 ≈±1、z=0。语义未定位 ❓ ⇒ 默认关。
+ * RNG = 确定性 LCG（不引 libm；同帧同弹同值，跨帧变）。*/
+static uint32_t s_aura_shake_rng = 0x9e3779b9u;
+static float pofv_aura_shake_unit(void)
+{
+    s_aura_shake_rng = s_aura_shake_rng * 1664525u + 1013904223u;
+    return (float)((s_aura_shake_rng >> 8) & 0xffu) * (2.0f / 255.0f) - 1.0f;   /* [−1, 1] */
+}
+static void pofv_aura_shake_apply(uint8_t *b)
+{
+    *(float *)(b + 0x48) = pofv_aura_shake_unit();
+    *(float *)(b + 0x4c) = pofv_aura_shake_unit();
+    *(float *)(b + 0x50) = 0.0f;          /* z = 0（一手：x/y ≈±1、z=0）*/
+}
+#endif
+
+/* 每帧（**在 `on_draw` 里跑**）：① 把**当前被结界碰到**的弹**每帧重写**成 `0xFFFF??80`；
+ * ② 把「离开结界 / 槽已空」的弹**还原成原色**并移出表。
+ *
+ * ⚠ **几何 = `pofv_aura_hit_here()`**（与 `aura_scan_bullets()` 的「碰到」判据**同一个入口**），
+ *   `pad` = **这颗弹自己的半径**（一手 `FUN_004f5130` 传 `bullet+0x674` 的对应物 = 本仓 `+0x658`）。
+ * ⚠ **与 `s_aura_bullet_done[]` 闩锁分层（硬要求）**：那把闩锁是**一次性**的、只管「掉道具」（每颗**一次**）；
+ *   染色是**持续**的 ⇒ 本函数**完全不看闩锁**，每帧自己扫、每帧重写（一手「每帧无条件重写」）。
+ * ⚠ 「结界在场」的判据 = `s_aura_r > 0`（松手 / 换关 / 删卡都会把它归 0：`on_tick_2` 尾部 +
+ *   `clear_card()`）⇒ 不需要在绘制里再读键（`ce_key_down` 不在 `on_draw` 里用）。*/
+static void pofv_aura_tint_tick(void)
+{
+    uint8_t *bm = CE_BULLET_MGR();
+    const float *pp = ce_player_pos();
+    const int active = (bm && pp && s_aura_r > 0.0f);
+    int i, w = 0;
+    uint32_t k;
+
+    /* ① 已有登记：还在结界里 ⇒ 保留（n++ 后**重写**本帧的色）；离开 / 槽空 ⇒ 还原 + 移出。*/
+    for (i = 0; i < s_aura_tint_n; ++i) {
+        uint8_t *b = s_aura_tint[i].b;
+        int keep = 0;
+        if (active) {
+            uint16_t st = *(const uint16_t *)(b + CE_BULLET_STATE);
+            float br = *(const float *)(b + POFV_BULLET_RADIUS_OFF);
+            if (st != 0 && br > 0.0f) {        /* 与 `aura_scan_bullets()` 同判据（空槽 = 0 ✓）*/
+                float dx = *(const float *)(b + CE_BULLET_POS) - pp[0];
+                float dy = *(const float *)(b + CE_BULLET_POS + 4) - pp[1];
+                keep = pofv_aura_hit_here(dx, dy, br);
+            }
+        }
+        if (keep) {
+            volatile uint32_t *col =
+                (volatile uint32_t *)(b + POFV_BULLET_VM_OFF + CE_ANM_VM_COLOR1);
+            if (s_aura_tint[i].n < 0xffffu) ++s_aura_tint[i].n;   /* 一手：每帧 +1 */
+            *col = pofv_aura_tint_color(s_aura_tint[i].n);
+#if POFV_AURA_BULLET_SHAKE
+            pofv_aura_shake_apply(b);
+#endif
+            s_aura_tint[w++] = s_aura_tint[i];
+        } else {
+            volatile uint32_t *col =
+                (volatile uint32_t *)(b + POFV_BULLET_VM_OFF + CE_ANM_VM_COLOR1);
+            *col = s_aura_tint[i].orig;         /* 无条件还原（lolk.c 的教训）*/
+        }
+    }
+    s_aura_tint_n = w;
+
+    if (!active) return;
+
+    /* ② 本帧**新进**结界的弹：记下原色 + 写 `n = 0` 那一档（`G = 0xd0`）。*/
+    for (k = 0; k < CE_BM_BULLET_COUNT; ++k) {
+        uint8_t *b = bm + CE_BM_BULLETS + (size_t)k * CE_BULLET_STRIDE;
+        uint16_t st = *(const uint16_t *)(b + CE_BULLET_STATE);
+        float br, dx, dy;
+        int j, dup = 0;
+        if (st == 0) continue;
+        br = *(const float *)(b + POFV_BULLET_RADIUS_OFF);
+        if (!(br > 0.0f)) continue;
+        dx = *(const float *)(b + CE_BULLET_POS) - pp[0];
+        dy = *(const float *)(b + CE_BULLET_POS + 4) - pp[1];
+        if (!pofv_aura_hit_here(dx, dy, br)) continue;
+        for (j = 0; j < s_aura_tint_n; ++j) if (s_aura_tint[j].b == b) { dup = 1; break; }
+        if (dup) continue;                       /* 已在①里处理（n 已自增）⇒ **每颗弹只记一份** ✓ */
+        if (s_aura_tint_n >= POFV_AURA_TINT_MAX) continue;   /* 保底（结构上到不了）*/
+        {
+            volatile uint32_t *col =
+                (volatile uint32_t *)(b + POFV_BULLET_VM_OFF + CE_ANM_VM_COLOR1);
+            s_aura_tint[s_aura_tint_n].b = b;
+            s_aura_tint[s_aura_tint_n].orig = *col;   /* 整条快照（见文件头对 alpha 的说明）*/
+            s_aura_tint[s_aura_tint_n].n = 0;         /* 一手：新碰到 ⇒ n=0 ⇒ G=0xd0 */
+            *col = pofv_aura_tint_color(0);
+#if POFV_AURA_BULLET_SHAKE
+            pofv_aura_shake_apply(b);
+#endif
+        }
+        ++s_aura_tint_n;
+    }
+}
+
 /* ============================ 伤害（一手：每帧每台一次半径 64 的命中、参数 = 1） ============================
  * 矩形**先裁到场地内**（否则场心靠边时会把还没进屏的敌人打死）。 */
 static int storm_hit_clipped(float cx, float cy, float r, int dmg)
@@ -1194,6 +1377,11 @@ static void clear_card(ce_card_t *c)
     {   int ip4; for (ip4 = 0; ip4 < POFV_AURA_PIECES; ++ip4)          /* ★ 铁律：咲夜那 **7 片**也要一起收干净 ✓ */
             if (s_aura_piece[ip4]) { ce_anm_delete((uint32_t)s_aura_piece[ip4]); s_aura_piece[ip4] = 0; }
     }
+    /* ★★★★ 2026-10-09（铁律「长持续效果删卡要交代」✓）：结界染过的**敌弹颜色**也是跨帧留下的东西
+     *   ⇒ 删卡 / 换关 / 重开必须把颜色写回原样，否则那几颗弹会**永远停在 `0xFFFF??80`** ✗。
+     *   ⚠ 本函数（`on_ctor` / `on_run_reset` / `on_delete` 三路共用）**不依赖 tick** ✓
+     *     —— 删卡发生在商店里、`on_draw` 不跑 ⇒ 只能靠这里（与 `s_storm_vm` / `s_aura_piece` 同一支）。*/
+    pofv_aura_tint_restore_all();
     s_aura_charge = 0.0f; s_aura_r = 0.0f;   /* ★ Shift 蓄力随卡清零 ✓ */
     s_aura_role_logged = 0;                  /* ★ 下次激活再打一次角色日志 ✓ */
     s_cnt_send54 = s_cnt_send30 = s_cnt_arrive = s_cnt_gift = s_cnt_kill = 0;   /* ★ goal ②：计数随卡清零 ✓ */
@@ -3345,6 +3533,32 @@ static int on_load(ce_card_t *c)
 static void on_run_reset(ce_card_t *c) { clear_card(c); }
 static void on_delete(ce_card_t *c)    { clear_card(c); }
 
+/* ★★★★ 2026-10-09 固灵结界碰敌弹的**染色**落笔点 —— **`on_draw`（虚表 `+0x48`）**。
+ *
+ * ⚠ **为什么放 `on_draw` 而不是 `on_tick_2`**：同一个门字段（`bullet+0x28 + CE_ANM_VM_COLOR1`）
+ *   **卡 111 也在写**，而 111 写在 `on_draw` 里（`signal.c:2013-2015` 明文：写 `on_tick_2` 会被
+ *   115 覆盖）⇒ 本卡也放 `on_draw`，让「本卡的染色在 111 之后生效的机会最大」= 同一条 on_draw 线里
+ *   **本函数只做这一件事**（没有别的绘制会在本卡内部排在它后面）。
+ * ⚠ **顺序现状（❓ 未解决，已如实登记 `TUNING.md`，不声称已解决）**：卡按 id 顺序跑 ⇒ 本卡（**109**）
+ *   的 `on_draw` **先**跑、**111（id=111，更大）后**跑 ⇒ 若同一颗弹同帧被两边都写，
+ *   **111 的红落在本卡之后、压住本卡**（本卡无法在 111 之后再写，除非改引擎的卡遍历顺序 —— 不在本卡权限内）。
+ *   ⚠ 111 的红还带机体门（只咲夜）⇒ 非咲夜机体上这条冲突不存在（本卡照染）。
+ * ⚠ **帧守卫**：`on_draw` 每帧可能不止跑一次（同款先例 = 111，`signal.c` 用 `ce_sdk_frame()` 同帧去重）
+ *   —— 染色带 `n` 帧计数 ⇒ 同帧重复会**多计帧**，必须去重。
+ * ⚠ 本函数**同时负责还原**：即使结界已不在场（`s_aura_r <= 0`），也要每帧跑一次 `pofv_aura_tint_tick()`
+ *   （它先做还原）—— 否则上一帧染过的弹会**永远留在色里**（本仓没有一手的引擎 color 插值回落）。*/
+static int on_draw(ce_card_t *c)
+{
+    static uint32_t s_aura_tint_frame = 0xffffffffu;
+    const uint32_t now = ce_sdk_frame();
+    (void)c;
+    if (now != s_aura_tint_frame) {
+        s_aura_tint_frame = now;
+        pofv_aura_tint_tick();
+    }
+    return 0;
+}
+
 /* ★★★ 主动卡（owner 口径）：「只有当**切换到本卡**时，按 C 才有用；作为主动卡**必须写上去的
  *   按 C 实际没有作用、即刻 return**」。`.active_recharge` 非 0 ⇒ 引擎/UI 把 109 认成主动卡
  *   （`category == 0` ⟺ `active_recharge != 0`，`tools/contract_check.py` 硬闸）；
@@ -3387,5 +3601,6 @@ CE_CARD(109, .on_active_tick = pofv_active_tick,
         .on_load = on_load,             /* ★ 2026-10-08：认领「灵力 = 蓄力槽」的 HUD 货架块（幂等 ✓）*/
         .on_enemy_death = on_enemy_death,
         .on_tick_2 = on_tick_2,
+        .on_draw = on_draw,             /* ★ 2026-10-09：固灵结界碰弹染色（一手 TH19 `0x4f5130`）*/
         .on_run_reset = on_run_reset,
         .on_delete = on_delete);
