@@ -885,27 +885,32 @@ static void pofv_hud_charge_bar(float fx, float fy, float ratio_rei, float ratio
     /* 两个比例各自钳到 0..1 ✓（卡侧兜住负值/超值 ✓）*/
     fr = (ratio_rei > 1.0f) ? 1.0f : ((ratio_rei > 0.0f) ? ratio_rei : 0.0f);
     fc = (ratio_chg > 1.0f) ? 1.0f : ((ratio_chg > 0.0f) ? ratio_chg : 0.0f);
+    /* ★★★ 2026-10-03z8（owner 实跑：「**108 和 109 以及原生目前没有进入同时黑暗**」）——
+     *   本卡原来**没有压暗消费者**（审计：只进"带"、自己不淡）⇒ 装了别的 HUD 卡时，
+     *   自机压到带里时**别人淡、109 不淡**。⇒ 现在读**共享带**的 alpha 并写进四支 VM 的颜色
+     *   （`ce_anm_set_color` 收 `0xAARRGGBB`；把 A 换成 band alpha 即可，RGB 不动）。*/
+    const uint32_t tdim = ((uint32_t)ce_hud_band_dim_alpha() & 0xffu) << 24;
     /* ① **底槽**：满块（452×12 表面 px ✓）；色 = 一手 script1 的暗色 ✓ ⇒ 未填部分 = 深灰/暗 ✓ */
     if (s_hud_chg_track_vm) {
         ce_anm_set_pos((uint32_t)s_hud_chg_track_vm, fx, fy, 0.0f);
         ce_anm_set_scale((uint32_t)s_hud_chg_track_vm,
                          POFV_HUD_CHG_BLOCK_W_SURF, POFV_HUD_CHG_BLOCK_H_SURF);
-        ce_anm_set_color((uint32_t)s_hud_chg_track_vm, POFV_HUD_CHG_TRACK_COL1);
-        ce_anm_set_color2((uint32_t)s_hud_chg_track_vm, POFV_HUD_CHG_TRACK_COL2);
+        ce_anm_set_color((uint32_t)s_hud_chg_track_vm, tdim | (POFV_HUD_CHG_TRACK_COL1 & 0xffffffu));
+        ce_anm_set_color2((uint32_t)s_hud_chg_track_vm, tdim | (POFV_HUD_CHG_TRACK_COL2 & 0xffffffu));
     }
     /* ② **蓝填充 = 灵力比例**（规格 ① ✓）：左端起、长 `fr × 448` ✓ */
     if (s_hud_chg_fill_vm) {
         ce_anm_set_pos((uint32_t)s_hud_chg_fill_vm, bx, by, 0.0f);
         ce_anm_set_scale((uint32_t)s_hud_chg_fill_vm, fr * POFV_HUD_CHG_FILL_W, POFV_HUD_CHG_FILL_H);
-        ce_anm_set_color((uint32_t)s_hud_chg_fill_vm, POFV_HUD_CHG_FILL_COL);
-        ce_anm_set_color2((uint32_t)s_hud_chg_fill_vm, POFV_HUD_CHG_FILL_COL);
+        ce_anm_set_color((uint32_t)s_hud_chg_fill_vm, tdim | (POFV_HUD_CHG_FILL_COL & 0xffffffu));
+        ce_anm_set_color2((uint32_t)s_hud_chg_fill_vm, tdim | (POFV_HUD_CHG_FILL_COL & 0xffffffu));
     }
     /* ③ **白段 = 蓄力比例**（规格 ② ✓）：同一左端、**叠在蓝上** ✓ */
     if (s_hud_chg_white_vm) {
         ce_anm_set_pos((uint32_t)s_hud_chg_white_vm, bx, by, 0.0f);
         ce_anm_set_scale((uint32_t)s_hud_chg_white_vm, fc * POFV_HUD_CHG_FILL_W, POFV_HUD_CHG_FILL_H);
-        ce_anm_set_color((uint32_t)s_hud_chg_white_vm, POFV_HUD_CHG_WHITE_COL);
-        ce_anm_set_color2((uint32_t)s_hud_chg_white_vm, POFV_HUD_CHG_WHITE_COL);
+        ce_anm_set_color((uint32_t)s_hud_chg_white_vm, tdim | (POFV_HUD_CHG_WHITE_COL & 0xffffffu));
+        ce_anm_set_color2((uint32_t)s_hud_chg_white_vm, tdim | (POFV_HUD_CHG_WHITE_COL & 0xffffffu));
     }
     /* ④ **C1..C4 四枚标**（规格 ⑤⑥ ✓；形状 = 一手 `ins_617(1.0f,4)` ⇒ 脚本 425 的**贴图**）
      *    ★★ **三档**（一手 `interruptLabel` 的 4 / 3 / 2 三态；推法见 `TUNING.md` 本轮 §①②）：
@@ -943,7 +948,7 @@ static void pofv_hud_charge_bar(float fx, float fy, float ratio_rei, float ratio
              *     「充能**越过**这个标之后会发出**菱形的光晕**」✓。
              *   ⚠ 一手的 `interruptLabel(3)`（那 0.4×24 的细针态）**本卡不再复刻** ✗ ⇒ ❓已登记 TUNING。*/
             ce_anm_set_scale(vm, POFV_HUD_CHG_DIA_SCALE, POFV_HUD_CHG_DIA_SCALE);
-            ce_anm_set_color(vm, POFV_HUD_CHG_MARK_COL);
+            ce_anm_set_color(vm, tdim | (POFV_HUD_CHG_MARK_COL & 0xffffffu));
             ce_anm_set_color2(vm, POFV_HUD_CHG_MARK_COL);
             ce_anm_set_sprite(CE_ABILITY_ANM(), vm, POFV_HUD_CHG_MARK_SPR[i]);      /* 4 色 4 张 ✓ */
         }

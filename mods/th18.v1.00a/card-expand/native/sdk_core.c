@@ -1518,7 +1518,11 @@ void ce_hud_row_remaining_w(float *out)
 {
     float left0, w;
     if (!out) return;
-    hud_card_shelf_x0(&left0, CE_HUD_ANCHOR_X, CE_HUD_GAP, s_hud_card_present);
+    /* ★★★ 2026-10-03z8（owner 实跑：「110-111 在第三行…**空开了最左侧的空间**，应该是为了避开
+     *   主动卡，但是**从观感来讲，最左侧的空间是可行的**」）——⇒ **不再为原生卡面预留 68..124**：
+     *   货架起点一律 = 左锚点 68（卡面仍进"带"里一起淡，见 `hud_band_union()`）。*/
+    left0 = CE_HUD_ANCHOR_X;
+    (void)hud_card_shelf_x0;
     w = CE_HUD_X_MAX - left0;
     *out = (w > 0.0f) ? w : 0.0f;
 }
@@ -1613,7 +1617,16 @@ static void hud_relayout(void)
     for (i = 0; i <= CE_SDK_CARD_ID_MAX; ++i) {
         s_hw[i] = 0.0f;                                  /* 清"已摆"表 */
         if (!s_hud[i].used) continue;
-        if (s_hud[i].side == CE_HUD_SIDE_PINNED) continue;   /* 自带锚点：不参与排布 */
+        if (s_hud[i].side == CE_HUD_SIDE_PINNED) {
+            /* ★★★ 2026-10-03z8（owner 实跑：「113 和 112 重叠」）——**PINNED 块也是障碍**：
+             *   原来货架排布只在自己那批成员之间避让，**看不见 pinned 的块** ⇒
+             *   一旦某块被判碰撞、回退货架，它就可能被摆到**某个 pinned 块身上**。
+             *   ⇒ 把 pinned 的**当前矩形**先塞进"已摆"表当障碍（它们的位置由锚点决定、不参与排序）。*/
+            s_hx[i] = s_hud[i].x; s_hy[i] = s_hud[i].y;
+            s_hw[i] = s_hud[i].w; s_hh[i] = s_hud[i].h;
+            s_hside[i] = (s_hud[i].side == CE_HUD_SIDE_RIGHT) ? 1 : 0;
+            continue;
+        }
         order[n++] = i;
     }
     /* 顺序 = (priority 降, 宽降, card_id 升) —— 贪心 first-fit-decreasing（见 §2.1）*/
@@ -1724,9 +1737,8 @@ static int hud_register(uint32_t card_id, const ce_hud_block_t *blk,
              *   我们的 pinned 块（64/68/88 那一片）本来就压在它身上 ⇒ 卡面在的时候必须让开。
              *   ⚠ 货架那一侧**早就让了**（`hud_card_shelf_x0()` ⇒ 起点 max(锚点, 116+8)）；
              *     这里补的是 **PINNED 不该成为例外**：撞卡面 ⇒ 同样回退货架（落到 124 右边，天然不撞）。*/
-            if (!hit && s_hud_card_present &&
-                hud_rect_hit(anchor_x, anchor_y, blk->w, blk->h,
-                             HUD_CARD_POS_X, HUD_CARD_POS_Y, HUD_CARD_W, HUD_CARD_H)) hit = 1;
+            /* ★ 2026-10-03z8：**不再**把原生卡面当碰撞障碍（owner 口径：「最左侧的空间是可行的」）
+             *   —— 卡面仍算进"带"（`hud_band_union()`），所以它会跟着一起淡。*/
             if (hit) {                                   /* 回退：降级成 LEFT 参与排布 */
                 s_hud[card_id].side = CE_HUD_SIDE_LEFT;
                 s_hud[card_id].priority = 0;

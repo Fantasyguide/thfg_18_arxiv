@@ -643,7 +643,10 @@ static void test_hud_slots(void)
         CHECK(ce_hud_slot_fallbacks() == 0);
         CHECK(ce_hud_slot_claim_pinned(118, &pinblk, 100.0f, 924.0f, &p_hit));
         CHECK(ce_hud_slot_fallbacks() == 1);                         /* ③ 相交 ⇒ 回退 */
-        CHECK(p_hit.side == CE_HUD_SIDE_LEFT && p_hit.x == CE_HUD_ANCHOR_X);
+        /* ★ 2026-10-03z8：货架排布现在**把 pinned 块当障碍** ⇒ 回退的这块被摆到它**右边**，
+         *   而不是叠在锚点上（这正是修「113 和 112 重叠」的那条规则）。*/
+        CHECK(p_hit.side == CE_HUD_SIDE_LEFT);
+        CHECK(p_hit.x == 68.0f + 100.0f + CE_HUD_GAP);
         CHECK(ce_hud_slot_get(117, &p_far) && p_far.x == 600.0f);    /* ⚠ 不动别的块 */
         ce_hud_slots_reset();
         CHECK(ce_hud_slot_fallbacks() == 0);
@@ -661,11 +664,13 @@ static void test_hud_slots(void)
         CHECK(pin_slot.x == 68.0f && pin_slot.side == CE_HUD_SIDE_PINNED);
         CHECK(ce_hud_slot_fallbacks() == 0);
         ce_hud_slots_reset();
-        ce_hud_card_set(1);                                              /* 有主动卡 ⇒ 撞卡面 ⇒ 回退 */
+        /* ★★★ 2026-10-03z8（owner：「**最左侧的空间是可行的**」）——**卡面不再算障碍**：
+         *   有主动卡时 pinned 也**保持原位**（卡面照样进"带"、一起淡）。*/
+        ce_hud_card_set(1);
         CHECK(ce_hud_slot_claim_pinned(112, &pin_68, 68.0f, 924.0f, &pin_slot));
-        CHECK(pin_slot.side == CE_HUD_SIDE_LEFT);
-        CHECK(ce_hud_slot_fallbacks() == 1);
-        CHECK(pin_slot.x >= HUD_CARD_POS_X + HUD_CARD_W);                 /* 落在卡面右边 */
+        CHECK(pin_slot.side == CE_HUD_SIDE_PINNED);
+        CHECK(ce_hud_slot_fallbacks() == 0);
+        CHECK(pin_slot.x == 68.0f);
         ce_hud_card_set(0);
         ce_hud_slots_reset();
     }
@@ -707,9 +712,9 @@ static void test_hud_slots(void)
     {   float rw = 0.0f;
         ce_hud_row_remaining_w(&rw);
         CHECK(rw == CE_HUD_X_MAX - CE_HUD_ANCHOR_X);                                /* 无卡面：1024−68 */
-        ce_hud_card_set(1);
+        ce_hud_card_set(1);                                  /* ★ z8：卡面不再预留 ⇒ 与上面同一个值 */
         ce_hud_row_remaining_w(&rw);
-        CHECK(rw == CE_HUD_X_MAX - (HUD_CARD_POS_X + HUD_CARD_W + CE_HUD_GAP));
+        CHECK(rw == CE_HUD_X_MAX - CE_HUD_ANCHOR_X);
     }
     ce_hud_card_set(0);
 
@@ -804,9 +809,9 @@ static void test_hud_slots(void)
         CHECK(ce_hud_slot_claim_pinned(117, &pin, 88.0f, 924.0f, &p1));
         CHECK(p1.x == 88.0f && p1.y == 924.0f);            /* 锚点原样 */
         CHECK(p1.x640 == 44.0f && p1.y640 == 462.0f);      /* 640 空间同步 */
-        /* 货架卡照旧从锚点 257 起（pinned 不占它的位、也不被它顶动）*/
+        /* ★ 2026-10-03z8：货架现在**会避开 pinned 块** ⇒ 111 落在 117（88..281）右边 */
         CHECK(ce_hud_slot_claim(111, &shelf, &p2));
-        CHECK(p2.x == CE_HUD_ANCHOR_X && p2.y == CE_HUD_ANCHOR_Y);
+        CHECK(p2.x == 88.0f + pin.w + CE_HUD_GAP && p2.y == CE_HUD_ANCHOR_Y);
         CHECK(ce_hud_slot_get(117, &p1) && p1.x == 88.0f && p1.y == 924.0f);
         /* 重复认领幂等 */
         CHECK(ce_hud_slot_claim_pinned(117, &pin, 88.0f, 924.0f, &p1) && p1.x == 88.0f);

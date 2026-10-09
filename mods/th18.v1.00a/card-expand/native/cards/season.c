@@ -209,8 +209,12 @@
  *   ⚠ 要再左/右移**只改这一个数**。*/
 #define SEASON_HUD_PIN_X       68.0f
 #define SEASON_HUD_PIN_Y       924.0f
-#define SEASON_HUD_DIGIT_X640  (-32.75f) /* 档位数字（640 空间）= 锚点.x640 + 它*/
-#define SEASON_HUD_DIGIT_Y640  (-10.25f) /* 档位数字（640 空间）= 锚点.y640 + 它*/
+/* ★★★ 2026-10-03z8（owner 实跑：「**季节等级指示数字依然在季节主体的左侧**」；
+ *   实跑日志一行定案：`season: hud geom … frame_cx 761.0 … digit_sx 644.5 | **digit−frame −116.5 px**`）——
+ *   旧常量（−32.75 / −10.25）是 257 锚点时代按**另一套基准**标定的 ⇒ 数字比外框心**左 116.5 px**。
+ *   现改成**跟着外框心**（外框心 = 槽 + (51, −8)，见上面那一族常量）⇒ 640 空间就是其一半。*/
+#define SEASON_HUD_DIGIT_X640    25.5f   /* = 外框心 x 偏移 51 / 2（`resolutionMode(2)` ⇒ 640 空间 = 表面/2）*/
+#define SEASON_HUD_DIGIT_Y640    (-4.0f) /* = 外框心 y 偏移 −8 / 2 */
 /* ★★ 2026-09-10 第三十二轮：外框改成**四条矩形**拼出来（TH16 `front.anm` script114 的
  * `drawRectBorder(102,10)` 等价画法；脚本 123 = 1×1 模板，实际尺寸全靠 VM `scale`）。
  * 像素口径（用户 1280 档 100% 截图逐轮标定）：
