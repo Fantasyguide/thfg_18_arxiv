@@ -1830,12 +1830,18 @@ static int c2_cancel_drop(const float *pos, float r)
 }
 
 /* 可见扩张环（❓自定画法）：建 / 每帧跟随自机 + 写 scale(=半径)。脚本 396 的半径由外部每帧写 ✓。*/
+/* ★★ 2026-10-10 owner 实跑订正：「**C1 C2 包括其他 C 的消弹圈是扩张的红色圆环**」✓
+ *   ⇒ 各档的「圈」是**红色**的（旧记「一手无可视扩张环」✗ 作废）。卡里既有约定
+ *   `0xffffff00` = 黄 ⇒ 同字节序下 **红 = `0xffff0000`**（AARRGGBB）。*/
+#define POFV_C_RING_COLOR       0xffff0000u
+
 static void c2_ring_vm_sync(float r)
 {
     if (!s_c2.ring_vm) {
         const uint32_t id = ce_anm_spawn(CE_ABILITY_ANM(), POFV_C2_RING_SCRIPT, POFV_C2_VM_LAYER);
         if (!id) return;                       /* 建失败 ⇒ 少一台装饰环，逻辑照走（下一帧再试 ✓）*/
         s_c2.ring_vm = (int32_t)id;
+        ce_anm_set_color(id, POFV_C_RING_COLOR);   /* ★ owner：扩张的**红色**圆环 ✓ */
     }
     {
         const float *p = ce_player_pos();
@@ -2154,6 +2160,7 @@ static void pofv_c1_fire(void)
         if (s_c1_vm[t]) {
             ce_anm_set_pos((uint32_t)s_c1_vm[t], s_c1_x[t], s_c1_y[t], 0.0f);
             ce_anm_set_scale((uint32_t)s_c1_vm[t], 0.25f, 0.25f);   /* ❓自定：占位观感的尺寸 */
+            ce_anm_set_color((uint32_t)s_c1_vm[t], POFV_C_RING_COLOR);  /* ★ owner：红色 ✓ */
         }
     }
 }
