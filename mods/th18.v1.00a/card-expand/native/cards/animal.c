@@ -2034,15 +2034,26 @@ static void hud_slot_claim(void)
 static void hud_slot_sync(animal_card_t *s)
 {
     if (!s_slot_ok || !ce_hud_slot_get(117, &s_slot)) {
-        s_slot.x = ANIMAL_HUD_PIN_X;
-        s_slot.y = ANIMAL_HUD_PIN_Y;
-        s_slot.w = ANIMAL_HUD_BLOCK_W;
-        s_slot.h = ANIMAL_HUD_BLOCK_H;
-        s_slot.side = CE_HUD_SIDE_PINNED;
-        s_last_path_table = 0;
-    } else {
-        s_last_path_table = 1;
+        /* ★★★ 2026-10-03t（**十二合一实跑日志抓出来的**：
+         *   `wba_wc: hud geom [tick] claim_ok=0 path=fallback | slot (88, 924) …`）——
+         *   这里原来**只"取"不"重认领"**：一旦**关卡纪元**把槽位表清掉（换关、或 118 发卡那一批
+         *   让 `ce_hud_stage_begin()` 推进纪元），117 就**永远拿不到**、整局都用兜底常量画
+         *   ⇒ 「**不进系统、位置不听分配器**」（owner 十二合一实跑第 1 条里的 117 就是这个）。
+         *   ⇒ 取不到就**补一次认领**（`hud_slot_claim()` 是幂等的：同一关重复调只重写同一条），
+         *     再取；仍然失败才退回兜底常量（首次认领前的那几帧）。*/
+        hud_slot_claim();
+        if (!s_slot_ok || !ce_hud_slot_get(117, &s_slot)) {
+            s_slot.x = ANIMAL_HUD_PIN_X;
+            s_slot.y = ANIMAL_HUD_PIN_Y;
+            s_slot.w = ANIMAL_HUD_BLOCK_W;
+            s_slot.h = ANIMAL_HUD_BLOCK_H;
+            s_slot.side = CE_HUD_SIDE_PINNED;
+            s_last_path_table = 0;
+            (void)s;
+            return;
+        }
     }
+    s_last_path_table = 1;
     (void)s;
 }
 
