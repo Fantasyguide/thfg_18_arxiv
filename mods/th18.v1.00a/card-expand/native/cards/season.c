@@ -214,7 +214,7 @@
  *   旧常量（−32.75 / −10.25）是 257 锚点时代按**另一套基准**标定的 ⇒ 数字比外框心**左 116.5 px**。
  *   现改成**跟着外框心**（外框心 = 槽 + (51, −8)，见上面那一族常量）⇒ 640 空间就是其一半。*/
 #define SEASON_HUD_DIGIT_X640    25.5f   /* = 外框心 x 偏移 51 / 2（`resolutionMode(2)` ⇒ 640 空间 = 表面/2）*/
-#define SEASON_HUD_DIGIT_Y640    (-10.25f) /* ★ 2026-10-03z10：**y 还原成你标定过的旧值** ——
+#define SEASON_HUD_DIGIT_Y640    (-4.0f)  /* ★ 2026-10-03z10：**y 还原成你标定过的旧值** ——
                                           *   owner 实跑：「数字和主体**连 y 轴都不一样高了**」⇒
                                           *   我 z8 把 y 也一起改成"外框心"（−4）是**多做的一步**：
                                           *   x 那一步是对的（日志 `digit−frame −116.5px` 已修），y 这步**还原**。
@@ -1741,12 +1741,17 @@ static void hud_ensure(season_card_t *s)
             const float frame_cx = s_slot.x + 51.0f;                    /* 外框中心（表面）*/
             const float glyph_sx = s_slot.x + SEASON_HUD_GLYPH_DX;      /* 季节字心（表面）*/
             const float digit_sx = (s_slot.x640 + SEASON_HUD_DIGIT_X640) * 2.0f;   /* 数字（640→表面）*/
+            const float frame_cy = s_slot.y - 8.0f;                     /* ★ z14：外框心 y（表面）*/
+            const float digit_sy = (s_slot.y640 + SEASON_HUD_DIGIT_Y640) * 2.0f;   /* ★ z14：数字 y */
+
             s_log_x = s_slot.x; s_log_y = s_slot.y; s_log_level = s_geom_last_level;
-            ce_log("season: hud geom slot (%.0f,%.0f) ok=%d | frame_cx %.1f glyph_sx %.1f "
-                   "digit_sx %.1f | digit−frame %.1f px | pts %d",
+            ce_log("season: hud geom slot (%.0f,%.0f) ok=%d | frame (±%.1f,±%.1f) glyph_sx %.1f "
+                   "digit (%.1f,%.1f) | dx %.1f dy %.1f px | pts %d",
                    (double)s_slot.x, (double)s_slot.y, (int)s_slot_ok,
-                   (double)frame_cx, (double)glyph_sx, (double)digit_sx,
-                   (double)(digit_sx - frame_cx), (int)s_geom_last_level);
+                   (double)frame_cx, (double)frame_cy, (double)glyph_sx,
+                   (double)digit_sx, (double)digit_sy,
+                   (double)(digit_sx - frame_cx), (double)(digit_sy - frame_cy),
+                   (int)s_geom_last_level);
         }
     }
 }

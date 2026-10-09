@@ -1521,6 +1521,8 @@ void ce_hud_row_remaining_w(float *out)
     /* ★★★ 2026-10-03z10（**撤销 z8**）：owner 实跑「108 变到第一行去了，并且**没有避开主动卡**」
      *   ⇒ 恢复"为原生卡面让位"：有主动卡时货架起点 = `hud_card_shelf_x0()`（= **124**）、
      *   没有时 = 锚点 68。z8 把这条去掉导致 108（256 宽）直接压在卡面上。*/
+    /* ⚠ 这个函数**仍然要**按"卡面让位"算剩余宽度（109 的声明宽 = 底边真正可用的宽度）
+     *   —— 卡面之上虽然能用，但那要由排布器去摆，声明宽保守取到卡面右边。*/
     hud_card_shelf_x0(&left0, CE_HUD_ANCHOR_X, CE_HUD_GAP, s_hud_card_present);
     w = CE_HUD_X_MAX - left0;
     *out = (w > 0.0f) ? w : 0.0f;
@@ -1547,9 +1549,10 @@ void ce_hud_card_set(int present) { s_hud_card_present = present ? 1 : 0; }
  *   · 水平方向：从起点向右扫，撞上已摆块就**跳到它右边 + 间隙**再扫（左侧）；右侧镜像向左扫；
  *   · ⚠ 仍然**完全确定**：顺序 = (priority 降, 宽降, card_id 升)，候选 y 排序、x 单向扫 ⇒ 同输入同结果。
  *   · `own_row`（口子保留）：该块的候选只剩"所有已摆块之上"那一条 ⇒ 仍然独占一条新行。*/
-static float s_hx[CE_SDK_CARD_ID_MAX + 1], s_hy[CE_SDK_CARD_ID_MAX + 1];
-static float s_hw[CE_SDK_CARD_ID_MAX + 1], s_hh[CE_SDK_CARD_ID_MAX + 1];
-static int   s_hside[CE_SDK_CARD_ID_MAX + 1];
+static float s_hx[CE_SDK_CARD_ID_MAX + 2], s_hy[CE_SDK_CARD_ID_MAX + 2];
+static float s_hw[CE_SDK_CARD_ID_MAX + 2], s_hh[CE_SDK_CARD_ID_MAX + 2];
+static int   s_hside[CE_SDK_CARD_ID_MAX + 2];
+#define HUD_PLACED_CARD_FACE (CE_SDK_CARD_ID_MAX + 1)   /* ★ z14：原生卡面在"已摆表"里的哨兵下标 */
 
 /* 在 `side` 这一侧给 `w×h` 找落点（纯矩形、无行）。成功返回 1。*/
 static int hud_place_scan(int side, float w, float h, float left0, int own_row,
@@ -1563,13 +1566,13 @@ static int hud_place_scan(int side, float w, float h, float left0, int own_row,
     cand[ncand++] = y_base;
     if (own_row) {                                     /* 独占一行：只留"所有已摆块之上"那一条 */
         float top = y_base;
-        for (i = 0; i <= CE_SDK_CARD_ID_MAX; ++i) {
+        for (i = 0; i <= HUD_PLACED_CARD_FACE; ++i) {
             if (s_hw[i] <= 0.0f || s_hside[i] != side) continue;
             if (s_hy[i] - s_hh[i] - CE_HUD_GAP < top) top = s_hy[i] - s_hh[i] - CE_HUD_GAP;
         }
         cand[0] = top; ncand = 1;
     } else {
-        for (i = 0; i <= CE_SDK_CARD_ID_MAX; ++i) {
+        for (i = 0; i <= HUD_PLACED_CARD_FACE; ++i) {
             if (s_hw[i] <= 0.0f || s_hside[i] != side) continue;
             cand[ncand++] = s_hy[i] - s_hh[i] - CE_HUD_GAP;    /* 叠在它上面（留间隙）*/
         }
@@ -1587,7 +1590,7 @@ static int hud_place_scan(int side, float w, float h, float left0, int own_row,
         int moved = 1, guard = 0;
         while (moved && guard++ < 2 * CE_SDK_CARD_ID_MAX + 8) {
             moved = 0;
-            for (i = 0; i <= CE_SDK_CARD_ID_MAX; ++i) {
+            for (i = 0; i <= HUD_PLACED_CARD_FACE; ++i) {
                 float qx, qy, qw, qh;
                 if (s_hw[i] <= 0.0f || s_hside[i] != side) continue;
                 qx = s_hx[i]; qy = s_hy[i]; qw = s_hw[i]; qh = s_hh[i];
@@ -1611,10 +1614,23 @@ static void hud_relayout(void)
     float left0;
     static int order[CE_SDK_CARD_ID_MAX + 1];    /* ⚠ 文件静态：钩子里的栈很紧 */
     int n = 0, k, i;
-    hud_card_shelf_x0(&left0, CE_HUD_ANCHOR_X, CE_HUD_GAP, s_hud_card_present);
+    /* ★★★ 2026-10-03z14（owner：「**原生主动卡之上的空间没有被妥善利用**」）——
+     *   原来"有卡面就把**整条货架起点**让到 124"⇒ 68..124 那一列**整列空着**（连卡面上方都浪费）。
+     *   现在：**货架起点一律 = 锚点 68**，把**卡面本身当作一块障碍矩形**塞进"已摆表"
+     *   ⇒ 卡面那一格谁也压不到，而**它上方的空间可以被正常使用** ✓。
+     *   （pinned 块撞卡面仍然回退 —— 那条判据不动。）*/
+    left0 = CE_HUD_ANCHOR_X;
 
+    s_hw[HUD_PLACED_CARD_FACE] = 0.0f;                   /* ★ 哨兵格**每次都要清**（否则卡面矩形会残留）*/
+    if (s_hud_card_present) {                            /* ★ z14：卡面 = 一块障碍（HUD 不可压）*/
+        s_hx[HUD_PLACED_CARD_FACE] = HUD_CARD_POS_X;
+        s_hy[HUD_PLACED_CARD_FACE] = HUD_CARD_POS_Y;
+        s_hw[HUD_PLACED_CARD_FACE] = HUD_CARD_W;
+        s_hh[HUD_PLACED_CARD_FACE] = HUD_CARD_H;
+        s_hside[HUD_PLACED_CARD_FACE] = 0;
+    }
     for (i = 0; i <= CE_SDK_CARD_ID_MAX; ++i) {
-        s_hw[i] = 0.0f;                                  /* 清"已摆"表 */
+        s_hw[i] = 0.0f;                                  /* 清"已摆"表（含卡面哨兵）*/
         if (!s_hud[i].used) continue;
         if (s_hud[i].side == CE_HUD_SIDE_PINNED) {
             /* ★★★ 2026-10-03z8（owner 实跑：「113 和 112 重叠」）——**PINNED 块也是障碍**：
@@ -1644,7 +1660,18 @@ static void hud_relayout(void)
         const int id = order[k];
         const int side = (s_hud[id].side == CE_HUD_SIDE_RIGHT) ? 1 : 0;
         float x = 0.0f, y = 0.0f;
-        (void)hud_place_scan(side, s_hud[id].w, s_hud[id].h, left0, s_hud[id].own_row, &x, &y);
+        /* ★★★ 2026-10-03z14（owner：「**少了那种高度模糊匹配的感觉**」）——
+         *   把每块的**排布高度量化到 8px 网格**（`h_q`，向上取整）：同一条底边上的块**顶沿对齐**，
+         *   观感从"参差"变成"一排一排"（真正的块高 `s_hud[id].h` 不动，只影响摆放）。*/
+        {
+            const float g = 8.0f;
+            const float r = s_hud[id].h / g;
+            int ri = (int)r;
+            float h_q;
+            if ((float)ri < r) ++ri;                      /* 向上取整（不用 ceil，避开 libm）*/
+            h_q = (float)ri * g;
+            (void)hud_place_scan(side, s_hud[id].w, h_q, left0, s_hud[id].own_row, &x, &y);
+        }
         s_hud[id].x = x;
         s_hud[id].y = y;
         s_hx[id] = x; s_hy[id] = y; s_hw[id] = s_hud[id].w; s_hh[id] = s_hud[id].h;
