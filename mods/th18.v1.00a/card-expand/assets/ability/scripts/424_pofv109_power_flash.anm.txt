@@ -1,0 +1,27 @@
+script script424 {
+    // 109 · 每颗灵力道具**真正出现那一刻**的一台几何闪光 —— 复刻 TH19 `effect.anm` **script94**
+    //   （一手 = `local/th19.v1.10c/_ext/effect.txt`，`thanm -l 19` 逐条解出；2026-10-09）。**逐字照抄**。
+    //
+    // 一手正文（= 本脚本除 `script` 号外的全部）：`sprite(-1); drawPolyBorder(1.0f,12); blendMode(1);
+    //   layer(16); color(224,224,192); scale(1,1); scaleTime(20,4,32,32); +10: alphaTime(10,4,0);
+    //   +10: delete();` ⇒ **加算空心 12 边形环**，20 帧里 scale 1→32（= 2px→64px），
+    //   后 10 帧淡到 α0，**第 20 帧自行 `delete()`** ✓（所以卡侧不必替它删，只需句柄探活）。
+    //
+    // ★ 移植差异：**0 条**。`sprite(-1)`（无贴图、引擎程序画几何）+ `drawPolyBorder` 都是本仓
+    //   实证可用的写法（`223_ufo_pentagon.anm.txt` 的 `sprite(-1); drawPolyBorder(1.0f,5)` ✓、
+    //   原生 `effect.anm` script101 `sprite(-1); drawPolyBorder(1.0f,12)` ✓；`605 drawPolyBorder`
+    //   在 v8 指令表里 ✓）。层 16 照一手原值（本仓世界层 3–19 ✓，不派生 `resolutionMode`）。
+    //   ⚠ 本卡道具本体 VM 在层 **13**、闪光照一手在 **16** ⇒ 闪光画在道具**之上**（层大者后画）。
+    //    一手「道具本体层 vs 闪光层」的相对关系未逐字核 ⇒ 存疑那一半登记 `TUNING.md`（❓）。
+    sprite(-1);
+    drawPolyBorder(1.0f, 12);
+    blendMode(1);
+    layer(16);
+    color(224, 224, 192);
+    scale(1.0f, 1.0f);
+    scaleTime(20, 4, 32.0f, 32.0f);
++10: // 10
+    alphaTime(10, 4, 0);
++10: // 20
+    delete();
+}

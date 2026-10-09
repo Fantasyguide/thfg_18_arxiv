@@ -1,0 +1,45 @@
+script script423 {
+    // 109 · 固灵结界消弹产物「霊力アイテム」的**可视 VM** —— 复刻 TH19 `bullet.anm` **script123**
+    //   （一手 = `local/th19.v1.10c/_ext/bullet.txt`，`thanm -l 19` 逐条解出；2026-10-09）。
+    //
+    // 一手正文（逐字，一行不多一行不少）：
+    //   `sprite(sprite517); originMode(1); type(1); alpha(96); angleVel(0,0,0.7853982f);
+    //    scale(0,0); scaleTime(16,0,0.5,0.5);` → 第 32 帧 `angleVel(0,0,0)` →
+    //   标签 `offset128`：`scaleTime(4,9,0.5,0.5)` → +4 `scaleTime(4,9,0.55,0.55)` →
+    //   +4 `jmp(offset128,32)` → `static()`。
+    //   `sprite517` 的矩形 = **`(209,33,14,14)`**（`bullet.anm` 的 sprite 表）⇒ 本卡切图 `TH19_ITEM_KIND9`。
+    //   ⇒ 观感 = **半透明（α=96）蓝紫小点、自转 45°/帧、16 帧从 0 胀到 0.5 倍，
+    //     之后每 4 帧 0.5↔0.55 脉冲**（= owner 描述的「半透明偏蓝小点」✓）。
+    //   ★ 为什么是 kind 9：一手「拾取加槽」只发生在 **kind 9–14**（kind 1–8 拾取只播 SE/删除、不加槽）
+    //     ⇒ 本卡道具用 kind 9 的外观（负结论登记 `TUNING.md`）。
+    //
+    // ★ 移植差异（逐条：一条一手、一条原因）：
+    //   ① `sprite(sprite517)` → `sprite(@TH19_ITEM_KIND9)`：**同一矩形的一手切图**（0 差异）。
+    //   ② 唯一**新增**的一行 = `layer(13)`：一手 script123 **不写** `layer`（层由 TH19 游戏代码在 spawn
+    //      时给）；本卡 `power_vm_sync()` 的 spawn 层也是 13 ⇒ 显式写死同值，防两个来源打架。
+    //      层 3–19 **不派生** `resolutionMode`（`engine/anm/th18/01-vm-instantiate.md` §5）⇒ 与世界层
+    //      其它 VM 同语义 ✓（**不需要** HUD 那行 `resolutionMode(2)` ✗）。
+    //   ③ `originMode(1)` / `type(1)` / `angleVel` / `static` 四项**全部照抄、一个没省**：
+    //      逐条核过本仓的 v8 指令表（`local/vendor/truth/map/v8.anmm`）——`438 originMode` / `302 type` /
+    //      `415 angleVel` / `2 static` 都在表里，且 `223`（angleVel）/`186`（static）/`115`（type）已在用 ✓。
+    //      （一手 TH19 与本仓同属 anm 头版本 8 —— `tooling/thtk/unpack.py` 的 GAMES 表 ⇒ 指令集同族 ✓。）
+    //   ④ 一手不写 `color` / `blendMode` ⇒ 两者都取 VM 默认（白 / 普通混合）；本脚本同样不写
+    //      （卡侧只在出生时写一次 `0xffffffff` = 不染色，与一手默认等价 ✓）。
+    sprite(@TH19_ITEM_KIND9);
+    layer(13);                 /* ★ 本卡 spawn 层同值（一手不写，见上 ②）*/
+    originMode(1);
+    type(1);
+    alpha(96);
+    angleVel(0.0f, 0.0f, 0.7853982f);
+    scale(0.0f, 0.0f);
+    scaleTime(16, 0, 0.5f, 0.5f);
+32:
+    angleVel(0.0f, 0.0f, 0.0f);
+offset128:
+    scaleTime(4, 9, 0.5f, 0.5f);
++4: // 36
+    scaleTime(4, 9, 0.55f, 0.55f);
++4: // 40
+    jmp(offset128, 32);
+    static();
+}

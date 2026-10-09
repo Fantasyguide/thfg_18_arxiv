@@ -1256,3 +1256,13 @@ POFV109_TH09_UI_DIGIT_6   ability/th09front/TH09_HUD_DIGIT_6.png      12x12
 POFV109_TH09_UI_DIGIT_7   ability/th09front/TH09_HUD_DIGIT_7.png      12x12
 POFV109_TH09_UI_DIGIT_8   ability/th09front/TH09_HUD_DIGIT_8.png      12x12
 POFV109_TH09_UI_DIGIT_9   ability/th09front/TH09_HUD_DIGIT_9.png      12x12
+# ★★★★ 2026-10-09 卡 109：TH19 固灵结界消弹产物「霊力アイテム」的**一手贴图**（owner 明确否掉「借 116 季节道具」✗）。
+#   源 = TH19 v1.10c `anm/bullet/bullet/item.png`（`local/` 开头 ⇒ 构建时现取，版权字节不入库）。
+#   `item.png` 是一张 **14 px 一格的道具表**：kind k 的格子 = `(209, 1 + 16*(k-1), 14, 14)`
+#   （k=2 → `(209,1)`、k=3 → `(209,17)`、k=9 → `(209,33)` ✓）。
+#   ★ 只切三张：**kind 9 = 真正拾取加槽的那一颗**（一手 `bullet.anm` script123 `sprite(sprite517)` =
+#     `(209,33,14,14)`，可见像素质心 RGB≈(63,53,81) = 蓝紫小圆点 ✓）＋ kind 2A/2B 两张**备用**
+#     （一手 kind 1–8 拾取只播 SE/删除、**不加槽** ⇒ 本卡不用它们上场；先备着，见 `TUNING.md`）。
+TH19_ITEM_KIND9   ability/th19item/TH19_ITEM_KIND9.png   14x14
+TH19_ITEM_KIND2A  ability/th19item/TH19_ITEM_KIND2A.png  14x14
+TH19_ITEM_KIND2B  ability/th19item/TH19_ITEM_KIND2B.png  14x14

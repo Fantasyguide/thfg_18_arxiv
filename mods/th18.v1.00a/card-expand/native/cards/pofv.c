@@ -102,13 +102,16 @@ typedef void (__attribute__((thiscall)) *pofv_fn_bullet_cancel_t)(void *bullet, 
  *     ② 固灵结界碰到敌方弹幕 ⇒ 从**该弹的原位**撒（**必定掉、不做概率模型** ✗）；
  *   · 每帧推进 + 收取入账（本卡的「攻击槽」= `s_ex_gauge`）；
  *   · 每颗的**可视 VM**（`power_vm_sync()`：延时结束建 / 每帧跟随 / 所有移除路径删）；
+ *   · 出生那一刻另起**一台几何闪光**（同一处建；一手 `effect.anm` script94）；
  *   · `clear_card()` 收干净（铁律：长持续效果删卡要交代）。
- * ★ 视觉：**照 116（季节道具）的做法**（`season.c` 的 `point_spawn_vm()` / `points_tick()`）——
- *   复用现成的 `CE_ANM_ABILITY_SCRIPT_SEASON_POINT`（`ability.anm` script115）+ 配套贴图
- *   `CE_ANM_ABILITY_SPRITE_PT_SPRING` + 层 `POFV_POWER_VM_LAYER`（= 116 的 13）。
- *   ⚠ 这是**借 116 的现成美术**，**不是**一手 TH19 的灵力道具美术（TH19 原贴图未取到；
- *     被删前那份借的是当时的 374，那个号现在已被别的卡占用）⇒ 美术身份**待定 ❓**，
- *     已登记 `TUNING.md`（N5 处理 + 新增 ❓ 自定项）。*/
+ * ★★★★ 2026-10-09 视觉身份换正（owner 明确否掉「借 116 季节道具」✗）—— 改用**一手 TH19 美术**：
+ *   ① 本体 = 一手 `bullet.anm` **script123**（`local/th19.v1.10c/_ext/bullet.txt`）⇒ 新脚本 **423** +
+ *      新贴图 `TH19_ITEM_KIND9`（= 一手 `sprite517` 的矩形 `(209,33,14,14)`，从 `bullet/item.png` 原样切）；
+ *   ② 闪光 = 一手 `effect.anm` **script94**（同目录 `effect.txt`）⇒ 新脚本 **424**（加算空心环、20 帧自删）；
+ *   接线形状仍照 116（`season.c` 的 `point_spawn_vm()` / `points_tick()`）：spawn → set_pos/sprite/color
+ *   → 每帧跟随 → 移除时 `ce_anm_delete` + 句柄清 0。
+ *   ★ 为什么是 kind 9：一手「拾取加槽」只发生在 **kind 9–14**（kind 1–8 拾取只播 SE + 删除）⇒ 本卡道具用
+ *     kind 9 的外观（负结论已登记 `TUNING.md`）。*/
 #define POFV_POWER_SE_GET       0x25   /* ★ 一手：收取音（TH16 季节道具的拾取音 `0x25`）*/
 #define POFV_POWER_SE_LEVEL     0x3f   /* ★ 一手：**升档音** —— TH16 季节道具升档（`item_collect_season`）
                                         *   播 `0x3f`（116 `season.c` 的 `SEASON_SE_LEVEL` 同源；
@@ -511,6 +514,8 @@ static int ipow10(int n) { int v = 1; while (n-- > 0) v *= 10; return v; }
 /* ★★★★ 2026-10-08 TH09 **自机上方「Charge 当前档/上限档」指示**（一手 script68–71 ✓）：
  *   4 台 VM，随自机移动（+ 偏移）、中心锚点 ✓：
  *     标签 `Charge` (0,−40) ✓／当前档 (−12,−28) ✓／斜杠 `/` (0,−28) ✓／上限档 (+12,−28) ✓；
+ *     ★ 2026-10-09：以上是**一手 640×480 空间**的值 ⇒ 落到本卡 UI 列表时要**×2 到表面 px**
+ *       （并且自机坐标也要先换成表面 px，见 `POFV_HUD_SURF_X/Y`）✓；
  *   出现：**按住蓄力键（C∨Shift ✓）满 10 帧** ✓；松手 ⇒ `interrupt(…,1)` 收掉 ✓；
  *   动画：淡入 `alphaTime(10,0,192)` ✓；标签与当前档 **绿(128,255,128)↔白 每 10 帧** ✓；
  *         上限档与斜杠 **灰 (192,192,192) 静态** ✓。
@@ -523,6 +528,7 @@ static int32_t s_hud_chg_hold;      /* 蓄力键连续按住的帧数（一手�
 /* ★★★★ 2026-10-08 TH09 **自机上方「Gauge Filled / level」提示**（一手 script72–74 ✓）：
  *   3 台 VM，随自机移动、中心锚点 ✓：
  *     标签 `Gauge Filled` (0,−40) ✓／标签 `level` (−8,−28) ✓／档位数字 (+18,−28) ✓；
+ *     ★ 2026-10-09：同上，一手的这三组偏移是 **640×480 空间** ⇒ 落 UI 列表时 **×2 到表面 px** ✓；
  *   出现：★ **档位上涨那一帧** ✓（一手 `FUN_0041bc90` ⇒ `0x41bd26` 调 `0x41a320` 装这 3 支脚本 ✓）；
  *   动画：淡入 `alphaTime(3,0,192)` ✓；`Gauge Filled` 灰(224,224,224)↔白、`level` 与数字 灰(160,160,160)↔白，
  *         周期 **30 帧** ✓（一手 script72/73/74 的 `ins_37(计时器, 30)` ✓ —— 与 A 组的 10 帧不同 ✓）。
@@ -531,6 +537,23 @@ static int32_t s_hud_chg_hold;      /* 蓄力键连续按住的帧数（一手�
 static int32_t s_hud_lv_gf_vm, s_hud_lv_label_vm, s_hud_lv_digit_vm;
 static int32_t s_hud_lv_left;       /* 提示剩余帧 ✓ */
 static int32_t s_hud_lv_last_tier;  /* 上次看到的档位（检测上涨沿 ✓）*/
+
+/* ★★★★ 2026-10-09 HUD 坐标空间（owner 实跑：「A/B 两组 TH09 指示 UI 位置十分靠左上、尺寸偏小
+ *   ⇒ 坐标没有 ×2、大小也没有 ×2」✗）—— **UI 列表 VM 的坐标 = 表面 px**：
+ *   · `HUD-LAYOUT.md` §1.1：UI 列表的 VM（`ce_anm_spawn_ui` + `ce_anm_set_pos`）用**表面 px**
+ *     （= 640×480 字面量空间的 **2×**；`resolutionMode(2)` 下 1 单位 = 1 表面 px ✓）；
+ *   · 自机（世界/实体坐标：游玩区 x∈±192 / y∈[0,448]）→ 表面 px 的换算**沿用本仓已能正确显示
+ *     的先例** = 117 动物灵的释放动画（`cards/animal.c:3204`/`:3220` 逐字是
+ *     `640.0f + pp[0] * 2.0f`、`32.0f + pp[1] * 2.0f` ✓）与它的咆哮条（`animal.c:2374`）——
+ *     **不是**这里自己发明的映射 ✓：
+ *       表面 x = 640（屏心 1280/2）+ 世界 x × 2；表面 y = 32（游玩区上边）+ 世界 y × 2 ✓
+ *     （游玩区 384×448 世界单位 ⇔ 表面 768×896 ⇒ x∈256..1024 / y∈32..928 ✓，与 §1.2 的左下锚点
+ *      「表面 (257, 924)」互证 ✓）。
+ *   · 一手 A/B 组的偏移是 **TH09（640×480）字面量** ⇒ 到表面同样 **×2**：
+ *     `-40→-80` / `-12→-24` / `+12→+24` / `-8→-16` / `+18→+36` / `-28→-56` ✓；
+ *     精灵同理：一手 12×12 的 640 空间字形 ⇒ 表面 **24×24** ⇒ 每帧 `ce_anm_set_scale(vm, 2, 2)` ✓。*/
+#define POFV_HUD_SURF_X(x)   (640.0f + (x) * 2.0f)   /* 自机世界 x → 表面 px（117 `animal.c:3204` 同式 ✓）*/
+#define POFV_HUD_SURF_Y(y)   ( 32.0f + (y) * 2.0f)   /* 自机世界 y → 表面 px（117 `animal.c:3220` 同式 ✓）*/
 
 static int32_t s_hud_bonus_vm;   /* ★ TH09 `Bonus!`（一手原图 th09 ascii.anm sprite107 ✓）*/
 static int32_t s_hud_ag_fill_vm, s_hud_ag_dot_vm[4];   /* TH19 gauge fill + 4 threshold markers (original art) */   /* TH19 Bonus label (cut from original art) */   /* ★ TH19 hits 标签（**切自原作字体** ✓ ascii.png y=56 行 ✓）*/   /* ★ TH09 連擊槽条 / TH19 攻击槽条（卡自建 VM ⇒ 必须在 clear_card 里真删 ✓ 铁律）*/
@@ -1283,20 +1306,33 @@ static void do_storm_frame(const pofv_storm_t *bl)
 }
 
 /* ============================================================ 灵力道具的**可视 VM**
- * ★★ 照 **116 季节道具**的做法（`season.c` 的 `point_spawn_vm()` `:594` / `points_tick()`）：
+ * ★★★★ 2026-10-09（owner 明确否掉「借 116 季节道具美术」✗）—— 美术身份换正为**一手 TH19**：
+ *   · 本体 = 一手 `bullet.anm` **script123**（`local/th19.v1.10c/_ext/bullet.txt`）⇒ 本仓新脚本 **423**；
+ *   · 闪光 = 一手 `effect.anm` **script94**（同目录 `effect.txt`）⇒ 本仓新脚本 **424**。
+ *   接线形状照 **116 季节道具**的做法（`season.c` 的 `point_spawn_vm()` `:594` / `points_tick()`）：
  *   `ce_anm_spawn(CE_ABILITY_ANM(), <脚本>, <层>)` → `ce_anm_set_pos` / `set_sprite` / `set_color`
  *   → 每帧 `ce_anm_set_pos` 跟随 → 移除时 `ce_anm_delete(id)` 并把句柄清 0。
- *   复用**现成**的脚本与贴图（**不新增脚本 / 不切图**）：
- *     · 脚本 = `CE_ANM_ABILITY_SCRIPT_SEASON_POINT`（= `ability.anm` script115，`anm_ids.h:1398`）；
- *     · 贴图 = `CE_ANM_ABILITY_SPRITE_PT_SPRING`（**春季**那张，`anm_ids.h:141`；
- *       `season.c:500` 的 `season_sprite()` 就是这么挑的 —— 这里**固定挑春**）；
+ *   新增的脚本 / 贴图（`assets/ability/scripts/423_*` / `424_*` + ORDER 末尾 `TH19_ITEM_KIND*` 三行）：
+ *     · `POFV_POWER_VM_SCRIPT`    = 423（kind9 外观：半透明蓝紫小点、自转、0.5↔0.55 脉冲）；
+ *     · `POFV_POWER_VM_SPRITE`    = `TH19_ITEM_KIND9` = 一手 `bullet.anm` 的 **`sprite517`**
+ *       （矩形 **`(209,33,14,14)`**，从 TH19 `anm/bullet/bullet/item.png` 原样切、构建期现取）；
+ *     · `POFV_POWER_FLASH_SCRIPT` = 424（一手 script94 的**逐字**移植：加算空心 12 边形环、20 帧自删）；
  *     · 层   = `POFV_POWER_VM_LAYER`（= **13**，照 116 `season.c:118` 的 `SEASON_POINT_LAYER`：
- *             世界层 13 = 相机 3（游玩区），与原生道具同层）。
- *   ⚠ 这是**借 116 的美术**（脚本/贴图/层号都是 116 的），**不是**一手 TH19 的灵力道具美术
- *     ⇒ 美术身份**待定 ❓**（已登记 `TUNING.md`）。句柄存在 `pofv_core.h` 的 `pofv_power_t.vm`。*/
-#define POFV_POWER_VM_SCRIPT   CE_ANM_ABILITY_SCRIPT_SEASON_POINT
-#define POFV_POWER_VM_SPRITE   CE_ANM_ABILITY_SPRITE_PT_SPRING
-#define POFV_POWER_VM_LAYER    13
+ *             世界层 13 = 相机 3（游玩区），与原生道具同层）—— 闪光脚本自己写一手原值 `layer(16)`。
+ *   ★ 为什么是 **kind 9**：一手「拾取加槽」只发生在 kind 9–14（kind 1–8 拾取只播 SE + 删除）
+ *     ⇒ 本卡道具该用 kind 9 的外观（负结论登记 `TUNING.md`）。
+ *   ⚠ 句柄：本体存在 `pofv_core.h` 的 `pofv_power_t.vm`；闪光按**道具槽号 1:1** 存在下面的
+ *     `s_power_flash[]`（一个槽同时只放一颗道具 ⇒ 同时至多一台闪光）+ `clear_card()` 里真删。*/
+#define POFV_POWER_VM_SCRIPT      CE_ANM_ABILITY_SCRIPT_POFV109_POWER_ITEM
+#define POFV_POWER_VM_SPRITE      CE_ANM_ABILITY_SPRITE_TH19_ITEM_KIND9
+#define POFV_POWER_FLASH_SCRIPT   CE_ANM_ABILITY_SCRIPT_POFV109_POWER_FLASH
+#define POFV_POWER_VM_LAYER       13
+
+/* ★ 闪光句柄表（**按道具槽号 1:1**：槽 i 的道具出生时把闪光 id 写进 `s_power_flash[i]`）。
+ *   一手闪光脚本自带 `delete()`（20 帧）⇒ 句柄多半**已经死了** ⇒ 用前一律 `ce_anm_get_vm()` 探活，
+ *   只对**还活着**的调 `ce_anm_delete()`（`sdk.h:240`；先例 `sdk.c:728` —— id 会被引擎回收，
+ *   拿陈旧 id 去删 = **误删别人的 VM** ✗）。*/
+static int32_t s_power_flash[POFV_POWER_MAX];
 
 /* 内部：删一台道具 VM 并把句柄清 0 —— **唯一**的删法（所有移除路径 / `clear_card()` 共用）。*/
 static void power_vm_drop(pofv_power_t *it)
@@ -1304,15 +1340,32 @@ static void power_vm_drop(pofv_power_t *it)
     if (it && it->vm) { ce_anm_delete((uint32_t)it->vm); it->vm = 0; }
 }
 
+/* 内部：**道具真正出现那一刻**的几何闪光（一手 `effect.anm` script94 ⇒ 新脚本 424 一台）。
+ *   位置 = 道具出生点（与本体 VM 同点）；脚本 20 帧后自删 ⇒ 这里**只记句柄、不删**。
+ *   同槽若还有上一颗的闪光活着（不足 20 帧）⇒ 先顶掉（一手一个生成点一台环）。*/
+static void power_flash_fire(int slot, float x, float y)
+{
+    uint32_t id;
+    if (slot < 0 || slot >= POFV_POWER_MAX) return;
+    if (s_power_flash[slot]) {
+        if (ce_anm_get_vm((uint32_t)s_power_flash[slot])) ce_anm_delete((uint32_t)s_power_flash[slot]);
+        s_power_flash[slot] = 0;
+    }
+    id = ce_anm_spawn(CE_ABILITY_ANM(), POFV_POWER_FLASH_SCRIPT, POFV_POWER_VM_LAYER);
+    if (!id) return;                     /* 建失败 ⇒ 少一台装饰闪光，逻辑照走（不丢道具）*/
+    ce_anm_set_pos(id, x, y, 0.0f);
+    s_power_flash[slot] = (int32_t)id;
+}
+
 /* ★ 每帧同步（在 `pofv_power_tick()` **之后**调；116 的 `points_tick()` 同形）：
  *   · **建**：`delay` 减到 0（= 待发射延时结束、真正开始飞散那一刻）才建 —— 与 116
  *     「延时结束才建 VM」同口径（`season.c:590-604` 的注释 + `:826` 的 `if (!point_spawn_vm(...))`）；
+ *     **同一刻**也点一台几何闪光（一手「物品出现时起 ring」的口径；比 spawn 成功那一帧更贴一手）；
  *   · **跟随**：`ce_anm_set_pos(vm, x, y, 0)`（116 `season.c:949/:951`）；
  *   · **删**：core 的移除路径（**收取 / 出界 / 寿命到期**）都只是把 `active` 清 0 ⇒
  *     这里统一按「`active == 0` 而句柄还在 ⇒ 删 + 清 0」收干净（铁律：不许留幽灵 VM）。
- *   ⚠ script115 只 `stop()`、**不自己 `delete()`**（`115_season_point.anm.txt`：`interruptLabel(1)`
- *     之后才 delete，本卡**不触发**那个 label，收/出界一律由我们删）⇒ 不需要 116 那种
- *     「`!ce_anm_get_vm(id)` ⇒ 槽回收」的探测支。*/
+ *   ⚠ 道具脚本（423）也**不自己 `delete()`**（一手 script123 是 `static()` 常驻）⇒ 收/出界一律由我们删；
+ *     闪光脚本（424）则**自己 delete**（一手如此）⇒ 它的句柄只探活、不在这里删。*/
 static void power_vm_sync(void)
 {
     int i;
@@ -1324,8 +1377,9 @@ static void power_vm_sync(void)
             if (!id) continue;          /* 建失败 ⇒ 逻辑照走（下一帧再试），不丢道具 */
             ce_anm_set_pos(id, it->x, it->y, 0.0f);
             ce_anm_set_sprite(CE_ABILITY_ANM(), id, POFV_POWER_VM_SPRITE);
-            ce_anm_set_color(id, 0xffffffffu);   /* 出生无染色（116 同：`0xffffffff`）*/
+            ce_anm_set_color(id, 0xffffffffu);   /* 出生无染色（116 同：`0xffffffff`；一手也不染色）*/
             it->vm = (int32_t)id;
+            power_flash_fire(i, it->x, it->y);   /* ★ 同一刻点一台几何闪光（一手 effect.anm script94）*/
         }
         if (it->vm) ce_anm_set_pos((uint32_t)it->vm, it->x, it->y, 0.0f);
     }
@@ -1355,6 +1409,16 @@ static void clear_card(ce_card_t *c)
      *   anm API ⇒ 删不了）⇒ 不先删就是**幽灵 VM 泄漏**（与 `s_storm_vm` / `s_spirit_vm` 同款坑）。
      *   `on_delete` / `on_run_reset` / `on_ctor` 都走本函数 ⇒ 三条路都收得到 ✓。*/
     { int z5; for (z5 = 0; z5 < POFV_POWER_MAX; ++z5) power_vm_drop(&s_power.s[z5]); }
+    /* ★★ 2026-10-09（铁律「长持续效果删卡要交代」✓）：道具出生时那台**几何闪光**（一手 `effect.anm`
+     *   script94 ⇒ 脚本 424）也是**卡自建 VM**。它 20 帧后自己 `delete()` ⇒ 句柄多半已死 ⇒
+     *   **必须先 `ce_anm_get_vm()` 探活再删**（陈旧 id 直接删 = 误删别人回收掉的 VM ✗）。
+     *   与上面 `power_vm_drop` 同一处、同一支（`on_delete` / `on_run_reset` / `on_ctor` 三路共用 ✓，
+     *   不依赖 tick ✓）。*/
+    { int z6; for (z6 = 0; z6 < POFV_POWER_MAX; ++z6)
+        if (s_power_flash[z6]) {
+            if (ce_anm_get_vm((uint32_t)s_power_flash[z6])) ce_anm_delete((uint32_t)s_power_flash[z6]);
+            s_power_flash[z6] = 0;
+        } }
     pofv_power_clear(&s_power);
     s_power_got = 0; s_power_logged = 0; s_aura_bullets = 0;
     {   int z9; for (z9 = 0; z9 < CE_BM_BULLET_COUNT; ++z9) s_aura_bullet_done[z9] = 0; }
@@ -2698,37 +2762,44 @@ static int on_tick_2(ce_card_t *c)
         s_hud_chg_hold = held ? (s_hud_chg_hold + 1) : 0;
         if (s_hud_chg_hold >= 10 && s_aura_charge > 0.0f) {     /* 一手：满 10 帧 + 当前值≠0 ✓ */
             const float *pp = ce_player_pos();
-            float bx = pp ? pp[0] : 0.0f, by = pp ? pp[1] : 0.0f;
+            /* ★★★ 2026-10-09（owner：「位置十分靠左上、尺寸偏小」✗ ⇒ 坐标/偏移/缩放都缺 ×2）：
+             *   自机坐标 → **表面 px**（`POFV_HUD_SURF_*` 的推导与 117 先例见那两行宏的注释 ✓）；
+             *   下面每个偏移都是一手 640 空间原值 **×2** ✓。*/
+            float bx = POFV_HUD_SURF_X(pp ? pp[0] : 0.0f), by = POFV_HUD_SURF_Y(pp ? pp[1] : 0.0f);
             int32_t tier = (int32_t)(s_aura_charge / 50.0f);    /* ❓自定：0..200 ⇒ 每格 50 ✓ */
             if (tier < 0) tier = 0;
             if (tier > POFV_HUD_CHG_MAX_TIER) tier = POFV_HUD_CHG_MAX_TIER;
             const int flash = ((s_card_frames / 10) & 1) ? 1 : 0;   /* 一手：每 10 帧一轮 ✓ */
-            if (!s_hud_chg_label_vm)
-                s_hud_chg_label_vm = (int32_t)hud_vm_spawn(CE_ANM_ABILITY_SCRIPT_HUD_GLYPH, bx, by - 40.0f);
-            if (!s_hud_chg_cur_vm)
-                s_hud_chg_cur_vm   = (int32_t)hud_vm_spawn(CE_ANM_ABILITY_SCRIPT_HUD_GLYPH, bx - 12.0f, by - 28.0f);
-            if (!s_hud_chg_slash_vm)
-                s_hud_chg_slash_vm = (int32_t)hud_vm_spawn(CE_ANM_ABILITY_SCRIPT_HUD_GLYPH, bx, by - 28.0f);
-            if (!s_hud_chg_max_vm)
-                s_hud_chg_max_vm   = (int32_t)hud_vm_spawn(CE_ANM_ABILITY_SCRIPT_HUD_GLYPH, bx + 12.0f, by - 28.0f);
+            if (!s_hud_chg_label_vm)   /* 标签 (0,−40) → 表面 (0,−80) ✓ ×2 */
+                s_hud_chg_label_vm = (int32_t)hud_vm_spawn(CE_ANM_ABILITY_SCRIPT_HUD_GLYPH, bx, by - 80.0f);
+            if (!s_hud_chg_cur_vm)     /* 当前档 (−12,−28) → 表面 (−24,−56) ✓ ×2 */
+                s_hud_chg_cur_vm   = (int32_t)hud_vm_spawn(CE_ANM_ABILITY_SCRIPT_HUD_GLYPH, bx - 24.0f, by - 56.0f);
+            if (!s_hud_chg_slash_vm)   /* 斜杠 (0,−28) → 表面 (0,−56) ✓ ×2 */
+                s_hud_chg_slash_vm = (int32_t)hud_vm_spawn(CE_ANM_ABILITY_SCRIPT_HUD_GLYPH, bx, by - 56.0f);
+            if (!s_hud_chg_max_vm)     /* 上限档 (+12,−28) → 表面 (+24,−56) ✓ ×2 */
+                s_hud_chg_max_vm   = (int32_t)hud_vm_spawn(CE_ANM_ABILITY_SCRIPT_HUD_GLYPH, bx + 24.0f, by - 56.0f);
             if (s_hud_chg_label_vm) {
-                ce_anm_set_pos((uint32_t)s_hud_chg_label_vm, bx, by - 40.0f, 0.0f);
+                ce_anm_set_pos((uint32_t)s_hud_chg_label_vm, bx, by - 80.0f, 0.0f);
+                ce_anm_set_scale((uint32_t)s_hud_chg_label_vm, 2.0f, 2.0f);   /* ★ 一手 640 空间 1:1 → 表面 ×2 ✓ */
                 ce_anm_set_sprite(CE_ABILITY_ANM(), (uint32_t)s_hud_chg_label_vm, CE_ANM_ABILITY_SPRITE_POFV109_TH09_UI_CHARGE);
                 ce_anm_set_color((uint32_t)s_hud_chg_label_vm, flash ? 0xFF80FF80u : 0xFFFFFFFFu);
             }
             if (s_hud_chg_cur_vm) {
-                ce_anm_set_pos((uint32_t)s_hud_chg_cur_vm, bx - 12.0f, by - 28.0f, 0.0f);
+                ce_anm_set_pos((uint32_t)s_hud_chg_cur_vm, bx - 24.0f, by - 56.0f, 0.0f);
+                ce_anm_set_scale((uint32_t)s_hud_chg_cur_vm, 2.0f, 2.0f);     /* ★ 同上 ×2 ✓ */
                 ce_anm_set_sprite(CE_ABILITY_ANM(), (uint32_t)s_hud_chg_cur_vm,
                                   CE_ANM_ABILITY_SPRITE_POFV109_TH09_UI_DIGIT_0 + (uint32_t)tier);
                 ce_anm_set_color((uint32_t)s_hud_chg_cur_vm, flash ? 0xFF80FF80u : 0xFFFFFFFFu);
             }
             if (s_hud_chg_slash_vm) {
-                ce_anm_set_pos((uint32_t)s_hud_chg_slash_vm, bx, by - 28.0f, 0.0f);
+                ce_anm_set_pos((uint32_t)s_hud_chg_slash_vm, bx, by - 56.0f, 0.0f);
+                ce_anm_set_scale((uint32_t)s_hud_chg_slash_vm, 2.0f, 2.0f);   /* ★ 同上 ×2 ✓ */
                 ce_anm_set_sprite(CE_ABILITY_ANM(), (uint32_t)s_hud_chg_slash_vm, CE_ANM_ABILITY_SPRITE_POFV109_TH09_UI_SLASH);
                 ce_anm_set_color((uint32_t)s_hud_chg_slash_vm, 0xFFC0C0C0u);   /* 灰静态 ✓ */
             }
             if (s_hud_chg_max_vm) {
-                ce_anm_set_pos((uint32_t)s_hud_chg_max_vm, bx + 12.0f, by - 28.0f, 0.0f);
+                ce_anm_set_pos((uint32_t)s_hud_chg_max_vm, bx + 24.0f, by - 56.0f, 0.0f);
+                ce_anm_set_scale((uint32_t)s_hud_chg_max_vm, 2.0f, 2.0f);     /* ★ 同上 ×2 ✓ */
                 ce_anm_set_sprite(CE_ABILITY_ANM(), (uint32_t)s_hud_chg_max_vm,
                                   CE_ANM_ABILITY_SPRITE_POFV109_TH09_UI_DIGIT_0 + POFV_HUD_CHG_MAX_TIER);
                 ce_anm_set_color((uint32_t)s_hud_chg_max_vm, 0xFFC0C0C0u);     /* 灰静态 ✓ */
@@ -2751,29 +2822,34 @@ static int on_tick_2(ce_card_t *c)
         s_hud_lv_last_tier = tier;
         if (s_hud_lv_left > 0) {
             const float *pp = ce_player_pos();
-            float bx = pp ? pp[0] : 0.0f, by = pp ? pp[1] : 0.0f;
+            /* ★★★ 2026-10-09（同 A 组：owner「位置十分靠左上、尺寸偏小」✗）：自机坐标 → **表面 px**
+             *   （`POFV_HUD_SURF_*` 的推导 / 117 先例见那两行宏的注释 ✓），偏移全部 **×2** ✓。*/
+            float bx = POFV_HUD_SURF_X(pp ? pp[0] : 0.0f), by = POFV_HUD_SURF_Y(pp ? pp[1] : 0.0f);
             const int flash = ((s_card_frames / 30) & 1) ? 1 : 0;          /* 一手：30 帧一轮 ✓ */
             --s_hud_lv_left;
-            if (!s_hud_lv_gf_vm)
-                s_hud_lv_gf_vm    = (int32_t)hud_vm_spawn(CE_ANM_ABILITY_SCRIPT_HUD_GLYPH, bx, by - 40.0f);
-            if (!s_hud_lv_label_vm)
-                s_hud_lv_label_vm = (int32_t)hud_vm_spawn(CE_ANM_ABILITY_SCRIPT_HUD_GLYPH, bx - 8.0f, by - 28.0f);
-            if (!s_hud_lv_digit_vm)
-                s_hud_lv_digit_vm = (int32_t)hud_vm_spawn(CE_ANM_ABILITY_SCRIPT_HUD_GLYPH, bx + 18.0f, by - 28.0f);
+            if (!s_hud_lv_gf_vm)       /* 标签 (0,−40) → 表面 (0,−80) ✓ ×2 */
+                s_hud_lv_gf_vm    = (int32_t)hud_vm_spawn(CE_ANM_ABILITY_SCRIPT_HUD_GLYPH, bx, by - 80.0f);
+            if (!s_hud_lv_label_vm)    /* 标签 (−8,−28) → 表面 (−16,−56) ✓ ×2 */
+                s_hud_lv_label_vm = (int32_t)hud_vm_spawn(CE_ANM_ABILITY_SCRIPT_HUD_GLYPH, bx - 16.0f, by - 56.0f);
+            if (!s_hud_lv_digit_vm)    /* 档位数字 (+18,−28) → 表面 (+36,−56) ✓ ×2 */
+                s_hud_lv_digit_vm = (int32_t)hud_vm_spawn(CE_ANM_ABILITY_SCRIPT_HUD_GLYPH, bx + 36.0f, by - 56.0f);
             if (s_hud_lv_gf_vm) {
-                ce_anm_set_pos((uint32_t)s_hud_lv_gf_vm, bx, by - 40.0f, 0.0f);
+                ce_anm_set_pos((uint32_t)s_hud_lv_gf_vm, bx, by - 80.0f, 0.0f);
+                ce_anm_set_scale((uint32_t)s_hud_lv_gf_vm, 2.0f, 2.0f);      /* ★ 一手 640 空间 1:1 → 表面 ×2 ✓ */
                 ce_anm_set_sprite(CE_ABILITY_ANM(), (uint32_t)s_hud_lv_gf_vm,
                                   CE_ANM_ABILITY_SPRITE_POFV109_TH09_UI_GAUGEFILLED);
                 ce_anm_set_color((uint32_t)s_hud_lv_gf_vm, flash ? 0xFFFFFFFFu : 0xFFE0E0E0u);
             }
             if (s_hud_lv_label_vm) {
-                ce_anm_set_pos((uint32_t)s_hud_lv_label_vm, bx - 8.0f, by - 28.0f, 0.0f);
+                ce_anm_set_pos((uint32_t)s_hud_lv_label_vm, bx - 16.0f, by - 56.0f, 0.0f);
+                ce_anm_set_scale((uint32_t)s_hud_lv_label_vm, 2.0f, 2.0f);   /* ★ 同上 ×2 ✓ */
                 ce_anm_set_sprite(CE_ABILITY_ANM(), (uint32_t)s_hud_lv_label_vm,
                                   CE_ANM_ABILITY_SPRITE_POFV109_TH09_UI_LEVELLABEL);
                 ce_anm_set_color((uint32_t)s_hud_lv_label_vm, flash ? 0xFFFFFFFFu : 0xFFA0A0A0u);
             }
             if (s_hud_lv_digit_vm) {
-                ce_anm_set_pos((uint32_t)s_hud_lv_digit_vm, bx + 18.0f, by - 28.0f, 0.0f);
+                ce_anm_set_pos((uint32_t)s_hud_lv_digit_vm, bx + 36.0f, by - 56.0f, 0.0f);
+                ce_anm_set_scale((uint32_t)s_hud_lv_digit_vm, 2.0f, 2.0f);   /* ★ 同上 ×2 ✓ */
                 ce_anm_set_sprite(CE_ABILITY_ANM(), (uint32_t)s_hud_lv_digit_vm,
                                   CE_ANM_ABILITY_SPRITE_POFV109_TH09_UI_DIGIT_0 + (uint32_t)tier);
                 ce_anm_set_color((uint32_t)s_hud_lv_digit_vm, flash ? 0xFFFFFFFFu : 0xFFA0A0A0u);
