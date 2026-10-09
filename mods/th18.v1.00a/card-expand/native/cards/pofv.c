@@ -1878,6 +1878,17 @@ static const pofv_c1_shot_t s_c1_table[POFV_C1_GROUPS][POFV_C1_SHOTS_PER_GROUP] 
 #define POFV_C2_GEN_FRAMES          4   /* 一手 ✓ `Ecl_EtBreakLv2` 共 4 帧 */
 #define POFV_C2_GEN_R0            8.0f  /* 一手 ✓ 半径序列 8/12/16/20 */
 #define POFV_C2_GEN_STEP          4.0f  /* 一手 ✓ 每帧 +4 */
+/* ★★ 一手的**逐档消弹环序列**（`Ecl_EtBreakLvN` ✓，§5.1）—— ★ 三档都有、只有 C1 没有 ✓：
+ *   Lv2 = **8/12/16/20**（每帧 +4、共 4 帧 ✓，C2 已用 ✓）；
+ *   Lv3 = **16/24/32**（每帧 +8、共 3 帧 ✓）；Lv4 = **16/24/32/40/48**（每帧 +8、共 5 帧 ✓）。
+ * ★ 一手这三档做的事 = **消弹 + 撒道具**（**没有伤害** ✓）⇒ ★ 本卡正好用现成的 `c2_cancel_drop` ✓。
+ * ★ 侧别：一手 Lv2 留本侧、**Lv3/Lv4 送对侧**（写 `1−side` ✓）—— ★ 本作是"我方场地打我方 E" ✓
+ *   ⇒ ★ **都留在本侧** ✓（正是 owner 那两处改动之一 ✓）。*/
+#define POFV_EB_LV3_R0     16.0f
+#define POFV_EB_LV4_R0     16.0f
+#define POFV_EB_STEP        8.0f   /* ★ 一手 ✓ 每帧 +8 */
+#define POFV_EB_LV3_FRAMES    3    /* ★ 一手 ✓ 16/24/32 */
+#define POFV_EB_LV4_FRAMES    5    /* ★ 一手 ✓ 16/24/32/40/48 */
 #define POFV_C2_POINT_HIT_EVERY     5   /* 一手 ✓ 每 5 帧一个伤害源 */
 #define POFV_C2_POINT_HIT_DMG       4   /* ❓自定：一手只给了 kind=4（`FUN_005200f0(…, 4)`）⇒ 伤害量先用 4 */
 #define POFV_C2_POINT_HIT_R      16.0f  /* ❓自定：32×32 的矩形源（一手形状未给；≈ 环绕点体量）*/
@@ -2057,6 +2068,31 @@ static void c2_ring_vm_release(void)
     if (!s_c2.ring_vm) return;
     if (ce_anm_get_vm((uint32_t)s_c2.ring_vm)) ce_anm_interrupt((uint32_t)s_c2.ring_vm, 1);
     s_c2.ring_vm = 0;
+}
+
+/* ★ 消弹**范围圈**：起 / 驱动 / 收（**一台 VM** ✓，脚本 432 = `texArcEven(64)` ✓，§15 ✓）。
+ *   `r` = 本帧的**消弹半径** ⇒ `scale.y` 照写（**判定=绘制** ✓）。★ C2 用它自己的（见上 ✓），
+ *   C3/C4 用这两个 ✓。*/
+static void pofv_eb_ring_sync(int32_t *vm, float r)
+{
+    const float *p = ce_player_pos();
+    if (!vm || r <= 0.0f) return;
+    if (!*vm) {
+        const uint32_t id = ce_anm_spawn(CE_ABILITY_ANM(),
+                            CE_ANM_ABILITY_SCRIPT_POFV109_C_RING_ARC, 6);
+        if (!id) return;
+        *vm = (int32_t)id;
+    }
+    if (!p) return;
+    vm_set_world_pos((uint32_t)*vm, p[0], p[1]);
+    ce_anm_set_scale((uint32_t)*vm, POFV_C2_RING_BAND_W, r);
+}
+
+static void pofv_eb_ring_close(int32_t *vm)
+{
+    if (!vm || !*vm) return;
+    if (ce_anm_get_vm((uint32_t)*vm)) ce_anm_interrupt((uint32_t)*vm, 1);
+    *vm = 0;
 }
 
 static void pofv_c2_clear(void)
@@ -2435,11 +2471,14 @@ typedef struct {
     int wave;       /* 已发出的波数 */
     int wait;       /* 距下一波的剩余帧（0 = 本帧发）*/
     int parity;     /* 波奇偶（近似一手 `etSprite(46)/(47)`，见 ❓⑤）*/
+    int     eb, ring_vm;   /* ★ 一手 `Ecl_EtBreakLv3` 的步进 / 范围圈句柄 ✓ */
 } pofv_c3_t;
 static pofv_c3_t s_c3;
 
 static void pofv_c3_clear(void)
 {
+    pofv_eb_ring_close(&s_c3.ring_vm);   /* ★ 铁律：范围圈 VM 也收 ✓ */
+    s_c3.eb = -1;
     int k;
     for (k = 0; k < POFV_C3_MAX_BULLETS; ++k) {
         if (s_c3_b[k].vm) { ce_anm_delete((uint32_t)s_c3_b[k].vm); s_c3_b[k].vm = 0; }
@@ -2490,12 +2529,29 @@ static void pofv_c3_fire(void)
     s_c3.wave = 0;
     s_c3.wait = 0;
     s_c3.parity = 0;
+    s_c3.eb = 0;   /* ★ 一手的 `Ecl_EtBreakLv3`（16/24/32）从这一帧起 ✓ */
 }
 
 /* 每帧：① 波次机（发波 / 波末 wait）② 每颗弹（加速 + 撞墙反弹 + 伤害源）。
  * ⚠ **不依赖结界键电平** ✓；波发完（`active=0`）后**已飞的弹要继续走完** ⇒ 不能在这里 early-return ✗。*/
 static void pofv_c3_tick(void)
 {
+    /* ★★ 一手 `Ecl_EtBreak`（§5.1 ✓）：**每帧一档**、共 POFV_EB_LV3_FRAMES 帧 ⇒ 消弹 + 撒道具 + 范围圈 ✓
+     *   （★ 留本侧 ✓ —— 一手这一档会送对侧，本作是"我方场地"⇒ 不翻 ✓）。*/
+    if (s_c3.eb >= 0 && s_c3.eb <= POFV_EB_LV3_FRAMES) {
+        const float *pe = ce_player_pos();
+        if (pe) {
+            float pos[3];
+            const float r = POFV_EB_LV3_R0 + POFV_EB_STEP * (float)s_c3.eb;
+            pos[0] = pe[0]; pos[1] = pe[1]; pos[2] = 0.0f;
+            (void)c2_cancel_drop(pos, r);
+            pofv_eb_ring_sync(&s_c3.ring_vm, r);
+        }
+        ++s_c3.eb;
+    } else if (s_c3.eb > 0) {
+        pofv_eb_ring_close(&s_c3.ring_vm);
+        s_c3.eb = -1;
+    }
     int k, busy = 0;
     for (k = 0; k < POFV_C3_MAX_BULLETS; ++k) if (s_c3_b[k].live) { busy = 1; break; }
     if (!s_c3.active && !busy) return;
@@ -2760,10 +2816,12 @@ typedef struct {
 } pofv_c4_bullet_t;
 
 static pofv_c4_bullet_t s_c4_b[POFV_C4_MAX_BULLETS];
-static struct { int timer, emitted, dir, live; float base; } s_c4;
+static struct { int timer, emitted, dir, live; float base; int eb, ring_vm; } s_c4;
 
 static void pofv_c4_clear(void)
 {
+    pofv_eb_ring_close(&s_c4.ring_vm);   /* ★ 铁律：范围圈 VM 也收 ✓ */
+    s_c4.eb = -1;
     int k;
     for (k = 0; k < POFV_C4_MAX_BULLETS; ++k) {
         if (s_c4_b[k].vm) { ce_anm_delete((uint32_t)s_c4_b[k].vm); s_c4_b[k].vm = 0; }
@@ -2776,6 +2834,7 @@ static void pofv_c4_clear(void)
 static void pofv_c4_fire(void)
 {
     s_c4.live = 1; s_c4.timer = 0; s_c4.emitted = 0; s_c4.dir = 1;
+    s_c4.eb = 0;   /* ★ 一手的 `Ecl_EtBreakLv4`（16/24/32/40/48）从这一帧起 ✓ */
 }
 
 /* ★ 发一发（两条扫描共用：`dir` = ±1 ✓）*/
@@ -2809,6 +2868,22 @@ static void pofv_c4_emit(int dir)
 /* ★ 每帧：波次机 + 逐发（自转/加速/出屏/寿命）*/
 static void pofv_c4_tick(void)
 {
+    /* ★★ 一手 `Ecl_EtBreak`（§5.1 ✓）：**每帧一档**、共 POFV_EB_LV4_FRAMES 帧 ⇒ 消弹 + 撒道具 + 范围圈 ✓
+     *   （★ 留本侧 ✓ —— 一手这一档会送对侧，本作是"我方场地"⇒ 不翻 ✓）。*/
+    if (s_c4.eb >= 0 && s_c4.eb <= POFV_EB_LV4_FRAMES) {
+        const float *pe = ce_player_pos();
+        if (pe) {
+            float pos[3];
+            const float r = POFV_EB_LV4_R0 + POFV_EB_STEP * (float)s_c4.eb;
+            pos[0] = pe[0]; pos[1] = pe[1]; pos[2] = 0.0f;
+            (void)c2_cancel_drop(pos, r);
+            pofv_eb_ring_sync(&s_c4.ring_vm, r);
+        }
+        ++s_c4.eb;
+    } else if (s_c4.eb > 0) {
+        pofv_eb_ring_close(&s_c4.ring_vm);
+        s_c4.eb = -1;
+    }
     int k;
     if (s_c4.live) {
         /* ★ 每 2 帧一发；两条扫描同时跑（一手每轮调两次 `_at` ✓）*/
@@ -4553,7 +4628,6 @@ static int on_tick_2(ce_card_t *c)
         static int s_c2s_lv;                    /* ★ ② C2 早苗分支：档闩锁 ✓ */
         static int s_c3s_lv;                    /* ★ ⑤ C3 早苗分支：档闩锁 ✓ */
         static int s_c3s4_lv;                   /* ★ ⑤ C4 早苗分支：档闩锁 ✓ */
-        const float cap2  = POFV_AURA_TARGET_CHARGE * (s_reiryoku / POFV_REI_MAX);
         /* ★★ 2026-10-10 owner 实跑连带订正：阈值此前写成"**cap 的百分比**" ✗ ——
          *   灵力 500（新初值）时 cap = 20 ⇒ **四档会在 1 秒内全放** ✗。★ 一手是**绝对**阈值 ✓：
          *   `S+0x28/0x2c/0x30/0x34/0x38` ×10 = **500 / 1000 / 1700 / 2500** ✓，
