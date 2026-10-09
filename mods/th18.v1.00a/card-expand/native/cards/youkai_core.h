@@ -1288,6 +1288,24 @@ int        yk_fam_wave_clear(yk_map_t *m, uint32_t fam_id);
 int        yk_is_real_bomb(int bomb_active, int started_in_deathbomb);
 /* 切换总门：1 = 允许切侧；0 = 锁住当前侧。三个条件取或（任一为 1 ⇒ 锁）。 */
 int        yk_side_switch_allowed(int trance, int roar, int real_bomb);
+/* ★★★★ 2026-10-01（owner 拍板 **D2 = 插值跟随**）：壳不再硬钉在槽原点，而是**有限速度滑过去**。
+ *   **一方依据（owner 给的调研）**：TH18 的 st6 小怪 `GirlA01_at` 与 st4 道中 `MBoss1_at` 都是
+ *   **`etNew(0)` 一次 + 每波 `etOffsetRad(0, 随机角, 32/64)`**（槽号不变 ⇒ 壳的身份 = 槽 ✓）；
+ *   而 TH08 的随机化要么只动**出点**（`etOffset(rand,rand)`，实体不动），要么本体用
+ *   **`moveRandTime(60, 4, 1.0f)` 飞过去**（实体**不会瞬移**）⇒ 我们的硬钉 = 「打一枪换一个地方」的来源。
+ *   ⚠ `YK_EMIT_WAVE_GAP`(24 帧) 在这两个案例**永不触发**（`etOn` 间隔 2/5 帧）⇒ 它不是「换地方」判据。
+ *
+ *   **本函数是纯函数**（可主机单测）：把 `*xy` 朝 `(tx,ty)` 沿「起点 `(sx,sy)` → 目标」的直线推进。
+ *     · `frames <= 0`  ⇒ **硬钉**（= 旧行为，便于对照）；`*xy = target`；
+ *     · `age  <= 0`   ⇒ **首帧不动**（留在起点 —— 目标刚变那一帧壳不许跳）；
+ *     · `age  >= frames` ⇒ 到位（吸附到目标）；
+ *     · 其它 ⇒ `k = age/frames`，`xy = start + (target-start)·k`，且**当剩余距离 < 1 px 时直接吸附**
+ *       （避免末段抖动/来回）。`k` 单调 → **越过目标不回弹**（结构性保证）。
+ *   ❓ 收敛帧数 = `YK_EMIT_FOLLOW_FRAMES`（旋钮，一手量级照 TH08 `moveRandTime(60,·)`）。*/
+#define YK_EMIT_FOLLOW_FRAMES 60
+#define YK_EMIT_FOLLOW_SNAP_PX 1.0f
+void yk_follow_step(float *xy, float sx, float sy, float tx, float ty, int age, int frames);
+
 int32_t    yk_clamp_spawn_life(int32_t life);
 
 /* =============================================================== §3.7 伤害转交 1/2

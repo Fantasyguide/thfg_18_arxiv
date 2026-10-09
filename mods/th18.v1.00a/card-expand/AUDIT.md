@@ -29098,3 +29098,29 @@ TH16 `09-drawing.md` §3.3：外顶点恒 `color_1`、内顶点在 `(flags_lo & 
 * 110/111 当年就是靠这个共享口错开的（`mof.c:755`）⇒ 照同式做，
   避免各卡各写一份散布公式而**漂移**。
 
+## §BE 详录 #207（2026-10-01）：发射口壳的位置策略 = **D2 插值跟随**（owner 拍板）
+
+**问题**：映射壳原来每帧 `yk_pin_familiar(f, sl->x, sl->y)` **硬钉**在槽原点；而一手给的两个案例
+（st6 小怪 `GirlA01_at`、st4 道中 `MBoss1_at`）都是 **`etNew(0)` 一次 + 每波 `etOffsetRad(0, 随机角, 32/64)`**
+（**槽号不变**，st6 每 2 帧、st4 每 5 帧改一次）⇒ 壳**瞬移** = owner 报的「打一枪换一个地方」。
+
+**一手对照（TH08 怎么做）**：随机化要么只动**出点**（`etOffset(rand, rand)`，实体不动），
+要么本体 **`moveRandTime(60, 4, 1.0f)` 飞过去** ⇒ 实体**从不瞬移**。
+
+**落地（默认路径，开关全 1）**：
+· 新常量 **`YK_EMIT_FOLLOW_FRAMES = 60`**（`youkai_core.h`；0 = 硬钉，对照用）；
+· 纯函数 **`yk_follow_step(xy, sx, sy, tx, ty, age, frames)`**（`youkai_core.c`，**不返回 float**）：
+  `frames<=0` ⇒ 吸附目标；`age<=0` ⇒ 留在起点（**首帧不动**）；`age>=frames` ⇒ 到位；
+  否则 `k = age/frames` 线性推进 + 剩余 <1 px 吸附；`k ∈ [0,1]` ⇒ **结构性不回弹/不超调**；
+· 卡侧 `yk_pin_follow_step()` + `s_pin_follow[YK_FAM_MAX]` 平行数组（`fam_id` 识别换壳；
+  目标 = `sl->x/sl->y`，即由 `enemy+0x4e58+i*0x0c` 的**偏移向量**派生 ⇒ 正是 owner 要的判据信号）。
+  ⚠ 目标变化**不** CREATE/WITHDRAW（壳的身份 = 槽）。
+· ⚠ `YK_EMIT_WAVE_GAP`(24) 在案例里**永不触发**（`etOn` 间隔 2/5 帧）⇒ **不得**拿它当「换地方」判据。
+
+**未采纳（留作后续选项）**：「弹从壳出」（把该槽的 `etOn` 出点改到壳的实时位置）。
+地址/入口 = `0x433ffa`（`etOn` 汇聚点，SDK 已在此设站点否决）+ `0x433f34`（`etOn` handler）；
+实现要点 = 在站点处改写 `props[i]` 的偏移（或 `etOffsetRad` 的结果）为「壳 − 敌」再放行 ⇒
+需要精算与 `etAim/etAngle` 的先后，风险高于本轮收益，owner 已拍「先不做」。
+
+**单测**：`yk_follow_step` 六组（`frames=0` 硬钉 / 首帧不动 / 60 帧单调收敛且精确到位 /
+不越过目标 / 剩余 <1 px 吸附 / 空指针安全）。

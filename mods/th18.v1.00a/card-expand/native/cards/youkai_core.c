@@ -868,6 +868,27 @@ int yk_is_real_bomb(int bomb_active, int started_in_deathbomb)
     return started_in_deathbomb ? 0 : 1;      /* 灵击（决死窗口里按的 B）不算「真 B」*/
 }
 
+/* ★★★★ 2026-10-01（D2 插值跟随）：纯函数，详见 `youkai_core.h` 的同名小节。
+ * ⚠ 不返回 float（i686 上 float 返回值必过 x87）；就地写 `xy[0]/xy[1]`。*/
+void yk_follow_step(float *xy, float sx, float sy, float tx, float ty, int age, int frames)
+{
+    float dx, dy, k;
+    if (!xy) return;
+    if (frames <= 0) { xy[0] = tx; xy[1] = ty; return; }        /* 0 = 硬钉（旧行为）*/
+    if (age <= 0)    { xy[0] = sx; xy[1] = sy; return; }        /* 首帧不动（留在起点）*/
+    if (age >= frames) { xy[0] = tx; xy[1] = ty; return; }      /* 到位 */
+    k = (float)age / (float)frames;                             /* 0 < k < 1（不会越过目标）*/
+    dx = tx - sx; dy = ty - sy;
+    xy[0] = sx + dx * k;
+    xy[1] = sy + dy * k;
+    {   /* 剩余距离 < `YK_EMIT_FOLLOW_SNAP_PX` ⇒ 直接吸附（末段不抖）*/
+        float rx = tx - xy[0], ry = ty - xy[1];
+        if (rx < 0.0f) rx = -rx;
+        if (ry < 0.0f) ry = -ry;
+        if (rx < YK_EMIT_FOLLOW_SNAP_PX && ry < YK_EMIT_FOLLOW_SNAP_PX) { xy[0] = tx; xy[1] = ty; }
+    }
+}
+
 int yk_side_switch_allowed(int trance, int roar, int real_bomb)
 {
     return (trance || roar || real_bomb) ? 0 : 1;   /* 任一成立 ⇒ 锁住当前侧（不许切）*/

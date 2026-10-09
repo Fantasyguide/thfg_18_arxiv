@@ -713,6 +713,39 @@ static int32_t yk_enemy_hp_max_by_id(uint32_t id)
 /* 每帧钉位置（spec §3.5）+ 皮肤（资产未到时不动）。*/
 static uint8_t g_fam_nodmg_state = 0xff;   /* ★ 批次 2：上一次记过的免伤位状态（0/1；0xff = 还没记过）*/
 
+/* ★★★★ 2026-10-01（owner 拍板 **D2 = 插值跟随**）：映射壳的**位置状态**（每个槽一份，按 `s_map.e[]`
+ *   的**下标**存 —— 下标在条目存活期间稳定；`fam_id` 用来识别「这一格换了一只新壳」⇒ 重新初始化）。
+ *   为什么另开一个平行数组而不塞进 `yk_slot_t`：那张表已有 `sizeof` 上限度量（`tests` 里盯着），
+ *   这里 32 × 28 B = 896 B 是文件级静态，不进卡的 496 B 预算。
+ *   语义见 `youkai_core.h` 的 `yk_follow_step()`：目标 = 该槽**当前世界坐标**（`sl->x/sl->y`，
+ *   它由 `enemy+0x4e58+i*0x0c` 的偏移向量派生 ⇒ 偏移一变、目标就变，这正是 owner 要的
+ *   「用偏移向量的帧间变化当换地方信号」），起点 = 变化那一刻壳在哪 ⇒ 60 帧滑过去。*/
+typedef struct { uint32_t fam_id; float cx, cy, sx, sy, tx, ty; uint16_t age; } yk_pin_follow_t;
+static yk_pin_follow_t s_pin_follow[YK_FAM_MAX];
+
+/* 每帧把一只壳朝它的槽原点插值推进（D2）；返回要写进敌人的位置。*/
+static void yk_pin_follow_step(yk_pin_follow_t *pf, uint32_t fam_id, float tx, float ty)
+{
+    if (!pf) return;
+    if (pf->fam_id != fam_id) {                        /* 新壳（或这一格换了壳）⇒ 就地起步，不跳 */
+        pf->fam_id = fam_id;
+        pf->cx = tx; pf->cy = ty;
+        pf->sx = tx; pf->sy = ty;
+        pf->tx = tx; pf->ty = ty;
+        pf->age = 0;
+        return;
+    }
+    if (tx != pf->tx || ty != pf->ty) {                /* 目标变了（= 槽偏移变了）⇒ 捕获起点、重新计时 */
+        pf->sx = pf->cx; pf->sy = pf->cy;
+        pf->tx = tx; pf->ty = ty;
+        pf->age = 0;
+    }
+    /* ⚠ `&pf->cx` 当 `float[2]` 用：`cx, cy` 在结构体里**相邻**（上面定义保证）。*/
+    yk_follow_step(&pf->cx, pf->sx, pf->sy, pf->tx, pf->ty,
+                   (int)pf->age, (int)YK_EMIT_FOLLOW_FRAMES);
+    if (pf->age < 0xffffu) ++pf->age;
+}
+
 static void yk_pin_familiar(uint8_t *f, float x, float y)
 {
     *(float *)(f + CE_ENEMY_POS_X) = x;                   /* final_pos（spec §3.5 指定的那两格）*/
@@ -2545,7 +2578,11 @@ static void __attribute__((noinline)) yk_transfer_tick(yk_card_t *s)
             ++s->silent;
             continue;
         }
-        yk_pin_familiar(f, sl->x, sl->y);                              /* 位置每帧重钉 */
+        /* ★ D2（owner 拍板）：**插值跟随**槽原点，不再硬钉 —— 槽偏移每 2/5 帧随机一次时壳是滑过去，
+         *   不是瞬移。`YK_EMIT_FOLLOW_FRAMES = 0` 时 `yk_follow_step()` 退化成硬钉（旧行为，便于对照）。
+         *   ⚠ 目标变化**不** CREATE/WITHDRAW 壳（身份 = 槽，不变）。*/
+        yk_pin_follow_step(&s_pin_follow[i], sl->fam_id, sl->x, sl->y);
+        yk_pin_familiar(f, s_pin_follow[i].cx, s_pin_follow[i].cy);
         /* ★ 每帧跟随 VM：位置与上面那次钉的是**同一个** `final_pos`（`CE_ENEMY_POS_X/Y`）
          * ⇒ VM 与实体永远重合（脚本是 8 帧循环、不自删；句柄自愈见 `yk_fam_vm_follow`）。*/
         yk_fam_vm_follow(sl->fam_id, yk_fam_mapped_kind((int)sl->slot), f);

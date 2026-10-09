@@ -1362,6 +1362,47 @@ int main(void)
     CHECK(yk_side_switch_allowed(0, 0, 1) == 0);    /* 真 B ⇒ 锁 */
     CHECK(yk_side_switch_allowed(1, 1, 1) == 0);    /* 取或 */
 
+    /* ============ ★★★ 2026-10-01（owner 拍板 **D2 = 插值跟随**）：`yk_follow_step()` ============
+     * 一手量级 = TH08 `moveRandTime(60, 4, 1.0f)`（60 帧飞过去）；语义见 `youkai_core.h`。*/
+    CHECK(YK_EMIT_FOLLOW_FRAMES == 60);
+    {
+        float p[2];
+        /* ① `frames = 0` ⇒ 硬钉（旧行为）*/
+        p[0] = 5.0f; p[1] = 7.0f;
+        yk_follow_step(p, 0.0f, 0.0f, 100.0f, -50.0f, 0, 0);
+        CHECK(p[0] == 100.0f && p[1] == -50.0f);
+        /* ② 首帧不动（age = 0）：留在起点 */
+        p[0] = 5.0f; p[1] = 7.0f;
+        yk_follow_step(p, 5.0f, 7.0f, 65.0f, 7.0f, 0, 60);
+        CHECK(p[0] == 5.0f && p[1] == 7.0f);
+        /* ③ 60 帧内收敛：单调、不回弹、第 60 帧精确到位 */
+        {
+            float prev = 5.0f;
+            int i;
+            int ok_mono = 1, ok_range = 1;
+            p[0] = 5.0f; p[1] = 7.0f;
+            for (i = 1; i <= 60; ++i) {
+                yk_follow_step(p, 5.0f, 7.0f, 65.0f, 7.0f, i, 60);
+                if (p[0] < prev - 0.0001f) ok_mono = 0;          /* 不回弹（超调也在这里被抓住）*/
+                if (p[0] > 65.0001f) ok_range = 0;               /* 不越过目标 */
+                prev = p[0];
+            }
+            CHECK(ok_mono == 1);
+            CHECK(ok_range == 1);
+            CHECK(p[0] == 65.0f && p[1] == 7.0f);                /* 第 60 帧精确到位 */
+        }
+        /* ④ 目标不变时吸附（剩余 < 1 px ⇒ 直接贴到目标，不再抖）*/
+        p[0] = 0.0f; p[1] = 0.0f;
+        yk_follow_step(p, 64.5f, 7.0f, 65.0f, 7.0f, 30, 60);   /* 起点离目标仅 0.5 px */
+        CHECK(p[0] == 65.0f && p[1] == 7.0f);
+        /* ⑤ 斜向也收敛（x/y 同步推进）*/
+        p[0] = 0.0f; p[1] = 0.0f;
+        yk_follow_step(p, 0.0f, 0.0f, 30.0f, 40.0f, 60, 60);
+        CHECK(p[0] == 30.0f && p[1] == 40.0f);
+        /* ⑥ 空指针安全 */
+        yk_follow_step(0, 0.0f, 0.0f, 1.0f, 1.0f, 1, 60);
+    }
+
     /* ============ §3.10 人妖槽（TH08 `youkaiGauge`；限值/判定/几何全部一手）============ */
     /* 夹紧：`th08:0x43c0fa`（下限）/`th08:0x43c128`（上限），两条都**取等号**。*/
     CHECK(yk_gauge_clamp(0) == 0);
