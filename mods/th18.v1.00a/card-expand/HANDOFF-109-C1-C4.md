@@ -424,3 +424,17 @@ stop();
 - ★ **禁主动移动**：★ 卡侧把 `CE_PLAYER_SPEED_MULT`（`0x477ec`）当帧写 0 ✓（★ `on_tick_2` 先于 `Player::on_tick` ⇒ 当帧生效 ✓，`engine.h` 有注 ✓）。
 - ★ **背向位移**：★ 方向用 **`s_c2_dir36` 查表** ✓（★ **不许 `atan2f`** ✗ —— 守 `dllx87` ✓）；
   ★ 速度 `2.0` **线性衰减 40 帧** × **128** 单位 ✓（一手 ✓）。
+
+## 12. ⚠ C1 观感贴图的构建坑（2026-10-10 实测，★ 暂缓接线）
+
+★ 生成器 **`assets/ability/make_pofv109_c1_bullet_art.py`** 已写好并可跑 ✓ ——
+它从 `local/th19.v1.10c/anm/pl00f/player/pl00/pl00.png` **切一手 `sprite38` 的 (1,81,30,30)** ✓
+（源取法见 §6.2；脚本会自己向上找含 `local/` 的仓库根，★ **不数 `../` 层数** ✗ —— 我数错过两次 ✓）。
+
+⚠ **但 `ORDER.txt` 的行一加就红** ✗：`make check` 报
+> `回读失败：ability/POFV109_C1_BULLET.png 不在 thanm -x 的输出里（entry148）`
+
+★ 即：★ **构建/校验那侧把子目录丢了** ✗（它找 `ability/POFV109_C1_BULLET.png`，★ 不是 `ability/c1bullet/…` ✓）。
+★ 而 **`chgmark` 的行同样带子目录却没事** ✓（`ability/chgmark/CHG_MARK_BLUE.png` ✓）⇒ ★ 差异**未查明** ❓。
+⇒ ★ **本轮先把 ORDER 行与贴图撤掉** ✓（★ 检查复绿 ✓），★ **生成器留着** ✓；★ **C1 观感继续用占位脚本 ✓**。
+★ 下次要接真观感时：★ 先弄清这条差异（★ 试**平铺**到 `assets/ability/<名字>.png` ✗ 或 ★ 查 `build_ability.py`/`verify.py` 的路径拼法 ✓）。
