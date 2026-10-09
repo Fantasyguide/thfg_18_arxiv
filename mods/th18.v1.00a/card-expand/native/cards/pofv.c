@@ -2651,7 +2651,19 @@ static int on_tick_2(ce_card_t *c)
         /* ★★★★ 2026-10-10 owner：**蓄力被上限量（灵力 `s_reiryoku`）封顶** ✓
          *   （一手：`charge < clamp(S+0x24)` 才涨 ⇒ `S+0x24`（= 灵力）就是当前蓄力 `AuraCtrlInf+0x94` 的上限 ✓）。
          *   ⇒ `s_aura_charge = min(满值, 灵力)`；灵力初值 = C1 > 0 ⇒ **永远不会开局为 0** ✓。*/
-        s_aura_charge = (s_reiryoku < POFV_AURA_TARGET_CHARGE) ? s_reiryoku : POFV_AURA_TARGET_CHARGE;
+        /* ★★★★ 2026-10-10 **修量纲 bug**（owner 实感「被封到 50 / 半径只有一半」✓）：
+         *   原式把 **灵力（0..2500 ✓）** 直接和 **蓄力上限（100 ✗）** 比较 ⇒ 开局 C1=50 就把蓄力封到 50 ✗。
+         *   ★ 正确关系（owner 一手口径）：「**蓄力最大值 = 灵力**」✓ ⇒ 两者必须**同量纲换算**：
+         *     蓄力满值(100) × (灵力 / 灵力满值 2500) ✓
+         *   ⇒ 灵力 = 2500（满）时蓄力上限 = **100**（= 改前手感 ✓）；灵力 = C1 时按比例 ✓。
+         *   ⚠ `POFV_REI_C1` 的取值直接决定**开局能蓄到多少** ⇒ 它是 ❓自定（一手是 clamp([sht]×10,0,2500)，
+         *     逐角色；**很可能是 2500 = 满**）⇒ 见 TUNING 的待定条目 ✓。*/
+        {
+            float cap = POFV_AURA_TARGET_CHARGE * (s_reiryoku / POFV_REI_MAX);
+            if (cap > POFV_AURA_TARGET_CHARGE) cap = POFV_AURA_TARGET_CHARGE;
+            if (cap < 0.0f) cap = 0.0f;
+            s_aura_charge = cap;
+        }
     } else if (aura_held && s_aura_charge > 0.0f) {
         /* ★ 2026-10-10 新增（**结界键还在按**）：Shift 仍按着 ⇒ **保持**当前蓄力值、**不收束**
          *   —— 这是 owner 早前「**两个 key 可以接续**」（按住 C 再按 Shift ⇒ 续同一个蓄力 ✓）的落地：
