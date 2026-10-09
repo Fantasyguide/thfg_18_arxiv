@@ -64,6 +64,7 @@
  */
 #include "sdk.h"
 #include "pofv_core.h"
+#include "faith.h"   /* ★ 2026-10-09：借用共享落点散布 faith_scatter_from_enemy() ✓（见 AUDIT §BE）*/
 
 /* ============================================================ 常量 */
 
@@ -1565,13 +1566,26 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
      *     （被删前那份同样没有 boss 门 ⇒ 这里保持同口径；boss 死了也只多这一颗，20 分）。
      *   成本 = 一次线性找空槽（≤ `POFV_POWER_MAX` 次比较）—— 清场帧 100–300 次也够便宜
      *   （被删前那份的同一个取舍）。*/
-    if (pofv_power_spawn_dir(&s_power, ev->x, ev->y, POFV_POWER_PTS_KILL, POFV_POWER_SRC_KILL,
-                             POFV_POWER_DROP_ANGLE, POFV_POWER_DROP_SPEED) < 0) {
-        if (!s_power_logged) {
-            ce_log("pofv: power pool full (%d) — kill drop lost", POFV_POWER_MAX);
-            s_power_logged = 1;
+    /* ★★★★ 2026-10-09 owner：「绿点/信仰点**不应当和原本的掉落物重合**」✓（澄清：**位置**重合 ✓）——
+     *   一手/本仓事实：109 的击破掉落原先用**敌机精确坐标**、角度 −π/2、速度 2.2，
+     *   与 **TH18 原生 main-drop 的实参逐项相同** ✓，且本卡道具还有 **6 帧待发射原地不动** ✓
+     *   ⇒ **至少 6 帧与原生掉落完全叠住** ✗（之后两者都向正上方飞、仍基本重合 ✓）。
+     *   ⇒ 照 **110/111 的同式做法** ✓（`mof.c:755`）：用**共享口** `faith_scatter_from_enemy()`
+     *     把落点改成「敌机坐标 **+ ZUN 爆道具散布偏移**」✓（公式一手 ✓：`敌机 + (cos·rx, sin·ry)×(0.5·rand)`，
+     *     `rx/ry` = 敌机掉落区 ✓ 默认 32 ✓；随机源 = 本仓 LCG ✓ 避开 x87 ✓）。
+     *   ⚠ 与 110/111 用的是**同一个共享函数**（该共享件归 107+110/111 那批）⇒ 已在 `AUDIT.md` §BE 登记 ✓。
+     *   ★ 注意：**只错开位置** ✓，**不清原生掉落** ✗（owner 当年的口径：这是「**额外**性质」的点 ✓）。*/
+    {
+        float sc0 = 0.0f, sc1 = 0.0f;
+        faith_scatter_from_enemy((const uint8_t *)ev->enemy, &sc0, &sc1);   /* 照 mof.c:755 ✓ */
+        if (pofv_power_spawn_dir(&s_power, ev->x + sc0, ev->y + sc1, POFV_POWER_PTS_KILL, POFV_POWER_SRC_KILL,
+                                 POFV_POWER_DROP_ANGLE, POFV_POWER_DROP_SPEED) < 0) {
+            if (!s_power_logged) {
+                ce_log("pofv: power pool full (%d) — kill drop lost", POFV_POWER_MAX);
+                s_power_logged = 1;
+            }
         }
-    }
+    }   /* ★ 2026-10-09：本块是「加散布偏移」新包的外层 `{`（照 mof.c:755 同式）✓ */
     if (ev->enemy &&
         (*(const uint32_t *)((const uint8_t *)ev->enemy + CE_ENEMY_FLAGS) & CE_ENEMY_FLAG_BOSS))
         return;                                            /* ★ 杂鱼口径：boss 不起暴风 */
