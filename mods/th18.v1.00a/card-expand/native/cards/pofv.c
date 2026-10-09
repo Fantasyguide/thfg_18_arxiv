@@ -383,6 +383,17 @@ static int32_t pofv_hits_chain_x_for(int32_t kind, int32_t level)
 /* ★ HUD「hits」（一手 §9.8）：当前值 `+0x22b4` / 锁存 `+0x22b8` / 寿命 120 / `+0x227c<1` 时 6 帧闪灰 ✓
  *   ⚠ 按 owner 结论：**只接 hit 这一条**（两作同源 ✓），**SP 不并进 Hits** ✗ ⇒ 这里不碰 SP ✓ */
 static pofv_hits_t s_hits;
+/* ★★★★ 2026-10-10 TH19「連撃（combo）」**真账**（一手核死；口径/地址全在 `pofv_core.h` 的
+ *   「TH19『連撃（combo）』账」段 —— 那里有 `0x549780: inc [ecx+0x44]` / 两个调用点 /
+ *   窗口 60 帧 / 穿 0 归零 / **无上限** 的逐条一手）。
+ *   与上面那本 `s_hits` **是两本独立的账** ✓（owner：「TH09 与 TH19 独立运行」✓）：
+ *     · `s_hits` 继续只服务**显示层**（一手 `+0x22B4/+0x22B8/+0x2290/+0x227C` 的复刻 ✓，本处**不动它** ✗）；
+ *     · **本账**才是「击破奖励（一手 `0x50c464`）要读的那个 combo」✓ —— 上一版拿 `s_hits.cur` 当近似 ✗
+ *       ⇒ owner 明确要真账 ✓。
+ *   ⚠ 一手另外还有一条 `+0x22B4 := +0x22BC`（`0x549815`）的 HUD 镜像 —— 本卡**不接** ✗：
+ *     TH19 那个数字元素已被 owner 2026-10-08 明确撤下 ✓，而现有 `hits`/TH09 SP 显示层另有 `s_hits` 一套
+ *     （owner 已调过多次）⇒ 接上去会把两本账串起来 ✗；恢复方案写在 `TUNING.md` 的登记里 ✓。*/
+static pofv_th19_combo_t s_combo_th19;
 /* ★★★ MODEL-109-SPIRIT-MIRROR.md §4.5 / §4.6（owner 2026-10-05 追加）—— 这两个是**独立事件源** ✓：
  *  §4.5 **周期生成**：除 boss 外，每 **30 s**（=1800 帧）尝试在**两侧各**生成 1 只（幽灵/纯净灵，种类**各自随机** ✓）
  *        ⇒ 这是**本侧的首个生成入口** ✓（解开「本侧恒 0 只」的 bootstrap 死锁 ✓）
@@ -1461,6 +1472,43 @@ static void storm_vm_sync(void)
     }
 }
 
+/* ============================ TH19 連撃账：+1 / 窗口 / 归零 ============================
+ * 一手逐条（地址见 `pofv_core.h` 的「TH19『連撃（combo）』账」段，TH19 v1.10c）：
+ *   · **+1** = `FUN_00549780` 的 `0x54980f: inc dword ptr [ecx+0x44]` ✓
+ *     —— 调用点只有两处：`0x50c450`（击破，实参 = `Enemy+0x6350` = ECL `ins_1032` = 20 ✓）、
+ *        `0x51cb91`（暴风消一颗小弹，实参 = 0 ✓）⇒ 本函数用 `(n, win_add)` 覆盖这两支 ✓。
+ *   · **窗口** = `+0x227C`：`+= win_add`、**上限 60**（`0x5497fb` ✓）。
+ *   ⇒ `n` = 本事件加几（击破 = 1；暴风 = 本帧消掉的颗数 ✓）。*/
+static void combo_th19_add(int32_t n, int32_t win_add)
+{
+    if (n <= 0) return;
+    s_combo_th19.combo += n;                                   /* 一手：`0x54980f` 每事件 +1 → 这里按事件颗数一次加 ✓ */
+    if (win_add > 0) {
+        s_combo_th19.win += win_add;                           /* 一手：`0x5497ca: addss [ecx+8], xmm1` ✓ */
+        if (s_combo_th19.win > POFV_TH19_COMBO_WINDOW_MAX)     /* 一手：`0x5497db: cmp eax,0x3c` + `0x5497fb` ✓ */
+            s_combo_th19.win = POFV_TH19_COMBO_WINDOW_MAX;
+    }
+}
+
+/* 每帧推进窗口（一手 `FUN_005450e0` 的 `0x5459d8`–`0x5459ee`）：**逐帧 −1**；
+ * **穿 0 的那一帧才归零 combo**（一手 `0x545a2e: mov dword [ebx+0x44],0` ✓）。
+ * ⚠ 一手的 quirk **照抄** ✓：窗口**已经 ≤0** 时入口 `0x545962: jg` 早退 ⇒ **不动 combo** ✗
+ *   ⇒ 所以这里第一行就 `return`（不是 `combo = 0`）✓。*/
+static void combo_th19_tick(void)
+{
+    if (s_combo_th19.win <= 0) return;                          /* ★ 一手 quirk（`0x545962`）*/
+    --s_combo_th19.win;
+    if (s_combo_th19.win > 0) return;
+    /* 一手归零前还有一条阈值支（`0x5459f5: cmp [ebx+0x44],0x14`）—— 它给「该侧 struct 的
+     * `+0x2C` 对象」加一次计数，本卡**没有那个系统** ⇒ 只把口径记进日志、不消费 ✓（`TUNING.md` ❓）。*/
+    if (s_combo_th19.combo >= POFV_TH19_COMBO_BONUS_AT)
+        ce_log("pofv: TH19 連撃窗口漏空：combo %d（≥ %d，一手 0x5459f5 的阈值支；本卡无消费者 ⇒ 只记 ✓）",
+               (int)s_combo_th19.combo, (int)POFV_TH19_COMBO_BONUS_AT);
+    else if (s_combo_th19.combo > 0)
+        ce_log("pofv: TH19 連撃窗口漏空 ⇒ combo %d → 0（一手 0x545a2e ✓）", (int)s_combo_th19.combo);
+    s_combo_th19.combo = 0;
+}
+
 /* ============================ 每帧：一个场 ============================
  * 一手（TH09 节点律）：场**停在原地**、每帧半径 `r += dr`、到寿命释放。
  *   · **消弹**：半径内**本仓可消弹**（半径 ≤ 4.0，见 `pofv_core.h`）逐颗 `Bullet__cancel`；
@@ -1477,6 +1525,11 @@ static void do_storm_frame(const pofv_storm_t *bl)
     pos[0] = bl->x; pos[1] = bl->y; pos[2] = 0.0f;
 
     n = cancel_white_in_circle(pos, r, POFV_CANCEL_MAX, POFV_BULLET_CANCEL_MODE);
+    /* ★★★★ 2026-10-10 TH19 連撃：暴风**每消掉一颗小弹 ⇒ combo +1**（一手 `0x51cb91`：
+     *   `FUN_0051c8c0`（暴风 tick）的消弹循环里调 `FUN_00549780(实参 0)` ✓ —— 实参 0 ⇒ **窗口不加** ✓）。
+     *   这是 combo 的**第二个**（也是唯一另一个）来源 ✓；一手对「除霊オーラ（结界）消弹」**不加** ✗
+     *   （那条走 `FUN_004ee770`，不在那两个调用点里 ✓）⇒ 本卡结界碰弹（`aura_scan_bullets`）**也不加** ✓。*/
+    if (n > 0) combo_th19_add(n, POFV_TH19_COMBO_CANCEL_WIN);
     /* ★ 伤害：每帧每场一个矩形源（判定 = 绘制同半径）。日志只在「出生帧」与「起不来」时打，避免刷屏。 */
     {
         int idx = storm_hit_clipped(bl->x, bl->y, r, bl->dmg);
@@ -1786,6 +1839,14 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
         return;                                             /* 离场**不算击破** ✓（不喂累计器 ✓）*/
     }
     if (!(ev->flags & CE_EDEATH_F_REAL)) return;           /* 真敌人（哨兵/特殊对象不算）*/
+    /* ★★★★ 2026-10-10 TH19 連撃 **+1**（一手 `0x50c450`：通用敌人死亡处理里
+     *   `FUN_00549780(实参 = Enemy+0x6350)` ✓）。
+     *   ★ 位置是**有意义的**：一手 `0x50c450` 在**奖励读点 `0x50c464` 之前** ✓
+     *     ⇒ 下面 `0x50c464` 那条看到的是**含本次击破**的 combo ✓
+     *     （上一版把喂食放在回调后段 ⇒ 读到的是"少 1"的值 ✗，现在与一手同序 ✓）。
+     *   ★ 窗口加量 = `Enemy+0x6350`（ECL `ins_1032`）：一手**默认 20**、`wave*.ecl` 也全写 20 ✓
+     *     ⇒ `POFV_TH19_COMBO_KILL_WIN = 20` ✓（TH18 无同类字段 ⇒ 取一手常数，登记 `TUNING.md` ❓）。*/
+    combo_th19_add(1, POFV_TH19_COMBO_KILL_WIN);
     /* ★★★ owner 2026-10-08 定案（生成口 ①）：**击破敌人 ⇒ 撒 1 颗灵力道具** ——
      *   位置 = **敌机位置**（`ev->x/ev->y`）、角度 **−π/2**、速度 **2.2**（= 一手 `FUN_00521d60`
      *   的实参，见 `pofv_core.h` 的 `POFV_POWER_DROP_ANGLE/_SPEED`）。
@@ -1823,14 +1884,16 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
          *   ⚠ 一手那条 `enemy[+0x63a0] & 0x8000000 ⇒ n = 1` 的**例外未接** ✗：那是 TH19 敌机 flags 的
          *     bit27，TH18 的敌机 flags 在 `+0x635c`（`CE_ENEMY_FLAGS` ✓）且**没有**已知同义位
          *     ⇒ 无法照抄 ⇒ 登记 `TUNING.md` ❓（本卡就不做这条例外 ✓）。
-         *   ❓ **`combo` 来源**：一手 = TH19 `PlayerInf+0x22bc`（HUD 連爆/队列计数，cap 19）；
-         *     本卡**没有**这本账 ⇒ 用**同侧、同一 Hits 子对象、同语义**的现成连击计数 `s_hits.cur`
-         *     （= 一手 `+0x22b4` HUD Hits 当前值 ✓，同样「每次击破 +1、断链归零」✓，
-         *      见 `pofv_hits_tick` / `s_chain_storm_age` 的清零路 ✓）作为**近似** ⇒ 登记 `TUNING.md` ❓。
-         *     ⚠ 时序：本处读到的是**本次击破入账之前**的 `s_hits.cur`（喂食 `pofv_hits_bump` 在
-         *       本回调更后面 ⇒ 相当于 `combo` **少 1**；一手 `0x50c464` 的读取时序未逐字核 🟡）。*/
+         *   ✅ **`combo` 来源（2026-10-10 定案 ✓）**：一手 = TH19 `PlayerInf+0x22bc`
+         *     （= Hits 子对象 `PlayerInf+0x2278` 的 `+0x44` ✓——**不是** HUD 值；HUD 读的 `+0x22b4`
+         *      只是它在 `0x549815` 处的**镜像** ✓。旧注里的「HUD 連爆/队列计数，cap 19」两处都错 ✗：
+         *      HUD 读的是 `+0x22b4`；上限**不存在** ✓）。
+         *     ⇒ 本卡现在读**自己的 TH19 連撃账 `s_combo_th19`** ✓（`combo_th19_*`，口径见 `pofv_core.h`；
+         *      上一版拿 `s_hits.cur` 当近似 ✗ —— 那本账服务显示层且被 TH09 的窗口清、与一手不同 ✗）。
+         *     ★ 时序**已与一手同序** ✓：本回调在 `CE_EDEATH_F_REAL` 之后**先** `combo_th19_add(1, 20)`
+         *      再走到这里 ⇒ 这里看到的是**含本次击破**的 combo ✓（一手 `0x50c450` 在 `0x50c464` 之前 ✓）。*/
         {
-            const int32_t combo = s_hits.cur;          /* ❓近似：见上（一手是 `+0x22bc`，本卡用 `+0x22b4`）*/
+            const int32_t combo = s_combo_th19.combo;   /* ★ 真账（一手 `PlayerInf+0x22bc` ✓）*/
             if (combo > 5) {
                 int32_t n = combo / 12 + 1;
                 if (n > 3) n = 3;                      /* 一手：`if (n > 3) n = 3` ✓ */
