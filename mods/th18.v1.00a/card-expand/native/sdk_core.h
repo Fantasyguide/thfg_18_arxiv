@@ -707,6 +707,16 @@ typedef struct {
     float w, h;      /* 声明块尺寸（表面 px）*/
     int   side;      /* 0 = 左下（默认）／1 = 右下 */
 } ce_hud_block_t;
+/* ★★★ 2026-10-03k（owner：「**首先得考虑某种美观性**」，并点名 109 的口径）——
+ *   **美观规则**由 `ce_hud_slot_claim_ex()` 的两个额外参数表达（**不动 `ce_hud_block_t`**：
+ *   本仓宿主测试带 `-Werror=missing-field-initializers`，往结构体尾部加字段会逼着所有
+ *   `{ w, h, side }` 位置初始化（含别的卡的文件）一起改；独立入口零 churn）：
+ *     · `priority`：**大的先摆** ⇒ 先摆的落在**更下面**的行（底边行归优先级最高者）。
+ *                   同优先级按 `card_id` 升序（与 §4.4 同一条确定性规则）。平常传 0。
+ *     · `own_row` ：**独占一行**（摆放前断行、摆完也断行）—— 给"水平几乎占满整个宽度"的块用
+ *                   （109 的蓄力槽 **452 宽**是典型）：它自己占底边那一行，
+ *                   别人自然排到上面一行 ⇒ **不会出现"宽块右边吊着一个小块"的难看排布**。
+ *                   ⚠ 与 `priority` 正交：`own_row` 只管断行，位置仍由 `priority` 决定。*/
 
 #define CE_HUD_SIDE_LEFT  0
 #define CE_HUD_SIDE_RIGHT 1
@@ -762,6 +772,8 @@ int  ce_hud_stage_current(void);                                /* 记住的关�
 /* 认领（幂等）。成功返回 1 并填 *out；卡 id 非法 / blk 非法返回 0。
  * `blk->side == CE_HUD_SIDE_PINNED` 时本函数返回 0（要用下面那个带锚点的入口）。*/
 int  ce_hud_slot_claim(uint32_t card_id, const ce_hud_block_t *blk, ce_hud_slot_t *out);
+int  ce_hud_slot_claim_ex(uint32_t card_id, const ce_hud_block_t *blk,
+                          int priority, int own_row, ce_hud_slot_t *out);
 /* ★ **自带锚点认领**（`blk->side == CE_HUD_SIDE_PINNED`）：按用户按截图量过的固定位置登记。
  *   `anchor_x/anchor_y` = 块的**左下角**（表面 px，y 是块的下边缘）。登记后 `ce_hud_slot_get()` 取得到、
  *   关卡纪元照样会清（下一关要重新认领），但**货架不会去动它**（别的块也不会为它让位 ⇒ 它自己负责不压别人）。

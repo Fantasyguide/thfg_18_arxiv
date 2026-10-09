@@ -638,6 +638,28 @@ static void test_hud_slots(void)
     CHECK(!ce_hud_slot_get(CE_SDK_CARD_ID_MAX + 1u, &a));
     CHECK(!ce_hud_slot_get(107, &a));                             /* 没认领过 */
 
+    /* ★★★ 2026-10-03k（owner：「首先得考虑某种**美观性**」；点名 109 的口径）：
+     *   **优先级 + 独占行** —— priority 大的先摆（⇒ 落在更下面的行）；own_row 的块独自占一行。*/
+    {
+        ce_hud_slot_t lo, wide, hi;
+        ce_hud_block_t blk_lo   = { 100.0f, 20.0f, CE_HUD_SIDE_LEFT };
+        ce_hud_block_t blk_wide = { 452.0f, 24.0f, CE_HUD_SIDE_LEFT };     /* 109 那条蓄力槽 */
+        ce_hud_block_t blk_hi   = { 100.0f, 20.0f, CE_HUD_SIDE_LEFT };
+        ce_hud_slots_reset();
+        CHECK(ce_hud_slot_claim(200, &blk_lo, &lo));
+        CHECK(ce_hud_slot_claim_ex(201, &blk_wide, 100, 1, &wide));        /* 优先级最高 + 独占一行 */
+        CHECK(ce_hud_slot_claim_ex(202, &blk_hi, 1, 0, &hi));
+        CHECK(ce_hud_slot_get(201, &wide) && ce_hud_slot_get(200, &lo) && ce_hud_slot_get(202, &hi));
+        CHECK(wide.x == CE_HUD_ANCHOR_X && wide.y == CE_HUD_ANCHOR_Y);          /* 优先级最高 ⇒ 底边行 */
+        CHECK(hi.y == CE_HUD_ANCHOR_Y - blk_wide.h - CE_HUD_GAP);               /* 独占行 ⇒ 别人上抬一行 */
+        CHECK(hi.x == CE_HUD_ANCHOR_X);
+        CHECK(lo.x == CE_HUD_ANCHOR_X + blk_hi.w + CE_HUD_GAP && lo.y == hi.y); /* 同优先级按 id 升序 */
+        /* 幂等：重复认领不改变优先级/独占行的结果 */
+        CHECK(ce_hud_slot_claim_ex(201, &blk_wide, 100, 1, &wide));
+        CHECK(ce_hud_slot_get(202, &hi) && hi.y == CE_HUD_ANCHOR_Y - blk_wide.h - CE_HUD_GAP);
+        ce_hud_slots_reset();
+    }
+
     /* ★★ 2026-09-15c 回归：**111 当年的 bug 就是这一行** —— `on_load` 里
      *   `ce_hud_slot_claim_card(111, &blk, 0)` 传了 NULL `out`（上面那条断言说明 SDK 一定会拒绝它）
      *   ⇒ 111 的 HUD 槽从来没认领成功、3 支原版 VM 一次都没起过（用户报「看不见信号 UI」）。

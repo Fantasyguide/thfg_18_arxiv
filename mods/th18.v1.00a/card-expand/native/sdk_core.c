@@ -1395,6 +1395,8 @@ static struct {
     uint32_t id;
     float  w, h;
     int    side;
+    int    priority;        /* ★ 2026-10-03k：大的先摆（⇒ 落在更下面的行）*/
+    int    own_row;         /* ★ 2026-10-03k：独占一行（宽块用）*/
     float  x, y;
 } s_hud[CE_SDK_CARD_ID_MAX + 1];
 static int s_hud_near_corner;
@@ -1416,11 +1418,38 @@ static void hud_relayout(void)
     cx[0] = left0;                   row_bottom[0] = CE_HUD_ANCHOR_Y; row_h[0] = 0.0f;
     cx[1] = CE_HUD_ANCHOR_X_RIGHT;   row_bottom[1] = CE_HUD_ANCHOR_Y; row_h[1] = 0.0f;
 
+    /* ★★★ 2026-10-03k（owner：「首先得考虑某种**美观性**」）—— 摆放顺序 = (priority 降, card_id 升)。
+     *   为什么需要它：原来只按 card_id 排 ⇒ 谁先注册谁占底边行，**块有多宽、多重要都不影响**；
+     *   于是「109 那条 452 宽的蓄力槽」会和别人挤在同一行（右边吊着个小块，很难看）。
+     *   现在：优先级高的先摆 ⇒ 落在更下面的行；`own_row` 的块**独自占一行**。
+     *   实现用**插入排序**（N ≤ 255，纯整数比较）⇒ 不引进 qsort（宿主/目标两套 libc 行为差异）。*/
+    static int order[CE_SDK_CARD_ID_MAX + 1];    /* ⚠ 文件静态：钩子里的栈很紧（255×4 = 1 KB 不进栈）*/
+    int n = 0;
     for (int id = 0; id <= CE_SDK_CARD_ID_MAX; ++id) {
         if (!s_hud[id].used) continue;
-        if (s_hud[id].side == CE_HUD_SIDE_PINNED) continue;        /* 自带锚点：不参与货架排布 */
+        if (s_hud[id].side == CE_HUD_SIDE_PINNED) continue;         /* 自带锚点：不参与货架排布 */
+        order[n++] = id;
+    }
+    for (int i = 1; i < n; ++i) {                                   /* 插入排序：(priority 降, id 升) */
+        int key = order[i], j = i - 1;
+        while (j >= 0 && (s_hud[order[j]].priority < s_hud[key].priority ||
+                          (s_hud[order[j]].priority == s_hud[key].priority && order[j] > key))) {
+            order[j + 1] = order[j];
+            --j;
+        }
+        order[j + 1] = key;
+    }
+
+    for (int k = 0; k < n; ++k) {
+        int id = order[k];
         int side = (s_hud[id].side == CE_HUD_SIDE_RIGHT) ? 1 : 0;
         int fits;
+        /* ★ `own_row`：**摆之前**先断行（把上一行封口），保证它从一条干净的行走起。*/
+        if (s_hud[id].own_row && row_h[side] > 0.0f) {
+            row_bottom[side] -= row_h[side] + CE_HUD_GAP;
+            cx[side] = (side == 0) ? left0 : CE_HUD_ANCHOR_X_RIGHT;
+            row_h[side] = 0.0f;
+        }
         if (side == 0) fits = (cx[0] + s_hud[id].w <= CE_HUD_X_MAX);
         else           fits = (cx[1] - s_hud[id].w >= CE_HUD_X_MIN);
         /* 这一行放不下 ⇒ 上抬一行。空行上的「超大块」不抬（认领时已过 §4.2 硬约束），
@@ -1440,6 +1469,12 @@ static void hud_relayout(void)
             cx[1] -= s_hud[id].w + CE_HUD_GAP;
         }
         if (s_hud[id].h > row_h[side]) row_h[side] = s_hud[id].h;
+        /* ★ `own_row`：**摆之后**也断行 ⇒ 后面的块绝不会贴到它右边。*/
+        if (s_hud[id].own_row) {
+            row_bottom[side] -= row_h[side] + CE_HUD_GAP;
+            cx[side] = (side == 0) ? left0 : CE_HUD_ANCHOR_X_RIGHT;
+            row_h[side] = 0.0f;
+        }
     }
 }
 
@@ -1463,6 +1498,8 @@ void ce_hud_slots_reset(void)
         s_hud[id].id = 0;
         s_hud[id].w = s_hud[id].h = 0.0f;
         s_hud[id].side = CE_HUD_SIDE_LEFT;
+        s_hud[id].priority = 0;
+        s_hud[id].own_row = 0;
         s_hud[id].x = s_hud[id].y = 0.0f;
     }
     s_hud_near_corner = 0;
@@ -1471,7 +1508,8 @@ void ce_hud_slots_reset(void)
 /* 把一块登记进表（不动锚点），再按 side 决定要不要重排。返回 0 = 参数非法。
  * `anchor_x/y` 只在 pinned 时用；`do_relayout` 由调用方给（pinned 不动别的位置）。*/
 static int hud_register(uint32_t card_id, const ce_hud_block_t *blk,
-                        float anchor_x, float anchor_y, int pinned, ce_hud_slot_t *out)
+                        float anchor_x, float anchor_y, int pinned, int priority, int own_row,
+                        ce_hud_slot_t *out)
 {
     if (card_id > (uint32_t)CE_SDK_CARD_ID_MAX || !blk || !out) return 0;
     if (blk->w <= 0.0f || blk->h <= 0.0f) return 0;
@@ -1489,6 +1527,8 @@ static int hud_register(uint32_t card_id, const ce_hud_block_t *blk,
     }
     s_hud[card_id].used = 1;
     s_hud[card_id].reserved = 0;                                    /* 重新认领 = 复活这个占位 */
+    s_hud[card_id].priority = priority;                             /* ★ 2026-10-03k（美观规则）*/
+    s_hud[card_id].own_row  = own_row ? 1 : 0;
     s_hud[card_id].id = card_id;
     s_hud[card_id].w = blk->w;
     s_hud[card_id].h = blk->h;
@@ -1508,12 +1548,18 @@ static int hud_register(uint32_t card_id, const ce_hud_block_t *blk,
 int ce_hud_slot_claim_pinned(uint32_t card_id, const ce_hud_block_t *blk,
                              float anchor_x, float anchor_y, ce_hud_slot_t *out)
 {
-    return hud_register(card_id, blk, anchor_x, anchor_y, 1, out);
+    return hud_register(card_id, blk, anchor_x, anchor_y, 1, 0, 0, out);
 }
 
 int ce_hud_slot_claim(uint32_t card_id, const ce_hud_block_t *blk, ce_hud_slot_t *out)
 {
-    return hud_register(card_id, blk, 0.0f, 0.0f, 0, out);
+    return hud_register(card_id, blk, 0.0f, 0.0f, 0, 0, 0, out);
+}
+
+int ce_hud_slot_claim_ex(uint32_t card_id, const ce_hud_block_t *blk,
+                         int priority, int own_row, ce_hud_slot_t *out)
+{
+    return hud_register(card_id, blk, 0.0f, 0.0f, 0, priority, own_row, out);
 }
 
 int ce_hud_slot_get(uint32_t card_id, ce_hud_slot_t *out)

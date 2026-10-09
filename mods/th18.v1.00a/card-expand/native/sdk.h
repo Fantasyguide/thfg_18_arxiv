@@ -1157,6 +1157,18 @@ static inline void *ce_spawn_enemy(const char *ecl_name, const void *spawn_param
  * 换表面 px；TH18 表面 = 1280×960 ⇒ 系数 2.0，🟡 待实跑确认一次）。*/
 #define CE_HUD_SURFACE_TO_640   CE_HUD_640_SCALE
 
+/* ★ 2026-10-03k：带**美观规则**的认领（priority / own_row，语义见 `sdk_core.h`）——
+ *   109 的 452 宽蓄力槽用 `_ex(…, 100, 1)`：优先级最高 + 独占底边那一行。*/
+static inline int ce_hud_slot_claim_card_ex(uint32_t card_id, const ce_hud_block_t *blk,
+                                            int priority, int own_row, ce_hud_slot_t *out)
+{
+    /* 与 `ce_hud_slot_claim_card()` 逐字同款（关卡纪元 + 原生「当前卡」UI 在场声明），
+     * 只多把**美观规则**（priority / own_row）透给分配器。*/
+    ce_hud_stage_begin(CE_CURRENT_STAGE());
+    ce_hud_card_set(hud_card_present(*(void *const *)(CE_ABILITY_MGR() + CE_MGR_SELECTED_ACTIVE)));
+    return ce_hud_slot_claim_ex(card_id, blk, priority, own_row, out);
+}
+
 static inline int ce_hud_slot_claim_card(uint32_t card_id, const ce_hud_block_t *blk, ce_hud_slot_t *out)
 {
     /* ★ 关卡纪元（HUD-LAYOUT §4.4）：关卡号变了 ⇒ 先把上一关的占位清掉再认领。

@@ -810,12 +810,18 @@ static void pofv_hud_chg_claim(void)
      *   （一手常显态是 4×24 的菱形 ⇒ 要整个落在块里；推法/上抬影响见该宏处注释 ✓）*/
     blk.h = POFV_HUD_BLOCK_H_TOTAL_SURF;     /*  24 = 12 + 12 ✓ */
     blk.side = CE_HUD_SIDE_LEFT;       /* 走底部货架（owner：「冲突是已知问题，就这么做」⇒ 不为避让改位置 ✓）*/
-    s_hud_chg_slot_ok = ce_hud_slot_claim_card(109, &blk, &s_hud_chg_slot);
+    /* ★★★ 2026-10-03k（owner：「109 的槽位是**水平几乎占满整个宽度**的，他的**优先级最高摆在最下面**」）：
+     *   走带**美观规则**的入口（`sdk_core.h` 的 `ce_hud_slot_claim_ex()`；不动 `ce_hud_block_t`）：
+     *   · `priority = 100` ⇒ 在货架里**最先摆** ⇒ 占**底边那一行**；
+     *   · `own_row = 1`    ⇒ **独占一行**（前后都断行）—— 452 宽 + 别人 104/193 宽的块挤在同一行会
+     *     出现「宽槽右边吊着一个小块」的排布；独占一行后，其它卡的块自然排到**上一行**（美观性优先）。*/
+    s_hud_chg_slot_ok = ce_hud_slot_claim_card_ex(109, &blk, 100, 1, &s_hud_chg_slot);
     if (!s_hud_chg_slot_logged) {
         s_hud_chg_slot_logged = 1;
-        ce_log("pofv: HUD 蓄力槽块 %.0fx%.0f claimed=%d at surface (%.1f, %.1f) side=%d",
+        ce_log("pofv: HUD 蓄力槽块 %.0fx%.0f claimed=%d at surface (%.1f, %.1f) side=%d "
+               "(priority %d, own_row %d)",
                (double)blk.w, (double)blk.h, s_hud_chg_slot_ok,
-               (double)s_hud_chg_slot.x, (double)s_hud_chg_slot.y, (int)blk.side);
+               (double)s_hud_chg_slot.x, (double)s_hud_chg_slot.y, (int)blk.side, 100, 1);
     }
 }
 

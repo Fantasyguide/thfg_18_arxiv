@@ -4968,6 +4968,8 @@ UI 列表尾插、组内后生成者后画（§2b.4）。
 
 | 2026-10-03j | **所有卡**（共享资源 `assets/cards/`：5 张新卡的 `_min` 重出成「整幅 ÷4」；`make_white_item_card.py` 默认改 A；`_src/README.md` 记口径）| 见下方「§BE 详录 #227」 |
 
+| 2026-10-03k | **HUD 槽位分配器**（共享件 `sdk_core.{h,c}` / `sdk.h`：新增**美观规则** `priority` / `own_row` + `ce_hud_slot_claim_ex()`；109 用上；单测 +10 条）| 见下方「§BE 详录 #228」 |
+
 
 > **§BE 详录 #42（2026-09-20 · P1「缺音效一批」8 条 + 音效表扩容新增 5 枚别作原版 SE）**
 >
@@ -26222,6 +26224,12 @@ verify/autoplay 的场景只判 109 的日志）；`sites.py` / `sdk.*` / `engin
 **`glow` 的判据**：宿主自己那支脚本引用的 sprite **整组**落在辉光区（`220..267` 或 `316..327`）⇒ `glow=1`。
 实测：`S=184`/`189`（辉光蓝/红，st2/st3/st7）= 1、`S=224`（64×64 辉光大号）= 1；其余（0/5/10/15/91/99/103/40）= 0。
 
+**两条实现的取舍（写在这里，别丢）**
+- **为什么不动 `ce_hud_block_t`**：宿主测试带 `-Werror=missing-field-initializers`，往结构体尾部加字段会逼着
+  **所有** `{ w, h, side }` 位置初始化（**含别的卡的文件**）一起改成 5 个字段 ⇒ 用独立入口 `_ex()` **零 churn**。
+- **为什么用插入排序 + 文件静态数组**：钩子里的栈很紧（`static int order[256]` 让 1 KB **不进栈**）；
+  不用 `qsort`（宿主 / Windows 两套 libc 的行为差异不值得为 255 个元素冒险）；纯整数键 ⇒ 结果确定。
+
 **影响面 / 回归**：
 - **共享件**：`cards/faith.c` 是 107/110/111 共用的点池实现；新增字段在结构体尾部、新增调用只在
   「点出界」时起 VM ⇒ 画面内的点**行为逐字节不变**（`ce_topi_tick` 在 `y ≥ -8` 那一支只会
@@ -29195,3 +29203,33 @@ TH16 `09-drawing.md` §3.3：外顶点恒 `color_1`、内顶点在 `(flags_lo & 
 ③ 激光槽 `laserSlots[32]` = 未来工作（需 1 新站点 + `laser_slot→fam_id` 表；TH18 侧未查 🟡）；
 ④ 文档更正：`etEx` 不是槽表（= `transforms[id]`，`enemy+0x2e44` stride `0x18`）、`etFan` 前两参 = `bulletType/color`、
 平坦 dump 地址差（th08 −0x200 / th18 −0xc00）。
+
+---
+
+### §BE 详录 #228 —— 2026-10-03k：HUD 分配器加**美观规则**（`priority` / `own_row`），109 首位实战
+
+**谁改的**：统筹。**owner**：「从统筹的角度……**HUD 分配器可以开始考虑实现了**」＋
+「**首先得考虑某种"美观性"**」＋「109 的槽位是**水平几乎占满整个宽度**的，他的**优先级最高摆在最下面**（或者 PINNED）」。
+
+**为什么**：分配器本体早就有（`ce_hud_slot_*`），但它**只按 `card_id` 升序**摆 ——
+块有多宽、多重要都不影响位置；于是 109 那条 **452 宽**的蓄力槽会和别人挤在同一行，
+出现「宽槽右边吊着一个小块」的排布（而且 109 的优先级在语义上是第一）。
+
+| 落点 | 改动 |
+| --- | --- |
+| `native/sdk_core.h`（**共享件**）| 新增 `ce_hud_slot_claim_ex(card_id, blk, priority, own_row, out)` + 口径注释（**不动 `ce_hud_block_t`**，理由见下）|
+| `native/sdk_core.c`（**共享件**）| 表加两个字段；`hud_register()` 多收两参；`hud_relayout()` 改成按 **(priority 降, card_id 升)** 摆；`own_row` 的块**摆前/摆后都断行**；`reset` 一并清（细节见下） |
+| `native/sdk.h`（**共享件**）| 卡侧包装 `ce_hud_slot_claim_card_ex()`（与 `_card` 版逐字同款：关卡纪元 + 原生「当前卡」UI 在场声明），只多透两个规则参数 |
+| `native/cards/pofv.c`（**109**）| 改走 `_ex`：`priority = 100, own_row = 1` ⇒ **占底边那一行、独占一行**，别的卡自然排到上一行；认领日志也打这两个值 |
+| `native/tests/test_sdk_core.c` | +10 条断言：优先级决定行序（最高的坐底边）、`own_row` 前后断行（后者上抬一行）、同优先级按 `card_id` 升序、幂等；`test_sdk_core: 1393 passed, 0 failed` |
+
+**影响面 / 回归**
+- `sdk_core.*` / `sdk.h` 是**共享件**（所有卡的 HUD 都走这里）⇒ 本次**只新增**一个入口 +
+  在既有排布里加两条规则；`priority`/`own_row` 缺省 **0** ⇒ **没传的卡行为逐字不变**
+  （既有断言全绿就是证明）。
+- **零新增站点**；不动 `patch/**` / `assets/**`。
+- 验证：`make check` **rc=0**（`test_sdk_core` 1393 条 / `anm-verify` / `capcheck` / `check-docs` 447 文件）。
+
+**还没做（等 owner 定，见 §BE #228 的对话）**：**116 / 117 从 `PINNED` 迁到 `LEFT`** ——
+它们的锚点是 `SEASON_HUD_PIN_X = 68` / `ANIMAL_HUD_PIN_X = 88`，**都在货架锚点 257 的左边**，
+而且都是各作原版 HUD 的实测定位；要迁得先定「货架锚点是不是就该在 68 那一带」。
