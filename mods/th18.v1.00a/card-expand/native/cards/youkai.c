@@ -5449,9 +5449,18 @@ static void yk_gauge_hud_update(yk_card_t *s)
                                          *   117 的 `ANIMAL_HUD_PIN_Y = 924` 是**格心** pin
                                          *   （`ANIMAL_HUD_DY = −20` ⇒ 格心 y = 904、块 y 876..924），折算到
                                          *   「块左下角」也在 928 一带。owner 这单只说「往左」⇒ y 保持。*/
-    anchor[0] = YK_GAUGE_BASE_X;
-    anchor[1] = YK_GAUGE_BASE_Y;
-    (void)s->hud;                       /* 认领值不再参与定位（见上）；日志里保留显示 */
+    /* ★★★ 2026-10-03y：落点 = **分配器给的槽**（`s->hud`）。
+     *   因为本卡现在是 **PINNED 在 (68,928)**（= owner 第九轮明令的那个位置），
+     *   所以**单开时 `s->hud` 恒等于 (68,928) ⇒ 画的位置一个像素不变**；
+     *   只有**撞上别人/原生卡面**、分配器把它回退到货架时，整块才跟着让开。
+     *   （空槽兜底也在认领处：拿不到时 `s->hud` = 声明锚点。）*/
+    if (s->hud_ready && s->hud.w > 0.0f) {
+        anchor[0] = s->hud.x;
+        anchor[1] = s->hud.y;
+    } else {
+        anchor[0] = YK_GAUGE_BASE_X;
+        anchor[1] = YK_GAUGE_BASE_Y;
+    }
     yk_gauge_hud(s->gauge, anchor, CE_HUD_SURFACE_TO_640, &h);
     col = yk_gauge_color(s->gauge);
     /* ★★★ 2026-09-22（P2）：**四件也每帧重写 scale**（`h.px` = 2）。
@@ -5625,8 +5634,16 @@ static int on_ctor(ce_card_t *c)
         __builtin_memset(&blk, 0, sizeof blk);
         blk.w = YK_HUD_BLOCK_W;
         blk.h = YK_HUD_BLOCK_H;
-        blk.side = 0;
-        s->hud_ready = (uint8_t)(ce_hud_slot_claim_card(ce_card_id(c), &blk, &s->hud) ? 1 : 0);
+        /* ★★★ 2026-10-03y（goal「所有左下角 HUD 进同一个分配器」）——
+         *   本卡原来走**货架**（`blk.side = 0`）却**不拿货架值定位**（`yk_gauge_hud_update()` 里
+         *   写死 `YK_GAUGE_BASE_X/Y = 68/928`，那是 owner 2026-09-30 第九轮明令的位置）
+         *   ⇒ 结果是"认领归认领、画归画"：分配器把块排到 257+，画仍在 68 ⇒ 看着"堆在左下角、
+         *   不听分配器"（owner 十二合一实跑）。
+         *   ⇒ 改成 **PINNED 在 owner 那个位置 (68, 928)**：单开时槽 = pin ⇒ 画的位置**一个像素不变**；
+         *     与别人/原生卡面**撞了**才回退货架，那时 `s->hud` 变了、画也跟着走（见 `…_update()`）。*/
+        blk.side = CE_HUD_SIDE_PINNED;
+        s->hud_ready = (uint8_t)(ce_hud_slot_claim_pinned_card(
+            ce_card_id(c), &blk, YK_GAUGE_BASE_X, YK_GAUGE_BASE_Y, &s->hud) ? 1 : 0);
     }
     if (s->hud_ready) yk_gauge_hud_spawn(c, s);
     return 0;
