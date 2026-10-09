@@ -22,38 +22,59 @@ DISC = 96      # 内层：白色半透明圆
 GLOW = 128     # 外层：黄色外发光
 
 
-def bake(size: int, rgb: tuple, inner: float, outer: float, a_max: int) -> Image.Image:
-    """半径归一化到 1：inner 以内实心，inner→outer 平滑衰减到 0，outer 以外全透明。"""
+def _falloff(a: float) -> float:
+    return a * a                    # 二次柔边
+
+
+def bake_disc(size: int, rgb, inner: float, a_max: int):
+    """★ **实心半透明圆**：0→inner 满 alpha，inner→1.0 二次衰减到 0（= 白色透明圆的柔边 ✓）。"""
     im = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     px = im.load()
     c = (size - 1) / 2.0
     for y in range(size):
         for x in range(size):
-            dx, dy = (x - c) / c, (y - c) / c
-            r = (dx * dx + dy * dy) ** 0.5
-            if r >= outer:
+            r = (((x - c) / c) ** 2 + ((y - c) / c) ** 2) ** 0.5
+            if r >= 1.0:
                 a = 0.0
             elif r <= inner:
                 a = 1.0
             else:
-                t = (r - inner) / (outer - inner)
-                a = (1.0 - t) ** 2                    # 二次衰减 ⇒ 柔边
+                a = _falloff(1.0 - (r - inner) / (1.0 - inner))
             if a > 0.0:
-                al = int(round(a * a_max))
-                px[x, y] = (rgb[0], rgb[1], rgb[2], al)
+                px[x, y] = (rgb[0], rgb[1], rgb[2], int(round(a * a_max)))
+    return im
+
+
+def bake_ring(size: int, rgb, r_in: float, r_mid: float, a_max: int):
+    """★ **空心带**（外发光 ✓）：r < r_in 全透明（**中心是空的** ✗ 不是实心圆 ✓），
+       r_in→r_mid 升到满，r_mid→1.0 二次衰减到 0。"""
+    im = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    px = im.load()
+    c = (size - 1) / 2.0
+    for y in range(size):
+        for x in range(size):
+            r = (((x - c) / c) ** 2 + ((y - c) / c) ** 2) ** 0.5
+            if r <= r_in or r >= 1.0:
+                a = 0.0
+            elif r <= r_mid:
+                a = _falloff((r - r_in) / (r_mid - r_in))
+            else:
+                a = _falloff(1.0 - (r - r_mid) / (1.0 - r_mid))
+            if a > 0.0:
+                px[x, y] = (rgb[0], rgb[1], rgb[2], int(round(a * a_max)))
     return im
 
 
 def main() -> int:
     OUT.mkdir(parents=True, exist_ok=True)
-    arts = [
-        # (ORDER 名, 文件名, 尺寸, RGB, 内实心, 外截止, 峰值 alpha)
-        ("POFV109_BARRIER_DISC", "BARRIER_DISC.png", DISC, (255, 255, 255), 0.80, 1.00, 150),
-        ("POFV109_BARRIER_GLOW", "BARRIER_GLOW.png", GLOW, (255, 230, 90),  0.75, 1.00, 170),
-    ]
-    for name, fn, size, rgb, inner, outer, amax in arts:
-        bake(size, rgb, inner, outer, amax).save(OUT / fn)
-        print(f"{name:<24} ability/barrier/{fn:<20} {size}x{size}")
+    # ★ 内层：**白色、半透明**的实心圆（owner：「一个白色透明圆形」✓）
+    #   ★ 峰值 alpha 120（❓旋钮：普通 alpha 混合 ⇒ 120/255 ≈ 47% 透白 ✓）
+    bake_disc(DISC, (255, 255, 255), 0.80, 120).save(OUT / "BARRIER_DISC.png")
+    print(f"{'POFV109_BARRIER_DISC':<24} ability/barrier/BARRIER_DISC.png {DISC}x{DISC}")
+    # ★ 外层：**黄色外发光**（owner）⇒ ★ **空心带** ✓：0.70→0.85 升满、→1.0 衰减 ✓
+    #   ★ 峰值 alpha 130（❓旋钮）—— ★ 只在外缘一圈，**中心是空的** ✗ 不再是实心大圆 ✓
+    bake_ring(GLOW, (255, 230, 90), 0.70, 0.85, 130).save(OUT / "BARRIER_GLOW.png")
+    print(f"{'POFV109_BARRIER_GLOW':<24} ability/barrier/BARRIER_GLOW.png {GLOW}x{GLOW}")
     return 0
 
 

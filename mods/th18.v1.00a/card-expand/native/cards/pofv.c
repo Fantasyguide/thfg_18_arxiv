@@ -2471,6 +2471,16 @@ static void pofv_c3_tick(void)
  *   同量纲 0..2500 ✓；触发形状照 C1/C2 = **按蓄力档**、只在**上升**那一帧放一次 ✓）。*/
 #define POFV_C3_THRESH          1700.0f
 #define POFV_BARRIER_R          40.0f
+/* ★★ 2026-10-10 owner 实跑订正：「半径上感觉**大了 1.5 倍**」✗ —— 真因 = 外层曾写
+ *   `scale = k × (128/96)` ✗（把"贴图是 128 px"错当成"要画得更大"），它的**外缘**于是落在
+ *   `64 × 0.833 × 1.333 = 71` 单位 = **判定半径的 1.78 倍** ✗。
+ * ★ 正确做法：**按"每张贴图里圆的可见外缘"换算**（判定=绘制 ✓，与暴风"同一个半径写 VM scale"同款 ✓）：
+ *     · 内层 `POFV109_BARRIER_DISC` = **96×96** ⇒ 可见外缘 = 48 px ⇒ `scale = R / 48` ✓；
+ *     · 外层 `POFV109_BARRIER_GLOW` = **128×128** ⇒ 外缘 = 64 px ⇒ `scale = (R × 1.25) / 64` ✓
+ *       ⇒ ★ 外缘 = **判定半径的 1.25 倍** ✓（不再是 1.78 ✓）。*/
+#define POFV_BARRIER_DISC_TEX_R    48.0f    /* 96/2 ✓ */
+#define POFV_BARRIER_GLOW_TEX_R    64.0f    /* 128/2 ✓ */
+#define POFV_BARRIER_GLOW_OUT       1.25f   /* ❓自定旋钮：外发光的外缘 = 判定半径 × 此值 */
 #define POFV_BARRIER_VM_LAYER_DISC  6    /* ★ 内层：与世界层对齐（脚本里也写 layer(6) ✓）*/
 #define POFV_BARRIER_VM_LAYER_GLOW  5    /* ★ 外层：低一层 ⇒ 画在内层下面 ✓ */    /* ❓自定：盾半径 */
 #define POFV_BARRIER_BREAK_N    40       /* ★ 一手 ✓ 禁主动移动 40 帧 */
@@ -2543,9 +2553,11 @@ static void pofv_barrier_clear(void)
 static void pofv_barrier_vm_sync(void)
 {
     const float *p = ce_player_pos();
-    float k;
+    float k_disc, k_glow;
     if (!p) return;
-    k = POFV_BARRIER_R / 48.0f;               /* 贴图内层半径 = 96/2 = 48 px ⇒ 1:1 映射 ✓ */
+    /* ★ 判定=绘制 ✓：两张贴图各自按"圆/带的外缘"换算（见上面那组常量的推导 ✓）*/
+    k_disc = POFV_BARRIER_R / POFV_BARRIER_DISC_TEX_R;
+    k_glow = (POFV_BARRIER_R * POFV_BARRIER_GLOW_OUT) / POFV_BARRIER_GLOW_TEX_R;
     if (!s_barrier_vm_glow)
         s_barrier_vm_glow = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
                              CE_ANM_ABILITY_SCRIPT_POFV109_BARRIER_GLOW, POFV_BARRIER_VM_LAYER_GLOW);
@@ -2554,11 +2566,11 @@ static void pofv_barrier_vm_sync(void)
                              CE_ANM_ABILITY_SCRIPT_POFV109_BARRIER_DISC, POFV_BARRIER_VM_LAYER_DISC);
     if (s_barrier_vm_glow) {
         vm_set_world_pos((uint32_t)s_barrier_vm_glow, p[0], p[1]);
-        ce_anm_set_scale((uint32_t)s_barrier_vm_glow, k * (128.0f / 96.0f), k * (128.0f / 96.0f));
+        ce_anm_set_scale((uint32_t)s_barrier_vm_glow, k_glow, k_glow);
     }
     if (s_barrier_vm_disc) {
         vm_set_world_pos((uint32_t)s_barrier_vm_disc, p[0], p[1]);
-        ce_anm_set_scale((uint32_t)s_barrier_vm_disc, k, k);
+        ce_anm_set_scale((uint32_t)s_barrier_vm_disc, k_disc, k_disc);
     }
 }
 
