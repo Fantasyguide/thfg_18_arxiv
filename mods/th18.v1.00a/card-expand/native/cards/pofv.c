@@ -2594,6 +2594,139 @@ static void pofv_barrier_tick(void)
     }
 }
 
+/* ================= ⑤ C4：灵梦 `Boss00BossCard1` 的「扫描弧」（一手 §14）=================
+ * ★ 一手链路（`local/th19.v1.10c/_ext/ecl/pl00.txt`，亲读转写 ✓）：
+ *   `BossAttack` → `ins_300("Boss00")` → `Boss00()` → `enmCreate("Boss00Boss")`
+ *   → `Boss00Boss()` 按 **`[-9887]`（符卡号）** 分派 ⇒ ★ **`!23` = `Boss00BossCard1`** ✓。
+ * ★ `Boss00BossCard1()`：★ **每 60 帧一轮** ✓，每轮调 **两次** `Boss00BossCard1_at` ✓：
+ *     基准角 = `[-9989] − [-9987] × 0.34906584f`（**20°** ✓）；两次的 `B` 分别是
+ *     **`+6.2831855f`（+2π）** 与 **`−6.2831855f`（−2π）** ⇒ ★ **两条反向的扫描** ✓。
+ * ★ `Boss00BossCard1_at(A, B)`：★ 发 **`$D` 发**（`ins_570($D, **13,13,13,14,15,16,17,18**)` ✓），
+ *     ★ **每 2 帧一发**（`ins_23(2)` ✓）、★ 角 `A += B/$D`（★ **把 ±2π 均分** ✓）、
+ *     ★ **偶数发开弹槽 0 / 奇数发开弹槽 1**（★ 轮流 ✓）；每发：`etSprite(0,44,3)` ✓、
+ *     `etAngle(A, 10°)` ✓、`etSpeed(**1.5 + [-9888]×0.8**, 1.0)` ✓，
+ *     并挂三条 `etEx`：角度加速 / **`EX_ACCEL` 600 帧（`0.01 + [-9888]×0.02`、角 π/2）** ✓ /
+ *     **`EX_BOUNCE`（type 64、4 次、walls 13）** ✓。
+ * ★ **本卡的落地**（owner 路线：纯伤害源 + anm VM ✓）：
+ *   ★ 照抄"每 60 帧、两条反向、13 发、每 2 帧一发、均分整圈"✓；
+ *   ★ 每发 = **红环 VM（脚本 430）+ 伤害源** ✓，★ **自己算加速**（`POFV_C4_ACCEL` ✓）。
+ * ❓自定（登记 TUNING）：
+ *   ① `[-9888]` **未定位**（§10.5/§14.4 同一条，像 0..1 归一化标量）⇒ ★ **取 0** ✓；
+ *   ② 基准角 `[-9989] − [-9987]×20°` 的两个变量**未定位** ⇒ ★ **本卡用"随轮次缓慢自转"近似** ✓
+ *      （一手 `ins_91(1, %A, 3600, …)` 说明它确实在转 ✓）；
+ *   ③ **`EX_BOUNCE` 不做** ✗（反弹要引擎弹 VM ✓；本卡是伤害源 ⇒ 出屏即收 ✓）；
+ *   ④ `$D` 先固定 **13**（一手按档位 13..18 ✓）；
+ *   ⑤ 弹的寿命/盒/伤害沿用 C1 的口径（可后调 ✓）。*/
+#define POFV_C4_MAX_BULLETS      40
+#define POFV_C4_SHOTS_PER_SWEEP  13       /* ❓④：一手 `ins_570` 的档 0..2 = 13（先固定 ✓）*/
+#define POFV_C4_EMIT_EVERY        2       /* ★ 一手 ✓ `ins_23(2)` */
+#define POFV_C4_WAVE_PERIOD      60       /* ★ 一手 ✓ 每 60 帧一轮 */
+#define POFV_C4_SPEED           1.5f      /* ★ 一手 ✓ `1.5 + [-9888]×0.8`，❓① 取 0 ⇒ 1.5 */
+#define POFV_C4_ACCEL          0.01f      /* ★ 一手 ✓ `0.01 + [-9888]×0.02`，❓① 取 0 ⇒ 0.01 */
+#define POFV_C4_ACCEL_FRAMES     600      /* ★ 一手 ✓ */
+#define POFV_C4_BULLET_LIFE      150      /* ❓⑤：出屏估 */
+#define POFV_C4_VM_LAYER           6
+#define POFV_C4_BASE_SPIN    0.0349066f   /* ❓②：每轮基准角 +2°（近似一手的缓慢自转）*/
+
+typedef struct {
+    int     live, age;
+    float   x, y, ang, spd;
+    int32_t vm;
+} pofv_c4_bullet_t;
+
+static pofv_c4_bullet_t s_c4_b[POFV_C4_MAX_BULLETS];
+static struct { int timer, emitted, dir, live; float base; } s_c4;
+
+static void pofv_c4_clear(void)
+{
+    int k;
+    for (k = 0; k < POFV_C4_MAX_BULLETS; ++k) {
+        if (s_c4_b[k].vm) { ce_anm_delete((uint32_t)s_c4_b[k].vm); s_c4_b[k].vm = 0; }
+        s_c4_b[k].live = 0; s_c4_b[k].age = 0;
+    }
+    s_c4.timer = 0; s_c4.emitted = 0; s_c4.dir = 1; s_c4.live = 0; s_c4.base = 0.0f;
+}
+
+/* ★ 一轮开始（一手：每 60 帧调两次 `_at`，方向 +2π / −2π ✓）*/
+static void pofv_c4_fire(void)
+{
+    s_c4.live = 1; s_c4.timer = 0; s_c4.emitted = 0; s_c4.dir = 1;
+}
+
+/* ★ 发一发（两条扫描共用：`dir` = ±1 ✓）*/
+static void pofv_c4_emit(int dir)
+{
+    int k, i;
+    float ang, di;
+    for (k = 0; k < POFV_C4_MAX_BULLETS; ++k) if (!s_c4_b[k].live) break;
+    if (k >= POFV_C4_MAX_BULLETS) return;
+    /* ★ 角 = base + dir × 2π × (第几发 / D)（一手 `A += B/$D` 的均分 ✓）*/
+    di = (float)s_c4.emitted / (float)POFV_C4_SHOTS_PER_SWEEP;
+    if (dir >= 0) ang = s_c4.base + 6.2831853f * di;
+    else          ang = s_c4.base - 6.2831853f * di;
+    s_c4_b[k].live = 1; s_c4_b[k].age = 0;
+    s_c4_b[k].x = 0.0f; s_c4_b[k].y = 128.0f;      /* ★ 一手：环心在 (0,128) ✓（`ins_504(0,128,…)`）*/
+    s_c4_b[k].ang = ang;
+    s_c4_b[k].spd = POFV_C4_SPEED;
+    {
+        int a5 = (int)(ang * (36.0f / 6.2831853f)) % 36;
+        if (a5 < 0) a5 += 36;
+        s_c4_b[k].x = 0.0f; s_c4_b[k].y = 128.0f;
+        (void)a5;
+    }
+    s_c4_b[k].vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), POFV_C_RING_SCRIPT, POFV_C4_VM_LAYER);
+    if (s_c4_b[k].vm) {
+        ce_anm_set_color((uint32_t)s_c4_b[k].vm, 0xffffffffu);
+        ce_anm_set_scale((uint32_t)s_c4_b[k].vm, 0.5f, 0.5f);
+    }
+}
+
+/* ★ 每帧：波次机 + 逐发（自转/加速/出屏/寿命）*/
+static void pofv_c4_tick(void)
+{
+    int k;
+    if (s_c4.live) {
+        /* ★ 每 2 帧一发；两条扫描同时跑（一手每轮调两次 `_at` ✓）*/
+        if (s_c4.timer % POFV_C4_EMIT_EVERY == 0) {
+            if (s_c4.emitted < POFV_C4_SHOTS_PER_SWEEP) {
+                pofv_c4_emit(+1);
+                pofv_c4_emit(-1);
+            }
+            ++s_c4.emitted;
+        }
+        if (++s_c4.timer >= POFV_C4_WAVE_PERIOD) {
+            s_c4.timer = 0; s_c4.emitted = 0; s_c4.live = 0;
+            s_c4.base += POFV_C4_BASE_SPIN;         /* ❓②：基准角缓慢自转 ✓ */
+        }
+    }
+    for (k = 0; k < POFV_C4_MAX_BULLETS; ++k) {
+        pofv_c4_bullet_t *b = &s_c4_b[k];
+        float pos[3];
+        int di;
+        if (!b->live) continue;
+        /* ★ 加速（一手 `EX_ACCEL` 600 帧 ✓）*/
+        if (b->age < POFV_C4_ACCEL_FRAMES) b->spd += POFV_C4_ACCEL;
+        di = (int)(b->ang * (36.0f / 6.2831853f)) % 36;
+        if (di < 0) di += 36;
+        b->x += s_c2_dir36[di][0] * b->spd;
+        b->y += s_c2_dir36[di][1] * b->spd;
+        ++b->age;
+        if (b->x < -POFV_FIELD_HALF_W || b->x > POFV_FIELD_HALF_W ||
+            b->y < 0.0f || b->y > POFV_FIELD_H || b->age >= POFV_C4_BULLET_LIFE) {
+            if (b->vm) { ce_anm_delete((uint32_t)b->vm); b->vm = 0; }
+            b->live = 0;
+            continue;
+        }
+        if (b->vm) {
+            ce_anm_set_pos((uint32_t)b->vm, b->x, b->y, 0.0f);
+            ce_anm_set_scale((uint32_t)b->vm, 0.5f + (float)b->age * 0.004f,
+                             0.5f + (float)b->age * 0.004f);
+        }
+        pos[0] = b->x; pos[1] = b->y; pos[2] = 0.0f;
+        (void)ce_damage_rect(pos, 0.0f, POFV_C1_HIT_LIFE, 14.0f, POFV_C1_HIT_W, POFV_C1_HIT_H);
+    }
+}
+
 static void clear_card(ce_card_t *c)
 {
     int i, k;
@@ -2666,6 +2799,7 @@ static void clear_card(ce_card_t *c)
     pofv_c1_clear();   /* ★ 铁律：长持续效果（C1 的 VM + 伤害源）删卡要收干净 ✓ */
     pofv_c3_clear();   /* ★ 铁律：C3 每一颗弹都带一台 VM ⇒ 删卡/换关/重开全收 ✓ */
     pofv_barrier_clear();   /* ★ 铁律：罩子（盾/破罩计时）删卡要收干净 ✓ */
+    pofv_c4_clear();        /* ★ 铁律：C4 每发一台 VM ⇒ 删卡/换关全收 ✓ */
     /* ★★★★ 2026-10-10 owner：灵力（上限量 = 一手 `S+0x24`）**初值 = C1（不是 0 ✗）**
      *   ⇒ 开局有基础灵力 ⇒ 蓄力/结界不会被封到 0 ✓（C1 数值 = ❓自定，见 `POFV_REI_C1` ✓）。*/
     s_reiryoku = POFV_REI_C1;
@@ -3770,6 +3904,14 @@ static int on_tick_2(ce_card_t *c)
         if (s_aura_charge >= c1_at) { if (!s_c1_lv) { pofv_c1_fire(); s_c1_lv = 1; } } else s_c1_lv = 0;
         if (s_aura_charge >= c2_at) { if (!s_c2_lv) { pofv_c2_fire(); s_c2_lv = 1; } } else s_c2_lv = 0;
         /* ★ ⑤ C3（ExtraAttack）：★ 按蓄力档（**不是**边沿 ✗ —— 旧 `pofv_aura_rise_edge()` 已被 owner 实跑否掉 ✓）*/
+        /* ★ ⑤ C4：一手阈值 = 2500（= `pl00.sht +0x38` ×10 ✓，= 满 ✓）*/
+        {
+            static int s_c4_lv;
+            const float c4_at = cap2 * (2500.0f / POFV_REI_MAX);
+            if (s_aura_charge >= c4_at && s_aura_charge >= cap2 * (2499.0f / POFV_REI_MAX)) {
+                if (!s_c4_lv) { pofv_c4_fire(); s_c4_lv = 1; }
+            } else s_c4_lv = 0;
+        }
         if (s_aura_charge >= c3_at) {
             if (!s_c3_lv) {
                 pofv_c3_fire(); s_c3_lv = 1;
@@ -3786,6 +3928,7 @@ static int on_tick_2(ce_card_t *c)
         pofv_barrier_tick();
         pofv_c1_tick();                     /* ★ C1：前进 + 伤害源 + 收尾 ✓ */
         pofv_c3_tick();                     /* ★ C3：波次机 + 每颗弹（加速/反弹/伤害源）+ 收尾 ✓ */
+        pofv_c4_tick();                     /* ★ C4：扫描弧（两条反向 + 加速 + 伤害源）✓ */
     }
     }   /* ← 2026-10-10 新增的两把键作用域块（`chg_held` / `aura_held`）收尾 ✓ */
     /* ★★ 2026-10-10 结界半径用的"有效蓄力"：见上面两把键的分工注释 ——
