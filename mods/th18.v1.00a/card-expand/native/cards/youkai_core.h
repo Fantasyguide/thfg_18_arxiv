@@ -1302,7 +1302,7 @@ int        yk_side_switch_allowed(int trance, int roar, int real_bomb);
  *     · 其它 ⇒ `k = age/frames`，`xy = start + (target-start)·k`，且**当剩余距离 < 1 px 时直接吸附**
  *       （避免末段抖动/来回）。`k` 单调 → **越过目标不回弹**（结构性保证）。
  *   ❓ 收敛帧数 = `YK_EMIT_FOLLOW_FRAMES`（旋钮，一手量级照 TH08 `moveRandTime(60,·)`）。*/
-#define YK_EMIT_FOLLOW_FRAMES 60
+#define YK_EMIT_FOLLOW_FRAMES 0
 #define YK_EMIT_FOLLOW_SNAP_PX 1.0f
 void yk_follow_step(float *xy, float sx, float sy, float tx, float ty, int age, int frames);
 
