@@ -29283,7 +29283,8 @@ TH16 `09-drawing.md` §3.3：外顶点恒 `color_1`、内顶点在 `(flags_lo & 
 · 一帧多原点（33 sub；`st05bs:1121` 同帧 6 次 `etOn`）⇒ 一槽一壳口径补充「同帧 N 次会全塌到壳上」；
 · `type == 0` 的激光槽 **5 处**（`st07bs:1530/1846/2157/2174/2191`）⇒ 不进槽表；订正 `engine/enemy/th18/07` 的「2 处」；
 · `etCopy`（`st02bs:611`/`st06bs:143`）两壳重叠 = 已知现象；
-· ★ 更正：`props[i]+0x08/0x0c/0x10` 是**世界坐标** ⇒ 「弹从壳出」应**直接写壳的世界坐标**，不是「壳 − 敌人」；
+· ★ 更正：`props[i]+0x08/0x0c/0x10` 是**世界坐标**（相对路已加 `final_pos`）；
+  ⛔ **但「写它让弹从壳出」已被 owner 硬约束否决**（2026-10-01：「你只能不发弹，不能改发弹位置」）⇒ 该方案**禁止**，见 #212-A；
 · 老 🟡 结案：`etCount(slot,[-1],1)` 的 `[-1]` = 难度分支占位（375 处 100% 紧邻 `!E/!N/!LO`；`0x48d4f0` rank 掩码）。
 
 ---
@@ -29309,3 +29310,27 @@ TH16 `09-drawing.md` §3.3：外顶点恒 `color_1`、内顶点在 `(flags_lo & 
 （117 的块 193×48 ⇒ 68..261，会与 110/111 的 68..256 几乎完全重合 ⇒ 届时正好由 #229 的**碰撞回退**接管）。
 
 **验证**：`make check` **rc=0**（`test_sdk_core` / `anm-verify` / `capcheck` / `check-docs` **448** 文件全绿）。
+
+## §BE 详录 #212（2026-10-01）：**owner 两条硬约束**（A 只许不发弹 / B 时符不转嫁）
+
+### A. 「只能不发弹，不能改发弹位置」⇒ `etDist` 归零**已回滚** + 站点写权限收窄
+· **回滚**：`youkai.c` 站点 `0x433ffa` 里那句 `*(int32_t*)(pr + 0x24) = 0`（`etDist`）**删掉**，回到「一个字节都不写」。
+· **站点写权限审计（现状）**：`yk_on_shot_slot()` 里对我们的槽只做两件事 ——
+  ① **读** `props[i]+0x08/+0x0c/+0x10`（**世界坐标**，latch 只读复制）；② 调 `yk_shot_slot_gate()` 由**返回值**否决本帧 `etOn`。
+  **没有任何 `props` 写入**（`+0x24` 已回滚；`+0x00/+0x04/offsets/origins/aim/angle` 从未写过）。
+· **代码不变量注释**已加在站点入口（「禁止修改 props 的 offsets/origins/dist/aim/angle/type」）。
+· `TUNING §2.1ccc-43-A`、`HANDOFF §3 第 98 行`；「覆写 `offset_final` 让弹从壳出」由未来工作**降级为禁止**。
+
+### B. 「时符期间，使魔的伤害不能返回到敌人身上」
+· **判据（一手）**：符卡名 = `zSpellcard + 0x34`，由 `Spellcard__start`（`0x42a320`）**逐字节**拷入
+  （`0x42a370`–`0x42a37b`：`mov al,[ecx]` / `mov [edx+ecx+0x33],al` 循环，NUL 结尾）；
+  符卡进行中 = `zSpellcard+0x78` bit0（`CE_SPELL_FLAG_ACTIVE`）。
+  ⇒ 纯函数 `yk_spell_name_is_time(name, maxlen)`：名字以 **時符 / 时符** 开头即判（**三种编码都认**：
+  UTF-16LE `42 66 26 7B` / `F6 65 26 7B`、UTF-8 `E6 99 82 E7 AC A6` / `E6 97 B6 E7 AC A6`、Shift-JIS `8E 9E 95 84`）。
+· **实现**：`yk_transfer_tick()` 在消费 `pending` 之前先问 `yk_transfer_spell_blocked()` ⇒ 命中则
+  **整笔进 `dropped`**（不建 `ce_damage_rect`、不抬每敌每帧上限），`transferred` 不涨；进入时打一行
+  `youkai/xfer: spell <id> => transfer SUPPRESSED … name[0..7]=<hex>`（每次进入一次）。
+· **判据**：时符期间打死使魔 ⇒ **不扣敌人血**（`dropped` 涨、`transferred` 不涨）。
+· ⚠ **待实跑校准**：实测 TH18 的 `*.ecl` 里**没有**上述序列（三种编码 0 命中）⇒ 若该日志从不出现，
+  就用 `name[0..7]` 的**十六进制**反查真实编码与名字，再补判据（**不改其它行为**）。
+· 单测：`yk_spell_name_is_time` 7 条（4 种编码命中 + 「符」开头不命中 + 空指针 + 过短）。

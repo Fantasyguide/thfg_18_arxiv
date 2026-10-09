@@ -1440,6 +1440,23 @@ int main(void)
         CHECK(q[0] == 30.0f && q[1] == 0.0f);       /* 只有位置被写 */
     }
 
+    /* ============ ★★★ 2026-10-01（owner 硬约束 ②）：时符名判据 ============
+     * 符卡名 = `zSpellcard+0x34`（`Spellcard__start` 逐字节拷入）⇒ 按字节判「時符/时符」开头。*/
+    {
+        static const uint8_t u16_t[8] = { 0x42, 0x66, 0x26, 0x7B, 0x00, 0x00, 0x00, 0x00 }; /* 時符 */
+        static const uint8_t u16_s[8] = { 0xF6, 0x65, 0x26, 0x7B, 0x00, 0x00, 0x00, 0x00 }; /* 时符 */
+        static const uint8_t u8_t[8]  = { 0xE6, 0x99, 0x82, 0xE7, 0xAC, 0xA6, 0x00, 0x00 };
+        static const uint8_t sjis[8]  = { 0x8E, 0x9E, 0x95, 0x84, 0x00, 0x00, 0x00, 0x00 };
+        static const uint8_t other[8] = { 0xE7, 0xAC, 0xA6, 0x00, 0x00, 0x00, 0x00, 0x00 }; /* 「符」开头 */
+        CHECK(yk_spell_name_is_time(u16_t, 8) == 1);
+        CHECK(yk_spell_name_is_time(u16_s, 8) == 1);
+        CHECK(yk_spell_name_is_time(u8_t, 8) == 1);
+        CHECK(yk_spell_name_is_time(sjis, 8) == 1);
+        CHECK(yk_spell_name_is_time(other, 8) == 0);
+        CHECK(yk_spell_name_is_time(0, 8) == 0);
+        CHECK(yk_spell_name_is_time(u16_t, 3) == 0);      /* 太短 ⇒ 不判 */
+    }
+
     /* ============ §3.10 人妖槽（TH08 `youkaiGauge`；限值/判定/几何全部一手）============ */
     /* 夹紧：`th08:0x43c0fa`（下限）/`th08:0x43c128`（上限），两条都**取等号**。*/
     CHECK(yk_gauge_clamp(0) == 0);

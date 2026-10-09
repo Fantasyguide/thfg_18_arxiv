@@ -1323,6 +1323,15 @@ void yk_follow_step(float *xy, float sx, float sy, float tx, float ty, int age, 
  *   **位置/目标变化完全不参与** —— 本函数**没有**位置参数，这就是「瞬移不重建」的结构性证明
  *   （沿 `yk_pin_familiar()` 那条路只写位置字段，见 `AUDIT.md` §BE #208 的逐行表）。*/
 int  yk_shell_needs_rebuild(int have_shell, int broken);
+/* ★★★★ 2026-10-01（owner 硬约束 ②）：**时符期间，使魔受到的伤害不得转嫁给敌人**。
+ *   owner 逐字：「另外，**对于时符**，应该程序内可能有定义，**这个使魔的伤害肯定不能返回到敌人身上**」。
+ *   一手判据（本仓已核）：符卡名 = `zSpellcard + 0x34` 起、**逐字节拷进来的 NUL 结尾字符串**
+ *   （`Spellcard__start` `0x42a320`：`0x42a370`–`0x42a37b` 的 `mov al,[ecx]` / `mov [edx+ecx+0x33],al` 循环）。
+ *   ⇒ 本函数**按字节**判「时符」：名字以 **時符 / 时符** 开头（任一编码都认：
+ *     UTF-16LE `42 66 26 7B`（時符）/`F6 65 26 7B`（时符）、UTF-8 `E6 99 82 E7 AC A6`、
+ *     或 Shift-JIS `8E 9E 95 84`）。⚠ 实测 TH18 的 `*.ecl` 里**没有**这些序列（0 命中）⇒
+ *     实跑若从不触发，就用日志里的 `name=` 十六进制看真实编码，再补判据（已登记 `AUDIT §BE #212`）。*/
+int  yk_spell_name_is_time(const uint8_t *name, int maxlen);
 /* ★★★ 2026-10-01（#209 · **主功能**：打死使魔 ⇒ 关闭该发射口）：**「这一条 `etOn` 算不算新一波」**（纯函数）。
  *   判据 = 间隔 ≥ `YK_EMIT_WAVE_GAP`(24) **且** 间隔 ≥ `4 × gap_ref`（该槽自己的波内间隔最小值；
  *   `gap_ref <= 0` = 还没观测到 ⇒ 只用绝对阈值）。⇒ **缓发敌人（波内间隔就有 30/60 帧）不会被误放行**，

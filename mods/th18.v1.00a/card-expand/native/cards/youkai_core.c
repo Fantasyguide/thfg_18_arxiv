@@ -920,6 +920,30 @@ int yk_emit_gap_is_new_wave(int eton_gap, int gap_ref)
     return 1;
 }
 
+/* ★★★★ 2026-10-01（owner 硬约束 ②）：符卡名是不是「时符」（详注见头文件）。纯字节比较、无浮点。*/
+int yk_spell_name_is_time(const uint8_t *name, int maxlen)
+{
+    static const unsigned char P_UTF16_T[4] = { 0x42, 0x66, 0x26, 0x7B };  /* 時符（UTF-16LE）*/
+    static const unsigned char P_UTF16_S[4] = { 0xF6, 0x65, 0x26, 0x7B };  /* 时符（UTF-16LE）*/
+    static const unsigned char P_UTF8_T[6]  = { 0xE6, 0x99, 0x82, 0xE7, 0xAC, 0xA6 };
+    static const unsigned char P_UTF8_S[6]  = { 0xE6, 0x97, 0xB6, 0xE7, 0xAC, 0xA6 };
+    static const unsigned char P_SJIS[4]    = { 0x8E, 0x9E, 0x95, 0x84 };
+    int i;
+    if (!name || maxlen < 4) return 0;
+    for (i = 0; i < 4; ++i) if (name[i] != P_UTF16_T[i]) break;
+    if (i == 4) return 1;
+    for (i = 0; i < 4; ++i) if (name[i] != P_UTF16_S[i]) break;
+    if (i == 4) return 1;
+    for (i = 0; i < 4; ++i) if (name[i] != P_SJIS[i]) break;
+    if (i == 4) return 1;
+    if (maxlen < 6) return 0;
+    for (i = 0; i < 6; ++i) if (name[i] != P_UTF8_T[i]) break;
+    if (i == 6) return 1;
+    for (i = 0; i < 6; ++i) if (name[i] != P_UTF8_S[i]) break;
+    if (i == 6) return 1;
+    return 0;
+}
+
 int yk_shell_needs_rebuild(int have_shell, int broken)
 {
     return (!have_shell && !broken) ? 1 : 0;

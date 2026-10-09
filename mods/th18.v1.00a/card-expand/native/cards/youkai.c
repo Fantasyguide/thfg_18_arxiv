@@ -582,6 +582,7 @@ typedef struct { uint32_t enemy_id; int16_t slot; uint8_t used; float x, y, z; }
 static yk_emit_latch_t s_emit_latch[YK_EMIT_LATCH_N];
 static unsigned s_emit_latch_head;
 static unsigned s_emit_latch_logged;      /* 判据：打过几行 `latched=` */
+static unsigned s_emit_dist0;            /* ★ 硬约束回滚后：恒 0（保留格子只为日志口径稳定；我们**从不**写 props）*/
 
 static void yk_emit_latch_put(uint32_t enemy_id, int slot, float x, float y, float z)
 {
@@ -2619,6 +2620,33 @@ static yk_xfam_t *yk_xfam_find(uint32_t id)
     return 0;
 }
 
+/* ★★★★ 2026-10-01（**owner 硬约束 ②**）：**时符期间，使魔受到的伤害不得转嫁**。
+ *   owner 逐字：「另外，**对于时符**，应该程序内可能有定义，**这个使魔的伤害肯定不能返回到敌人身上**」。
+ *   判据（一手）：符卡进行中（`zSpellcard+0x78` bit0，`0x409b10`）+ 符卡名（`+0x34`，`Spellcard__start`
+ *   `0x42a370`–`0x42a37b` 逐字节拷入）是「時符 / 时符」（`yk_spell_name_is_time()`，三种编码都认）。
+ *   ⇒ 命中即**不转嫁**：量进 `dropped` 账、`transferred` 不涨；进入时打一行（含 `spell id` 与名字前
+ *     8 字节的十六进制 ⇒ 实跑可反查真实编码）。⚠ 实测 TH18 的 `*.ecl` 里没有这些序列（0 命中）⇒
+ *     若实跑从不触发，用那行十六进制补判据（登记 `AUDIT §BE #212`）。*/
+static int yk_transfer_spell_blocked(void)
+{
+    uint8_t *sc = CE_SPELLCARD();
+    const uint8_t *nm;
+    static int32_t logged_id = -1;
+    if (!sc) return 0;
+    if (!(*(const int32_t *)(sc + CE_SPELL_FLAGS) & CE_SPELL_FLAG_ACTIVE)) return 0;
+    nm = (const uint8_t *)(sc + 0x34);
+    if (!yk_spell_name_is_time(nm, 64)) return 0;
+    {   int32_t id = *(const int32_t *)(sc + CE_SPELL_ID);
+        if (id != logged_id) {
+            logged_id = id;
+            ce_log("youkai/xfer: spell %d => transfer SUPPRESSED (time spell; owner 2026-10-01: familiar "
+                   "damage must NOT go back to the enemy) name[0..7]=%02x %02x %02x %02x %02x %02x %02x %02x",
+                   (int)id, nm[0], nm[1], nm[2], nm[3], nm[4], nm[5], nm[6], nm[7]);
+        }
+    }
+    return 1;
+}
+
 static void __attribute__((noinline)) yk_transfer_tick(yk_card_t *s)
 {
     ++s_xfer_tick_calls;                   /* ★ 诊断：这一支本局跑了几次 */
@@ -2761,6 +2789,12 @@ static void __attribute__((noinline)) yk_transfer_tick(yk_card_t *s)
         }
     }
     if (s->tr.pending <= 0) return;
+    /* ★ 硬约束 ②：时符期间 ⇒ 整笔待转嫁量丢进 `dropped`（不建伤害源、不抬上限）。*/
+    if (yk_transfer_spell_blocked()) {
+        s->dropped += (uint32_t)s->tr.pending;
+        s->tr.pending = 0;
+        return;
+    }
     /* ★★★ 2026-10-01：**落点 = 使魔自己的母机**（`s_xfer_parent`）——一手语义就是「转给它的主人」，
      *   不再要求母机在 boss 表里（道中大妖精 / 道中 boss / leveledit 米斯蒂亚那批都能落地）。
      *   母机查不到（已死/已撤）才退回**全局 boss**；两者都没有才 `noboss` 丢（账仍不攒）。*/
@@ -6166,6 +6200,12 @@ static int yk_on_shot_slot(ce_card_t *c, const ce_enemy_shot_t *ev)
         float ly = *(const float *)(pr + 0x0c);
         float lz = *(const float *)(pr + 0x10);
         yk_emit_latch_put(ev->enemy_id, ev->slot, lx, ly, lz);
+        /* ★★★★★ 2026-10-01（**owner 硬约束，回滚**）：owner 逐字「**但是无论如何，你只能不发弹，
+         *   **不能改发弹位置**」⇒ 本卡**永远不写 `props` 的任何一格**（`+0x24` 的 `etDist` 归零
+         *   已回滚 —— 一手 `th18:0x4251f9`/`0x425219` 确实能「把生成点推 dist px」，但那**不许碰**）。
+         *   ⇒ 本站点对我们的槽**只做两件事**：① 读事实（上面那段 latch：`props+0x08/+0x0c/+0x10`
+         *     = 世界坐标，只读）；② 通过返回值**否决这条 `etOn`**（`yk_shot_slot_gate()` 返回 1）。
+         *   **不变量（硬）**：禁止修改 `props` 的 offsets / origins / dist / aim / angle / type 任何一格。*/
         if (s_emit_latch_logged < 8u) {                   /* 判据：前 8 次定格值各打一行 */
             ++s_emit_latch_logged;
             ce_log("youkai/emit: latched offset_final for slot %d of enemy_id %u = (%.1f, %.1f, %.1f) "
@@ -7316,10 +7356,11 @@ static int on_tick_2(ce_card_t *c)
             float lz[3];
             int have = yk_emit_latch_get(0u, 0, lz);       /* 只为日志占位；下面打「最近一次定格」*/
             (void)have;
-            ce_log("youkai/emit: move %u create %u withdraw %u hp_reset %u latched=%u "
+            ce_log("youkai/emit: move %u create %u withdraw %u hp_reset %u latched=%u dist0=%u "
                    "(position-only pinning: offset changes never rebuild the shell nor reset its HP; "
                    "shell targets the FROZEN offset_final from the etOn site; AUDIT §BE #208/#210)",
-                   s_emit_move, s->spawns, s->lost + s->silent, s_emit_hp_reset, s_emit_latch_logged);
+                   s_emit_move, s->spawns, s->lost + s->silent, s_emit_hp_reset, s_emit_latch_logged,
+                   s_emit_dist0);
         }
     }
     focused = yk_focused();                               /* ★ owner ④：本卡眼中的侧（锁期间钉住）*/
