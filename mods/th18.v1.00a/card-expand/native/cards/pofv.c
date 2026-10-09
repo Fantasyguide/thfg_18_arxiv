@@ -935,10 +935,14 @@ static void pofv_hud_charge_bar(float fx, float fy, float ratio_rei, float ratio
         uint32_t vm = (uint32_t)s_hud_chg_tick_vm[i];
         if (vm) {
             ce_anm_set_pos(vm, tx, ty, 0.0f);
-            /* ★ 三档的 x：已达 = 1.0（4 px 菱形）/ 未达 = 0.1（0.4 px 细针）；y 恒 1.0 ⇒ 高恒 24 ✓ */
-            ce_anm_set_scale(vm,
-                             reached ? POFV_HUD_CHG_DIA_SCALE : POFV_HUD_CHG_MARK_NEEDLE_SX,
-                             POFV_HUD_CHG_DIA_SCALE);   /* 4×1.0 = 4 / 24×1.0 = 24 ✓（贴图原尺寸）*/
+            /* ★★ 2026-10-10 owner 实跑：「C2/C4 对应的菱形**只有在蓄力越过的时候才出现**」✗
+             *   ⇒ 真因 = 未达时把 x 压成 `POFV_HUD_CHG_MARK_NEEDLE_SX`（**0.4 表面 px 的细针** ✗）
+             *     ⇒ **肉眼等于没有** ✗，只有越过（切成光晕那层）才"出现" ✓。
+             *   ⇒ ★ **底色菱形改成常显** ✓（x/y 恒 1.0 = **4×24** ✓）；★ "越过"只体现在**光晕**那层 ✓
+             *     —— 与 owner 的规格逐条一致：「**4 个标**」常显 ✓ +
+             *     「充能**越过**这个标之后会发出**菱形的光晕**」✓。
+             *   ⚠ 一手的 `interruptLabel(3)`（那 0.4×24 的细针态）**本卡不再复刻** ✗ ⇒ ❓已登记 TUNING。*/
+            ce_anm_set_scale(vm, POFV_HUD_CHG_DIA_SCALE, POFV_HUD_CHG_DIA_SCALE);
             ce_anm_set_color(vm, POFV_HUD_CHG_MARK_COL);
             ce_anm_set_color2(vm, POFV_HUD_CHG_MARK_COL);
             ce_anm_set_sprite(CE_ABILITY_ANM(), vm, POFV_HUD_CHG_MARK_SPR[i]);      /* 4 色 4 张 ✓ */
@@ -1100,7 +1104,13 @@ static int pofv_aura_key(void)
  *   是**逐帧累加器** ✓，涨率 = `clamp(S+0x88, 0, 200) × 10 / 100`（`0x4e7cf2`–`0x4e7d29` ✓）。
  *   本卡无 `S+0x88` 对应字段 ⇒ 取一手默认 100 ⇒ **10/帧**（0→100 约 10 帧 ✓）。
  *   ⚠ 2026-10-06 那句「删掉自造的蓄力累加」针对的是**我编的速率/形状** ✗，不是"累加"这件事 ✓。*/
-#define POFV_AURA_CHARGE_RATE  10.0f   /* ★ 一手涨率 = clamp(S+0x88,0,200)×10/100（取默认 100 ⇒ 10/帧 ✓）*/
+/* ★★ 2026-10-10 owner 实跑：「**蓄力速度过快**」✗ —— 真因 = **量纲没换算** ✗：
+ *   一手涨率 = `clamp(S+0x88, 0, 200) × 10 / 100` ⇒ 取默认 100 ⇒ **10/帧** ✓，
+ *   但那是**灵力量纲（0..2500）**的 10 ✓，而本卡 `s_aura_charge` 是 **0..100** ✗
+ *   ⇒ 换算 `10 × 100/2500` = **0.4/帧** ✓。
+ *   ★ 对表（一手 ↔ 本卡）：满蓄 2500/10 = **250 帧 ≈ 4.2 s** ↔ 100/0.4 = **250 帧** ✓；
+ *     C1（500）50 帧 ≈ 0.83 s ↔ cap 20（灵力 500 时）/0.4 = **50 帧** ✓ —— 逐档一致 ✓。*/
+#define POFV_AURA_CHARGE_RATE  0.4f
 /* ★★★★ 2026-10-10 owner（**上限量 = 灵力**，一手 `S+0x24` 的等价物 ✓）：一手 `S+0x24` 的**初值**
  *   = `clamp(S+0x28,0,2500)` = **C1 阈值**（不是 0 ✗）；拾道具 `+= 15 × clamp(S+0x98,0,100)/100`；
  *   当前蓄力 `AuraCtrlInf+0x94/+0x98` 的**上限**就是它 ✓。
@@ -1110,7 +1120,12 @@ static int pofv_aura_key(void)
 /* ★★★★ 2026-10-10 owner：初值 `C1` = 一手 `clamp([sht+0x2c]×10, 0, 2500)`（逐角色，`plXX.sht` 未解包 ❓）。
  *   ★ 判据 = owner 的「**目前的手感应当是一手**」：开局必须能蓄满 ⇒ 取 **满值 2500** ✓
  *     （= 若 `[sht]` ≈ 250，则 `×10` 正好 2500 ✓；改这一个数就能调"开局能蓄到多少" ✓）。*/
-#define POFV_REI_C1   2500.0f
+/* ★★ 2026-10-10 owner 实跑：「灵力**一直固定在最大值**」✗ —— 真因 = 初值取了**满值** ✗。
+ *   一手：`pl00.sht` 的 `+0x2c` ×10 = **500** ✓（= 一手 C1 阈值 ✓，也与 owner 早先的口径
+ *   「**灵力的初值 = C1**」一致 ✓）⇒ 改成 500 ✓。
+ *   ★ 连带修掉 ④：`clear_card` 用 `灵力/2500` 起步 ⇒ 2500 时 `s_hud_lv_last_tier` 直接是
+ *     **最高档** ⇒ `tier != last` **永不成立** ⇒ "level n/m" 文字**永不弹** ✗；改 500 ⇒ 起步档 0 ✓。*/
+#define POFV_REI_C1   500.0f
 #define POFV_REI_MAX  2500.0f  /* ★ 一手量纲 ✓（`0x9c4` = 2500；此前拿 100 当上限是错的 ✗）*/
 /* ⚠ 2026-10-06 核实订正（我上一版把两处出处标错 ✗）：
  *   · 一手**蓄力槽**是 `AuraCtrlInf+0x94`（**另一个结构体的同偏移** ✗），速率 = `clamp(S+0x88,0,200) × 10 / 100`
@@ -4451,10 +4466,21 @@ static int on_tick_2(ce_card_t *c)
         static int s_c3s_lv;                    /* ★ ⑤ C3 早苗分支：档闩锁 ✓ */
         static int s_c3s4_lv;                   /* ★ ⑤ C4 早苗分支：档闩锁 ✓ */
         const float cap2  = POFV_AURA_TARGET_CHARGE * (s_reiryoku / POFV_REI_MAX);
-        const float c1_at = cap2 * (POFV_C1_THRESH / POFV_REI_MAX);
-        const float c2_at = cap2 * (POFV_C2_THRESH / POFV_REI_MAX);
-        const float c3_at = cap2 * (POFV_C3_THRESH / POFV_REI_MAX);
-        const float c4_at = cap2 * (2500.0f / POFV_REI_MAX);   /* ★ 一手 ✓ C4 = 2500（= 满）*/
+        /* ★★ 2026-10-10 owner 实跑连带订正：阈值此前写成"**cap 的百分比**" ✗ ——
+         *   灵力 500（新初值）时 cap = 20 ⇒ **四档会在 1 秒内全放** ✗。★ 一手是**绝对**阈值 ✓：
+         *   `S+0x28/0x2c/0x30/0x34/0x38` ×10 = **500 / 1000 / 1700 / 2500** ✓，
+         *   判据 = `charge ≥ 阈值ᵢ` **且** `charge ≤ S+0x24`（= **灵力**，即本卡的 `cap` ✓）。
+         *   ★ 本卡蓄力 0..100、灵力 0..2500 ⇒ **换算因子 = 2500/100 = 25** ✓：
+         *     C1 = 500/25 = **20** ✓、C2 = **40** ✓、C3 = **68** ✓、C4 = **100**（= 条满 ✓）。
+         *   ★ 与条上 4 枚标的置位（`POFV_HUD_CHG_TICK_FRAC` = 0.20/0.40/0.68/1.00 ✓，**绝对** ✓）
+         *     以及条填充 `fc = 蓄力/100`（**绝对** ✓）**逐一对上** ✓。
+         *   ⚠ 后果（一手如此 ✓）：灵力 500 时 cap = 20 ⇒ **只用得到 C1** ✓，
+         *     要靠吸灵力道具涨灵力才解锁 C2/C3/C4 ✓。*/
+        const float units = POFV_REI_MAX / POFV_AURA_TARGET_CHARGE;   /* = 25 ✓ */
+        const float c1_at = POFV_C1_THRESH / units;
+        const float c2_at = POFV_C2_THRESH / units;
+        const float c3_at = POFV_C3_THRESH / units;
+        const float c4_at = 2500.0f / units;
         if (s_aura_charge >= c1_at) { if (!s_c1_lv) { pofv_c1_fire(); s_c1_lv = 1; } } else s_c1_lv = 0;
         /* ★★ 2026-10-10：一手**三人**的 C2 完全不同（灵梦 = `EXReigekiInf` ✓ / 魔理沙 = 6 条
          *   `EXLaserInf` ✓ / 早苗 = 不建对象、改走 shot 行 11 ✓，见 §5.2）⇒ ★ **本卡的 C2 只对灵梦** ✓，
