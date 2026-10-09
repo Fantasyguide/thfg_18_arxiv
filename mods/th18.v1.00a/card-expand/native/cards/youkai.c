@@ -571,6 +571,49 @@ static void yk_slot_offsets(uint8_t *e, int i, float off3[3], float org3[3])
     __builtin_memcpy(org3, e + YK_EMIT_ORIGINS + (size_t)i * YK_EMIT_VEC_STRIDE, sizeof(float) * 3);
 }
 
+/* ★★★★ 2026-10-01（owner 工单 · 普查 ①：**壳要读「发弹时定格的 offset_final」，不是活偏移**）：
+ *   现象：TH08 常见写法 `etOffset(非零) → et* → etOffset(0,0)`（138 组、`mathCirclePos` 110 处）
+ *   ⇒ 活偏移字段在**同一帧内**就被清回 (0,0)，而我们是**每帧采样** ⇒ 壳只在那一帧闪一下（一闪一缩）。
+ *   修法（**0 新站点**）：在**已在用**的站点 `th18:0x433ffa`（`yk_on_shot_slot`）里，把 `etOn` 刚写好的
+ *   `props[i]+0x08/+0x0c/+0x10`（**offset_final**）抄一份到卡侧**每槽小缓存**；壳的目标位置优先用它。
+ *   缓存按 `(enemy_id, slot)` 存（`s_emit_latch[]`，8 组环形；同一个 `(enemy,槽)` 只保留最新一份）。*/
+typedef struct { uint32_t enemy_id; int16_t slot; uint8_t used; float x, y, z; } yk_emit_latch_t;
+#define YK_EMIT_LATCH_N 8
+static yk_emit_latch_t s_emit_latch[YK_EMIT_LATCH_N];
+static unsigned s_emit_latch_head;
+static unsigned s_emit_latch_logged;      /* 判据：打过几行 `latched=` */
+
+static void yk_emit_latch_put(uint32_t enemy_id, int slot, float x, float y, float z)
+{
+    unsigned k;
+    for (k = 0; k < YK_EMIT_LATCH_N; ++k) {
+        yk_emit_latch_t *L = &s_emit_latch[k];
+        if (L->used && L->enemy_id == enemy_id && L->slot == (int16_t)slot) {
+            L->x = x; L->y = y; L->z = z;             /* 同一槽 ⇒ 覆盖成最新 */
+            return;
+        }
+    }
+    {   yk_emit_latch_t *L = &s_emit_latch[s_emit_latch_head];
+        s_emit_latch_head = (s_emit_latch_head + 1u) % YK_EMIT_LATCH_N;
+        L->enemy_id = enemy_id; L->slot = (int16_t)slot; L->used = 1;
+        L->x = x; L->y = y; L->z = z;
+    }
+}
+
+/* 取该 `(敌人, 槽)` 的定格 offset；返回 0 = 还没发过弹（调用方回落到活偏移）。*/
+static int yk_emit_latch_get(uint32_t enemy_id, int slot, float out3[3])
+{
+    unsigned k;
+    for (k = 0; k < YK_EMIT_LATCH_N; ++k) {
+        const yk_emit_latch_t *L = &s_emit_latch[k];
+        if (L->used && L->enemy_id == enemy_id && L->slot == (int16_t)slot) {
+            out3[0] = L->x; out3[1] = L->y; out3[2] = L->z;
+            return 1;
+        }
+    }
+    return 0;
+}
+
 /* 当前 boss（`mgr+0x48` 的 4 个 id，照 `get_boss_enemy_full` `0x4237f0` 的读法；76 guding.c 同款）。
  * 取不到（道中 / 已死 / 不可锁定）⇒ 本帧不转嫁（研究 §4）。*/
 static uint8_t *yk_boss(void)
@@ -2454,6 +2497,13 @@ static void yk_familiars_tick(yk_card_t *s)
             /* 不活跃、又不是我们认识的槽 ⇒ 连表都不用碰（扫得快、条目也少）。*/
             if (!active && !yk_map_find(&s_map, id, i)) continue;
             yk_slot_offsets(e, i, off3, org3);
+            /* ★ 普查 ①：**发弹定格**优先（活偏移在同一帧内可能已被 `etOffset(0,0)` 清掉 ⇒ 壳一闪一缩）。
+             *   定格值只在 `etOn` 那一刻更新 ⇒ 壳停在「那一刻的出点」；没发过弹 ⇒ 回落活偏移。*/
+            {   float lo[3];
+                if (yk_emit_latch_get(id, i, lo)) {
+                    off3[0] = lo[0]; off3[1] = lo[1]; off3[2] = lo[2];
+                }
+            }
             yk_emit_world_pos(epos, off3, org3, wxy);
             /* ★★★ 2026-09-26（owner #37，两次实跑同一条：「**发射口与敌人重合不应该建立使魔**」/
              *   「依旧能看见敌人的身上有魔法阵」）：**体上炮口直接跳过整格**。
@@ -6106,6 +6156,24 @@ static int yk_on_shot_slot(ce_card_t *c, const ce_enemy_shot_t *ev)
 {
     if (!YK_ENABLE_CARD) return 0;                    /* ★ 总开关：整卡 no-op */
     if (!YK_ENABLE_MAP_LAYER) return 0;                  /* ★ ⑨：闸也停（不掐任何 etOn）*/
+    /* ★★★ 普查 ①（0 新站点）：`etOn` 已经把 **offset_final** 写进 `props[i]+0x08/+0x0c/+0x10`
+     *   （就在本断点之前那几步）⇒ 立刻抄回卡侧缓存，供壳的**目标位置**使用。
+     *   `ev->enemy` 只在本次回调内有效 ⇒ 只读、只抄，不缓存指针。*/
+    if (ev && ev->enemy && ev->slot >= 0 && ev->slot < YK_EMIT_SLOTS) {
+        const uint8_t *pr = (const uint8_t *)ev->enemy + YK_EMIT_PROPS
+                          + (size_t)ev->slot * YK_EMIT_PROP_STRIDE;
+        float lx = *(const float *)(pr + 0x08);
+        float ly = *(const float *)(pr + 0x0c);
+        float lz = *(const float *)(pr + 0x10);
+        yk_emit_latch_put(ev->enemy_id, ev->slot, lx, ly, lz);
+        if (s_emit_latch_logged < 8u) {                   /* 判据：前 8 次定格值各打一行 */
+            ++s_emit_latch_logged;
+            ce_log("youkai/emit: latched offset_final for slot %d of enemy_id %u = (%.1f, %.1f, %.1f) "
+                   "at the etOn site (0x433ffa) - the shell targets this FROZEN point, not the live "
+                   "offset (survey item 1: 138 ECL groups clear it back to 0 in the same frame)",
+                   ev->slot, ev->enemy_id, (double)lx, (double)ly, (double)lz);
+        }
+    }
     yk_card_t *s = ce_state(c, yk_card_t);
     uint32_t have = 0;
     uint32_t rearms_before;
@@ -7244,9 +7312,15 @@ static int on_tick_2(ce_card_t *c)
     /* ★ 2026-10-01（owner：「瞬移不会重建血量吧」）实跑判据行（每 120 帧、只在有活动时打）：
      *   `move` 涨 = 槽在换位置（瞬移或插值）；`create/withdraw/hp_reset` 不涨 = **没有重建、没有重置血量**。*/
     if ((s_ledger_frame % 120u) == 0u && (s_emit_move || s->spawns || s->lost || s->silent)) {
-        ce_log("youkai/emit: move %u create %u withdraw %u hp_reset %u (position-only pinning: "
-               "offset changes never rebuild the shell nor reset its HP; AUDIT §BE #208)",
-               s_emit_move, s->spawns, s->lost + s->silent, s_emit_hp_reset);
+        {
+            float lz[3];
+            int have = yk_emit_latch_get(0u, 0, lz);       /* 只为日志占位；下面打「最近一次定格」*/
+            (void)have;
+            ce_log("youkai/emit: move %u create %u withdraw %u hp_reset %u latched=%u "
+                   "(position-only pinning: offset changes never rebuild the shell nor reset its HP; "
+                   "shell targets the FROZEN offset_final from the etOn site; AUDIT §BE #208/#210)",
+                   s_emit_move, s->spawns, s->lost + s->silent, s_emit_hp_reset, s_emit_latch_logged);
+        }
     }
     focused = yk_focused();                               /* ★ owner ④：本卡眼中的侧（锁期间钉住）*/
     /* ★★ 2026-09-22（人妖槽 + 永点）：每帧三件事 + 一件声明，全部是**普通内存读写**（不新增站点）。

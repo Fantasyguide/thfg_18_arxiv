@@ -29177,3 +29177,21 @@ TH16 `09-drawing.md` §3.3：外顶点恒 `color_1`、内顶点在 `(flags_lo & 
 
 **单测**：自适应判据 7 条（含「缓发敌人 30 帧节奏不放行」与「st4 波内 12 帧时 24 帧不算新波」）+
 夹持期否决计数与放行上下文断言（`yk_map_last_release_*`）。
+
+## §BE 详录 #210（2026-10-01）：壳读**发弹时定格的 `offset_final`**（普查 ① 落地）
+
+**现象（普查）**：TH08 常见 `etOffset(非零) → et* → etOffset(0,0)`（138 组；`mathCirclePos` 110 处）
+⇒ **活偏移字段在同一帧内被清回 (0,0)**，而卡每帧采样一次 ⇒ 壳只在那一帧**闪一下**（「一闪一缩」）。
+
+**修法（0 新站点）**：在**已在用**的站点 `th18:0x433ffa`（`yk_on_shot_slot`，`ce_enemy_shot_t` 给 `enemy`+`slot`）
+里，把 `etOn` 刚写好的 **`props[i]+0x08/+0x0c/+0x10`（offset_final）** 抄进卡侧每槽小缓存
+`s_emit_latch[]`（8 组环形，按 `(enemy_id, slot)` 覆盖取最新；`ev->enemy` 只读、不缓存指针）；
+扫描时**优先**用定格值算壳的目标世界坐标（没发过弹 ⇒ 回落活偏移 `data+0x4e58`）。
+
+**判据**：日志 `youkai/emit: latched offset_final for slot i of enemy_id N = (x,y,z) at the etOn site (0x433ffa) …`
+（前 8 次）+ 台账行新增 `latched=` ⇒ 实跑**壳停在那一刻的出点**。
+
+**同批登记（不改代码）**：② 一槽一壳 = 视觉代理（同帧多原点，好处 = 打死壳 ⇒ 整槽 25 个口一起关）；
+③ 激光槽 `laserSlots[32]` = 未来工作（需 1 新站点 + `laser_slot→fam_id` 表；TH18 侧未查 🟡）；
+④ 文档更正：`etEx` 不是槽表（= `transforms[id]`，`enemy+0x2e44` stride `0x18`）、`etFan` 前两参 = `bulletType/color`、
+平坦 dump 地址差（th08 −0x200 / th18 −0xc00）。

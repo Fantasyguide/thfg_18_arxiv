@@ -15611,3 +15611,13 @@ owner 逐字：「**我真正想做的是：当我打掉了使魔，我能关闭
 | ★ 本轮修的误放行 | 原 `YK_EMIT_WAVE_GAP`(24) 只看绝对间隔 ⇒ **缓发敌人（波内 30/60 帧）被误判成新波而立刻重开** = 「打死了却没关掉」。现自适应：`≥24 且 ≥4×gap_ref`（`gap_ref` = 本夹持期最小波内间隔）|
 | 端到端判据 | 日志 `youkai/emit: slot i of enemy_id N released by <WAVE-EDGE / WAVE-GAP(adaptive) / TTL(600f)> after vetoing K etOn(s)` ⇒ **K 在涨**且该槽那一波不再出弹；`released by` 只应在①②③④出现 |
 | 登记 | `AUDIT.md` §BE #209；`HANDOFF-108.md` §3 第 95 行 |
+
+### 2.1ccc-41 ❓ 2026-10-01（卡 108 · 普查口径）：**一槽一壳 = 视觉代理**（同帧多原点）+ 激光槽留待未来
+
+| 项 | 说明 |
+| --- | --- |
+| 口径 | TH08 一帧**最多 25 个出点**（多原点 fan/circle 族；激光另有 `laserSlots[32]`），我们 **1 槽 : 1 壳**表达不了 ⇒ **接受「一槽一壳 = 视觉代理」** |
+| ★ 好处（正是 owner 主需求）| **打死壳 ⇒ 该槽的 25 个口一起关**（观感与机制都自洽）|
+| 未来工作（不做）| TH08 **激光槽** `laserSlots[32]`（12 份 ECL / 97 条指令）：需要 **1 个新站点** + 卡侧 `laser_slot→fam_id` 表；**TH18 侧激光生成点未查（🟡）**。代价与入口见 `HANDOFF-108-EMITTER-COVERAGE.md` §6 |
+| 已实现（同批）| ① 壳目标位置改用 **`etOn` 时刻定格的 `offset_final`**（`props[i]+0x08/+0x0c/+0x10`，站点 `0x433ffa` 抄回缓存）⇒ 修掉「`etOffset(0,0)` 同帧清空 ⇒ 壳一闪一缩」（138 组 / `mathCirclePos` 110 处）|
+| 登记 | `AUDIT.md` §BE #210；`HANDOFF-108.md` §3 第 96 行 |

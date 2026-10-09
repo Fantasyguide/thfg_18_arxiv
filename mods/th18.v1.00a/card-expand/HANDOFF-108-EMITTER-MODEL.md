@@ -291,3 +291,11 @@ TH08 没有「实体跟着发射口瞬移」的语义可抄。
 - TH18 槽与波次：[`07-emitter-slots-waves-and-phase-transitions.md`](../../../engine/enemy/th18/07-emitter-slots-waves-and-phase-transitions.md)
 - 关槽调研（scratch）：`local/_scratch/c108/RESEARCH-emitter-disable.md`
 - 卡侧共享件改动登记：[`AUDIT.md`](AUDIT.md) · 数值口径：[`TUNING.md`](TUNING.md)
+
+## 7. ★ 更正（2026-10-01，普查者一手）
+
+- **`etEx`（op 111）不是发射口槽表** —— 它是 `bulletSpawnDescriptor.transforms[id]`（`enemy+0x2e44`，stride `0x18`）
+  ⇒ §1.1/§1.4 里把它当「槽表」的表述**作废**；
+- **`etFan` 的前两个实参 = `bulletType` / `color`**（不是槽）；
+- 「**每敌人只有一支弹模板**」这条**比原来写的更硬**（`etEx` 走的是 `transforms[]`，与 `props[16]` 无关）。
+- 平坦 dump 的地址差（交叉引用前先减）：**th08 文件偏移 = dump 地址 − `0x200`**、**th18 = − `0xc00`**。
