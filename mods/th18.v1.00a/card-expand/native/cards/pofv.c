@@ -1687,6 +1687,7 @@ static void clear_card(ce_card_t *c)
     s_point_q = 0;
     pofv_acc_init(&s_acc); s_acc_last_x = 0.0f; s_acc_last_y = 0.0f;
     s_combo_blasts = 0; s_sp_life = 0;   /* ★ 一手的連爆数/SP 寿命 ✓ */
+    s_combo_th19.combo = 0; s_combo_th19.win = 0;   /* ★ TH19 連撃真账（一手初值：`0x42fac4`/`0x5482b9` 都是 0 ✓）*/
     pofv_hits_init(&s_hits);
     /* ★ MODEL `:104-107`（owner 新增「跨面 ⇒ **全清**」）：清单含「各类**冷却**·队列·**待生成项**」✓
      *   ⇒ 下面 5 个原先**漏复位** ✗（核实复核指出）：冷却 `s_ghost_cool`、击破计数 `s_pure_kill_n`、
@@ -3142,6 +3143,10 @@ static int on_tick_2(ce_card_t *c)
      *   ⇒ 本卡在场时把它置 1 即可（一手 `+0x227c` 的 active 门 ✓；这里没有"濒死"概念 ⇒ 恒 1 ✓）。*/
     s_hits.active = 1;
     pofv_hits_tick(&s_hits);                     /* ★★★★ 2026-10-08 A 组「Charge 当前档/上限档」（一手 script68–71 ✓）*/
+    /* ★★★★ 2026-10-10 TH19 連撃账：窗口逐帧 −1、**穿 0 才归零**（一手 `FUN_005450e0` 的
+     *   `0x5459d8`–`0x5459ee` ⇒ `0x545a2e` ✓；「已 ≤0 不归零」的 quirk 也照抄 ✓）。
+     *   放在这里 = 每帧一次 ✓（`s_hits` 的 HUD 层与它各走各的、互不影响 ✓）。*/
+    combo_th19_tick();
     {
         /* ★★ 2026-10-10 逐处定类：这里是 **A 组（`Charge 当前/上限`）的显隐** = **蓄力**那一类
          *   ⇒ `pofv_charge_key()` = **C only** ✓（owner：「level n/m 那个是仅限蓄力，按 shift 不是蓄力」✓）。*/
