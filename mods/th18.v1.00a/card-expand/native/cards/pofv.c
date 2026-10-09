@@ -3684,7 +3684,15 @@ static int on_tick_2(ce_card_t *c)
         if (s_aura_charge >= c1_at) { if (!s_c1_lv) { pofv_c1_fire(); s_c1_lv = 1; } } else s_c1_lv = 0;
         if (s_aura_charge >= c2_at) { if (!s_c2_lv) { pofv_c2_fire(); s_c2_lv = 1; } } else s_c2_lv = 0;
         /* ★ ⑤ C3（ExtraAttack）：★ 按蓄力档（**不是**边沿 ✗ —— 旧 `pofv_aura_rise_edge()` 已被 owner 实跑否掉 ✓）*/
-        if (s_aura_charge >= c3_at) { if (!s_c3_lv) { pofv_c3_fire(); s_c3_lv = 1; } } else s_c3_lv = 0;
+        if (s_aura_charge >= c3_at) {
+            if (!s_c3_lv) {
+                pofv_c3_fire(); s_c3_lv = 1;
+                /* ★★ ④ 罩子：一手 `FUN_0040b420` **只有 C3 / C4 两个调用点**（`0x4e8176` / `0x4e7b8d` ✓）
+                 *   ⇒ ★ **C3 一到就给盾** ✓（原来挂在结界边沿 ✗，是那个 Shift bug 的一部分 ✓）；
+                 *   ★ C4 落地后在它那一支里**同样**调 `pofv_barrier_fire()` ✓。*/
+                pofv_barrier_fire();
+            }
+        } else s_c3_lv = 0;
         /* ★ ④ 罩子：一手是「**C3/C4 才给盾**」✗（C3/C4 尚未实现）⇒ ★ **本轮先不给盾** ✓
          *   （旧版挂在结界边沿 ✗ ⇒ 也是那个 Shift bug 的一部分 ✓ 已一并去掉 ✓）。
          *   C3/C4 做好后在这里按 C3/C4 阈值给盾 ✓，或直接调 `pofv_barrier_fire()` ✓。*/
