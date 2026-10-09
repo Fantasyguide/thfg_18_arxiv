@@ -2742,6 +2742,85 @@ static void pofv_c4_tick(void)
     }
 }
 
+/* ================= ② C2 —— **魔理沙**分支：6 条激光（一手 `EXMarisaInf` 槽 4）=================
+ * ★ 一手（`HANDOFF-109-C1-C4.md` §5.2）：`EXMarisaInf` 槽 4 = `0x417b90` ⇒ ★ **new 6 × `EXLaserInf`**
+ *   （`0x77c`，vt `0x5a8b8c`）✓，★ 每条寿命 **60–159 帧随机**（`FUN_0053d280`：`(rand&0xffff)%100+0x3c` ✓）。
+ * ★ 一手那 6 条的**位置/角度**在 `EXLaserInf` 的 init 里（★ 本卡未逐条核到 ⇒ ❓）。
+ *   ⇒ ★ 本卡按"**6 条等分竖直激光、绕自机铺开**"近似 ✓（★ 一手是"沿 `y=448` 横扫的双镜像"同族 ✓）。
+ * ★ 视觉用**本卡现成的魔理沙竖带**（脚本 403 = `AURA_MARISA`，`drawRectGrad(1.0f, 448)` ✓）
+ *   —— 一手魔理沙的弹幕就是这种"横长条"✓，本卡照它的形状用 ✓。
+ * ❓自定（登记 TUNING）：
+ *   ① 6 条的**角度/间距** = 360°/6 等分（一手未核到 ⇒ 取等分）；
+ *   ② 寿命取 **60 / 80 / 100 / 120 / 140 / 159**（★ 覆盖一手 60..159 的区间 ✓，★ 不用随机以利复现 ✓）；
+ *   ③ 伤害沿用 C1 口径（一手 `EXLaserInf` 的伤害未核到）。*/
+#define POFV_C2M_LASERS      6
+#define POFV_C2M_VM_LAYER    6
+#define POFV_C2M_HIT_LEW   12.0f     /* ❓：伤害源的宽（细）*/
+#define POFV_C2M_HIT_LEN   420.0f     /* ❓：伤害源的长（≈ 一手的 448 ✓）*/
+
+typedef struct {
+    int     live, age, life;
+    float   ang;
+    float   x, y;
+    int32_t vm;
+} pofv_c2m_laser_t;
+
+static pofv_c2m_laser_t s_c2m[POFV_C2M_LASERS];
+
+static void pofv_c2m_clear(void)
+{
+    int k;
+    for (k = 0; k < POFV_C2M_LASERS; ++k) {
+        if (s_c2m[k].vm) { ce_anm_delete((uint32_t)s_c2m[k].vm); s_c2m[k].vm = 0; }
+        s_c2m[k].live = 0; s_c2m[k].age = 0;
+    }
+}
+
+static void pofv_c2m_fire(void)
+{
+    static const int lifes[POFV_C2M_LASERS] = { 60, 80, 100, 120, 140, 159 };  /* ❓② */
+    const float *pp = ce_player_pos();
+    int k;
+    if (!pp) return;
+    for (k = 0; k < POFV_C2M_LASERS; ++k) {
+        pofv_c2m_laser_t *L = &s_c2m[k];
+        int di;
+        if (L->vm) { ce_anm_delete((uint32_t)L->vm); L->vm = 0; }
+        L->live = 1; L->age = 0; L->life = lifes[k];
+        L->ang = 6.2831853f * (float)k / (float)POFV_C2M_LASERS;   /* ❓① 等分 */
+        L->x = pp[0]; L->y = pp[1];
+        di = (int)(L->ang * (36.0f / 6.2831853f)) % 36;
+        if (di < 0) di += 36;
+        (void)di;
+        L->vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_POFV109_AURA_MARISA,
+                                      POFV_C2M_VM_LAYER);
+        if (L->vm) {
+            ce_anm_set_pos((uint32_t)L->vm, L->x, L->y, 0.0f);
+            ce_anm_set_scale((uint32_t)L->vm, 0.6f, 1.0f);
+        }
+    }
+}
+
+static void pofv_c2m_tick(void)
+{
+    int k;
+    for (k = 0; k < POFV_C2M_LASERS; ++k) {
+        pofv_c2m_laser_t *L = &s_c2m[k];
+        float pos[3];
+        if (!L->live) continue;
+        ++L->age;
+        if (L->age > L->life) {
+            if (L->vm) { ce_anm_delete((uint32_t)L->vm); L->vm = 0; }
+            L->live = 0;
+            continue;
+        }
+        if (L->vm) ce_anm_set_pos((uint32_t)L->vm, L->x, L->y, 0.0f);
+        /* ★ 伤害源：绕自机、沿该角度铺一条长盒（`ce_damage_rect` 不转 ⇒ 用等分角度近似 ❓）*/
+        pos[0] = L->x; pos[1] = L->y; pos[2] = 0.0f;
+        (void)ce_damage_rect(pos, L->ang, 2, 14.0f, POFV_C2M_HIT_LEW, POFV_C2M_HIT_LEN);
+    }
+}
+
 static void clear_card(ce_card_t *c)
 {
     int i, k;
@@ -2815,6 +2894,7 @@ static void clear_card(ce_card_t *c)
     pofv_c3_clear();   /* ★ 铁律：C3 每一颗弹都带一台 VM ⇒ 删卡/换关/重开全收 ✓ */
     pofv_barrier_clear();   /* ★ 铁律：罩子（盾/破罩计时）删卡要收干净 ✓ */
     pofv_c4_clear();        /* ★ 铁律：C4 每发一台 VM ⇒ 删卡/换关全收 ✓ */
+    pofv_c2m_clear();       /* ★ 铁律：魔理沙 C2 的 6 条激光 VM ⇒ 全收 ✓ */
     /* ★★★★ 2026-10-10 owner：灵力（上限量 = 一手 `S+0x24`）**初值 = C1（不是 0 ✗）**
      *   ⇒ 开局有基础灵力 ⇒ 蓄力/结界不会被封到 0 ✓（C1 数值 = ❓自定，见 `POFV_REI_C1` ✓）。*/
     s_reiryoku = POFV_REI_C1;
@@ -3914,6 +3994,7 @@ static int on_tick_2(ce_card_t *c)
         static int s_c3_lv;                     /* ★ ⑤ C3：档闩锁（与 C1/C2 同形，按蓄力档 ✓）*/
         static int s_c4_lv;                     /* ★ ⑤ C4：档闩锁 ✓ */
         static int s_barrier_lv;                /* ★ ④ 罩子：档闩锁（与角色无关 ✓）*/
+        static int s_c2m_lv;                    /* ★ ② C2 魔理沙分支：档闩锁 ✓ */
         const float cap2  = POFV_AURA_TARGET_CHARGE * (s_reiryoku / POFV_REI_MAX);
         const float c1_at = cap2 * (POFV_C1_THRESH / POFV_REI_MAX);
         const float c2_at = cap2 * (POFV_C2_THRESH / POFV_REI_MAX);
@@ -3925,6 +4006,10 @@ static int on_tick_2(ce_card_t *c)
         if (s_aura_charge >= c2_at && s_aura_kind == 0) {
             if (!s_c2_lv) { pofv_c2_fire(); s_c2_lv = 1; }
         } else s_c2_lv = 0;
+        /* ★ ② C2 —— **魔理沙**分支（一手 = 6 条 `EXLaserInf` ✓，见上）*/
+        if (s_aura_charge >= c2_at && s_aura_kind == 1) {
+            if (!s_c2m_lv) { pofv_c2m_fire(); s_c2m_lv = 1; }
+        } else s_c2m_lv = 0;
         /* ★ ⑤ C3（ExtraAttack）：★ 按蓄力档（**不是**边沿 ✗ —— 旧 `pofv_aura_rise_edge()` 已被 owner 实跑否掉 ✓）*/
         /* ★ ⑤ C4：一手阈值 = 2500（= `pl00.sht +0x38` ×10 ✓，= 满 ✓）*/
         {
@@ -3956,6 +4041,7 @@ static int on_tick_2(ce_card_t *c)
         pofv_c1_tick();                     /* ★ C1：前进 + 伤害源 + 收尾 ✓ */
         pofv_c3_tick();                     /* ★ C3：波次机 + 每颗弹（加速/反弹/伤害源）+ 收尾 ✓ */
         pofv_c4_tick();                     /* ★ C4：扫描弧（两条反向 + 加速 + 伤害源）✓ */
+        pofv_c2m_tick();                    /* ★ ② C2 魔理沙：6 条激光 ✓ */
     }
     }   /* ← 2026-10-10 新增的两把键作用域块（`chg_held` / `aura_held`）收尾 ✓ */
     /* ★★ 2026-10-10 结界半径用的"有效蓄力"：见上面两把键的分工注释 ——
