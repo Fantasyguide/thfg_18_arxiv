@@ -1216,7 +1216,14 @@ static int32_t         s_bg_vm;         /* 灵界背景 VM 的 anm id（0 = 没�
  *   ⚠ 2026-09-13 第三轮订正（−128 是 ×2 误换算）那条**仍然成立**：`ce_player_pos()` 是场地坐标，
  *     与一手的字面量同量纲。*/
 #define TRANCE_HUD_BLOCK_W   144.0f    /* 指示槽的块宽（表面 px）：外框左沿 248 → 总条右沿 392 */
-#define TRANCE_HUD_BLOCK_H    96.0f    /* 指示槽的块高（表面 px）：外框上沿 840 → 下沿 936 */
+#define TRANCE_HUD_BLOCK_H   128.0f    /* ★★★ 2026-10-03z3（owner：「113 和 108 重合，看上去像是 113 的
+                                        *   **y 矩形报少了**…113 和上一行也是有重叠的」）——
+                                        *   原来只有 **96**（外框 32×48 ×2 = 64×96）⇒ **漏了最上面那张**
+                                        *   `TRANCE_GAUGE_TOP`（atlas entry44 `@0,0,**64x64**`）× `ART_SCALE 2`
+                                        *   = **128×128 表面 px** ⇒ 真实上沿比声明高 **32 px**，
+                                        *   于是它既压住上一行、又和 108 判不出碰撞。
+                                        *   现取 **128**：块 = 表面 **808..936**（底 = `BLOCK_BOTTOM` 936 不动）。*/
+#define TRANCE_HUD_BLOCK_TOP  (TRANCE_HUD_BLOCK_BOTTOM - TRANCE_HUD_BLOCK_H)
 #define TRANCE_HUD_BLOCK_BOTTOM (TRANCE_HUD_BASE_Y + 8.0f)   /* 936：外框脚本 `pos.y = 8`（2× 空间）*/
                                                              /* ⇒ 块的**左下角**（`hud_dim_rect_surface` 的入口）*/
 #define TRANCE_TIERUP_LIFT 32.0f   /* 自机上方多少 px 起（一手：engine 在自机位置起、脚本再上浮 16）*/

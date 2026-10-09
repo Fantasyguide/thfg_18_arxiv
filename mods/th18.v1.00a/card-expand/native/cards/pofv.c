@@ -816,7 +816,10 @@ static void pofv_hud_chg_claim(void)
      *   · `own_row` **改回 0** —— 原来给 1（独占一行）⇒ 底边那行只剩它一个、**左边一大片空着**，
      *     别人被挤到第 2/3 行（owner 实跑原话就是这条）。改成 0 之后，**别的块紧挨着它往右填**，
      *     填满（到 `CE_HUD_X_MAX`）才抬行 ⇒ 「左下角占满、再往上面走」✓。
-     *   ⚠ `sdk_core.h` 的 `own_row` 仍然保留：它是给**未来**真需要独行的宽块用的口子。*/
+     *   ⚠ `sdk_core.h` 的 `own_row` 仍然保留：它是给**未来**真需要独行的宽块用的口子。
+     * ★★★ 2026-10-03z3（**owner 的规划**：「109 蓄力槽现在是没有占满整个剩余宽度，**但是最终会占满
+     *   整个剩余宽度**的」）：⇒ **不要**给它 `own_row = 1`。宽度是**声明常量**（只会随改代码变，
+     *   不会局中变），等它改成占满时 `hud_relayout()` 会把它右侧那些块自动挤到上面去 ✓。*/
     s_hud_chg_slot_ok = ce_hud_slot_claim_card_ex(109, &blk, 100, 0, &s_hud_chg_slot);
     if (!s_hud_chg_slot_logged) {
         s_hud_chg_slot_logged = 1;

@@ -259,6 +259,11 @@ int32_t senro_rot_drop_next(int32_t *cursor);   /* 取下一项并把游标推�
  * `out_digit[i]` = 该位数字、`out_draw[i]` = 该位画不画；两个数组都要能放 `digits` 个元素。 */
 void senro_field_layout(int32_t value, int digits, int *out_digit, int *out_draw);
 
+/* ★ 2026-10-03z3（owner：「目前我看到的最大樱点是 0，**应当是 000000 才对，补齐六位**」）——
+ *  **补零版**：与 `senro_field_layout()` 同口径取位，但**每一位都画**（含前导零）。
+ *  ⚠ 这是**owner 口径、偏离一手**（TH07 `th07:0x404a32` 的 `started` 闸 = 前导零不画）⇒ 登记 `TUNING.md`。*/
+void senro_field_layout_pad(int32_t value, int digits, int *out_digit, int *out_draw);
+
 /* 点道具（蓝点）分值 = 本卡的「最大得点」：`SENRO_POINT_BASE + max(0, cherry − BASE)/5`，
  * 向下取整到 10（th07:0x4330db–0x4331e5 的一手结构）。返回**分**（不是 ×10 的身价）。 */
 int32_t senro_point_item_value(const senro_state_t *s);

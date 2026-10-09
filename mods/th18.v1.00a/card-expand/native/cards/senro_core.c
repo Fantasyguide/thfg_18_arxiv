@@ -270,6 +270,19 @@ void senro_field_layout(int32_t value, int digits, int *out_digit, int *out_draw
     }
 }
 
+void senro_field_layout_pad(int32_t value, int digits, int *out_digit, int *out_draw)
+{
+    int32_t div = 1;
+    int i;
+    if (digits <= 0) return;
+    if (value < 0) value = 0;
+    for (i = 1; i < digits; ++i) div *= 10;
+    for (i = 0; i < digits; ++i, div /= 10) {
+        if (out_digit) out_digit[i] = (div > 0) ? (int)((value / div) % 10) : 0;
+        if (out_draw)  out_draw[i]  = 1;              /* ★ 补零：一位都不跳 */
+    }
+}
+
 int32_t senro_hit(senro_state_t *s, int32_t damage, int32_t stage)
 {
     int32_t p, k, v;

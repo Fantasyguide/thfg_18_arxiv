@@ -305,7 +305,12 @@
  *     ⇒ 本卡**不再**为了「不压别人的块」而左移或缩块：真实宽 286 > 认领的 200，
  *     右半会压到右邻块，owner 已接受（**块宽/货架的统一处理留到后面**）。
  *     旧口径（T 左移 43 让「右沿贴住块右沿」）**已作废** —— 那会把整块推到游玩区以左的空白里。*/
-#define SENRO_HUD_W                 200.0f
+#define SENRO_HUD_W                 286.0f   /* ★★★ 2026-10-03z3（owner：「**107 的最大樱点所占的位置似乎
+                                          *   没有在声明里面**」＋「横向的认定还得往里收」）——
+                                          *   一手整块包围盒 = x `T..T+143` / y `T−4..T+17`（**143×21 单位**
+                                          *   = **286×42 表面 px**，见上方包围盒表）⇒ 声明原来是 **200**：
+                                          *   少了「最大樱点」那一段（`T+93..T+143`）⇒ 右邻块会压上去。*/
+#define SENRO_HUD_W_LEGACY          200.0f   /* 旧值留档（不许删）：2026-09-22 之前的窄声明 */
 #define SENRO_HUD_H                 42.0f   /* = 21 单位 × 2（整块计数器的真实高度，含 +C 行上沿）*/
 /* ★★ 2026-09-30（owner 第 2 条，见 `senro_claim_hud` 的长注）：**钉住**在真正的左下角。
  *   `X = 68` = **112 的块左沿**（`ufo.c` 的 `UFO_HUD_PIN_X = 248 − 180 = 68`）= **原生「当前卡」UI 的左沿**
@@ -316,7 +321,9 @@
  *     **一行可回退**（改回 64.0f 即回到「逐值复刻 TH07」）。
  *   `Y = 928` = **游玩区下沿**（与 112 的 `UFO_HUD_PIN_Y`、113 的 `TRANCE_HUD_BASE_Y` 同一条底线）。*/
 #define SENRO_HUD_PIN_X             68.0f
-#define SENRO_HUD_PIN_Y            928.0f
+#define SENRO_HUD_PIN_Y            932.0f   /* ★ 2026-10-03z3：块**底边** = 墨迹底边（`T.y+17` 单位）。
+                                            *   原来 928 是按游玩区下沿取的 ⇒ 读数那 4 px 悬在声明之外
+                                            *   （也悬在游玩区底边之下）。旧值 928 留档。*/
 /* 原版锚 T 在本块里的位置（640 字面量空间，+y = 屏幕向下 ⇒ 负 = 往上）。
  * ★★ 2026-09-30（owner 第 2 条：「**左下角 HUD 位置不对，得再往左，参考 117、112、113 的左下角位置**」）
  *   —— 块改成**钉住 (68,928)**（见 `SENRO_HUD_PIN_X` / `senro_claim_hud` 的长注），于是：
@@ -680,7 +687,7 @@ static void senro_hud_digit(int slot, float x640, float y640, float scale, uint3
  * ⇒ 字段宽度固定、数字靠右对齐；`divisor == 1`（个位）永远画，所以值 0 显示 "0"。
  * `*slot` 每帧从 0 起走，返回值 = 字段结束后的 x（给下一个字段用）。*/
 static float senro_hud_field(int *slot, float x640, float y640, float pitch, float scale,
-                            uint32_t argb, int32_t value, int digits)
+                            uint32_t argb, int32_t value, int digits, int pad)
 {
     int d[SENRO_HUD_FIELD_MAX], draw[SENRO_HUD_FIELD_MAX], i;
 
@@ -688,7 +695,9 @@ static float senro_hud_field(int *slot, float x640, float y640, float pitch, flo
      *   （一手 `started` 闸：只有**第一个非零位之前**的 0 才跳过，之后含 0 全画、个位恒画）。
      *   旧实现写成「凡是 0 就跳过」⇒ 实跑 `200000` 被画成 `2    0`（owner 报）。*/
     if (digits > SENRO_HUD_FIELD_MAX) digits = SENRO_HUD_FIELD_MAX;
-    senro_field_layout(value, digits, d, draw);
+    /* ★ 2026-10-03z3：`pad` = owner 口径「补齐六位」（樱点 / 最大樱点两栏）；+C 栏仍是原口径。*/
+    if (pad) senro_field_layout_pad(value, digits, d, draw);
+    else     senro_field_layout(value, digits, d, draw);
     for (i = 0; i < digits; ++i) {
         if (draw[i]) senro_hud_digit(*slot, x640, y640, scale, argb, d[i]);
         ++*slot;                              /* 每一位都推进（一手：字段定宽、数字靠右）*/
@@ -1584,7 +1593,7 @@ static int on_draw(ce_card_t *c)
     x = tx + SENRO_HUD_TX_CHERRY;
     y = ty + SENRO_HUD_TY_CHERRY;
     x = senro_hud_field(&slot, x, y, SENRO_HUD_PITCH, SENRO_HUD_SCALE,
-                        (col_cherry & 0x00ffffffu) | (a << 24), s->st.cherry, SENRO_HUD_FIELD_CHERRY);
+                        (col_cherry & 0x00ffffffu) | (a << 24), s->st.cherry, SENRO_HUD_FIELD_CHERRY, 1);
 
     /* ② 同行的**最大樱点**：紧跟樱点字段 **+9 单位**（`th07:0x404ac8`）⇒ 字段起点固定
      *    （樱点字段是定宽的），位数 = 6，值 ≥ 1000000 时 7（`th07:0x404ae0` 那一支）。
@@ -1598,7 +1607,7 @@ static int on_draw(ce_card_t *c)
         if (cmax_show < 0) cmax_show = 0;
         digits_max = (cmax_show >= 1000000) ? 7 : SENRO_HUD_FIELD_CHERRY;
         (void)senro_hud_field(&slot, x + SENRO_HUD_GAP_MAX, y, SENRO_HUD_PITCH, SENRO_HUD_SCALE,
-                              (SENRO_HUD_COLOR_MAX & 0x00ffffffu) | (a << 24), cmax_show, digits_max);
+                              (SENRO_HUD_COLOR_MAX & 0x00ffffffu) | (a << 24), cmax_show, digits_max, 1);
     }
 
     /* ③ 上一行：**+C**（5 位定宽）。结界外的样子与结界中完全不同（这就是「森罗结界指示」的主体）：
@@ -1611,7 +1620,7 @@ static int on_draw(ce_card_t *c)
     x = tx + SENRO_HUD_TX_PLUS + (border ? SENRO_HUD_PLUS_SHIFT : 0.0f);
     y = ty + SENRO_HUD_TY_PLUS - (border ? SENRO_HUD_PLUS_SHIFT : 0.0f);
     (void)senro_hud_field(&slot, x, y, pitch_plus, scale_plus,
-                          (col_plus & 0x00ffffffu) | (a << 24), s->st.plus, SENRO_HUD_FIELD_PLUS);
+                          (col_plus & 0x00ffffffu) | (a << 24), s->st.plus, SENRO_HUD_FIELD_PLUS, 0);
 
     /* ④ 结界指示的**脉动花**（TH07 的 VM4 = `ascii.anm` sprite143，脚本 307 自己无限脉动）。
      *    `ds:0x4bfee5 == 1` 才画；位置 = `T + (24, 8)`（**居中锚** ⇒ 盒 = `T .. T+48` × `T.y .. T.y+16`，
