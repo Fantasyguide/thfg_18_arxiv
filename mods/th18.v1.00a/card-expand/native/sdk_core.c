@@ -1453,8 +1453,13 @@ static void hud_relayout(void)
     }
     for (int i = 1; i < n; ++i) {                                   /* 插入排序：(priority 降, id 升) */
         int key = order[i], j = i - 1;
+        /* ★ 2026-10-03p（owner：「第二行第三行用起来，我建议是看看能不能搞一个**贪心**或什么的算法」）：
+         *   同优先级内改成 **宽降序**（= 经典 first-fit-decreasing）⇒ 先摆宽的、窄的去补缝，
+         *   行被填得更满、往上抬的次数更少。仍然**完全确定**（宽度相同才回落到 id 升序）。*/
         while (j >= 0 && (s_hud[order[j]].priority < s_hud[key].priority ||
-                          (s_hud[order[j]].priority == s_hud[key].priority && order[j] > key))) {
+                          (s_hud[order[j]].priority == s_hud[key].priority &&
+                           (s_hud[order[j]].w < s_hud[key].w ||
+                            (s_hud[order[j]].w == s_hud[key].w && order[j] > key))))) {
             order[j + 1] = order[j];
             --j;
         }

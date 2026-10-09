@@ -599,15 +599,17 @@ static void test_hud_slots(void)
     CHECK(ce_hud_slot_claim(111, &blk, &again));
     CHECK(again.x == a.x && again.y == a.y);
 
-    /* 排不下 ⇒ 上抬一行；游标**单向**（抬行后不回填上一行的空档，照 §2 伪码）——
-     * 108(36高) 坐底行、109 放不下 ⇒ 行 2 底边 924−36−8 = 880、
-     * 111 又放不下行 2（965+108 > 1000）⇒ 行 3 底边 880−20−8 = 852。*/
+    /* ★★ 2026-10-03p（owner：「第二行第三行用起来，我建议是看看能不能搞一个**贪心**或什么的算法」）：
+     *   同优先级内改成 **宽降序**（first-fit-decreasing）⇒ **700 宽的 mid 先坐底边**，
+     *   108（108 宽）紧挨着它（965 ≤ 1040 ✓），111 放不下（965+108+8 = 1081 > 1040）⇒ 抬到第二行
+     *   （底边 924 − 20 − 8 = 896）。⚠ 旧断言假设「按 card_id 摆、软上限 1000」—— 已被本次口径取代。*/
     ce_hud_block_t mid = { 700.0f, 20.0f, CE_HUD_SIDE_LEFT };
     CHECK(ce_hud_slot_claim(109, &mid, &again));
-    CHECK(ce_hud_slot_get(108, &b) && ce_hud_slot_get(109, &again) && ce_hud_slot_get(111, &a));
-    CHECK(b.x == CE_HUD_ANCHOR_X && b.y == CE_HUD_ANCHOR_Y);
-    CHECK(again.x == CE_HUD_ANCHOR_X && again.y == CE_HUD_ANCHOR_Y - blk.h - CE_HUD_GAP);
-    CHECK(a.x == CE_HUD_ANCHOR_X && a.y == CE_HUD_ANCHOR_Y - blk.h - mid.h - 2.0f * CE_HUD_GAP);
+    CHECK(ce_hud_slot_get(109, &again) && ce_hud_slot_get(108, &b) && ce_hud_slot_get(111, &a));
+    CHECK(again.x == CE_HUD_ANCHOR_X && again.y == CE_HUD_ANCHOR_Y);       /* 宽的先摆、坐底边 */
+    /* 965 + 108 = 1073 > 1040 ⇒ 108 抬到第二行（底边 924 − 20 − 8 = 896）、111 紧跟它右边 */
+    CHECK(b.x == CE_HUD_ANCHOR_X && b.y == CE_HUD_ANCHOR_Y - mid.h - CE_HUD_GAP);
+    CHECK(a.x == CE_HUD_ANCHOR_X + blk2.w + CE_HUD_GAP && a.y == b.y);
 
     /* 局中删卡不当场重排（§4.4）：release 保留占位、别人坐标不变 */
     ce_hud_slot_release(108);

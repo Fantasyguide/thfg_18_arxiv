@@ -739,7 +739,7 @@ typedef struct {
 #define CE_HUD_ANCHOR_X_RIGHT 1040.0f   /* ❓ 右侧镜像锚点（§6.2 无先例卡验证过）*/
 #define CE_HUD_ANCHOR_Y        924.0f   /* 行底边 */
 #define CE_HUD_GAP               8.0f   /* 行内/行间间隙 */
-#define CE_HUD_X_MAX          1000.0f   /* 左列软上限（排不下就上抬一行）*/
+#define CE_HUD_X_MAX        1040.0f   /* 左列软上限（排不下就上抬一行）*/
 #define CE_HUD_X_HARD_MAX     1040.0f   /* 硬约束：块右边缘不许越过（§4.2）*/
 #define CE_HUD_X_MIN           257.0f   /* 右列向左排的软下限 */
 
