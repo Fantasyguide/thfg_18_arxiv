@@ -4461,13 +4461,27 @@ static int on_tick_2(ce_card_t *c)
             s_aura_charge += POFV_AURA_CHARGE_RATE;
             if (s_aura_charge > cap) s_aura_charge = cap;
         }
-    } else if (aura_held && s_aura_charge > 0.0f) {
+    } else if (aura_held) {
+        /* ★★ 2026-10-10：门**去掉 `&& s_aura_charge > 0.0f`** ✗ —— 否则「按 Shift 但没蓄过力」
+         *   （`s_aura_charge == 0`）会**掉进第三支** ⇒ 按住期间**每帧拆自己的领域** ✗✗。
+         *   ⇒ 现在「**只要结界键还按着 ⇒ 一律不收束**」✓（= owner「按 shift 只管张开结界」✓）。
+         *   ⚠ 下面第三支因此**只在键真的松开时**才可达 ✓。*/
         /* ★ 2026-10-10 新增（**结界键还在按**）：Shift 仍按着 ⇒ **保持**当前蓄力值、**不收束**
          *   —— 这是 owner 早前「**两个 key 可以接续**」（按住 C 再按 Shift ⇒ 续同一个蓄力 ✓）的落地：
          *   本体/收束都别动，下面的结界块继续按 `s_aura_charge` 维持同一台 VM ✓。
          *   （⚠ 蓄力值只在 **C** 那支里被赋值 ⇒ Shift 不会让蓄力"增长" ✓ = owner「按 shift 不是蓄力」✓。）*/
         (void)0;
-    } else if (s_aura_charge > 0.0f) {
+    } else if (s_aura_charge > 0.0f || s_aura_vm || s_aura_kind == 2) {
+        /* ★★ 2026-10-10 owner 实跑回归：「我领域**不再有消失过程**」✗ —— 根因 = **这一支的门** ✗：
+         *   原来门 = `s_aura_charge > 0.0f` ✓，而 ★ `s_aura_charge` **只在按 C 时增长** ✓
+         *   （见上面 `chg_held` 那支 ✓），★ 且被 `cap = 100 × 灵力/2500` **封顶** ✗
+         *   ⇒ ★ **灵力低（cap 小）** 或 **只按 Shift、从没按过 C** ⇒ `s_aura_charge == 0` ✗
+         *   ⇒ ★ **整段收束都不跑** ✗（含 `ce_anm_interrupt(aura_vm, 1)` + 咲夜的 `s_aura_close` ✓）
+         *   ⇒ ★ 领域**没有那 20 帧的收束/淡出** ✓ = owner 报的症状 ✓。
+         *   （★ 我本轮把灵力初值 2500 → 500 ⇒ cap 100 → 20 ⇒ 更容易撞上这条 ✗ —— 是我**暴露**了它 ✓，
+         *     也说明这个门**本来就不该挂在蓄力上** ✗：owner 的语义是「**结界键一松就该有收束**」✓。）
+         * ⇒ ★ 门改成「**有领域要收**」✓：蓄力 > 0 ✓ **或** 领域 VM 还在 ✓ **或** 咲夜的分片态 ✓
+         *   —— ★ 与"按 C 蓄力"**解耦** ✓（不动上面那两支的键语义 ✓）。*/
         /* ★★★ 2026-10-06 核实订正：`ce_anm_interrupt` **存在** ✓（`sdk.h:391`，本卡 `:550/:1053` 已在用 ✓）
          *   ⇒ 收束**完全交回脚本**：`interrupt(1)` ⇒ 脚本自己的
          *     `stop(); interruptLabel(1); scaleTime(20, 4, 0.0f, 0.0f); +20: delete();` ✓
