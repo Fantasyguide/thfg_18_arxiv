@@ -664,13 +664,13 @@ static void test_hud_slots(void)
         CHECK(pin_slot.x == 68.0f && pin_slot.side == CE_HUD_SIDE_PINNED);
         CHECK(ce_hud_slot_fallbacks() == 0);
         ce_hud_slots_reset();
-        /* ★★★ 2026-10-03z8（owner：「**最左侧的空间是可行的**」）——**卡面不再算障碍**：
-         *   有主动卡时 pinned 也**保持原位**（卡面照样进"带"、一起淡）。*/
+        /* ★★★ 2026-10-03z10（**恢复 z8 之前**：owner 实跑「108…**没有避开主动卡**」）——
+         *   有主动卡时 pinned 撞卡面 ⇒ **照旧回退货架**（卡面仍在"带"里、一起淡）。*/
         ce_hud_card_set(1);
         CHECK(ce_hud_slot_claim_pinned(112, &pin_68, 68.0f, 924.0f, &pin_slot));
-        CHECK(pin_slot.side == CE_HUD_SIDE_PINNED);
-        CHECK(ce_hud_slot_fallbacks() == 0);
-        CHECK(pin_slot.x == 68.0f);
+        CHECK(pin_slot.side == CE_HUD_SIDE_LEFT);
+        CHECK(ce_hud_slot_fallbacks() == 1);
+        CHECK(pin_slot.x >= HUD_CARD_POS_X + HUD_CARD_W);   /* 让到卡面右边 */
         ce_hud_card_set(0);
         ce_hud_slots_reset();
     }
@@ -712,9 +712,9 @@ static void test_hud_slots(void)
     {   float rw = 0.0f;
         ce_hud_row_remaining_w(&rw);
         CHECK(rw == CE_HUD_X_MAX - CE_HUD_ANCHOR_X);                                /* 无卡面：1024−68 */
-        ce_hud_card_set(1);                                  /* ★ z8：卡面不再预留 ⇒ 与上面同一个值 */
+        ce_hud_card_set(1);                                  /* ★ z10：有卡面 ⇒ 起点 124（恢复预留）*/
         ce_hud_row_remaining_w(&rw);
-        CHECK(rw == CE_HUD_X_MAX - CE_HUD_ANCHOR_X);
+        CHECK(rw == CE_HUD_X_MAX - (HUD_CARD_POS_X + HUD_CARD_W + CE_HUD_GAP));
     }
     ce_hud_card_set(0);
 

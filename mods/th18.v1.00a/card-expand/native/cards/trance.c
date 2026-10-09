@@ -3945,18 +3945,13 @@ static void trance_hud_tick(const trance_card_t *s)
     int hidden;
     {
         hud_dim_rect_t r;
-        /* ★★★ 2026-10-03z4（owner：「**113 没有接入统一隐去**」）——
-         *   原来喂的是**自己那块**矩形 ⇒ 自机压到别块时它不跟着淡。
-         *   现在与其余五张卡同款：矩形改用**整条带**（`ce_hud_band_rect()`）；空带兜底回本块。*/
-        float bx, by, bw, bh;
-        ce_hud_band_rect(&bx, &by, &bw, &bh);
-        if (bw <= 0.0f || bh <= 0.0f) {
-            bx = TRANCE_HUD_BASE_X + TRANCE_HUD_DX;
-            by = TRANCE_HUD_BLOCK_BOTTOM + TRANCE_HUD_DY;
-            bw = TRANCE_HUD_BLOCK_W;
-            bh = TRANCE_HUD_BLOCK_H;
-        }
-        hud_dim_rect_surface(&r, bx, by, bw, bh);
+        /* ★★★ 2026-10-03z10（**撤销 z4 的"喂带"**）：owner 实跑「**113 直接看不见了**」——
+         *   本卡的 `hud_dim_gate()` 是**二值 hide 门**（不是 alpha 斜坡）：喂"带"之后，
+         *   自机一进整条带（= 站位常在底部）**整块面板就消失**。
+         *   ⇒ 退回**自己那块**矩形。⚠ "一起淡"要等它改成 alpha 斜坡型消费者（或带的语义支持 hide 型）再说。*/
+        hud_dim_rect_surface(&r, TRANCE_HUD_BASE_X + TRANCE_HUD_DX,
+                             TRANCE_HUD_BLOCK_BOTTOM + TRANCE_HUD_DY,
+                             TRANCE_HUD_BLOCK_W, TRANCE_HUD_BLOCK_H);
         hidden = hud_dim_gate(s_hud_dim, &r, pp);
         s_hud_dim = hidden;
     }

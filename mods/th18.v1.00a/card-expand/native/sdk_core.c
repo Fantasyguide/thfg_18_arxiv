@@ -1518,11 +1518,10 @@ void ce_hud_row_remaining_w(float *out)
 {
     float left0, w;
     if (!out) return;
-    /* ★★★ 2026-10-03z8（owner 实跑：「110-111 在第三行…**空开了最左侧的空间**，应该是为了避开
-     *   主动卡，但是**从观感来讲，最左侧的空间是可行的**」）——⇒ **不再为原生卡面预留 68..124**：
-     *   货架起点一律 = 左锚点 68（卡面仍进"带"里一起淡，见 `hud_band_union()`）。*/
-    left0 = CE_HUD_ANCHOR_X;
-    (void)hud_card_shelf_x0;
+    /* ★★★ 2026-10-03z10（**撤销 z8**）：owner 实跑「108 变到第一行去了，并且**没有避开主动卡**」
+     *   ⇒ 恢复"为原生卡面让位"：有主动卡时货架起点 = `hud_card_shelf_x0()`（= **124**）、
+     *   没有时 = 锚点 68。z8 把这条去掉导致 108（256 宽）直接压在卡面上。*/
+    hud_card_shelf_x0(&left0, CE_HUD_ANCHOR_X, CE_HUD_GAP, s_hud_card_present);
     w = CE_HUD_X_MAX - left0;
     *out = (w > 0.0f) ? w : 0.0f;
 }
@@ -1737,8 +1736,11 @@ static int hud_register(uint32_t card_id, const ce_hud_block_t *blk,
              *   我们的 pinned 块（64/68/88 那一片）本来就压在它身上 ⇒ 卡面在的时候必须让开。
              *   ⚠ 货架那一侧**早就让了**（`hud_card_shelf_x0()` ⇒ 起点 max(锚点, 116+8)）；
              *     这里补的是 **PINNED 不该成为例外**：撞卡面 ⇒ 同样回退货架（落到 124 右边，天然不撞）。*/
-            /* ★ 2026-10-03z8：**不再**把原生卡面当碰撞障碍（owner 口径：「最左侧的空间是可行的」）
-             *   —— 卡面仍算进"带"（`hud_band_union()`），所以它会跟着一起淡。*/
+            /* ★ 2026-10-03z10（撤销 z8）：**恢复**把原生卡面当碰撞障碍 —— owner 实跑
+             *   「108…**没有避开主动卡**」⇒ pinned 块撞卡面时照旧回退货架（卡面本来就在"带"里一起淡）。*/
+            if (!hit && s_hud_card_present &&
+                hud_rect_hit(anchor_x, anchor_y, blk->w, blk->h,
+                             HUD_CARD_POS_X, HUD_CARD_POS_Y, HUD_CARD_W, HUD_CARD_H)) hit = 1;
             if (hit) {                                   /* 回退：降级成 LEFT 参与排布 */
                 s_hud[card_id].side = CE_HUD_SIDE_LEFT;
                 s_hud[card_id].priority = 0;

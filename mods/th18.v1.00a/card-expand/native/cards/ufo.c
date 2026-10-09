@@ -5275,6 +5275,24 @@ static void ufo_hud_ensure(void)
             }
         }
     }
+    /* ★★★ 2026-10-03z10（owner 实跑：「**112 和 108 没有接入变暗**」）——
+     *   本卡与 108/109 一样原来**没有压暗消费者**（只进"带"、自己不淡）。
+     *   现在每帧把**共享带**的 alpha 写进三格 + 横幅：**保留各自的 RGB**（`CE_ANM_VM_COLOR1`
+     *   里原本有色就用原来的），只换 A ⇒ 不破坏槽的着色逻辑。*/
+    {
+        const uint32_t a = (uint32_t)ce_hud_band_dim_alpha() & 0xffu;
+        int q;
+        for (q = 0; q < UFO_SLOT_COUNT; ++q) {
+            uint8_t *vm = s_slot_id[q] ? ce_anm_get_vm(s_slot_id[q]) : 0;
+            if (vm) ce_anm_set_color(s_slot_id[q],
+                       (a << 24) | (*(const uint32_t *)(vm + CE_ANM_VM_COLOR1) & 0x00ffffffu));
+        }
+        if (s_banner_id) {
+            uint8_t *vm = ce_anm_get_vm(s_banner_id);
+            if (vm) ce_anm_set_color(s_banner_id,
+                       (a << 24) | (*(const uint32_t *)(vm + CE_ANM_VM_COLOR1) & 0x00ffffffu));
+        }
+    }
     /* ★ 2026-10-03z5：横幅的落点**每帧**写一次（与三格同量平移；内部相对位移不变）——
      *   原来只在 spawn 那一帧写 ⇒ 槽被分配器搬走（碰撞回退/换关重排）时横幅留在原地 = 分离。*/
     if (s_banner_id && ce_anm_get_vm(s_banner_id)) {
