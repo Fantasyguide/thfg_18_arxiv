@@ -1,0 +1,45 @@
+script script426 {
+    // 109 · 蓄力槽段位标的**「越过」光晕**（菱形、加算、**一次性**）—— 复刻 TH19 `aura.anm`
+    //   **script6 / 8 / 10 / 12** 的 **`interruptLabel(2)`** 那一段（一手 = `local/th19.v1.10c/_ext/aura.txt`）。
+    //
+    // 一手正文（偶数支 = **加算外发光**，逐字；4 支只差颜色）：
+    //   `layer(34); sprite(-1); anchor(0,1); blendMode(1); ins_617(1.0f, 4); pos(-1.0f, 0.0f, 0.0f);
+    //    scale(6.0f, 6.0f); scale2(2.0f, 2.0f); color(<段位色>); alpha(255); color2(<段位色>);
+    //    alpha(0); alpha2(0); stop();`
+    //   `interruptLabel(2): alpha(255); alpha2(0); color(255,255,255); scale(18.0f, 0.2f);
+    //    offset316: scaleTime(8, 0, 18.0f, 18.0f); scale2(36.0f, 36.0f); scale2Time(8, 0, 3.6f, 3.6f);
+    //    +8: scaleTime(8, 0, 24.0f, 24.0f); scale2(48.0f, 48.0f); scale2Time(8, 0, 4.8f, 4.8f);
+    //    +8: jmp(offset316, 0); stop(); ... delete();`
+    //   ⇒ 一手那支是**每 16 帧一轮、无限循环**的「呼吸式放大」（`jmp(offset316, 0)`）。
+    //
+    // ★ 移植差异（逐条：一条一手、一条原因）：
+    //   ① **只跑一手的一轮**（16 帧）然后 `delete()` —— owner 2026-10-10 口径：「交叉瞬间应有**一次**的
+    //      弹出感，**不要**做成常驻大光晕」✗ ⇒ 拿掉 `jmp` 的循环，末段接 `alphaTime(8,0,0)` 淡出收尾
+    //      （一手那一轮**不淡出**，因为它靠下一轮接着呼吸；一次性弹出必须有收尾）。
+    //   ② `ins_617(1.0f, 4)` → **604 `drawPoly`**（与脚本 425 同一条移植理由；TH19 专有图元号）。
+    //   ③ 一手的 `scale2`（第二半径 36→48）在 TH18 `drawPoly` 里**没有对应字段**（模式 17 只吃 `scale`
+    //      一路半径，`th16:0x469e00`）⇒ 只保留 `scale` 那一轨：起手 = 底色菱形的大小（8），
+    //      `+8` → **36**（= 一手 18 × 2 表面倍率）、`+8` → **48**（= 一手 24 × 2）。
+    //   ④ 一手 `alpha2(0)`（周圈透明）在 TH18 **不生效**：不写 `colorMode` ⇒ 模式 0 ⇒ 顶点色只取
+    //      `color_1`（`engine/anm/th18/07-blendmode-rgb-only-alpha-is-sa.md` §2 订正）⇒ 本脚本
+    //      两路 alpha 同写（卡侧也两路同写），出来的是一枚**实心加算菱形**，不是径向渐变。
+    //   ⑤ 层/坐标空间同脚本 425：`layer(25) + resolutionMode(2)`（= 1 单位 = 1 表面 px）。
+    //   ⑥ 本脚本**自带全部动画**：卡侧只在出生时写一次颜色，**不写 `scale`**（写了会被插值器盖掉，
+    //      `native/sdk.h` 的 `ce_anm_set_scale` 头注 ✓），也不替它删（第 16 帧自删 ✓）。
+    sprite(-1);
+    layer(25);
+    resolutionMode(2);
+    blendMode(1);
+    drawPoly(1.0f, 4);
+    color(255, 255, 255);
+    color2(255, 255, 255);
+    alpha(255);
+    alpha2(255);
+    scale(8.0f, 8.0f);
+    scaleTime(8, 0, 36.0f, 36.0f);
++8: // 8
+    scaleTime(8, 0, 48.0f, 48.0f);
+    alphaTime(8, 0, 0);
++8: // 16
+    delete();
+}
