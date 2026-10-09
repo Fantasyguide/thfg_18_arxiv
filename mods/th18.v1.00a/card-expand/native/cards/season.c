@@ -304,6 +304,8 @@ static ce_hud_vm_text_t s_hud_digit;
  * （`ce_state` 只有 496 字节，见 AUDIT AF12 的同款静态池；本卡同时只会有一张在场）。
  * 与 117 那种「自带锚点」不同，本卡走**货架**：认领时给的是「块多大」，坐标由分配器按
  * card_id 升序算 ⇒ 必须每帧用 `ce_hud_slot_get()` 取最新（见 `hud_slot_sync`）。*/
+static int32_t s_geom_last_level = -1;   /* ★ 诊断：最近一次 geometry 日志里的档位 */
+
 static ce_hud_slot_t s_slot;
 static int32_t s_slot_ok;               /* 1 = 本关已认领到槽（拿不到就退回原绝对坐标兜底）*/
 
@@ -1715,6 +1717,27 @@ static void hud_ensure(season_card_t *s)
                         ce_anm_set_pos((uint32_t)s->hud_glyph, pos[0], pos[1], 0.0f); }
     if (s->hud_strip) { pos[0] = s_slot.x + SEASON_HUD_STRIP_DX; pos[1] = s_slot.y + SEASON_HUD_STRIP_DY;
                         ce_anm_set_pos((uint32_t)s->hud_strip, pos[0], pos[1], 0.0f); }
+
+    /* ★★★ 2026-10-03z6（owner 实跑：「**季节指示数字又和季节槽错位了**」）——
+     *   **几何自述**：把「槽 → 框心 → 字心 → 数字（640 空间换算回表面）」一次打全，
+     *   下次实跑就能直接读出**数字与框差多少 px**（本卡的元素各用一套偏移常量，
+     *   错位只可能是常量之间的基准不一致 ⇒ 这条日志是判据）。
+     *   节流：槽位或档位变化时各打一行（不刷屏）。*/
+    {
+        static float s_log_x = -1.0f, s_log_y = -1.0f;
+        static int32_t s_log_level = -1;
+        if (s_log_x != s_slot.x || s_log_y != s_slot.y || s_log_level != s_geom_last_level) {
+            const float frame_cx = s_slot.x + 51.0f;                    /* 外框中心（表面）*/
+            const float glyph_sx = s_slot.x + SEASON_HUD_GLYPH_DX;      /* 季节字心（表面）*/
+            const float digit_sx = (s_slot.x640 + SEASON_HUD_DIGIT_X640) * 2.0f;   /* 数字（640→表面）*/
+            s_log_x = s_slot.x; s_log_y = s_slot.y; s_log_level = s_geom_last_level;
+            ce_log("season: hud geom slot (%.0f,%.0f) ok=%d | frame_cx %.1f glyph_sx %.1f "
+                   "digit_sx %.1f | digit−frame %.1f px | pts %d",
+                   (double)s_slot.x, (double)s_slot.y, (int)s_slot_ok,
+                   (double)frame_cx, (double)glyph_sx, (double)digit_sx,
+                   (double)(digit_sx - frame_cx), (int)s_geom_last_level);
+        }
+    }
 }
 
 static void hud_hide(season_card_t *s)
