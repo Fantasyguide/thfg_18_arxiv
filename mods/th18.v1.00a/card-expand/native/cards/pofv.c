@@ -555,7 +555,10 @@ static int32_t  s_spirit_ex[POFV_SPIRIT_MAX];
  *   ⚠ 键值用 SDK 现成的 `CE_VK_C`（`sdk.h:827` ✓）/`CE_VK_SHIFT`（`:831` ✓），**不自己造** ✓。*/
 static int pofv_charge_key(void)
 {
-    return (ce_key_down(CE_VK_C) || pofv_charge_key()) ? 1 : 0;
+    /* ⚠⚠ 2026-10-08 **血的教训**：先前这里被误写成 `pofv_charge_key()` 自调 ⇒ **无限递归** ⇒
+     *   实跑**卡死（进不了画面）** ✗。原因：我批量替换 `ce_key_down(CE_VK_SHIFT)` 时把
+     *   **本函数体内**那一处也换成了新函数名 ✓。⇒ **批量替换后必须复查替换点自身** ✓。*/
+    return (ce_key_down(CE_VK_C) || ce_key_down(CE_VK_SHIFT)) ? 1 : 0;
 }
 
 /* ★★★ 2026-10-06 owner：「**shift 蓄力完全从属于固灵系统**」✓、且「结界大小 = 蓄力值」✓
