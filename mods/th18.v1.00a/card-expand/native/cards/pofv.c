@@ -540,6 +540,19 @@ static int32_t  s_spirit_ex[POFV_SPIRIT_MAX];
 /* ★ 魔理沙那套（一手 §7.2：`K = 14.0` ✓、形状 = **竖向带** ✓）⇒ 同样取 `S+0x8c = 125`：
  *   `R = 125 × 14 / 100 = 17.5f` ✓ */
 #define POFV_AURA_R_MARISA   17.5f
+/* ★★★★ 2026-10-08 owner 定案（蓄力键语义 ✓）：
+ *   · **蓄力键 = C** ✓；原生 C 在 TH18 无任何作用 ✓ ⇒ 只在本卡在场时有意义 ✓；
+ *   · **固灵结界张开：按 C = 按 Shift** ✓ ⇒ 两者**等价** ✓；
+ *   · ★ **两个 key 可以接续** ✓：按住 C 再按 Shift（或反之）⇒ **续同一个蓄力** ✓
+ *     ⇒ 判据 = **`C_held ∨ Shift_held`** ✓，**只有两个都松开**才算松开 ✓；
+ *   · ★ 蓄力中**切卡** ⇒ **视为松开 C**（蓄力立即停 ✓）；新卡的 C 行为**不管** ✓
+ *     （本卡 `on_delete` 已把 `s_aura_charge`/半径清零 ✓ ⇒ 已是该语义 ✓）。
+ *   ⚠ 键值用 SDK 现成的 `CE_VK_C`（`sdk.h:827` ✓）/`CE_VK_SHIFT`（`:831` ✓），**不自己造** ✓。*/
+static int pofv_charge_key(void)
+{
+    return (ce_key_down(CE_VK_C) || pofv_charge_key()) ? 1 : 0;
+}
+
 /* ★★★ 2026-10-06 owner：「**shift 蓄力完全从属于固灵系统**」✓、且「结界大小 = 蓄力值」✓
  *   ⇒ 卡侧自建 Shift 蓄力 `s_aura_charge`（0..200 ✓，一手 `clamp(S+0x8c,0,200)` ✓）：
  *   · **增长**：一手 §7.2 的动画器参数 `+0x94`（量）/`+0x98`（帧数）⇒ 本卡取「**每 `+0x98` 帧增长 `+0x94`**」
@@ -1410,8 +1423,8 @@ static int on_tick_2(ce_card_t *c)
                     const float *pp = ce_player_pos();
                     /* ★★★ owner 2026-10-06：「**固灵结界——按 shift**」✓ ⇒ 直接读键（不再依赖那个
                      *   「时间戳」变量：核实发现它**只有读、没有写** ✗ ⇒ 结界从来没亮过 ✓，这就是「该做结界了」的根因 ✓）。
-                     *   `ce_key_down(CE_VK_SHIFT)`（`sdk.h:832`；别的卡也用 `CE_VK_SHIFT` ✓，不自己造键值 ✗）。*/
-                    const int held = ce_key_down(CE_VK_SHIFT) ? 1 : 0;
+                     *   `pofv_charge_key()`（`sdk.h:832`；别的卡也用 `CE_VK_SHIFT` ✓，不自己造键值 ✗）。*/
+                    const int held = pofv_charge_key();
                     if (pp && held) {
                         float ddx = *(const float *)(e + POFV_ENEMY_ABS_POS) - pp[0];
                         float ddy = *(const float *)(e + POFV_ENEMY_ABS_POS + 4) - pp[1];
@@ -1488,7 +1501,7 @@ static int on_tick_2(ce_card_t *c)
                 {
                     const float *pp3 = ce_player_pos();
                     int32_t in_aura = 0;
-                    if (pp3 && ce_key_down(CE_VK_SHIFT)) {   /* ★ owner：「固灵结界——按 shift」✓ */
+                    if (pp3 && pofv_charge_key()) {   /* ★ owner：「固灵结界——按 shift」✓ */
                         float adx = *(const float *)(e + POFV_ENEMY_ABS_POS) - pp3[0];
                         float ady = *(const float *)(e + POFV_ENEMY_ABS_POS + 4) - pp3[1];
                         in_aura = pofv_aura_hit_here(adx, ady, *(const float *)(e + 0x110) * 0.5f);
@@ -1808,7 +1821,7 @@ static int on_tick_2(ce_card_t *c)
             }
         }
     }
-    if (ce_key_down(CE_VK_SHIFT)) {
+    if (pofv_charge_key()) {
         if (!s_aura_role_logged) {                             /* ★ 一次性：把角色全局的真实取值打出来 ✓ */
             s_aura_role_logged = 1;                            /*   （核实：`0x4cccf4` 确是角色下标 ✓，但「1=魔理沙」未逐值核 🟡
                                                                 *    ⇒ 实跑各开一次灵梦/魔理沙，把这行日志对一下即可钉死 ✓）*/

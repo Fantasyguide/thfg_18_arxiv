@@ -1236,3 +1236,23 @@ POFV109_TH09_BONUS  ability/th09bars/BONUS.png  40x8
 #   画它的脚本 = `script59`：`sprite(42); scale(0.0,1.0); pos(-141,30)` ⇒ **长度由游戏写 scale.x** ✓、
 #   **渐变在图里** ✓ ⇒ 卡侧不写渐变代码 ✓。框 `script7 pos(-144,0)` 80×32 ⇒ 条贴框**下沿内侧** ✓。
 POFV109_TH09_BAR_COMBO  ability/th09front/TH09_HUD_BAR_COMBO.png  72x4
+# ★★★★ 2026-10-08 一手（§3.45）：TH09 **自机上方两组指示 UI** 的全部贴图（`front.anm` ✓）——
+#   A 组「Charge 当前/上限」（script 68–71 ✓）：标签 sprite52 (256,192,48x12)、数字 sprite53..62
+#     (256+16k,176,12x12)、斜杠 sprite63 (416,176,12x12)；
+#   B 组「Gauge Filled / level」（script 72–74 ✓）：sprite66 (256,208,80x13)、sprite67 (256,224,40x12)，
+#     数字共用上面那套 sprite54+档 ✓。
+#   两组都随自机移动、**中心锚点** ✓（一手无 anchorTopLeft ✓）；用通用脚本 136 + ce_anm_set_sprite 换图 ✓。
+POFV109_TH09_UI_CHARGE      ability/th09front/TH09_HUD_CHARGE_LABEL.png   48x12
+POFV109_TH09_UI_GAUGEFILLED ability/th09front/TH09_HUD_GAUGE_FILLED.png  80x13
+POFV109_TH09_UI_LEVELLABEL  ability/th09front/TH09_HUD_LEVEL_LABEL.png   40x12
+POFV109_TH09_UI_SLASH       ability/th09front/TH09_HUD_SLASH.png          12x12
+POFV109_TH09_UI_DIGIT_0   ability/th09front/TH09_HUD_DIGIT_0.png      12x12
+POFV109_TH09_UI_DIGIT_1   ability/th09front/TH09_HUD_DIGIT_1.png      12x12
+POFV109_TH09_UI_DIGIT_2   ability/th09front/TH09_HUD_DIGIT_2.png      12x12
+POFV109_TH09_UI_DIGIT_3   ability/th09front/TH09_HUD_DIGIT_3.png      12x12
+POFV109_TH09_UI_DIGIT_4   ability/th09front/TH09_HUD_DIGIT_4.png      12x12
+POFV109_TH09_UI_DIGIT_5   ability/th09front/TH09_HUD_DIGIT_5.png      12x12
+POFV109_TH09_UI_DIGIT_6   ability/th09front/TH09_HUD_DIGIT_6.png      12x12
+POFV109_TH09_UI_DIGIT_7   ability/th09front/TH09_HUD_DIGIT_7.png      12x12
+POFV109_TH09_UI_DIGIT_8   ability/th09front/TH09_HUD_DIGIT_8.png      12x12
+POFV109_TH09_UI_DIGIT_9   ability/th09front/TH09_HUD_DIGIT_9.png      12x12
