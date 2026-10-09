@@ -5540,6 +5540,19 @@ static void yk_gauge_hud_update(yk_card_t *s)
         ce_anm_set_pos(s->hud_cursor, h.cursor_x, h.cursor_y, 0.0f);
         ce_anm_set_scale(s->hud_cursor, h.px, h.px);
     }
+    /* ★★★ 2026-10-03z9（owner 实跑：「**108 和 109 以及原生目前没有进入同时黑暗**」；
+     *   审计也指出本卡「无压暗消费者」）——本卡的四支 VM 是靠 `interrupt(1)` **显形**、
+     *   颜色里没有 alpha 通道可写 ⇒ 现在每帧把**共享带**的 alpha 写进颜色
+     *   （`0x00ffffff` = 白色 = **不动贴图本身的 RGB**，只改 A）。*/
+    {
+        const uint32_t a = (uint32_t)ce_hud_band_dim_alpha() & 0xffu;
+        uint32_t *ids[4];
+        int q;
+        ids[0] = &s->hud_bar;  ids[1] = &s->hud_human;
+        ids[2] = &s->hud_youkai; ids[3] = &s->hud_cursor;
+        for (q = 0; q < 4; ++q)
+            if (*ids[q] && ce_anm_get_vm(*ids[q])) ce_anm_set_color(*ids[q], (a << 24) | 0x00ffffffu);
+    }
     /* ★ 只记一次的**几何自述**（实跑判据）：P2 这一版的分辨率空间之争（640 空间 vs 表面 px）
      * 靠的就是把「我们写进去的那几个数」打在日志里 —— 与屏上看到的位置一比就知道生效的是哪一种。
      * 锚点 = 货架给的那一格左下角（表面 px）。⚠ 参数刻意压到 6 个：`ce_log` 是变参函数，
