@@ -2436,6 +2436,52 @@ static int   s_barrier_on;               /* 盾在不在 */
 static int   s_barrier_brk;              /* 破罩计时（>0 = 禁移 + 位移中）*/
 static float s_barrier_dx, s_barrier_dy; /* ❓自定：位移方向（先取正下）*/
 
+/* ★ 找半径内**最近**的一颗可消弹（给破罩的"背向命中点位移"用 ✓）。
+ *   一手：方向 = `atan2(自机y − 命中y, 自机x − 命中x)`（= **背离命中点** ✓）。
+ *   ★ 本仓不许 `atan2f` ✗（守 `dllx87`）⇒ 用 `s_c2_dir36` **查表取最贴的那个方向** ✓。
+ *   扫弹式照 `cancel_white_in_circle`（同款状态/半径/可消判据 ✓）。返回 1 = 找到。*/
+static int pofv_barrier_nearest_bullet(const float *pos, float r, float *ox, float *oy)
+{
+    uint8_t *bm = CE_BULLET_MGR();
+    uint32_t i;
+    float best = -1.0f;                       /* ★ 取"离自机最近"= d2 最小 */
+    float bx = 0.0f, by = 0.0f;
+    int found = 0;
+    if (!bm || !pos) return 0;
+    for (i = 0; i < CE_BM_BULLET_COUNT; ++i) {
+        uint8_t *b = bm + CE_BM_BULLETS + (size_t)i * CE_BULLET_STRIDE;
+        uint16_t state = *(const uint16_t *)(b + CE_BULLET_STATE);
+        float br, dx, dy, rr, d2;
+        if (state != 1 && state != 2) continue;
+        br = *(const float *)(b + POFV_BULLET_RADIUS_OFF);
+        if (!pofv_is_white_bullet(br)) continue;
+        dx = *(const float *)(b + CE_BULLET_POS) - pos[0];
+        dy = *(const float *)(b + CE_BULLET_POS + 4) - pos[1];
+        rr = br * 0.5f + r;
+        d2 = dx * dx + dy * dy;
+        if (d2 > rr * rr) continue;
+        if (!found || d2 < best) { best = d2; bx = dx; by = dy; found = 1; }
+    }
+    if (found) { *ox = bx; *oy = by; }
+    return found;
+}
+
+/* ★ 把"从自机指向命中弹"的向量**取反**、再量化到 `s_c2_dir36` 的 36 向里 ✓。
+ *   ★ 只比较**方向** ⇒ 直接比点积即可、**不需要归一化** ✓（点积对长度单调 ✓）；
+ *   ★ 取反 = 最大化 `dot(−d, table[i])` = **最小化** `dot(d, table[i])` ✓。★ 不引 `atan2f` ✗。*/
+static void pofv_barrier_dir_from(float dx, float dy)
+{
+    int i, bi = 0;
+    float bs = 1e30f;
+    if (dx == 0.0f && dy == 0.0f) { s_barrier_dx = 0.0f; s_barrier_dy = 1.0f; return; }
+    for (i = 0; i < 36; ++i) {
+        float dot = dx * s_c2_dir36[i][0] + dy * s_c2_dir36[i][1];
+        if (dot < bs) { bs = dot; bi = i; }
+    }
+    s_barrier_dx = s_c2_dir36[bi][0];
+    s_barrier_dy = s_c2_dir36[bi][1];
+}
+
 static void pofv_barrier_clear(void)
 {
     if (s_barrier_vm_disc) { ce_anm_delete((uint32_t)s_barrier_vm_disc); s_barrier_vm_disc = 0; }
@@ -2490,7 +2536,15 @@ static void pofv_barrier_tick(void)
             if (s_barrier_vm_disc) { ce_anm_delete((uint32_t)s_barrier_vm_disc); s_barrier_vm_disc = 0; }
             if (s_barrier_vm_glow) { ce_anm_delete((uint32_t)s_barrier_vm_glow); s_barrier_vm_glow = 0; }
             s_barrier_brk = POFV_BARRIER_BREAK_N;
-            s_barrier_dx = 0.0f; s_barrier_dy = 1.0f;     /* ❓自定：正下（拿不到命中点 ✗）*/
+            /* ★★ 一手：背向**命中点**位移 ✓ ⇒ 用半径内最近那颗被消掉的弹当命中点 ✓
+             *   （原来只有"正下" ❓ —— 已收掉 ✓）。找不到弹（理论上不该发生，因为刚挡到 ✓）
+             *   ⇒ 退回正下 ✓。*/
+            {
+                float hx = 0.0f, hy = 0.0f;
+                if (pofv_barrier_nearest_bullet(pp, POFV_BARRIER_R, &hx, &hy))
+                    pofv_barrier_dir_from(hx, hy);
+                else { s_barrier_dx = 0.0f; s_barrier_dy = 1.0f; }
+            }
             ce_invuln_request(POFV_CARD_ID, POFV_BARRIER_INVULN_N);   /* ★ 一手 ✓ 无敌 100 帧 */
         }
     }
