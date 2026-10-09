@@ -2407,6 +2407,10 @@ int __cdecl BP_ce_item_frame(x86_reg_t *regs, void *bp_info)
      * 且在道具池 body 之前 ⇒ 是天然的帧边界。107 的结界灵击与 117 的霊撃同帧都触发时，
      * 只有第一个 claim 的负责全屏消弹，第二家让位（避免空池扫荡 / 重复记账）。*/
     ce_cancel_latch_reset();
+    /* ★★★ 2026-10-03q（owner：「所有左下角 HUD 应当是**一块 HUD**」）：整条带的**共享淡化**
+     *   每帧算一次（矩形 = 所有已认领块的并集 ∪ 原生卡面）⇒ 各卡读 `ce_hud_band_dim_alpha()`。*/
+    ce_site_trail("if/ce_hud_band_dim_tick");
+    ce_hud_band_dim_tick(ce_player_pos());
     /* ★ 帧初：清「这次死亡由谁救」闩锁（用户 2026-09-12 定案：救援层 107 → 117 → 决死 B → 113；
      * 113 只在没人认领时才动手 —— 否则会「别人救了你、113 的窗口结束时又把你杀掉」）。*/
     ce_rescue_note_reset();

@@ -776,6 +776,21 @@ int  ce_hud_slot_claim(uint32_t card_id, const ce_hud_block_t *blk, ce_hud_slot_
 /* ★ 2026-10-03l：**PINNED 碰撞回退**的诊断计数（本次会话累计；`ce_hud_slots_reset()` 清零）。
  * 语义见 `sdk_core.c` 的 `hud_rect_hit()` 注：pinned 块与已占位块相交 ⇒ 降级成货架成员。*/
 int  ce_hud_slot_fallbacks(void);
+
+/* ★★★ 2026-10-03q（owner：「这么说，**所有左下角 HUD 应当是"一块 HUD"**」）——
+ *   **左下角那条带 = 一块**：矩形 = **所有已认领块的并集** ∪（有主动卡时）**原生卡面**；
+ *   淡化（「自机侵入就压暗」）= **一份共享状态**（不再每块各淡各的）。
+ *
+ *   为什么：各块各淡 ⇒ 自机压到 A 的时候只有 A 淡、旁边的 B/C 照旧 ⇒ 看着是"几块 HUD"；
+ *   统一成一条带 ⇒ **一起淡**（owner 前一条口径「自机侵入所有左下角 HUD 的位置时……一起隐藏」）。
+ *
+ *   ⚠ 淡化**参数**沿用一手值（终点 alpha 64 / 8 帧线性 / 进 = 矩形外扩 28、出 = 44；见 `cards/hud_dim.h`），
+ *     只是矩形从"各块自己的"换成"**带**的"。消费者改读 `ce_hud_band_dim_alpha()` 即可。*/
+void    ce_hud_band_rect(float *x, float *y, float *w, float *h);  /* 表面 px；空带 ⇒ *w = *h = 0 */
+int     ce_hud_band_empty(void);
+void    ce_hud_band_dim_reset(void);
+void    ce_hud_band_dim_tick(const float *player_pos);             /* ★ SDK 每帧调一次（帧初）*/
+int32_t ce_hud_band_dim_alpha(void);                               /* ★ 消费者读它（255 = 满亮）*/
 int  ce_hud_slot_claim_ex(uint32_t card_id, const ce_hud_block_t *blk,
                           int priority, int own_row, ce_hud_slot_t *out);
 /* ★ **自带锚点认领**（`blk->side == CE_HUD_SIDE_PINNED`）：按用户按截图量过的固定位置登记。

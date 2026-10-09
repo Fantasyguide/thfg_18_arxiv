@@ -627,8 +627,16 @@ static void fh_dim_tick(float sx, float sy)
     const float *pp = ce_player_pos();
     int i;
 
-    /* ① 每帧现算本块矩形（块会随货架移动）→ ② 共享件：闩锁（边距 28 + 滞回 16）+ alpha 斜坡（8 帧线性 → 64）*/
-    hud_dim_rect_surface(&r, sx, sy, FH_BLOCK_W, FH_BLOCK_H);
+    /* ① 每帧现算本块矩形（块会随货架移动）→ ② 共享件：闩锁（边距 28 + 滞回 16）+ alpha 斜坡（8 帧线性 → 64）
+     * ★★★ 2026-10-03q（owner：「**所有左下角 HUD 应当是"一块 HUD"**」）：矩形改用**整条带**
+     *   （`ce_hud_band_rect()` = 所有已认领块 ∪ 原生卡面）⇒ 自机压到带里**任意一块**时，
+     *   带里的每一块**一起淡**（不再"只淡被压到的那块"）。空带兜底回本块矩形。*/
+    {
+        float bx, by, bw, bh;
+        ce_hud_band_rect(&bx, &by, &bw, &bh);
+        if (bw <= 0.0f || bh <= 0.0f) { bx = sx; by = sy; bw = FH_BLOCK_W; bh = FH_BLOCK_H; }
+        hud_dim_rect_surface(&r, bx, by, bw, bh);
+    }
     (void)hud_dim_tick(&s_hud_dim, &r, pp);
 
     /* ③ 前 `FH_WARMUP_FRAMES` 帧**一帧都不写**：把 alpha 让给脚本自己的 20 帧淡入

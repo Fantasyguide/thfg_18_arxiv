@@ -661,6 +661,36 @@ static void test_hud_slots(void)
         ce_hud_slots_reset();
     }
 
+    /* ★★★ 2026-10-03q（owner：「**所有左下角 HUD 应当是"一块 HUD"**」）：
+     *   带的矩形 = **所有已认领块的并集** ∪（有主动卡时）**原生卡面**（68..116 × 864..924）。*/
+    {
+        float bx, by, bw, bh;
+        ce_hud_block_t b1 = { 100.0f, 40.0f, CE_HUD_SIDE_LEFT };
+        ce_hud_block_t b2 = { 200.0f, 60.0f, CE_HUD_SIDE_LEFT };
+        ce_hud_slots_reset();
+        ce_hud_card_set(0);
+        CHECK(ce_hud_band_empty());
+        CHECK(ce_hud_slot_claim(120, &b1, &b) && ce_hud_slot_claim(121, &b2, &a));
+        ce_hud_band_rect(&bx, &by, &bw, &bh);
+        CHECK(!ce_hud_band_empty());
+        CHECK(bx == CE_HUD_ANCHOR_X);                     /* 并集左沿 = 第一个块的左沿 */
+        CHECK(by == CE_HUD_ANCHOR_Y);                     /* 底边仍是锚点那一条 */
+        CHECK(bh >= 60.0f);                               /* 高 = 最高的块（200×60 那个）*/
+        /* 有主动卡 ⇒ 卡面那一块（68..116）也并进来 ⇒ 左沿被拉到 68、高至少 60 */
+        ce_hud_slots_reset();
+        ce_hud_card_set(1);
+        CHECK(ce_hud_slot_claim(120, &b1, &b));
+        ce_hud_band_rect(&bx, &by, &bw, &bh);
+        CHECK(bx == HUD_CARD_POS_X);                      /* ★ 包括原生 */
+        CHECK(by == HUD_CARD_POS_Y);
+        CHECK(bh >= HUD_CARD_H);
+        /* 共享淡化：空带 ⇒ 满亮；tick 后仍在合法区间 */
+        ce_hud_card_set(0);
+        ce_hud_slots_reset();
+        ce_hud_band_dim_reset();
+        CHECK(ce_hud_band_dim_alpha() == HUD_DIM_ALPHA_FULL);
+    }
+
     /* 硬约束（§4.2）：块右边缘不许越过 1040 ⇒ 声明宽度超限直接拒绝 */
     ce_hud_block_t too_wide = { CE_HUD_X_HARD_MAX - CE_HUD_ANCHOR_X + 1.0f, 36.0f, CE_HUD_SIDE_LEFT };
     CHECK(!ce_hud_slot_claim(110, &too_wide, &a));

@@ -850,6 +850,9 @@ static int32_t panel_alpha_sync(lolk_card_t *s)
     unsigned i;
 
     if (!panel_rect(s, &r)) return s->hud.alpha;
+    {   float bx, by, bw, bh;                                  /* ★ 2026-10-03q：**一块 HUD** */
+        ce_hud_band_rect(&bx, &by, &bw, &bh);
+        if (bw > 0.0f && bh > 0.0f) hud_dim_rect_surface(&r, bx, by, bw, bh); }
     a = hud_dim_tick(&s->hud, &r, pp);
     if (s->hud.dim != was) {                 /* 闩锁翻转（= 玩家进/出触发区）—— 日志用 */
         ce_log("lolk: panel dim %s (alpha %d, rect 表面 x %.1f..%.1f y %.1f..%.1f, 自机 %.1f,%.1f)",

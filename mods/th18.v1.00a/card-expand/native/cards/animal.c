@@ -2096,9 +2096,9 @@ static void hud_fade_tick(animal_card_t *s)
      *   （`path=tbl` 时 = `ce_hud_slot_get(117)`，`path=fallback` 时才是常量）。pin 的注释在历史上
      *   写错过一次（写成「整排左下角」），所以判据只认**运行时**那一个数。
      *   ⇒ 若哪天表里的 x 不是 88（日志 `wba_wc: hud geom … slot (…)` 会直接显示），压暗**自动跟着走**。*/
-    hud_dim_rect_surface(&r, s_slot.x - ANIMAL_HUD_HALF,
-                         s_slot.y + ANIMAL_HUD_DY + ANIMAL_HUD_HALF,
-                         ANIMAL_HUD_VIS_W, ANIMAL_HUD_VIS_H);
+        float bx, by, bw, bh;                                  /* ★ 2026-10-03q：**一块 HUD** —— 喂「带」的矩形 */
+        ce_hud_band_rect(&bx, &by, &bw, &bh);
+    hud_dim_rect_surface(&r, bx, by, bw, bh);
     (void)hud_dim_tick(&s->hud, &r, ce_player_pos());
     if (s->hud.dim != was_dim) {
         ce_log(s->hud.dim ? "wba_wc: hud dim on (player body touches the slot row)"

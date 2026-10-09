@@ -1401,7 +1401,73 @@ static struct {
     float  x, y;
 } s_hud[CE_SDK_CARD_ID_MAX + 1];
 static int s_hud_near_corner;
+
 static int s_hud_card_present;      /* 原生「当前卡」那块 UI 在不在（`ce_hud_card_set()`，见 sdk_core.h）*/
+/* ★★★ 2026-10-03q：「**左下角 HUD 是一块**」—— 带的矩形 + **一份**共享淡化状态。*/
+static void hud_band_union(float *ox, float *oy, float *ow, float *oh)
+{
+    int i, first = 1;
+    float x0 = 0.0f, y0 = 0.0f, x1 = 0.0f, y1 = 0.0f;
+    for (i = 0; i <= CE_SDK_CARD_ID_MAX; ++i) {
+        if (!s_hud[i].used) continue;
+        const float bx0 = s_hud[i].x, by0 = s_hud[i].y - s_hud[i].h;
+        const float bx1 = s_hud[i].x + s_hud[i].w, by1 = s_hud[i].y;
+        if (first) { x0 = bx0; y0 = by0; x1 = bx1; y1 = by1; first = 0; }
+        else {
+            if (bx0 < x0) x0 = bx0;
+            if (by0 < y0) y0 = by0;
+            if (bx1 > x1) x1 = bx1;
+            if (by1 > y1) y1 = by1;
+        }
+    }
+    if (s_hud_card_present) {                      /* 原生卡面也是这一块的一部分（owner：「包括原生」）*/
+        const float cx0 = HUD_CARD_POS_X, cy1 = HUD_CARD_POS_Y;
+        const float cx1 = cx0 + HUD_CARD_W,  cy0 = cy1 - HUD_CARD_H;
+        if (first) { x0 = cx0; y0 = cy0; x1 = cx1; y1 = cy1; first = 0; }
+        else {
+            if (cx0 < x0) x0 = cx0;
+            if (cy0 < y0) y0 = cy0;
+            if (cx1 > x1) x1 = cx1;
+            if (cy1 > y1) y1 = cy1;
+        }
+    }
+    if (first) { *ox = *oy = *ow = *oh = 0.0f; return; }
+    *ox = x0; *oy = y1; *ow = x1 - x0; *oh = y1 - y0;   /* 出口用「左下角 + w/h」口径 */
+}
+
+void ce_hud_band_rect(float *x, float *y, float *w, float *h)
+{
+    float bx, by, bw, bh;
+    hud_band_union(&bx, &by, &bw, &bh);
+    if (x) *x = bx;
+    if (y) *y = by;
+    if (w) *w = bw;
+    if (h) *h = bh;
+}
+
+int ce_hud_band_empty(void) { float w, h; hud_band_union(&w, &h, &w, &h); return w <= 0.0f; }
+
+static hud_dim_t s_band_dim;
+static int s_band_dim_inited;
+
+void ce_hud_band_dim_reset(void) { hud_dim_init(&s_band_dim); s_band_dim_inited = 1; }
+
+void ce_hud_band_dim_tick(const float *pp)
+{
+    hud_dim_rect_t r;
+    float bx, by, bw, bh;
+    if (!s_band_dim_inited) ce_hud_band_dim_reset();
+    hud_band_union(&bx, &by, &bw, &bh);
+    if (bw <= 0.0f || bh <= 0.0f) { hud_dim_init(&s_band_dim); return; }   /* 空带 ⇒ 满亮 */
+    hud_dim_rect_surface(&r, bx, by, bw, bh);
+    (void)hud_dim_tick(&s_band_dim, &r, pp);
+}
+
+int32_t ce_hud_band_dim_alpha(void)
+{
+    if (!s_band_dim_inited) return HUD_DIM_ALPHA_FULL;
+    return s_band_dim.alpha;   /* 结构体是公开的（`cards/hud_dim.h`）*/
+}
 
 /* ★★★ 2026-10-03l（owner：「**理论上，包含左下角 HUD 的都应当进这个系统**」）——
  *   **PINNED 也进系统**：登记后拿它自己的矩形与**已占位**块做碰撞检测：

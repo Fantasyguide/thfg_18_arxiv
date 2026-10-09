@@ -1541,7 +1541,9 @@ static int on_draw(ce_card_t *c)
      * （游戏线程 + `slot_ok`）⇒ 每帧正好推进一次。*/
     {
         hud_dim_rect_t r;
-        hud_dim_rect_surface(&r, cur.x, cur.y, SENRO_HUD_W, SENRO_HUD_H);
+        float bx, by, bw, bh;                                  /* ★ 2026-10-03q：**一块 HUD** —— 喂「带」的矩形 */
+        ce_hud_band_rect(&bx, &by, &bw, &bh);
+        hud_dim_rect_surface(&r, bx, by, bw, bh);
         a = (uint32_t)hud_dim_tick(&s->hud, &r, ce_player_pos()) & 0xffu;
     }
 

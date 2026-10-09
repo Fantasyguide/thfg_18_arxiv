@@ -1740,7 +1740,9 @@ static int on_draw(ce_card_t *c)
      * 每帧只调一次（这里已经过了主菜单/自机两道门）。*/
     {
         hud_dim_rect_t r;
-        hud_dim_rect_surface(&r, s_slot.x, s_slot.y, SEASON_HUD_BLOCK_W, SEASON_HUD_BLOCK_H);
+        float bx, by, bw, bh;                                  /* ★ 2026-10-03q：**一块 HUD** —— 喂「带」的矩形 */
+        ce_hud_band_rect(&bx, &by, &bw, &bh);
+        hud_dim_rect_surface(&r, bx, by, bw, bh);
         (void)hud_dim_tick(&s->hud, &r, ce_player_pos());
     }
 
