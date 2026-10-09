@@ -620,7 +620,22 @@ static int yk_emit_fired_recently(uint32_t enemy_id, int slot)
     return 0;
 }
 
+static uint8_t  g_fam_nobody_state;   /* ★ 无体术位只记一次日志 */
+/* ★ 距该槽最近一次 `etOn` 过了多少帧（诊断用；没记录过 ⇒ 返回 0xffff）。*/
+static unsigned yk_emit_fired_age(uint32_t enemy_id, int slot)
+{
+    unsigned k;
+    uint32_t now = ce_sdk_frame();
+    for (k = 0; k < YK_EMIT_LATCH_N; ++k) {
+        const yk_emit_latch_t *L = &s_emit_latch[k];
+        if (L->used && L->enemy_id == enemy_id && L->slot == (int16_t)slot)
+            return (unsigned)(now - L->frame);
+    }
+    return 0xffffu;
+}
+
 static unsigned s_emit_phantom;   /* ★ phantom 修复判据：**配了但从没开火 ⇒ 不建壳** 的槽数（去重后）*/
+static unsigned s_shell_logged;   /* ★ 建壳诊断已打几行 */
 #define YK_EMIT_PHANTOM_LOG_N 8
 static uint32_t s_phantom_enemy[YK_EMIT_PHANTOM_LOG_N];
 static int16_t  s_phantom_slot[YK_EMIT_PHANTOM_LOG_N];
@@ -841,6 +856,8 @@ static void yk_pin_follow_step(yk_pin_follow_t *pf, uint32_t fam_id, float tx, f
     if (pf->age < 0xffffu) ++pf->age;
 }
 
+#define YK_ENEMY_FLAG_NO_BODY     0x00000002u  /* ★ bit1：体术闸 `0x42f513 test [+0x5130],0x22` */
+
 static void yk_pin_familiar(uint8_t *f, float x, float y)
 {
     *(float *)(f + CE_ENEMY_POS_X) = x;                   /* final_pos（spec §3.5 指定的那两格）*/
@@ -860,6 +877,21 @@ static void yk_pin_familiar(uint8_t *f, float x, float y)
     {
         uint32_t *fl = (uint32_t *)(f + CE_ENEMY_FLAGS);
         int want = yk_focused() ? 1 : 0;
+        /* ★★★★ 2026-10-01（owner：「**所有使魔应当没有体术**」）：一手 —— 敌本体接触判定（体术）
+         *   的前置闸在 `EnemyData__step_game_logic` `0x42ed40`：`0x42f513` 一条是
+         *   **`enemy+0x5130 & 0x22`**（`zEnemyData` 基址 ⇒ 绝对 `enemy+0x635c` 的 bit1/bit5）；
+         *   任一位置上 ⇒ **整段接触判定跳过**。我们只置 **bit1（`0x2`）**：
+         *     · 它**不在**伤害闸 `test 0x21`（bits 0/5）里 ⇒ 使魔**照旧可被打掉**（人侧口径不变）；
+         *     · 它**不在**最近敌搜索的跳过掩码 `0xc000021`（bits 0/5/30/31）里 ⇒ 照旧可被锁定/判定；
+         *   ⇒ 只关「体术」这一件事，副作用为零。**只对我们的壳**写（本函数只作用于 `yk_spawn_familiar` 建的敌人）。*/
+        *fl |= YK_ENEMY_FLAG_NO_BODY;
+        if (g_fam_nobody_state != 1) {
+            g_fam_nobody_state = 1;
+            ce_log("youkai: familiar BODY ATTACK disabled (owner 2026-10-01: all familiars must have no "
+                   "body attack) - `enemy+0x635c` |= 0x2 (bit1); engine gate `0x42f513 test [..+0x5130],0x22` "
+                   "skips the contact check entirely; bit1 is NOT in the damage gate (0x21) nor in the "
+                   "nearest-enemy skip mask (0xc000021), so the shell is still shootable/targetable");
+        }
         if (want) *fl |= CE_ENEMY_FLAG_NO_DAMAGE;
         else      *fl &= ~(uint32_t)CE_ENEMY_FLAG_NO_DAMAGE;
         if (g_fam_nodmg_state != want) {           /* 两态各记一次（实跑判据）*/
@@ -2373,6 +2405,22 @@ static void yk_run_action(yk_card_t *s, const yk_action_t *act)   /* s 可为 NU
             return;
         }
         fid = *(uint32_t *)(f + CE_ENEMY_ID);
+        /* ★★★ 2026-10-01（owner：「依旧有一系列不该出现的发弹口使魔」）——**建壳诊断**（前 24 只）：
+         *   逐只给出 `(enemy_id, slot)`、`type/color`、`count_1/count_2`、`fired_age`（距该槽最近一次
+         *   `etOn` 过了多少帧）、`stage`、以及建壳用的坐标 ⇒ 用来判「配了没发出 / 激光槽 / `etCopy` / 别类」。
+         *   ⚠ 计数用静态值，跨局累加（只作定位用）。*/
+        if (s_shell_logged < 24u) {
+            ++s_shell_logged;
+            ce_log("youkai/emit: CREATE shell #%u for (enemy_id %u, slot %d) type=%d color=%d "
+                   "count_1=%d count_2=%d fired_age=%u stage=%d pos=(%.1f,%.1f) life=%d",
+                   s_shell_logged, act->enemy_id, act->slot,
+                   *(const int32_t *)((const uint8_t *)f + YK_EMIT_PROPS + (size_t)act->slot * YK_EMIT_PROP_STRIDE + 0x00),
+                   *(const int32_t *)((const uint8_t *)f + YK_EMIT_PROPS + (size_t)act->slot * YK_EMIT_PROP_STRIDE + 0x04),
+                   *(const int32_t *)((const uint8_t *)f + YK_EMIT_PROPS + (size_t)act->slot * YK_EMIT_PROP_STRIDE + 0x14),
+                   *(const int32_t *)((const uint8_t *)f + YK_EMIT_PROPS + (size_t)act->slot * YK_EMIT_PROP_STRIDE + 0x18),
+                   (unsigned)yk_emit_fired_age(act->enemy_id, act->slot),
+                   (int)CE_CURRENT_STAGE(), (double)act->x, (double)act->y, (int)life);
+        }
         yk_fam_created(&s_map, act->enemy_id, act->slot, fid);
         yk_pin_familiar(f, act->x, act->y);
         /* ★ 壳建好的**那一刻**起跟随 VM（脚本按发射口槽选：槽 i → s53+i 那一套四色之一）。
@@ -2683,7 +2731,7 @@ static yk_xfam_t *yk_xfam_find(uint32_t id)
  *   ⇒ 命中即**不转嫁**：量进 `dropped` 账、`transferred` 不涨；进入时打一行（含 `spell id` 与名字前
  *     8 字节的十六进制 ⇒ 实跑可反查真实编码）。⚠ 实测 TH18 的 `*.ecl` 里没有这些序列（0 命中）⇒
  *     若实跑从不触发，用那行十六进制补判据（登记 `AUDIT §BE #212`）。*/
-#define YK_ENEMY_FLAG_NO_DAMAGE24 0x01000000u  /* ★ 母机无敌/免伤位（bit24）——一手 `0x42f016`–`0x42f027` */
+#define YK_ENEMY_FLAG_NO_DAMAGE24 0x01000000u
 
 /* ★★★★ 2026-10-01 晚（owner 拍板「**要的**」）：**抑制转嫁的统一判据**（返回值 = 位掩码，0 = 正常转嫁）。
  *   来源三种：① `zSpellcard+0x78` bit3（耐久符卡 = 超时不算 bonus failed，**优先**）

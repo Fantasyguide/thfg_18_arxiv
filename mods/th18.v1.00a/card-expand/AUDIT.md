@@ -29975,3 +29975,27 @@ hud: coord-space ui_scale=%.3f (2.000 = 1280x960 设计空间 ✓) surface=%dx%d
 `resolutionMode(2)`）⇒ **下次实跑即可裁决**：ui_scale 是不是 2.0、我们那些 VM 到底走哪套坐标。
 
 **验证**：`make check` **rc=0**（`test_sdk_core` 1430 / `dllx87` 0 / `check-docs` 449 全绿）。
+
+## §BE 详录 #214（2026-10-01）：使魔**无体术**（owner：「所有使魔应当没有体术」）
+
+**一手**：敌本体接触判定（体术）宿主 = `EnemyData__step_game_logic` `0x42ed40`；前置闸 `0x42f513` =
+`enemy+0x5130 & 0x22`（`zEnemyData` 基址 ⇒ 绝对 **`enemy+0x635c` 的 bit1/bit5**）——任一置位 ⇒
+**整段接触判定跳过**（配套两闸 `+0x5108 > 0`、`ecx & 0x4000000`；全文 `engine/player/th18/03-player-hit-gate.md` §1.6.1）。
+
+**落笔**：`yk_pin_familiar()` 里 `*fl |= 0x2`（**只置 bit1**，与 bit4 免伤位同一处）。选 bit1 的理由：
+① 伤害闸是 `test 0x21`（bits 0/5）⇒ bit1 **不影响「能否被打掉」**；② 最近敌搜索跳过掩码 `0xc000021`
+（bits 0/5/30/31）**不含 bit1** ⇒ 使魔仍可被锁定/判定 ⇒ 只关体术、无副作用。
+激活范围：`yk_pin_familiar()` 只作用于 `yk_spawn_familiar()` 建的敌人（出生 + 每帧重钉 + 重建路径）
+⇒ **不碰别人的敌人**。
+
+**判据**：实机自机撞上使魔**不掉命、不被击退**；日志只打一次
+`youkai: familiar BODY ATTACK disabled (owner 2026-10-01: all familiars must have no body attack) …`。
+引擎**没有**「撞自机 ⇒ 敌人消失」的逻辑（接触命中后唯一动作是 `0x42f66c` 那条 `& 0x200` + `ret==2` 的擦弹调用）
+⇒ 使魔不会因碰撞消失。
+
+**同批的诊断（owner 第①条「依旧有一系列不该出现的发弹口使魔」）**：台账已见
+`create=36→40 / phantom=30→33`（说明 `fired` 门在挡，但仍有 36–40 只被建）；日志里 33 行
+`is CONFIGURED but has NOT fired` 全是 **`slot 0`**、`type ∈ {4,7,8}`、`count_1 = 0`、`count_2` 看着是**浮点位型**
+（`0x3D5C3D10` ≈ 0.0537、`0x3F0615D2` ≈ 0.5237 ⇒ `props+0x18` 其实是 float，我这格标注的 `count_2` 偏移不准）。
+⇒ 现日志**不足以判定被建壳的那 36–40 只是哪一类** ⇒ 本批已加**建壳诊断**（前 24 只）：
+`youkai/emit: CREATE shell #n for (enemy_id N, slot i) type=.. color=.. count_1=.. count_2=.. fired_age=.. stage=.. pos=(..) life=..`。
