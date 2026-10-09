@@ -907,12 +907,12 @@ static int pofv_aura_key(void)
 #define POFV_AURA_K_SANAE      128.0f   /* 一手 `06-aura.md` §7.2（Sanae）✓ ⇒ 满格 256 ✓ */
 #define POFV_AURA_K_SAKUYA   64.0f   /* ★ owner：「半径感觉不够大」⇒ K 32 → **64**（R=64 ⇒ 直径 128 ✓）*/
 #define POFV_AURA_CHARGE_MAX   200.0f
-#define POFV_AURA_TARGET_CHARGE 100.0f
+#define POFV_AURA_TARGET_CHARGE 100.0f   /* ★ owner 实跑定：满值取 100 ⇒ 灵梦 64（= 原 128 的一半 ✓）、早苗 128 ✓ */
 /* ★★ 2026-10-10 owner 选定「逐帧涨」（= 一手语义 ✓）：一手蓄力器 `AuraCtrlInf+0x94`(int)/`+0x98`(float)
  *   是**逐帧累加器** ✓，涨率 = `clamp(S+0x88, 0, 200) × 10 / 100`（`0x4e7cf2`–`0x4e7d29` ✓）。
  *   本卡无 `S+0x88` 对应字段 ⇒ 取一手默认 100 ⇒ **10/帧**（0→100 约 10 帧 ✓）。
  *   ⚠ 2026-10-06 那句「删掉自造的蓄力累加」针对的是**我编的速率/形状** ✗，不是"累加"这件事 ✓。*/
-#define POFV_AURA_CHARGE_RATE  10.0f   /* ★ owner 实跑定：满值取 100 ⇒ 灵梦 64（= 原 128 的一半 ✓）、早苗 128 ✓ */
+#define POFV_AURA_CHARGE_RATE  10.0f   /* ★ 一手涨率 = clamp(S+0x88,0,200)×10/100（取默认 100 ⇒ 10/帧 ✓）*/
 /* ★★★★ 2026-10-10 owner（**上限量 = 灵力**，一手 `S+0x24` 的等价物 ✓）：一手 `S+0x24` 的**初值**
  *   = `clamp(S+0x28,0,2500)` = **C1 阈值**（不是 0 ✗）；拾道具 `+= 15 × clamp(S+0x98,0,100)/100`；
  *   当前蓄力 `AuraCtrlInf+0x94/+0x98` 的**上限**就是它 ✓。
