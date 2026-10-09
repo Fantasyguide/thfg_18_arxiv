@@ -514,11 +514,15 @@ int     pofv_acc_take2c(pofv_acc_t *a, int32_t diff);
 /* ❓ 自定（结界「每帧上限」；口径 6 的护栏之一）—— 也是「擦弹掉道具」的每帧颗数上限。*/
 #define POFV_AURA_ITEMS_PER_FRAME       4
 
-/* 撒道具的三个来源（诊断 / 日志口径）。*/
+/* 撒道具的来源（诊断 / 日志口径）。*/
 typedef enum {
     POFV_POWER_SRC_CANCEL = 0,   /* 消弹（暴风蓝圈消掉的白弹）*/
     POFV_POWER_SRC_KILL   = 1,   /* 击破敌人 */
-    POFV_POWER_SRC_AURA   = 2    /* 固灵结界碰到敌弹（口径 6）*/
+    POFV_POWER_SRC_AURA   = 2,   /* 固灵结界碰到敌弹（口径 6）*/
+    /* ★ 2026-10-10 C2（霊撃）：`Ecl_EtBreakLv2` / `EXReigekiInf` 的消弹圈**命中点撒道具**
+     *   （一手 `HANDOFF-109-C1-C4.md` §5.1）。与上面三源**同一套池**、只做诊断区分 ✓
+     *   （加在末尾 = 既有取值不变，单测/日志口径不受影响 ✓）。*/
+    POFV_POWER_SRC_REIGEKI = 3
 } pofv_power_src_t;
 
 typedef struct {

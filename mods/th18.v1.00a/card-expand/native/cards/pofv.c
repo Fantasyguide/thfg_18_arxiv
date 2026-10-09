@@ -1729,6 +1729,222 @@ typedef struct {
 static pofv_c1_fly_t s_c1_fly[POFV_C1_MAX];
 static int           s_c1_prev = 0;      /* ★ 结界键的上一帧值（上升沿检测 ✓）*/
 
+/* ============================ C2：霊撃（★ 本轮只做灵梦）============================
+ * ★ 一手（`HANDOFF-109-C1-C4.md` §5；过程件 `engine/versus/th19/02-self-field-systems.md` §2.3，
+ *   来源 TH19 v1.10c `EXReigekiInf` 槽 1 `0x53b920`（发动）+ 槽 2 `0x53b3a0`（每帧）✓）：
+ *
+ *   ① **通用层 `Ecl_EtBreakLv2`**（`_ext/ecl/default.txt` L269，**全角色同一份** ✓）：
+ *      半径 **8 / 12 / 16 / 20**（每帧一档 +4，**共 4 帧** ✓）；中心 = **自机（`PlayerInf`）本体坐标** ✓
+ *      （`0x4e79e0` 读 `[PlayerInf+0x68c]`；本作单场地**同样如此 ⇒ 直接照抄** ✓）；**不写侧别** ⇒ 留本侧 ✓。
+ *
+ *   ② **灵梦槽 4 `EXReigekiInf`**：总时长 **105 帧** ✓（一手 `+0x5c < +0x6c(45) + 0x3c(60)`）：
+ *      · 帧 **0–44**：**3 个**环绕伤害点（角 **0°/120°/240°** ✓、整体 **+10°/帧** ✓、
+ *        环绕半径 **0 → 64**，用 **22 帧**缓动）；每点一个**半径 64 的消弹圈** ✓
+ *        （一手 `FUN_004ee770(&pos, 0x42800000=64.0f, 0, 99999, 0)`）+ **在该点撒道具** ❓；
+ *        **每 5 帧**（`age % 5 == 0`）打一个伤害源（一手 `FUN_005200f0(pos, 0, 1, 4)`——
+ *        第 6 参 `kind = 4` ✓，**伤害量 / 形状一手未给 ⇒ ❓自定**，见常量）；
+ *      · 帧 **45–105**：`local_54 = (t-45)*0x40/0x3c + 128.0f` ⇒ **单个扩张环 128→192（60 帧线性）** ✓，
+ *        继续消弹 / 撒道具 ✓；伤害参数一手 = **`0x18` = 24** ✓；
+ *      · 释放瞬间给**本侧 40 帧无敌**（一手 `PlayerInf+0x2074/0x2078/0x207c = 39/40/40.0f` ✓）——
+ *        本卡走 SDK 现成的**声明层** `ce_invuln_request()`（`sdk.h:1045`：逐帧声明剩余帧数）✓，
+ *        **不自己写内存** ✗。
+ *
+ *   ⚠ **存疑 1（如实标 ❓）**：一手帧 45–105 那支的中心在函数入口被**清零** ⇒ 传给消弹的是
+ *     **局部原点 (0,0,0)** 而非释放点 —— 本卡**按"自机坐标"实现**（与通用层同中心），此点待一手复核 ✓。
+ *   ⚠ **存疑 2（❓自定）**：一手**没有可见的扩张环**（视觉 = 被消弹的火花）⇒ 本卡的画法是**自定**：
+ *     借用本卡既有的**一手脚本 `396`**（`ghost.anm` script17 的逐字复刻 = 暴风圈同款）当占位 ✓
+ *     （**不新切贴图、不动 `ORDER.txt`** ✗）。
+ *   ⚠ **存疑 3（❓自定）**：一手「命中点撒道具」在单场地的对应物 ⇒ 映射到**本卡自建的灵力道具池**
+ *     （`pofv_power_spawn_packed`），位置 = 消弹圈中心（不引新实体池 ✓）；面值 / 每帧上限 = 本仓既有值 ✓。
+ *   ⚠ **存疑 4（❓自定）**：环绕半径那 22 帧的**缓动曲线**一手未给 ⇒ 取本卡结界同款的 **ease-out 二次** ✓。
+ *
+ *   ★ **触发**：沿用一手「蓄力档位」在本卡的既有替代 = **结界张开的上升沿**（与 C1 同一支 ✓）——
+ *     落点在 `on_tick_2` 的 `pofv_aura_rise_edge()`（见下方函数 + 调用点注释）。**同一次张开 ⇒
+ *     C1 与 C2 都放** ✓（C1 的 `pofv_c1_fire()` 由 owner 另写，挂同一个 `if (edge)` ✓）。
+ *   ⚠ **不碰** `POFV_REI_C1` / `s_aura_charge` / `s_aura_size` / `s_reiryoku` 的语义 ✗（纯读键 ✓）。
+ *
+ *   ★ **三角函数**：`pofv.c` 不用 `cosf/sinf`（i686 上它们把 x87 带进目标文件 ⇒ 顶掉 `make dllx87`
+ *     的「零 x87」不变式 ✗，同 `trance.c:1652` 的教训）⇒ 用**预计算的 36 向单位圆表**（10°/档，
+ *     构建前用 Python `math.cos/sin` 生成一次、写死常数 ✓；做法同 `pofv_core.c:829`）。
+ */
+#define POFV_CARD_ID             109u   /* = `CE_CARD(109, …)`；无敌**声明层**的键 = 卡号 ✓ */
+#define POFV_C2_TOTAL             105   /* 一手 ✓ 总时长（`+0x6c`=45 + `0x3c`=60）*/
+#define POFV_C2_POINT_END          45   /* 一手 ✓ 3 点阶段结束 / 扩张环起点（= `+0x6c`）*/
+#define POFV_C2_POINTS              3   /* 一手 ✓ 3 个环绕点（0°/120°/240°）*/
+#define POFV_C2_SPIN_STEP           1   /* 一手 ✓ 整体 +10°/帧 = 36 向表每帧 +1 档 */
+#define POFV_C2_POINT_BASE_STEP    12   /* 0°/120°/240° = 表中相隔 12 档（12×10°）*/
+#define POFV_C2_ORBIT_MAX        64.0f  /* 一手 ✓ 环绕半径终点（0 → 64）*/
+#define POFV_C2_ORBIT_FRAMES     22.0f  /* 一手 ✓ 22 帧到终点（缓动曲线 ❓自定，见下）*/
+#define POFV_C2_POINT_CANCEL_R   64.0f  /* 一手 ✓ 每点的消弹圈半径（`FUN_004ee770(…, 64.0f, …)`）*/
+#define POFV_C2_RING_R0         128.0f  /* 一手 ✓ 扩张环起点 */
+#define POFV_C2_RING_R1         192.0f  /* 一手 ✓ 终点（60 帧线性 ⇒ `+0x40`/`0x3c`）*/
+#define POFV_C2_RING_FRAMES      60.0f  /* 一手 ✓ */
+#define POFV_C2_RING_DMG           24   /* 一手 ✓（`0x18`）*/
+#define POFV_C2_GEN_FRAMES          4   /* 一手 ✓ `Ecl_EtBreakLv2` 共 4 帧 */
+#define POFV_C2_GEN_R0            8.0f  /* 一手 ✓ 半径序列 8/12/16/20 */
+#define POFV_C2_GEN_STEP          4.0f  /* 一手 ✓ 每帧 +4 */
+#define POFV_C2_POINT_HIT_EVERY     5   /* 一手 ✓ 每 5 帧一个伤害源 */
+#define POFV_C2_POINT_HIT_DMG       4   /* ❓自定：一手只给了 kind=4（`FUN_005200f0(…, 4)`）⇒ 伤害量先用 4 */
+#define POFV_C2_POINT_HIT_R      16.0f  /* ❓自定：32×32 的矩形源（一手形状未给；≈ 环绕点体量）*/
+#define POFV_C2_INVULN             40   /* 一手 ✓（39/40/40.0f）*/
+#define POFV_C2_VM_LAYER            6   /* 同暴风 `POFV_STORM_VM_LAYER`（脚本 396 里自己也写 `layer(6)` ✓）*/
+#define POFV_C2_RING_SCRIPT  CE_ANM_ABILITY_SCRIPT_POFV109_STORM   /* ★ 借一手脚本 396（❓自定画法）*/
+
+/* 36 向单位圆表（10°/档，Python 生成；**不引 libm** ⇒ 守住 `dllx87` ✓）。*/
+static const float s_c2_dir36[36][2] = {
+    { +1.0000000f, +0.0000000f }, { +0.9848078f, +0.1736482f }, { +0.9396926f, +0.3420201f },   /*   0° ..  20° */
+    { +0.8660254f, +0.5000000f }, { +0.7660444f, +0.6427876f }, { +0.6427876f, +0.7660444f },   /*  30° ..  50° */
+    { +0.5000000f, +0.8660254f }, { +0.3420201f, +0.9396926f }, { +0.1736482f, +0.9848078f },   /*  60° ..  80° */
+    { +0.0000000f, +1.0000000f }, { -0.1736482f, +0.9848078f }, { -0.3420201f, +0.9396926f },   /*  90° .. 110° */
+    { -0.5000000f, +0.8660254f }, { -0.6427876f, +0.7660444f }, { -0.7660444f, +0.6427876f },   /* 120° .. 140° */
+    { -0.8660254f, +0.5000000f }, { -0.9396926f, +0.3420201f }, { -0.9848078f, +0.1736482f },   /* 150° .. 170° */
+    { -1.0000000f, +0.0000000f }, { -0.9848078f, -0.1736482f }, { -0.9396926f, -0.3420201f },   /* 180° .. 200° */
+    { -0.8660254f, -0.5000000f }, { -0.7660444f, -0.6427876f }, { -0.6427876f, -0.7660444f },   /* 210° .. 230° */
+    { -0.5000000f, -0.8660254f }, { -0.3420201f, -0.9396926f }, { -0.1736482f, -0.9848078f },   /* 240° .. 260° */
+    { -0.0000000f, -1.0000000f }, { +0.1736482f, -0.9848078f }, { +0.3420201f, -0.9396926f },   /* 270° .. 290° */
+    { +0.5000000f, -0.8660254f }, { +0.6427876f, -0.7660444f }, { +0.7660444f, -0.6427876f },   /* 300° .. 320° */
+    { +0.8660254f, -0.5000000f }, { +0.9396926f, -0.3420201f }, { +0.9848078f, -0.1736482f },   /* 330° .. 350° */
+};
+
+typedef struct {
+    int active;      /* 1 = C2 生效中 */
+    int age;         /* 0..`POFV_C2_TOTAL`−1（一手 `EXReigekiInf+0x5c` ✓）*/
+    int invuln;      /* 剩余无敌帧（一手 40 ✓；逐帧声明给 SDK 的声明层 ✓）*/
+    int ring_vm;     /* 可见扩张环的 VM 句柄（❓自定画法：脚本 396）*/
+} pofv_c2_t;
+static pofv_c2_t s_c2;
+/* ★ C1/C2 **共用**的「结界键张开上升沿」闩锁（一手两档同一次蓄力释放 ⇒ 同一次张开都放 ✓）。
+ * ⚠ C1 的 `s_c1_prev`（上面）是上一版留下的**未使用**声明 —— 本函数落地后应改用它或删掉；
+ *   本轮**不动**它 ✗（避免与 owner 正在写的 C1 撞车）。*/
+static int s_aura_rise_prev;
+
+/* 结界张开的上升沿（0→1 的那一帧返回 1；电平无变化返回 0）。C1 / C2 共用 ✓。*/
+static int pofv_aura_rise_edge(int held)
+{
+    const int edge = (held && !s_aura_rise_prev) ? 1 : 0;
+    s_aura_rise_prev = held ? 1 : 0;
+    return edge;
+}
+
+/* 圈内消弹 + 在圈心撒道具（一手「命中点撒道具」的**单场地对应物** ❓自定；面值 / 上限走本仓既有值 ✓）。
+ * 返回消掉的颗数。位置 = 圈心（一手是逐个命中点，本卡不复刻逐点坐标 ⇒ 见 `TUNING.md` 的 ❓）。*/
+static int c2_cancel_drop(const float *pos, float r)
+{
+    const int n = cancel_white_in_circle(pos, r, POFV_CANCEL_MAX, POFV_BULLET_CANCEL_MODE);
+    if (n > 0) {
+        int32_t pts = 0;
+        (void)pofv_power_spawn_packed(&s_power, pos[0], pos[1], n, POFV_POWER_PTS_CANCEL,
+                                      POFV_AURA_ITEMS_PER_FRAME, POFV_POWER_SRC_REIGEKI, &pts);
+    }
+    return n;
+}
+
+/* 可见扩张环（❓自定画法）：建 / 每帧跟随自机 + 写 scale(=半径)。脚本 396 的半径由外部每帧写 ✓。*/
+static void c2_ring_vm_sync(float r)
+{
+    if (!s_c2.ring_vm) {
+        const uint32_t id = ce_anm_spawn(CE_ABILITY_ANM(), POFV_C2_RING_SCRIPT, POFV_C2_VM_LAYER);
+        if (!id) return;                       /* 建失败 ⇒ 少一台装饰环，逻辑照走（下一帧再试 ✓）*/
+        s_c2.ring_vm = (int32_t)id;
+    }
+    {
+        const float *p = ce_player_pos();
+        if (p) vm_set_world_pos((uint32_t)s_c2.ring_vm, p[0], p[1]);
+        ce_anm_set_scale((uint32_t)s_c2.ring_vm, r, r);
+    }
+}
+
+/* 收掉可见环：发事件 1（脚本 396：`alphaTime(10,0,0)` ⇒ 10 帧淡出 ⇒ 脚本自删 ✓），**只丢句柄** ✓。*/
+static void c2_ring_vm_release(void)
+{
+    if (!s_c2.ring_vm) return;
+    if (ce_anm_get_vm((uint32_t)s_c2.ring_vm)) ce_anm_interrupt((uint32_t)s_c2.ring_vm, 1);
+    s_c2.ring_vm = 0;
+}
+
+/* 释放（结界张开的上升沿那一帧）：复位状态 + 本侧 40 帧无敌（一手 ✓）。环在帧 45 才起 ⇒ 此处不建 VM ✓。*/
+static void pofv_c2_fire(void)
+{
+    s_c2.active = 1;
+    s_c2.age = 0;
+    s_c2.invuln = POFV_C2_INVULN;
+    /* ⚠ 若上一次的环还在淡出（句柄已在 `pofv_c2_*` 收尾时丢掉）⇒ 这里自然新建一台 ✓。*/
+}
+
+/* 每帧推进（105 帧）。`id` = 本卡卡号（无敌声明层的键 ✓）。**不依赖结界键电平** ✓（一次性 105 帧）。*/
+static void pofv_c2_tick(uint32_t id)
+{
+    const float *p;
+
+    if (!s_c2.active) return;
+    p = ce_player_pos();
+    if (!p) return;
+
+    /* ① 通用层 `Ecl_EtBreakLv2`（一手 ✓）：4 帧、半径 8/12/16/20、中心 = 自机 ✓ */
+    if (s_c2.age < POFV_C2_GEN_FRAMES) {
+        float pos[3];
+        pos[0] = p[0]; pos[1] = p[1]; pos[2] = 0.0f;
+        (void)c2_cancel_drop(pos, POFV_C2_GEN_R0 + POFV_C2_GEN_STEP * (float)s_c2.age);
+    }
+
+    if (s_c2.age < POFV_C2_POINT_END) {
+        /* ② 灵梦槽 4 · 帧 0–44：3 个环绕点（0°/120°/240°、整体 +10°/帧、环绕半径 0→64 / 22 帧）*/
+        int i;
+        float f = (float)s_c2.age / POFV_C2_ORBIT_FRAMES;
+        float orbit;
+        if (f > 1.0f) f = 1.0f;
+        /* ❓缓动曲线：一手未给 ⇒ 取本卡结界同款的 ease-out 二次（模式 4 同族 ✓）*/
+        orbit = POFV_C2_ORBIT_MAX * (1.0f - (1.0f - f) * (1.0f - f));
+        for (i = 0; i < POFV_C2_POINTS; ++i) {
+            const int di = (POFV_C2_POINT_BASE_STEP * i + POFV_C2_SPIN_STEP * s_c2.age) % 36;
+            float pos[3];
+            pos[0] = p[0] + orbit * s_c2_dir36[di][0];
+            pos[1] = p[1] + orbit * s_c2_dir36[di][1];
+            pos[2] = 0.0f;
+            (void)c2_cancel_drop(pos, POFV_C2_POINT_CANCEL_R);      /* 半径 64 的消弹圈 ✓ */
+            if (s_c2.age % POFV_C2_POINT_HIT_EVERY == 0)            /* 每 5 帧一个伤害源 ✓ */
+                (void)storm_hit_clipped(pos[0], pos[1], POFV_C2_POINT_HIT_R, POFV_C2_POINT_HIT_DMG);
+        }
+    } else {
+        /* ③ 帧 45–105：单个扩张环 128→192（60 帧线性 ✓）：消弹 + 撒道具 + 覆盖圈的伤害源（dmg 24 ✓）
+         *   ⚠ 中心按「自机坐标」实现（一手该支传局部原点 (0,0,0) ⇒ **语义存疑**，见块注释 ⚠存疑 1）*/
+        const float r = POFV_C2_RING_R0
+                      + (POFV_C2_RING_R1 - POFV_C2_RING_R0)
+                        * (float)(s_c2.age - POFV_C2_POINT_END) / POFV_C2_RING_FRAMES;
+        float pos[3];
+        pos[0] = p[0]; pos[1] = p[1]; pos[2] = 0.0f;
+        (void)c2_cancel_drop(pos, r);
+        (void)storm_hit_clipped(p[0], p[1], r, POFV_C2_RING_DMG);
+        c2_ring_vm_sync(r);
+    }
+
+    /* ④ 无敌（一手 40 帧 ✓）：**逐帧**声明剩余帧数（SDK 在帧界取最大值落笔 ✓，`sdk.h:1045`）*/
+    ce_invuln_request(id, (s_c2.invuln > 0) ? s_c2.invuln : 0);
+    if (s_c2.invuln > 0) --s_c2.invuln;
+
+    /* ⑤ 收尾（105 帧到 ⇒ 环淡出、无敌撤声明、状态归零 ✓）*/
+    if (++s_c2.age >= POFV_C2_TOTAL) {
+        c2_ring_vm_release();
+        ce_invuln_request(id, 0);
+        s_c2.active = 0;
+        s_c2.age = 0;
+        s_c2.invuln = 0;
+    }
+}
+
+/* 清干净（`clear_card()` = `on_ctor` / `on_run_reset` / `on_delete` 三路共用；铁律「长持续效果必须
+ * 收干净」✓ —— 本函数的跨帧遗留物 = ① 可见环 VM ② 无敌**声明层**的一格 ③ 上升沿闩锁 ✓）。*/
+static void pofv_c2_clear(void)
+{
+    if (s_c2.ring_vm) {
+        if (ce_anm_get_vm((uint32_t)s_c2.ring_vm)) ce_anm_delete((uint32_t)s_c2.ring_vm);
+        s_c2.ring_vm = 0;
+    }
+    s_c2.active = 0; s_c2.age = 0; s_c2.invuln = 0;
+    s_aura_rise_prev = 0;                 /* 删卡后不留幽灵闩锁 ⇒ 下次张开仍算上升沿 ✓ */
+    ce_invuln_request(POFV_CARD_ID, 0);   /* 撤无敌声明（声明层是**粘性**的 ⇒ 必须显式撤 ✓）*/
+}
+
 /* ============================ TH19 連撃账：+1 / 窗口 / 归零 ============================
  * 一手逐条（地址见 `pofv_core.h` 的「TH19『連撃（combo）』账」段，TH19 v1.10c）：
  *   · **+1** = `FUN_00549780` 的 `0x54980f: inc dword ptr [ecx+0x44]` ✓
@@ -1965,6 +2181,12 @@ static void clear_card(ce_card_t *c)
     pofv_aura_tint_restore_all();
     s_aura_charge = 0.0f; s_aura_r = 0.0f;   /* ★ 蓄力（C ✓）随卡清零 ✓ */
     s_aura_size = 0.0f;                      /* ★ 结界尺寸（一手 `S+0x8c` 等价物 ✓）随卡清零 ✓ */
+    /* ★★★★ C2（霊撃）的跨帧遗留物也在这里收干净（铁律「长持续效果删卡要交代」✓）：
+     *   · 可见扩张环的 VM（脚本 396）⇒ 真删；
+     *   · 无敌**声明层**的那一格 ⇒ 显式撤（声明层是粘性的，删卡只听 `on_delete` ⇒ 不撤就永久留着 ✗）；
+     *   · 结界张开上升沿的闩锁 ⇒ 归 0（不留幽灵闩锁）。
+     *   ⚠ 本函数**不依赖 tick** ⇒ 商店里删卡（倒吊人 / 弃整副牌）也收得到 ✓。*/
+    pofv_c2_clear();
     /* ★★★★ 2026-10-10 owner：灵力（上限量 = 一手 `S+0x24`）**初值 = C1（不是 0 ✗）**
      *   ⇒ 开局有基础灵力 ⇒ 蓄力/结界不会被封到 0 ✓（C1 数值 = ❓自定，见 `POFV_REI_C1` ✓）。*/
     s_reiryoku = POFV_REI_C1;
@@ -3040,6 +3262,18 @@ static int on_tick_2(ce_card_t *c)
         if (s_aura_kind != 2) s_aura_vm = 0;   /* 咲夜留着收束 ✓ */
         /* 旧注：交脚本自删 ⇒ 立刻忘掉句柄（`clear_card` 便不会二次删 ✓）*/
         s_aura_charge = 0.0f; s_aura_r = 0.0f;
+    }
+    /* ★★★★ C2 的**触发**（`HANDOFF-109-C1-C4.md` §5）：沿用 C1 的**结界张开上升沿** ——
+     *   `aura_held`（C ∨ Shift 的**电平**）在本块内可见 ⇒ 上升沿判定放这里（块尾 ✓）。
+     *   · **同一次张开 ⇒ C1 与 C2 都放** ✓：C1 的 `pofv_c1_fire()` **尚未落地**（owner 另写）
+     *     ⇒ 它落地时把调用加进下面这个 `if (aura_edge)` 即可（**共用同一个闩锁** `pofv_aura_rise_edge()` ✓，
+     *     不要另起一个 `s_c1_prev` 的自有闩锁 ✗，否则删卡清闩锁会漏一处 ✓）。
+     *   · C2 的 tick **每帧**跑（与结界键电平**无关** —— 一次张开 = 105 帧的 EX 对象 ✓）；
+     *     触发帧先 `fire()` 再 `tick()` ⇒ 那一帧就推进 `age = 0`（与一手"释放当帧即生效"同形 ✓）。*/
+    {
+        const int aura_edge = pofv_aura_rise_edge(aura_held);
+        if (aura_edge) pofv_c2_fire();          /* ★ C1 落地时在此行加：if (aura_edge) pofv_c1_fire(); */
+        pofv_c2_tick(POFV_CARD_ID);
     }
     }   /* ← 2026-10-10 新增的两把键作用域块（`chg_held` / `aura_held`）收尾 ✓ */
     /* ★★ 2026-10-10 结界半径用的"有效蓄力"：见上面两把键的分工注释 ——
