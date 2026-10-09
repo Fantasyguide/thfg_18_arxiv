@@ -3141,6 +3141,106 @@ static void pofv_c2s_tick(void)
     }
 }
 
+/* ============ ⑤ C3/C4 —— **早苗**分支：交替两侧刷一串弹（一手 = 刷 `ExAttack2` 子敌人）============
+ * ★ 一手（`HANDOFF-109-C1-C4.md` §10.1/§10.6）：★ `pl02.ecl` 的 `ExtraAttack` **自己不发弹** ✗ ——
+ *   ★ 每步 **`enmCreate("ExAttack2")`** 刷一个子敌人 ✓（子敌再跑 `ExAttackFunc2` 的 6 条 `etExSet`
+ *   效果栈 ✓，★ 与 C3 的 `ExAttackFunc` **同族**、只差 `$D` 与第 (4) 条的 `s` 符号 ✓）。
+ *   ★ 表（一手逐条照抄）：`$C`（每波子敌数）`{4,5,6,7,5,7,8,9}` ✓；`$D`（波数）`{1,1,1,1,2,2,2,2}` ✓；
+ *     `$E`（`I0` 递减）`{20,18,16,14,10,9,8,7}` ✓；`%F`（x 递减）`{10,10,9,9,8,8,7,7}` ✓；
+ *     `$G`（每步 wait）`{15,15,13,13,12,11,10,10}` ✓。
+ *   ★ 位置：★ `x = F1 × F0`（★ `F0` 从 **140** 起、每步 −`%F` ✓）、★ `y = RANDF2 × 32` ✓；
+ *     ★ `F1` 按难度奇偶取 ±1 ✓、★ **每步取反**（★ 左右交替 ✓）。
+ *   ★ 一手的 `ExtraAttack00` **pl02 没有** ✗ ⇒ ★ **她的 C3 与 C4 是同一套** ✓（★ 只有档位/阈值不同 ✓）。
+ * ★ 本卡落地（照 §10.6 的建议 ✓）：★ **不真的再 `enmCreate` 一层** ✗（少一个生命周期 ✓）——
+ *   ★ 直接按那三张表**刷一串"从两侧向中间收"的弹** ✓（★ 每颗 = 红环 VM + 伤害源 ✓）。
+ * ❓自定：① 档位取 **0**（`$C=4, $D=1, $E=20, %F=10, $G=15` ✓）；② x 从 140 起、交替正负 ✓；
+ *         ③ `y = RANDF2×32` 的 `RANDF2` 未定位 ⇒ ★ 本卡取 **y = 96**（自机上方固定一点 ✓）；
+ *         ④ 伤害沿用 C1 口径 ✓。*/
+#define POFV_C3S_MAX      60
+#define POFV_C3S_X0     140.0f     /* ★ 一手 ✓ `[-9981.0f]` 的初值 */
+#define POFV_C3S_Y       96.0f     /* ❓③：`RANDF2 × 32` 的 `RANDF2` 未定位 */
+
+static const unsigned char s_c3s_cnt[8]  = { 4, 5, 6, 7, 5, 7, 8, 9 };    /* $C ✓ */
+static const unsigned char s_c3s_waves[8]= { 1, 1, 1, 1, 2, 2, 2, 2 };    /* $D ✓ */
+static const unsigned char s_c3s_e[8]    = { 20,18,16,14,10, 9, 8, 7 };   /* $E ✓ */
+static const unsigned char s_c3s_f[8]    = { 10,10, 9, 9, 8, 8, 7, 7 };   /* %F ✓ */
+static const unsigned char s_c3s_wait[8] = { 15,15,13,13,12,11,10,10 };   /* $G ✓ */
+
+typedef struct { int live, age, life; float x, y; int32_t vm; } pofv_c3s_t;
+static pofv_c3s_t s_c3s[POFV_C3S_MAX];
+static struct { int active, wave, step, timer, level, side; float f0; } s_c3s_st;
+
+static void pofv_c3s_clear(void)
+{
+    int k;
+    for (k = 0; k < POFV_C3S_MAX; ++k) {
+        if (s_c3s[k].vm) { ce_anm_delete((uint32_t)s_c3s[k].vm); s_c3s[k].vm = 0; }
+        s_c3s[k].live = 0; s_c3s[k].age = 0;
+    }
+    s_c3s_st.active = 0; s_c3s_st.wave = 0; s_c3s_st.step = 0;
+    s_c3s_st.timer = 0; s_c3s_st.side = 1; s_c3s_st.f0 = POFV_C3S_X0;
+}
+
+static void pofv_c3s_spawn(float x, float y)
+{
+    int k;
+    for (k = 0; k < POFV_C3S_MAX; ++k) if (!s_c3s[k].live) break;
+    if (k >= POFV_C3S_MAX) return;
+    s_c3s[k].live = 1; s_c3s[k].age = 0; s_c3s[k].life = 120;
+    s_c3s[k].x = x; s_c3s[k].y = y;
+    s_c3s[k].vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), POFV_C_RING_SCRIPT, POFV_C4_VM_LAYER);
+    if (s_c3s[k].vm) {
+        ce_anm_set_color((uint32_t)s_c3s[k].vm, 0xffffffffu);
+        ce_anm_set_pos((uint32_t)s_c3s[k].vm, x, y, 0.0f);
+        ce_anm_set_scale((uint32_t)s_c3s[k].vm, 0.5f, 0.5f);
+    }
+}
+
+static void pofv_c3s_fire(void)
+{
+    s_c3s_st.active = 1; s_c3s_st.wave = 0; s_c3s_st.step = 0;
+    s_c3s_st.timer = 0; s_c3s_st.level = 0;     /* ❓① */
+    s_c3s_st.side = 1; s_c3s_st.f0 = POFV_C3S_X0;
+}
+
+static void pofv_c3s_tick(void)
+{
+    int k;
+    if (s_c3s_st.active) {
+        const int lv = s_c3s_st.level;
+        const int n = s_c3s_cnt[lv];
+        if (s_c3s_st.step < n) {
+            if (s_c3s_st.timer == 0) {
+                /* ★ 一手：x = F1 × F0（F1 每步取反 ⇒ **左右交替** ✓）、y = RANDF2×32 ✓ */
+                pofv_c3s_spawn((float)s_c3s_st.side * s_c3s_st.f0, POFV_C3S_Y);
+                s_c3s_st.side = -s_c3s_st.side;
+                s_c3s_st.f0 -= (float)s_c3s_f[lv];            /* ★ 一手 ✓ 每步 −%F */
+            }
+            if (++s_c3s_st.timer >= (int)s_c3s_wait[lv]) {     /* ★ 一手 ✓ 每步 wait $G */
+                s_c3s_st.timer = 0; ++s_c3s_st.step;
+            }
+        } else if (++s_c3s_st.wave < (int)s_c3s_waves[lv]) {
+            s_c3s_st.step = 0; s_c3s_st.timer = 0;
+            s_c3s_st.f0 = POFV_C3S_X0;                        /* ★ 一手 ✓ 每波重置 */
+        } else {
+            s_c3s_st.active = 0;
+        }
+    }
+    for (k = 0; k < POFV_C3S_MAX; ++k) {
+        pofv_c3s_t *b = &s_c3s[k];
+        float pos[3];
+        if (!b->live) continue;
+        ++b->age;
+        if (b->age > b->life) {
+            if (b->vm) { ce_anm_delete((uint32_t)b->vm); b->vm = 0; }
+            b->live = 0; continue;
+        }
+        if (b->vm) ce_anm_set_pos((uint32_t)b->vm, b->x, b->y, 0.0f);
+        pos[0] = b->x; pos[1] = b->y; pos[2] = 0.0f;
+        (void)ce_damage_rect(pos, 0.0f, 2, 14.0f, 24.0f, 24.0f);   /* ❓④ */
+    }
+}
+
 static void clear_card(ce_card_t *c)
 {
     int i, k;
@@ -3218,6 +3318,7 @@ static void clear_card(ce_card_t *c)
     pofv_c3m_clear();       /* ★ 铁律：魔理沙 C3 的激光 VM ⇒ 全收 ✓ */
     pofv_c4m_clear();       /* ★ 铁律：魔理沙 C4 的激光与扫射弹 VM ⇒ 全收 ✓ */
     pofv_c2s_clear();       /* ★ 铁律：早苗 C2 的整圈 VM ⇒ 全收 ✓ */
+    pofv_c3s_clear();       /* ★ 铁律：早苗 C3/C4 的刷弹 VM ⇒ 全收 ✓ */
     /* ★★★★ 2026-10-10 owner：灵力（上限量 = 一手 `S+0x24`）**初值 = C1（不是 0 ✗）**
      *   ⇒ 开局有基础灵力 ⇒ 蓄力/结界不会被封到 0 ✓（C1 数值 = ❓自定，见 `POFV_REI_C1` ✓）。*/
     s_reiryoku = POFV_REI_C1;
@@ -4321,10 +4422,13 @@ static int on_tick_2(ce_card_t *c)
         static int s_c3m_lv;                    /* ★ ⑤ C3 魔理沙分支：档闩锁 ✓ */
         static int s_c4m_lv;                    /* ★ ⑤ C4 魔理沙分支：档闩锁 ✓ */
         static int s_c2s_lv;                    /* ★ ② C2 早苗分支：档闩锁 ✓ */
+        static int s_c3s_lv;                    /* ★ ⑤ C3 早苗分支：档闩锁 ✓ */
+        static int s_c3s4_lv;                   /* ★ ⑤ C4 早苗分支：档闩锁 ✓ */
         const float cap2  = POFV_AURA_TARGET_CHARGE * (s_reiryoku / POFV_REI_MAX);
         const float c1_at = cap2 * (POFV_C1_THRESH / POFV_REI_MAX);
         const float c2_at = cap2 * (POFV_C2_THRESH / POFV_REI_MAX);
         const float c3_at = cap2 * (POFV_C3_THRESH / POFV_REI_MAX);
+        const float c4_at = cap2 * (2500.0f / POFV_REI_MAX);   /* ★ 一手 ✓ C4 = 2500（= 满）*/
         if (s_aura_charge >= c1_at) { if (!s_c1_lv) { pofv_c1_fire(); s_c1_lv = 1; } } else s_c1_lv = 0;
         /* ★★ 2026-10-10：一手**三人**的 C2 完全不同（灵梦 = `EXReigekiInf` ✓ / 魔理沙 = 6 条
          *   `EXLaserInf` ✓ / 早苗 = 不建对象、改走 shot 行 11 ✓，见 §5.2）⇒ ★ **本卡的 C2 只对灵梦** ✓，
@@ -4343,7 +4447,6 @@ static int on_tick_2(ce_card_t *c)
         /* ★ ⑤ C3（ExtraAttack）：★ 按蓄力档（**不是**边沿 ✗ —— 旧 `pofv_aura_rise_edge()` 已被 owner 实跑否掉 ✓）*/
         /* ★ ⑤ C4：一手阈值 = 2500（= `pl00.sht +0x38` ×10 ✓，= 满 ✓）*/
         {
-            const float c4_at = cap2 * (2500.0f / POFV_REI_MAX);
             /* ★ ⑤ C4 —— **魔理沙**分支（一手 = 一条激光 + 一串绕圈扫射弹 ✓，见上）*/
         if (s_aura_charge >= c4_at && s_aura_kind == 1) {
             if (!s_c4m_lv) { pofv_c4m_fire(); s_c4m_lv = 1; }
@@ -4361,6 +4464,14 @@ static int on_tick_2(ce_card_t *c)
             if (!s_barrier_lv) { pofv_barrier_fire(); s_barrier_lv = 1; }
         } else s_barrier_lv = 0;
 
+        /* ★ ⑤ C3/C4 —— **早苗**分支（一手 = 刷 ExAttack2 子敌人；她的 ExtraAttack00 不存在
+         *   ⇒ ★ **C3 与 C4 是同一套** ✓，只是阈值不同 ✓）*/
+        if (s_aura_charge >= c3_at && s_aura_kind == 3) {
+            if (!s_c3s_lv) { pofv_c3s_fire(); s_c3s_lv = 1; }
+        } else s_c3s_lv = 0;
+        if (s_aura_charge >= c4_at && s_aura_kind == 3) {
+            if (!s_c3s4_lv) { pofv_c3s_fire(); s_c3s4_lv = 1; }
+        } else s_c3s4_lv = 0;
         /* ★ ⑤ C3 —— **魔理沙**分支（一手 = 纯激光、沿 y=448 横扫、每步双镜像 ✓，见上）*/
         if (s_aura_charge >= c3_at && s_aura_kind == 1) {
             if (!s_c3m_lv) { pofv_c3m_fire(); s_c3m_lv = 1; }
@@ -4383,6 +4494,7 @@ static int on_tick_2(ce_card_t *c)
         pofv_c3m_tick();                    /* ★ ⑤ C3 魔理沙：横扫双镜像激光 ✓ */
         pofv_c4m_tick();                    /* ★ ⑤ C4 魔理沙：激光 + 扫射弹 ✓ */
         pofv_c2s_tick();                    /* ★ ② C2 早苗：更慢的 26 发整圈 ✓ */
+        pofv_c3s_tick();                    /* ★ ⑤ C3/C4 早苗：交替两侧刷弹 ✓ */
     }
     }   /* ← 2026-10-10 新增的两把键作用域块（`chg_held` / `aura_held`）收尾 ✓ */
     /* ★★ 2026-10-10 结界半径用的"有效蓄力"：见上面两把键的分工注释 ——
