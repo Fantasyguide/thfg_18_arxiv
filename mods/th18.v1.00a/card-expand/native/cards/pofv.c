@@ -1649,6 +1649,84 @@ static void storm_vm_sync(void)
     }
 }
 
+/* ============================ C1：灵梦的 4 发扇形（❓触发自定） ============================
+ * ★ **一手**（`HANDOFF-109-C1-C4.md` §3.7，来源 `pl00.sht` 表第 10 项 ✓）：灵梦 C1 = **4 发**：
+ *     行0  (0,0)  dmg=7  ang=−2.0944(−120°)  spd=14
+ *     行1  (0,0)  dmg=7  ang=−1.7453(−100°)  spd=14
+ *     行2  (0,0)  dmg=7  ang=−1.3963(−80°)   spd=14
+ *     行3  (0,0)  dmg=7  ang=−1.0472(−60°)   spd=14
+ *   anm = `pl00.anm` script10（30×30 弹）；**只在触发那一帧发一次** ✓（一手 `rate=100`，
+ *   而对象只活 21 帧 ⇒ 实际只出一轮 ✓）。★ 角度体系：**−π/2 = 正上** ✓（卡里主炮 `-1.5708` 同系 ✓）。
+ *
+ * ❓**触发自定**（不是复刻 ✗）：一手是「**蓄力 ≥ C1 阈值**」；但本卡的蓄力流程是自己的一套
+ *   （`s_aura_charge` / `s_reiryoku` / `POFV_REI_C1`，见下方 `s_aura_size` 附近）⇒ 这里改用
+ *   **结界张开的上升沿**（`pofv_aura_key()` 0→1 的那一帧）发**一轮**。
+ *   理由：① 结界键 = 本卡里唯一"玩家主动按下"的边沿事件 ✓；② 不动 `s_aura_charge` 语义 ✓；
+ *   ③ 上升沿天然"只发一次" ✓（与一手"只发一轮"同形 ✓）。
+ *   影响：按 C/Shift **立刻**出弹，**不受**灵力/`POFV_REI_C1` 门控 ✗（一手要蓄到 500 才出）
+ *   ⇒ 手感偏强；且 `POFV_REI_C1`（现 2500，一手 500）owner 未拍板 ⇒ 本轮**不动它** ✓。
+ *   ⇒ 定案登记在 `TUNING.md` 的 C1 节。
+ *
+ * ❓**观感自定**：一手是 `pl00.anm` script10 的 30×30 弹；本卡**暂用现成脚本占位**
+ *   （`CE_ANM_ABILITY_SCRIPT_POFV109_SPIRIT_BODY`），**不新切贴图、不动 `ORDER.txt`** ✗。
+ * ❓**伤害源自定**：`ce_damage_rect` 的 `life/w/h` 一手没给 ⇒ 先用下面的常量（32×32 ≈ 一手 30×30 ✓）。
+ */
+typedef struct { float x, y; int dmg; float ang, spd; } pofv_c1_shot_t;
+
+/* ★ 数据表：第 0 组 = **灵梦**（一手 ✓）；第 1/2 组 = **魔理沙 / 早苗：待补 ❓**（一手数值未取）。*/
+#define POFV_C1_SHOTS_PER_GROUP 4
+#define POFV_C1_GROUPS          3
+#define POFV_C1_MAX             (POFV_C1_SHOTS_PER_GROUP * POFV_C1_GROUPS)
+#define POFV_C1_GROUP_REI       0        /* 灵梦 */
+#define POFV_C1_GROUP_MARISA    1        /* 魔理沙：待补 ❓ */
+#define POFV_C1_GROUP_SANA    2        /* 早苗：待补 ❓ */
+
+static const pofv_c1_shot_t s_c1_table[POFV_C1_GROUPS][POFV_C1_SHOTS_PER_GROUP] = {
+    /* ---------------- 第 0 组：灵梦（一手 `pl00.sht` 第 10 项 ✓）---------------- */
+    {
+        { 0.0f, 0.0f, 7, -2.0944f, 14.0f },   /* −120° ✓ */
+        { 0.0f, 0.0f, 7, -1.7453f, 14.0f },   /* −100° ✓ */
+        { 0.0f, 0.0f, 7, -1.3963f, 14.0f },   /*  −80° ✓ */
+        { 0.0f, 0.0f, 7, -1.0472f, 14.0f },   /*  −60° ✓ */
+    },
+    /* ---------------- 第 1 组：魔理沙（**待补** ❓）---------------- */
+    {
+        { 0.0f, 0.0f, 0, 0.0f, 0.0f },
+        { 0.0f, 0.0f, 0, 0.0f, 0.0f },
+        { 0.0f, 0.0f, 0, 0.0f, 0.0f },
+        { 0.0f, 0.0f, 0, 0.0f, 0.0f },
+    },
+    /* ---------------- 第 2 组：早苗（**待补** ❓）---------------- */
+    {
+        { 0.0f, 0.0f, 0, 0.0f, 0.0f },
+        { 0.0f, 0.0f, 0, 0.0f, 0.0f },
+        { 0.0f, 0.0f, 0, 0.0f, 0.0f },
+        { 0.0f, 0.0f, 0, 0.0f, 0.0f },
+    },
+};
+
+/* ❓自定常量（一手未给）：一发弹的**伤害源形状/寿命**。
+ * **** 32×32 ≈ 一手 30×30 的弹体 ✓（`pl00.anm` script10）；`life` = 到出屏为止的帧数上限。
+ * ⚠ 伤害源**每帧按当前位置重新发**（= 本卡暴风 `storm_hit_clipped` 的既有套路 ✓），
+ *   故单帧 `life` 给 2（≈ 等效一个"跟着弹走"的源 ✓）；见 `pofv_c1_tick()`。*/
+#define POFV_C1_HIT_LIFE   2
+#define POFV_C1_HIT_W      32.0f
+#define POFV_C1_HIT_H      32.0f
+#define POFV_C1_BULLET_LIFE 90           /* ❓自定：一发弹的存活帧数（出屏即由裁剪切掉 ✓）*/
+#define POFV_C1_VM_LAYER   6             /* ❓自定：与世界层对齐（暴风 `POFV_STORM_VM_LAYER` 同层 ✓）*/
+
+/* C1 各发的飞行状态（VM 句柄 + 位置 + 剩余寿命）；`clear_card()` 里真删 ✓。*/
+typedef struct {
+    int   vm;            /* anm VM 句柄（0 = 空槽）*/
+    int   alive;
+    int   life;
+    int   dmg;
+    float x, y;
+    float ang, spd;
+} pofv_c1_fly_t;
+static pofv_c1_fly_t s_c1_fly[POFV_C1_MAX];
+static int           s_c1_prev = 0;      /* ★ 结界键的上一帧值（上升沿检测 ✓）*/
+
 /* ============================ TH19 連撃账：+1 / 窗口 / 归零 ============================
  * 一手逐条（地址见 `pofv_core.h` 的「TH19『連撃（combo）』账」段，TH19 v1.10c）：
  *   · **+1** = `FUN_00549780` 的 `0x54980f: inc dword ptr [ecx+0x44]` ✓
