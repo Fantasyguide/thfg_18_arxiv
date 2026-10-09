@@ -973,7 +973,12 @@ static int aura_scan_bullets(const float *center, int cap, float *ox, float *oy)
         uint8_t *b = bm + CE_BM_BULLETS + (size_t)i * CE_BULLET_STRIDE;
         uint16_t state = *(const uint16_t *)(b + CE_BULLET_STATE);
         float br, bx, by;
-        if (state != 1 && state != 2) { s_aura_bullet_done[i] = 0; continue; }  /* 空槽 / 别的状态：清闩锁 */
+        /* ★★★★ 2026-10-08 **修 bug**（owner：「结界碰弹**没有生成灵力道具**」✗ ⇒ 找到真因 ✓）：
+         *   原先写成 `state != 1 && state != 2 ⇒ skip` ✗ ⇒ **只认 state 1/2** ✗，而实际弹的 state 值不止这两个
+         *   ⇒ **一颗弹都扫不到** ⇒ 永远不掉道具 ✓。
+         *   ⇒ 改照**本仓已验证可用**的那套（卡 115 `lolk.c:491` ✓）：**`state == 0` = 空槽** ✓，
+         *     非 0 一律当活弹 ✓（同时把闩锁在空槽时清掉 ✓）。*/
+        if (state == 0) { s_aura_bullet_done[i] = 0; continue; }   /* 空槽：清闩锁 ✓ */
         if (s_aura_bullet_done[i]) continue;                                    /* ★ 这颗弹已经算过 */
         br = *(const float *)(b + POFV_BULLET_RADIUS_OFF);
         if (!(br > 0.0f)) continue;                                             /* 半径 0 的哨兵弹种：不算 */
