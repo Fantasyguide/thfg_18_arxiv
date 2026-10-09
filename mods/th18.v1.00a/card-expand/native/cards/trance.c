@@ -3959,6 +3959,26 @@ static void trance_hud_tick(const trance_card_t *s)
 
     if (!anm) return;
 
+    /* ★★★ 2026-10-03z11（owner：「**113没接统一变暗**」）——
+     *   本卡的压暗原来是**二值 hide 门**（`hud_dim_gate()` ⇒ 边沿发中断 4/5，整块显/隐），
+     *   所以 z4 那版"喂整条带"会让它**整块消失**（owner 实跑「113 直接看不见了」）而退回 z10。
+     *   ⇒ 正解：**两条腿分开** ——
+     *     · **hide 门**（自机真的压在面板上）继续用**自己那块**矩形（保持"让开自机"的原设计）；
+     *     · **统一变暗**改成 **alpha 斜坡**：每帧把共享带的 alpha 写进 4 支 VM 的颜色
+     *       （只改 A、不动贴图 RGB）⇒ 自机进带时整块**跟着淡**、但不会消失。
+     *   ⚠ 与 108/109/112 同款（alpha 斜坡型消费者），这正是「一起淡」的正确接法。*/
+    {
+        const uint32_t a = (uint32_t)ce_hud_band_dim_alpha() & 0xffu;
+        int q2;
+        for (q2 = 0; q2 < TRANCE_HUD_N; ++q2) {
+            uint8_t *vm2 = s_hud_vm[q2] ? ce_anm_get_vm((uint32_t)s_hud_vm[q2]) : 0;
+            uint32_t *cd;
+            if (!vm2) continue;
+            cd = (uint32_t *)(vm2 + CE_ANM_VM_COLOR1);
+            ce_anm_set_color((uint32_t)s_hud_vm[q2], (a << 24) | (*cd & 0x00ffffffu));
+        }
+    }
+
     /* ① 缺哪支补哪支（一手在关卡开始一次性建；我们每帧兜底：anm 重载 / 首帧还没装载都能自愈）
      *   ⚠ 诊断：**重建次数要记**（若每帧都在重建 ⇒ 说明 id 追不回 VM ⇒ 会像漏水的桶一样涨到崩）。
      *   ★★ 2026-09-13 第三轮：**兜底必须有上限** —— 若 `ce_anm_spawn_ui()` 因为任何原因返回 0

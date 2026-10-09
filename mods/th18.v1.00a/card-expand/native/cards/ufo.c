@@ -1268,7 +1268,7 @@ static void ufo_hud_vm_log(int i, const char *tag, uint32_t id)
     ep = (const float *)(vm + CE_ANM_VM_POS);               /* +0x5f0 实体坐标（C 侧摆位用这个）*/
     ce_log("ufo/slot.vm %s id %u script %d instr %d: draw = pos(0x30)(%.0f,%.0f) + pos2(0x4e4)(%.0f,%.0f) "
            "+ ent(0x5f0)(%.0f,%.0f) = 表面 (%.0f,%.0f) [本格槽心应 (%.0f,%.0f)]; "
-           "sprite %d scale %.2f alpha %u layer %d flags_lo %08x",
+           "sprite %d scale %.2f alpha %u layer %d flags_lo %08x flags_hi %08x resMode=%u",
            tag, id, (int)*(const int32_t *)(vm + CE_ANM_VM_SCRIPT_ID),
            (int)*(const int32_t *)(vm + 0x2c) /* instr_offset：脚本游标（诊断脚本停在哪）*/,
            (double)sp[0], (double)sp[1], (double)p2[0], (double)p2[1], (double)ep[0], (double)ep[1],
@@ -1278,7 +1278,9 @@ static void ufo_hud_vm_log(int i, const char *tag, uint32_t id)
            (double)*(const float *)(vm + CE_ANM_VM_SCALE),
            (unsigned)((*(const uint32_t *)(vm + CE_ANM_VM_COLOR1) >> 24) & 0xffu),
            (int)*(const int32_t *)(vm + CE_ANM_VM_LAYER),
-           (unsigned)*(const uint32_t *)(vm + CE_ANM_VM_FLAGS_LO));
+           (unsigned)*(const uint32_t *)(vm + CE_ANM_VM_FLAGS_LO),
+           (unsigned)*(const uint32_t *)(vm + CE_ANM_VM_FLAGS_HI),
+           (unsigned)((*(const uint32_t *)(vm + CE_ANM_VM_FLAGS_HI) & 0x1c00000u) >> 22));
 }
 
 /* ---- ★ A7（2026-09-12）：五边形框的**每个令牌槽一个** VM 句柄，同样放**文件静态** ----------------

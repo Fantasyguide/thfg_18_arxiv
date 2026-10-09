@@ -5552,6 +5552,11 @@ static void yk_gauge_hud_update(yk_card_t *s)
         ids[2] = &s->hud_youkai; ids[3] = &s->hud_cursor;
         for (q = 0; q < 4; ++q)
             if (*ids[q] && ce_anm_get_vm(*ids[q])) ce_anm_set_color(*ids[q], (a << 24) | 0x00ffffffu);
+        /* ★ 2026-10-03z11（owner：「**108 人妖槽的数字部分也没有接入**」）——
+         *   百分比/夜点的**字形 VM**（`s->hud_digit[]`）与上面四支同款处理。*/
+        for (q = 0; q < YK_GAUGE_TEXT_MAX; ++q)
+            if (s->hud_digit[q] && ce_anm_get_vm(s->hud_digit[q]))
+                ce_anm_set_color(s->hud_digit[q], (a << 24) | 0x00ffffffu);
     }
     /* ★ 只记一次的**几何自述**（实跑判据）：P2 这一版的分辨率空间之争（640 空间 vs 表面 px）
      * 靠的就是把「我们写进去的那几个数」打在日志里 —— 与屏上看到的位置一比就知道生效的是哪一种。

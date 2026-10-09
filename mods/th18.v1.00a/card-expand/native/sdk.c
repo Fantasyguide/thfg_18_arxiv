@@ -968,6 +968,20 @@ void ce_hud_slot_log_all(const char *tag)
     ce_log("hud:   band x %.0f..%.0f  y %.0f..%.0f  (%.0fx%.0f)  dim=%d alpha=%d  fallbacks=%d",
            (double)bx, (double)(bx + bw), (double)(by - bh), (double)by, (double)bw, (double)bh,
            ce_hud_band_dim_dimmed(), (int)ce_hud_band_dim_alpha(), ce_hud_slot_fallbacks());
+    /* ★★★ 2026-10-03z11（owner：「我感觉你的 log 和实际 HUD 的展现之间肯定有问题」）——
+     *   **坐标空间探针**：本仓 HUD 的一切常量都按 **1280×960 设计空间**写（`resolutionMode(2)`
+     *   的 VM 实际缩放 = `ui_scale × 0.5`；1280 时 ui_scale = 2.0 ⇒ 1 单位 = 1 表面 px ✓）。
+     *   若这台机器的 `ui_scale` ≠ 2.0（游戏表面可以是 640/960/1280 三档），
+     *   那"日志说的表面 px"与"屏幕上看到的位置"就会**整体差一个比例** ⇒ 先量出来再谈排布。*/
+    {
+        const float ui = *(const float *)CE_ADDR_UI_SCALE;
+        /* BMP 尺寸 = **表面尺寸**（`engine/anm/th18/05-snapshot-and-surfaces.md:105`）*/
+        const int32_t sw = *(const volatile int32_t *)0x56ac80;
+        const int32_t sh = *(const volatile int32_t *)0x56ac84;
+        ce_log("hud: coord-space ui_scale=%.3f (2.000 = 1280x960 设计空间 ✓) surface=%dx%d "
+               "(三档 640/960/1280) ⇒ 本仓常量按 1280 写",
+               (double)ui, (int)sw, (int)sh);
+    }
     ce_log("hud: ===== end =====");
 }
 
