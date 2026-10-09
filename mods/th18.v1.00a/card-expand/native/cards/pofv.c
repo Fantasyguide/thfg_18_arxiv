@@ -3158,7 +3158,7 @@ static int on_tick_2(ce_card_t *c)
             s_hud_lv_left = POFV_HUD_LV_POP_FRAMES;
             ce_log("pofv: 【灵力】档位 %d/%d ⇒ 弹一次（%d 帧 ✓；灵力 %.0f/%.0f）",
                    (int)tier, POFV_HUD_CHG_MAX_TIER, POFV_HUD_LV_POP_FRAMES,
-                   (double)s_reiryoku, (double)POFV_AURA_TARGET_CHARGE);
+                   (double)s_reiryoku, (double)POFV_REI_MAX);
         }
         if (s_hud_lv_left > 0) {
             const float *pp = ce_player_pos();
@@ -3944,7 +3944,7 @@ static int on_tick_2(ce_card_t *c)
                 ce_play_sound(POFV_POWER_SE_LEVEL, ce_player_x());
             s_power_got += got_n;
             ce_log("pofv: power +%d (%d items, gauge %d/%d, 灵力 %.0f/%.0f)", (int)got_pts, got_n,
-                   (int)s_ex_gauge, POFV_EX_GAUGE_MAX, (double)s_reiryoku, (double)POFV_AURA_TARGET_CHARGE);
+                   (int)s_ex_gauge, POFV_EX_GAUGE_MAX, (double)s_reiryoku, (double)POFV_REI_MAX);
         }
         /* ★★ 每帧同步可视 VM（**照 116 `points_tick()`**）：建（延时结束）/ 跟随 / 删
          *   （收取 / 出界 / 寿命到期的槽在 tick 里被清 `active`）⇒ 必须在 `pofv_power_tick()`
