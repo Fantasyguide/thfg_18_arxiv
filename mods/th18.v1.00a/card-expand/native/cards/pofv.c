@@ -1650,6 +1650,30 @@ static int on_tick_2(ce_card_t *c)
                         const int32_t lr = *(const int32_t *)(e + CE_ENEMY_ECL_I0 + 12);
                         ce_anm_set_scale((uint32_t)s_spirit_body[z], (lr == 0) ? 1.0f : -1.0f, 1.0f);
                     }
+                    /* ★★★★ 2026-10-08 owner 实跑 + 调研（一手 ✓）：**固化灵临终闪红** ——
+                     *   一手 `enemy.anm` script23（固化瞬间 `flags|=0x1000` ⇒ main script := 22+level = 23/24/25 ✓）：
+                     *     `sprite = (age/2) % 8` ✓（**2 帧一张** —— 原卡写的是 `/4` ✗，仅对固化态改 ✓）；
+                     *     `color`: 0–112 **不染色** ✓；112–128 **红/白每 2 帧**（预警 ✓）；≥128 **红/白每 1 帧**（全速 ✓）。
+                     *   删于 `enemy+0x5424` Timer > **160/200** ⇒ 一手全速闪 = 最后 **73** 帧（200−128+1 ✓）。
+                     *   ⚠ 本卡固化窗口 `POFV_DISABLE_JOUMON_FRAMES = 500` **另有一手依据**（TH19 沈静化 100+200+200 ✓）
+                     *     ⇒ **窗口不动** ✓，把一手的**末段闪红按比例挪到我们窗口末尾** ✓：
+                     *     全速闪 = 最后 **73** 帧、其前 **16** 帧为 2 帧一档的预警 ✓（数字都取自一手 ✓）。
+                     *   档位：`s_spirit_dis_age[z]`（固化后帧数 ✓，已有 ✓ ⇒ 不新增 VM/计时器 ✓）。
+                     *   ❓与 EX 分支的 `color(0xFFFFFF80)` 优先级：**固化优先**（本块后写 ✓）。*/
+                    if (s_spirit_kind[z] == POFV_SPIRIT_KIND_GHOST_TH09 && s_spirit_dis[z]) {
+                        const int32_t age = s_spirit_dis_age[z];
+                        const int32_t fast_from = POFV_DISABLE_JOUMON_FRAMES - 73;
+                        const int32_t warn_from = fast_from - 16;
+                        uint32_t tint = 0xFFFFFFFFu;                     /* 白 ✓ */
+                        if (age >= fast_from)        tint = (age & 1) ? 0xFFFFFFFFu : 0xFFFF0000u;   /* 全速：每 1 帧 ✓ */
+                        else if (age >= warn_from)   tint = (((age - warn_from) / 2) & 1) ? 0xFFFFFFFFu : 0xFFFF0000u;  /* 预警：每 2 帧 ✓ */
+                        if (s_spirit_body[z]) {
+                            ce_anm_set_sprite(CE_ABILITY_ANM(), (uint32_t)s_spirit_body[z],
+                                              pofv_spirit_body_sprite(s_spirit_kind[z], s_spirit_level[z], 1,
+                                                                      age / 2));    /* ★ 一手：2 帧一张 ✓ */
+                            ce_anm_set_color((uint32_t)s_spirit_body[z], tint);
+                        }
+                    } else
                     ce_anm_set_sprite(CE_ABILITY_ANM(), (uint32_t)s_spirit_body[z],
                                       pofv_spirit_body_sprite(s_spirit_kind[z], s_spirit_level[z], s_spirit_dis[z],
                                       s_spirit_age[z] / ((s_spirit_kind[z] == POFV_SPIRIT_KIND_WOLF ||
