@@ -1465,7 +1465,13 @@ static void power_vm_sync(void)
             if (!id) continue;          /* 建失败 ⇒ 逻辑照走（下一帧再试），不丢道具 */
             ce_anm_set_pos(id, it->x, it->y, 0.0f);
             ce_anm_set_sprite(CE_ABILITY_ANM(), id, POFV_POWER_VM_SPRITE);
-            ce_anm_set_color(id, 0xffffffffu);   /* 出生无染色（116 同：`0xffffffff`；一手也不染色）*/
+            /* ★★★★ 2026-10-09 **修 bug**（owner：「alpha 上限是 255=不透明；我看着咱们的可**不是 alpha 96**
+             *   这个透明度」✓ ⇒ 真因就在这里 ✓）：
+             *   `0xffffffff` 的 **alpha 字节 = 0xFF = 255** ✗ ⇒ **把脚本 423 里的 `alpha(96)` 覆盖成全不透明** ✓。
+             *   ⇒ 一手 kind 9 那条路**根本不写 `color`**（`bullet.anm` script123 全文无 `color`/`blendMode` ✓，
+             *     其 `color_1` 取 VM 默认白 ✓）⇒ 本卡**同样不写** ✓，让脚本的 `alpha(96)`（≈38% ✓）生效 ✓。
+             *   ⚠ 别再在这里写带 A 的 color（要染色也请保 A=96 或不带 A）✓。*/
+            /* ce_anm_set_color(id, …)  —— ★ 故意不写：保留脚本的 alpha(96) ✓ */
             it->vm = (int32_t)id;
             power_flash_fire(i, it->x, it->y);   /* ★ 同一刻点一台几何闪光（一手 effect.anm script94）*/
         }
