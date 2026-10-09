@@ -2821,6 +2821,107 @@ static void pofv_c2m_tick(void)
     }
 }
 
+/* ================= ⑤ C3 —— **魔理沙**分支：沿 `y = 448` 横扫的双镜像激光 ====================
+ * ★ 一手（`HANDOFF-109-C1-C4.md` §10.2）：`pl01.ecl` 的 `ExtraAttack` ★ **是纯激光** ✓
+ *   —— ★ **没有 `etOn`、也没有任何 `etEx`** ✗，只有 `ins_700`（建激光）/`ins_701`（时机）/`ins_703`（开）✓。
+ *   ★ 载体**每步移动**：`movePos(%G, 448)` → 开一发；`movePos(−%G, 448)` → **镜像再开一发** ✓。
+ * ★ 表（★ 一手逐条照抄，§10.3 ✓）：
+ *   `$C`（每波步数）= `{3,3,5,4,3,3,4,5}`；`$D`（波数）= `{1,2,1,2,3,3,2,2}`；
+ *   `$E`（每步 wait）= `{40,35,30,25,17,15,19,18}`；`%F`（收窄量）= `{8,16,8,8,16,12,24,24}` ✓。
+ *   ★ 每波：`%G = 140 − $H×%F`；★ 每步：`%G −= 125/($C−1)` ✓。
+ * ★ 视觉复用**脚本 403**（魔理沙竖带 ✓）；★ 激光从 `(±%G, 448)` **向上**打 ⇒ 一条长盒 ✓。
+ * ❓自定：① 档位取 **1**（`$D=2, $C=3, $E=35, %F=16` ✓，一手多为 1/3）；② 激光寿命按 wait 近似 ✓；
+ *         ③ 伤害沿用 C1 口径（一手 `ins_700/701` 的伤害未核到 ✓）。*/
+#define POFV_C3M_MAX_BEAMS   40
+#define POFV_C3M_VM_LAYER     6
+#define POFV_C3M_X0       140.0f          /* ★ 一手 ✓ 起始 `%G = 140` */
+#define POFV_C3M_Y        448.0f          /* ★ 一手 ✓ 横扫所在行 */
+#define POFV_C3M_XSPAN    125.0f          /* ★ 一手 ✓ 每波收窄 125 */
+
+static const unsigned char s_c3m_steps[8] = { 3, 3, 5, 4, 3, 3, 4, 5 };   /* $C ✓ */
+static const unsigned char s_c3m_waves[8] = { 1, 2, 1, 2, 3, 3, 2, 2 };   /* $D ✓ */
+static const unsigned char s_c3m_wait [8] = { 40,35,30,25,17,15,19,18 };  /* $E ✓ */
+static const unsigned char s_c3m_shrink[8] = { 8,16,8,8,16,12,24,24 };    /* %F ✓ */
+
+typedef struct { int live, age, life; float x, y; int32_t vm; } pofv_c3m_beam_t;
+static pofv_c3m_beam_t s_c3m[POFV_C3M_MAX_BEAMS];
+static struct { int active, wave, step, timer, level; float g; } s_c3m_st;
+
+static void pofv_c3m_clear(void)
+{
+    int k;
+    for (k = 0; k < POFV_C3M_MAX_BEAMS; ++k) {
+        if (s_c3m[k].vm) { ce_anm_delete((uint32_t)s_c3m[k].vm); s_c3m[k].vm = 0; }
+        s_c3m[k].live = 0; s_c3m[k].age = 0;
+    }
+    s_c3m_st.active = 0; s_c3m_st.wave = 0; s_c3m_st.step = 0;
+    s_c3m_st.timer = 0; s_c3m_st.g = 0.0f;
+}
+
+/* ★ 开一条激光在 `(x, 448)`，向上 ✓ */
+static void pofv_c3m_beam(float x)
+{
+    int k;
+    for (k = 0; k < POFV_C3M_MAX_BEAMS; ++k) if (!s_c3m[k].live) break;
+    if (k >= POFV_C3M_MAX_BEAMS) return;
+    s_c3m[k].live = 1; s_c3m[k].age = 0;
+    s_c3m[k].life = 90;                     /* ❓②：出屏/寿命上限 */
+    s_c3m[k].x = x; s_c3m[k].y = POFV_C3M_Y;
+    s_c3m[k].vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_POFV109_AURA_MARISA,
+                                        POFV_C3M_VM_LAYER);
+    if (s_c3m[k].vm) {
+        ce_anm_set_pos((uint32_t)s_c3m[k].vm, x, POFV_C3M_Y, 0.0f);
+        ce_anm_set_scale((uint32_t)s_c3m[k].vm, 0.5f, 1.0f);
+    }
+}
+
+static void pofv_c3m_fire(void)
+{
+    s_c3m_st.active = 1; s_c3m_st.level = 1;     /* ❓①：档位取 1 */
+    s_c3m_st.wave = 0; s_c3m_st.step = 0; s_c3m_st.timer = 0;
+    s_c3m_st.g = POFV_C3M_X0;                    /* %G = 140 − 0×%F ✓ */
+}
+
+static void pofv_c3m_tick(void)
+{
+    int k;
+    if (s_c3m_st.active) {
+        const unsigned char *T = s_c3m_steps;    /* 简记 */
+        const int lv = s_c3m_st.level;
+        if (s_c3m_st.step < (int)T[lv]) {
+            if (s_c3m_st.timer == 0) {
+                /* ★ 一手：`movePos(%G,448)` 开一发、`movePos(−%G,448)` **镜像**再开一发 ✓ */
+                pofv_c3m_beam( s_c3m_st.g);
+                pofv_c3m_beam(-s_c3m_st.g);
+                if (s_c3m_st.step + 1 < (int)T[lv])
+                    s_c3m_st.g -= POFV_C3M_XSPAN / (float)((int)T[lv] - 1);   /* ★ 一手 ✓ */
+            }
+            if (++s_c3m_st.timer >= (int)s_c3m_wait[lv]) {
+                s_c3m_st.timer = 0; ++s_c3m_st.step;
+            }
+        } else if (++s_c3m_st.wave < (int)s_c3m_waves[lv]) {
+            s_c3m_st.step = 0; s_c3m_st.timer = 0;
+            s_c3m_st.g = POFV_C3M_X0 - (float)s_c3m_st.wave * (float)s_c3m_shrink[lv];  /* ★ 一手 ✓ */
+        } else {
+            s_c3m_st.active = 0;
+        }
+    }
+    for (k = 0; k < POFV_C3M_MAX_BEAMS; ++k) {
+        pofv_c3m_beam_t *b = &s_c3m[k];
+        float pos[3];
+        if (!b->live) continue;
+        ++b->age;
+        if (b->age > b->life) {
+            if (b->vm) { ce_anm_delete((uint32_t)b->vm); b->vm = 0; }
+            b->live = 0;
+            continue;
+        }
+        pos[0] = b->x; pos[1] = b->y; pos[2] = 0.0f;
+        /* ★ 向上的一条长盒（`ce_damage_rect` 不转 ⇒ 竖直用宽 12 / 高 420 ❓③）*/
+        (void)ce_damage_rect(pos, 0.0f, 2, 14.0f, 12.0f, 420.0f);
+    }
+}
+
 static void clear_card(ce_card_t *c)
 {
     int i, k;
@@ -2895,6 +2996,7 @@ static void clear_card(ce_card_t *c)
     pofv_barrier_clear();   /* ★ 铁律：罩子（盾/破罩计时）删卡要收干净 ✓ */
     pofv_c4_clear();        /* ★ 铁律：C4 每发一台 VM ⇒ 删卡/换关全收 ✓ */
     pofv_c2m_clear();       /* ★ 铁律：魔理沙 C2 的 6 条激光 VM ⇒ 全收 ✓ */
+    pofv_c3m_clear();       /* ★ 铁律：魔理沙 C3 的激光 VM ⇒ 全收 ✓ */
     /* ★★★★ 2026-10-10 owner：灵力（上限量 = 一手 `S+0x24`）**初值 = C1（不是 0 ✗）**
      *   ⇒ 开局有基础灵力 ⇒ 蓄力/结界不会被封到 0 ✓（C1 数值 = ❓自定，见 `POFV_REI_C1` ✓）。*/
     s_reiryoku = POFV_REI_C1;
@@ -3995,6 +4097,7 @@ static int on_tick_2(ce_card_t *c)
         static int s_c4_lv;                     /* ★ ⑤ C4：档闩锁 ✓ */
         static int s_barrier_lv;                /* ★ ④ 罩子：档闩锁（与角色无关 ✓）*/
         static int s_c2m_lv;                    /* ★ ② C2 魔理沙分支：档闩锁 ✓ */
+        static int s_c3m_lv;                    /* ★ ⑤ C3 魔理沙分支：档闩锁 ✓ */
         const float cap2  = POFV_AURA_TARGET_CHARGE * (s_reiryoku / POFV_REI_MAX);
         const float c1_at = cap2 * (POFV_C1_THRESH / POFV_REI_MAX);
         const float c2_at = cap2 * (POFV_C2_THRESH / POFV_REI_MAX);
@@ -4027,6 +4130,10 @@ static int on_tick_2(ce_card_t *c)
             if (!s_barrier_lv) { pofv_barrier_fire(); s_barrier_lv = 1; }
         } else s_barrier_lv = 0;
 
+        /* ★ ⑤ C3 —— **魔理沙**分支（一手 = 纯激光、沿 y=448 横扫、每步双镜像 ✓，见上）*/
+        if (s_aura_charge >= c3_at && s_aura_kind == 1) {
+            if (!s_c3m_lv) { pofv_c3m_fire(); s_c3m_lv = 1; }
+        } else s_c3m_lv = 0;
         /* ★ 同上：一手三人的 C3 也不同（§10.1）⇒ ★ **只对灵梦** ✓（❓待补）。*/
         if (s_aura_charge >= c3_at && s_aura_kind == 0) {
             if (!s_c3_lv) {
@@ -4042,6 +4149,7 @@ static int on_tick_2(ce_card_t *c)
         pofv_c3_tick();                     /* ★ C3：波次机 + 每颗弹（加速/反弹/伤害源）+ 收尾 ✓ */
         pofv_c4_tick();                     /* ★ C4：扫描弧（两条反向 + 加速 + 伤害源）✓ */
         pofv_c2m_tick();                    /* ★ ② C2 魔理沙：6 条激光 ✓ */
+        pofv_c3m_tick();                    /* ★ ⑤ C3 魔理沙：横扫双镜像激光 ✓ */
     }
     }   /* ← 2026-10-10 新增的两把键作用域块（`chg_held` / `aura_held`）收尾 ✓ */
     /* ★★ 2026-10-10 结界半径用的"有效蓄力"：见上面两把键的分工注释 ——
