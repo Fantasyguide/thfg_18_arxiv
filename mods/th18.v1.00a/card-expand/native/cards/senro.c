@@ -321,7 +321,7 @@
  *     **一行可回退**（改回 64.0f 即回到「逐值复刻 TH07」）。
  *   `Y = 928` = **游玩区下沿**（与 112 的 `UFO_HUD_PIN_Y`、113 的 `TRANCE_HUD_BASE_Y` 同一条底线）。*/
 #define SENRO_HUD_PIN_X             68.0f
-#define SENRO_HUD_PIN_Y            932.0f   /* ★ 2026-10-03z3：块**底边** = 墨迹底边（`T.y+17` 单位）。
+#define SENRO_HUD_PIN_Y            936.0f   /* ★ 2026-10-03z3：块**底边** = 墨迹底边（`T.y+17` 单位）。
                                             *   原来 928 是按游玩区下沿取的 ⇒ 读数那 4 px 悬在声明之外
                                             *   （也悬在游玩区底边之下）。旧值 928 留档。*/
 /* 原版锚 T 在本块里的位置（640 字面量空间，+y = 屏幕向下 ⇒ 负 = 往上）。
@@ -1310,7 +1310,9 @@ static int on_tick_2(ce_card_t *c)
     /* ★★ 2026-09-18（用户实跑）：**中盘拿到卡（十二合一）时引擎只调 `ctor`、不调 `on_load`**
      *   ⇒ 这里从没认领过 HUD 槽 ⇒ 107 的 UI 不出现，要等换面（`on_load`）才补上。
      *   `senro_claim_hud()` 幂等（`_card` 入口只在关卡号变化时重排）⇒ 每帧补一次直到成功。*/
-    if (!s->slot_ok) senro_claim_hud(s);
+    /* ★ 2026-10-03z7（审计 P1-1）：补上 `ce_hud_slot_claimed()` 判据 —— 纪元清表后
+     *   `slot_ok` 仍是 1、但表里已经没有我们了 ⇒ 原来会**整关停在兜底常量、不进系统**。*/
+    if (!s->slot_ok || !ce_hud_slot_claimed(SENRO_ID)) senro_claim_hud(s);
     /* ★★ 2026-09-18：共享点池（樱点实体）—— 注册是幂等的（中盘拿卡时 `on_load` 不会被调），
      *   转换与池推进放在最前面：本帧转出来的大樱点当帧就建 VM、就受物理与收集判定。*/
     senro_faith_tick(c, s);
@@ -1552,6 +1554,9 @@ static int on_draw(ce_card_t *c)
         hud_dim_rect_t r;
         float bx, by, bw, bh;                                  /* ★ 2026-10-03q：**一块 HUD** —— 喂「带」的矩形 */
         ce_hud_band_rect(&bx, &by, &bw, &bh);
+        if (bw <= 0.0f || bh <= 0.0f) {                        /* ★ z7（审计 P3-3）：空带兜底回本块 */
+            bx = cur.x; by = cur.y; bw = SENRO_HUD_W; bh = SENRO_HUD_H;
+        }
         hud_dim_rect_surface(&r, bx, by, bw, bh);
         a = (uint32_t)hud_dim_tick(&s->hud, &r, ce_player_pos()) & 0xffu;
     }

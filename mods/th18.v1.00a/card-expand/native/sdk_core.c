@@ -1409,7 +1409,7 @@ static void hud_band_union(float *ox, float *oy, float *ow, float *oh)
     int i, first = 1;
     float x0 = 0.0f, y0 = 0.0f, x1 = 0.0f, y1 = 0.0f;
     for (i = 0; i <= CE_SDK_CARD_ID_MAX; ++i) {
-        if (!s_hud[i].used) continue;
+        if (!s_hud[i].used || s_hud[i].reserved) continue;   /* ★ z7（审计 P3-2）：删卡保留位不算在场 */
         const float bx0 = s_hud[i].x, by0 = s_hud[i].y - s_hud[i].h;
         const float bx1 = s_hud[i].x + s_hud[i].w, by1 = s_hud[i].y;
         if (first) { x0 = bx0; y0 = by0; x1 = bx1; y1 = by1; first = 0; }

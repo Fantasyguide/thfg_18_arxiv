@@ -1216,13 +1216,15 @@ static int32_t         s_bg_vm;         /* 灵界背景 VM 的 anm id（0 = 没�
  *   ⚠ 2026-09-13 第三轮订正（−128 是 ×2 误换算）那条**仍然成立**：`ce_player_pos()` 是场地坐标，
  *     与一手的字面量同量纲。*/
 #define TRANCE_HUD_BLOCK_W   144.0f    /* 指示槽的块宽（表面 px）：外框左沿 248 → 总条右沿 392 */
-#define TRANCE_HUD_BLOCK_H   128.0f    /* ★★★ 2026-10-03z3（owner：「113 和 108 重合，看上去像是 113 的
-                                        *   **y 矩形报少了**…113 和上一行也是有重叠的」）——
-                                        *   原来只有 **96**（外框 32×48 ×2 = 64×96）⇒ **漏了最上面那张**
-                                        *   `TRANCE_GAUGE_TOP`（atlas entry44 `@0,0,**64x64**`）× `ART_SCALE 2`
-                                        *   = **128×128 表面 px** ⇒ 真实上沿比声明高 **32 px**，
-                                        *   于是它既压住上一行、又和 108 判不出碰撞。
-                                        *   现取 **128**：块 = 表面 **808..936**（底 = `BLOCK_BOTTOM` 936 不动）。*/
+#define TRANCE_HUD_BLOCK_H    96.0f    /* ★★★ 2026-10-03z7（子智能体审计 P0-1，**订正我 z3 那次的误判**）——
+                                        *   我按 atlas 里 `TRANCE_GAUGE_TOP`（64×64 ×2 = 128×128）把块高改成了 128，
+                                        *   但审计给出反证：**那张贴图全仓没有任何脚本/C 引用**
+                                        *   （`assets/ability/make_trance_art.py` 自述「该成员眼下没有任何
+                                        *   脚本/C 代码引用（脚本 175 已改用 GAUGE_FRAME_A/B）」；
+                                        *   `scripts/175..178` 只用 FRAME_A(32×48) / BAR(48×32) / BAR2 / MARK(16×32)）
+                                        *   ⇒ 真实墨迹 y **840..936**（= 外框 32×48 ×2），块高就是 **96**。
+                                        *   ⚠ 128 会**多占 32 px**（虚假碰撞：把 108 顶走的正是它）⇒ 改回 96。
+                                        *   若将来真把顶层元素画出来，再加高（届时同步 `make_trance_art.py` 的注）。*/
 #define TRANCE_HUD_BLOCK_TOP  (TRANCE_HUD_BLOCK_BOTTOM - TRANCE_HUD_BLOCK_H)
 #define TRANCE_HUD_BLOCK_BOTTOM (TRANCE_HUD_BASE_Y + 8.0f)   /* 936：外框脚本 `pos.y = 8`（2× 空间）*/
                                                              /* ⇒ 块的**左下角**（`hud_dim_rect_surface` 的入口）*/

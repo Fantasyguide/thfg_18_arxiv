@@ -138,7 +138,14 @@
 #define ANIMAL_HUD_PIN_X      88.0f        /* = ANIMAL_HUD_X0（迁移前的硬编码值，一个像素没动）*/
 #define ANIMAL_HUD_PIN_Y     924.0f        /* 已量过的那条底线（= CE_HUD_ANCHOR_Y）*/
 #define ANIMAL_HUD_DY        (-20.0f)      /* 格中心 y = pin_y − 20（904 − 924）*/
-#define ANIMAL_HUD_BLOCK_W   193.0f        /* **声明给槽位的块宽**：pin_x .. pin_x+193 ⇒ 88..281（值不动）*/
+/* ★★★ 2026-10-03z7（子智能体审计 P1-2）——**声明块 ≠ 可见整排 24px**：
+ *   `ANIMAL_HUD_PIN_*` 报的是**首格的格心**(88,924)，而整排**可见**是 x **64..256** / y **880..928**
+ *   （本文件自述）⇒ 声明块整体右偏 24px（碰撞与压暗触发区跟着偏、还会多压右邻块）。
+ *   ⇒ 拆成两个概念：**pin = 画法基准（仍是 88/924，一个像素不动）**；
+ *     **block = 声明给分配器的可见盒（64, 928, 192×48）**；画的时候补回差值。*/
+#define ANIMAL_HUD_BLOCK_X   (ANIMAL_HUD_PIN_X - ANIMAL_HUD_HALF)      /* 88 − 24 = 64 */
+#define ANIMAL_HUD_BLOCK_Y   (ANIMAL_HUD_PIN_Y + 4.0f)                 /* 924 + 4 = 928 */
+#define ANIMAL_HUD_BLOCK_W   192.0f        /* **声明给槽位的块宽**：pin_x .. pin_x+193 ⇒ 88..281（值不动）*/
 #define ANIMAL_HUD_BLOCK_H    48.0f        /* 同上，块高 48；上沿 876（= 924 − 48）*/
 /* ★★ 2026-09-15i：**「声明块」≠「可见整排」** —— 压暗的判据用后者（见 `hud_fade_tick`），
  *   这里先把两份几何各自钉下来（只读推导：`hud_sync` 的 `x = s_slot.x + ANIMAL_HUD_DX·i` + 各 VM 的 sprite 盒）：
@@ -2005,7 +2012,7 @@ static void hud_slot_claim(void)
     blk.h = ANIMAL_HUD_BLOCK_H;
     blk.side = CE_HUD_SIDE_PINNED;             /* ★ 必须：非 pinned 会被 `ce_hud_slot_claim_pinned` 拒掉 */
     s_slot_ok = ce_hud_slot_claim_pinned_card(117, &blk,
-                                             ANIMAL_HUD_PIN_X, ANIMAL_HUD_PIN_Y, &s_slot);
+                                             ANIMAL_HUD_BLOCK_X, ANIMAL_HUD_BLOCK_Y, &s_slot);
     if (s_slot_ok) {
         ce_log("wba_wc: HUD block %.0fx%.0f pinned at surface (%.0f, %.0f)",
                (double)blk.w, (double)blk.h, (double)s_slot.x, (double)s_slot.y);
@@ -2013,8 +2020,8 @@ static void hud_slot_claim(void)
         ce_log("wba_wc: ce_hud_slot_claim_pinned_card FAILED");
         /* 认领失败 ⇒ 立刻把**兜底常量**填进 `s_slot`（SDK 失败时不会写 `out`）
          * ⇒ 这一行诊断与后续每帧的 `hud_slot_sync()` 都不会看到垃圾值 */
-        s_slot.x = ANIMAL_HUD_PIN_X;
-        s_slot.y = ANIMAL_HUD_PIN_Y;
+        s_slot.x = ANIMAL_HUD_BLOCK_X;
+        s_slot.y = ANIMAL_HUD_BLOCK_Y;
         s_slot.w = ANIMAL_HUD_BLOCK_W;
         s_slot.h = ANIMAL_HUD_BLOCK_H;
         s_slot.side = CE_HUD_SIDE_PINNED;
@@ -2043,8 +2050,8 @@ static void hud_slot_sync(animal_card_t *s)
          *     再取；仍然失败才退回兜底常量（首次认领前的那几帧）。*/
         hud_slot_claim();
         if (!s_slot_ok || !ce_hud_slot_get(117, &s_slot)) {
-            s_slot.x = ANIMAL_HUD_PIN_X;
-            s_slot.y = ANIMAL_HUD_PIN_Y;
+            s_slot.x = ANIMAL_HUD_BLOCK_X;
+            s_slot.y = ANIMAL_HUD_BLOCK_Y;
             s_slot.w = ANIMAL_HUD_BLOCK_W;
             s_slot.h = ANIMAL_HUD_BLOCK_H;
             s_slot.side = CE_HUD_SIDE_PINNED;
@@ -2143,8 +2150,10 @@ static void hud_sync(animal_card_t *s)
         /* ★★ 2026-09-12：第 i 格中心 = **槽锚点 + 36i**（表面 px）。
          * 迁移前这里是硬编码的 `ANIMAL_HUD_X0 + ANIMAL_HUD_DX * i` / `ANIMAL_HUD_Y`
          * ⇒ 锚点 = (88, 924) 时**逐像素相同**（904 = 924 + ANIMAL_HUD_DY，DY = −20）。*/
-        float x = s_slot.x + ANIMAL_HUD_DX * (float)i;
-        float y = s_slot.y + ANIMAL_HUD_DY;
+        /* ★ z7：槽现在是**声明块**（左下角 64/928）⇒ 画时补回「pin − block」的差值（+24 / −24），
+         *   落点与迁移前**逐像素相同**（首格格心 88 / 904）。*/
+        float x = s_slot.x + (ANIMAL_HUD_PIN_X - ANIMAL_HUD_BLOCK_X) + ANIMAL_HUD_DX * (float)i;
+        float y = s_slot.y + (ANIMAL_HUD_PIN_Y + ANIMAL_HUD_DY - ANIMAL_HUD_BLOCK_Y);
         int filled = (i < s->core.fill);
 
         if (filled) {

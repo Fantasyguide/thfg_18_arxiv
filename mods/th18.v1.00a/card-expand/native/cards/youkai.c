@@ -5503,6 +5503,7 @@ static void yk_gauge_hud_update(yk_card_t *s)
     yk_night_text_sync(s, &h, col);                        /* ★ #27/#28：夜点数字（左对齐 7 px/字）*/
 }
 
+static void yk_hud_claim(ce_card_t *c, yk_card_t *s);   /* ★ z7：定义在本文件后面（on_load 之后）*/
 static int on_ctor(ce_card_t *c)
 {
     if (!YK_ENABLE_CARD || !YK_ENABLE_CB_LIFECYCLE) return 0;   /* ★ 总开关 + 回调族 ⑨ */
@@ -5642,11 +5643,26 @@ static int on_ctor(ce_card_t *c)
          *   ⇒ 改成 **PINNED 在 owner 那个位置 (68, 928)**：单开时槽 = pin ⇒ 画的位置**一个像素不变**；
          *     与别人/原生卡面**撞了**才回退货架，那时 `s->hud` 变了、画也跟着走（见 `…_update()`）。*/
         blk.side = CE_HUD_SIDE_PINNED;
-        s->hud_ready = (uint8_t)(ce_hud_slot_claim_pinned_card(
-            ce_card_id(c), &blk, YK_GAUGE_BASE_X, YK_GAUGE_BASE_Y, &s->hud) ? 1 : 0);
+        yk_hud_claim(c, s);
     }
     if (s->hud_ready) yk_gauge_hud_spawn(c, s);
     return 0;
+}
+
+/* ★★★ 2026-10-03z7（子智能体审计 P1-1）——**认领抽成一支**，`on_load` 与每帧自愈共用。
+ *   本卡原来只在 `on_load`（每关一次）认领；而**纪元清表**（十二合一中盘发卡那批 / 换关竞争）
+ *   之后表里就没有我们了 ⇒ 原来会整关停在兜底常量、不进系统（117 的实跑日志
+ *   `wba_wc: hud geom … path=fallback` 就是同一现象）。*/
+static void yk_hud_claim(ce_card_t *c, yk_card_t *s)
+{
+    ce_hud_block_t blk;
+    if (!s) return;
+    __builtin_memset(&blk, 0, sizeof blk);
+    blk.w = YK_HUD_BLOCK_W;
+    blk.h = YK_HUD_BLOCK_H;
+    blk.side = CE_HUD_SIDE_PINNED;                 /* 非 pinned 会被 pinned 入口拒掉 */
+    s->hud_ready = (uint8_t)(ce_hud_slot_claim_pinned_card(
+        ce_card_id(c), &blk, YK_GAUGE_BASE_X, YK_GAUGE_BASE_Y, &s->hud) ? 1 : 0);
 }
 
 /* ============ ★★★ 2026-09-22（owner #26 · **风味选项**）决死窗口里全屏**敌弹**变红 =============
@@ -7477,6 +7493,12 @@ static int on_tick_2(ce_card_t *c)
                        (double)(*(const int32_t *)(o + CE_NATOPT_POS_Y) * CE_SUBPIXEL_TO_PIXEL));
             }
         }
+    }
+    /* ★ 2026-10-03z7（审计 P1-1）：自愈 —— `claimed` 为假（纪元清表）或取不到槽时**补认领**，
+     *   然后再取。⚠ 局中删卡的**保留位**在 SDK 里 `claimed` 仍为真 ⇒ 不会被误判（§4.4）。*/
+    if (!s->hud_ready || !ce_hud_slot_claimed(ce_card_id(c)) ||
+        !ce_hud_slot_get(ce_card_id(c), &s->hud)) {
+        yk_hud_claim(c, s);
     }
     if (s->hud_ready) {
         ce_hud_slot_get(ce_card_id(c), &s->hud);           /* 每帧取最新锚点（同批后来的认领会重排）*/

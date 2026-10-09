@@ -174,7 +174,7 @@
  *   上下各留 4 px ⇒ **36**（§6.1 说的 `CE_HUD_BLOCK_PAD` 口径，先在这张卡上落地）。
  *   ❓ 自定：36 这个 h（含 4 px pad）与 104 这个 w（外沿 263..365 的 102 + 左右各 1 px 余量）
  *   都是我拍的，实跑看一眼货架行高/与 117 的间距对不对再说（§6.1 待定项）。*/
-#define SEASON_HUD_BLOCK_W  104.0f    /* ❓ 自定：块宽（表面 px，报给货架分配器）*/
+#define SEASON_HUD_BLOCK_W  110.0f   /* ★ z7（审计 P2-1）：104 是 257 锚点时代推的 ⇒ 墨迹右沿 177 > 172，改 110 刚好包住 */    /* ❓ 自定：块宽（表面 px，报给货架分配器）*/
 #define SEASON_HUD_BLOCK_H   36.0f    /* ❓ 自定：块高 = 视觉 888..920（32）+ 上下各 4 */
 
 /* —— 块内布局：**每个元素相对「块左下角」的偏移**（表面 px）——§2「块内部怎么摆仍归卡自己」。
@@ -1659,7 +1659,10 @@ static void hud_ensure(season_card_t *s)
      * 这里补一次 —— 认领是幂等的，正常路径只有开场那一次真正落账。
      * ⚠ 只在「本卡状态说没认领到」时补：不看 `ce_hud_slot_claimed()`，因为局中删卡时 SDK
      * 只把占位标记为「保留」、`claimed` 仍为真，那种情况不该重新认领（§4.4 不当场重排）。*/
-    if (!s->hud_slot_ok) hud_slot_claim(s);   /* ★ 传卡指针：认领结果会写回 `s->hud_slot_ok`（见 hud_slot_claim 的注释）*/
+    /* ★ 2026-10-03z7（审计 P1-1）：补上 `ce_hud_slot_claimed()` 判据 ——
+     *   纪元清表后 `hud_slot_ok` 仍是 1、表里却没有我们 ⇒ 原来会整关停在兜底常量、不进系统。
+     *   （`reserved`（局中删卡的保留位）在 SDK 里 `claimed` 仍为真 ⇒ 不会被误判重认领 ✓）*/
+    if (!s->hud_slot_ok || !ce_hud_slot_claimed(116u)) hud_slot_claim(s);   /* ★ 传卡指针：认领结果会写回 `s->hud_slot_ok`（见 hud_slot_claim 的注释）*/
 
     pos[2] = 0.0f;
     /* ★ 2026-09-10 第二十九轮：任何 VM 被**重新生成**（换关时引擎清过 anm，或 VM 被删）都要把
@@ -1777,6 +1780,9 @@ static int on_draw(ce_card_t *c)
         hud_dim_rect_t r;
         float bx, by, bw, bh;                                  /* ★ 2026-10-03q：**一块 HUD** —— 喂「带」的矩形 */
         ce_hud_band_rect(&bx, &by, &bw, &bh);
+        if (bw <= 0.0f || bh <= 0.0f) {                        /* ★ z7（审计 P3-3）：空带兜底回本块 */
+            bx = s_slot.x; by = s_slot.y; bw = SEASON_HUD_BLOCK_W; bh = SEASON_HUD_BLOCK_H;
+        }
         hud_dim_rect_surface(&r, bx, by, bw, bh);
         (void)hud_dim_tick(&s->hud, &r, ce_player_pos());
     }

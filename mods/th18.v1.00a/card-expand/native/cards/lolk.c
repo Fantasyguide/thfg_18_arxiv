@@ -850,9 +850,11 @@ static int32_t panel_alpha_sync(lolk_card_t *s)
     unsigned i;
 
     if (!panel_rect(s, &r)) return s->hud.alpha;
-    {   float bx, by, bw, bh;                                  /* ★ 2026-10-03q：**一块 HUD** */
-        ce_hud_band_rect(&bx, &by, &bw, &bh);
-        if (bw > 0.0f && bh > 0.0f) hud_dim_rect_surface(&r, bx, by, bw, bh); }
+    /* ★★★ 2026-10-03z7（子智能体审计 P0-3 抓到**我上一轮引入的回归**）——
+     *   本卡的面板在**中左**（写死 `LOLK_PANEL_AX/AY`，x≈480..736），**根本不在左下角带里**，
+     *   而我上一轮（#233「一块 HUD」）把它喂成了 `ce_hud_band_rect()` ⇒ 只要装了别的 HUD 卡，
+     *   面板的压暗触发点就跑到**左下角**去了、面板自己**永不淡**（= 「面板挡自机」这条设计失效）。
+     *   ⇒ **退回自有矩形**；等带支持"额外矩形"（`ce_hud_band_add_rect`）再正式并进去。*/
     a = hud_dim_tick(&s->hud, &r, pp);
     if (s->hud.dim != was) {                 /* 闩锁翻转（= 玩家进/出触发区）—— 日志用 */
         ce_log("lolk: panel dim %s (alpha %d, rect 表面 x %.1f..%.1f y %.1f..%.1f, 自机 %.1f,%.1f)",
