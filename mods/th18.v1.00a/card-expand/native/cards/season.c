@@ -1626,11 +1626,23 @@ static void hud_slot_claim(season_card_t *s)
 static void hud_slot_sync(season_card_t *s)
 {
     (void)s;
-    /* ★ 2026-09-13 用户口径：**本卡不走货架**（"目前暂时不搞货架排布"）⇒ 锚点就是自己声明的
-     * 固定左下角 `SEASON_HUD_PIN_*`，**不再每帧 `ce_hud_slot_get()`**（那会拿分配器排给我们的槽位）。
-     * ⚠ 上一条（2026-09-13 早）我把这里改成"读货架槽位"并把它当成修 bug —— **判断错了**：
-     * `s->hud_slot_ok` 从没被写过**是本来就这么设计的**（本卡不参与货架排布）。
-     * 现在认领走 `ce_hud_slot_claim_pinned_card`（自带锚点）⇒ 取不取货架都是这个位置。*/
+    /* ★★★ 2026-10-03s（owner 十二合一实跑：「112 和 117 在左下角重叠，甚至和主动卡重叠……依旧有大量重叠」
+     *   ⇒ 查出**真凶就是这里**）：本函数原来**无条件**把槽覆盖回写死的 `SEASON_HUD_PIN_*`
+     *   （注释记的是 2026-09-13 的口径「本卡不走货架」）—— 于是**分配器怎么排 116 都不听**：
+     *   别人撞了会回退让位，116 却永远钉在 68..172 ⇒ 它和谁都能叠。
+     *
+     *   现行口径（owner 2026-10-03 三条，覆盖 09-13 那条）：
+     *     ·「**包含左下角 HUD 的都应当进这个系统**」；
+     *     ·「**所有左下角 HUD 应当是"一块 HUD"**」；
+     *     · 本卡认领走 `ce_hud_slot_claim_pinned_card()` ⇒ 会被分配器**判碰撞 + 必要时回退货架**。
+     *   ⇒ 现在**每帧从分配器取最新槽**（与 110/111/117 同款）；只有**取不到**（还没认领 / 本关被 reset）
+     *     才退回声明锚点兜底 —— 那份兜底**不再覆盖**分配器给出的位置。
+     *   ⚠ 取不到时用 `SEASON_HUD_PIN_*`（声明的左下角）而不是 0：首次认领前的那几帧不该把 UI 画到左上角。*/
+    if (ce_hud_slot_get(116u, &s_slot)) {
+        s_slot.x640 = s_slot.x * CE_HUD_SURFACE_TO_640;
+        s_slot.y640 = s_slot.y * CE_HUD_SURFACE_TO_640;
+        return;
+    }
     s_slot.x = SEASON_HUD_PIN_X;
     s_slot.y = SEASON_HUD_PIN_Y;
     s_slot.x640 = s_slot.x * CE_HUD_SURFACE_TO_640;

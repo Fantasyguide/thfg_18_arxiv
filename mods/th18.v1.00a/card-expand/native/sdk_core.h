@@ -791,6 +791,15 @@ int     ce_hud_band_empty(void);
 void    ce_hud_band_dim_reset(void);
 void    ce_hud_band_dim_tick(const float *player_pos);             /* ★ SDK 每帧调一次（帧初）*/
 int32_t ce_hud_band_dim_alpha(void);                               /* ★ 消费者读它（255 = 满亮）*/
+
+/* ★★★ 2026-10-03r（owner：「你加一下 log，因为**十二合一是测试的终极形态**」）——
+ *   **HUD 台账**的只读枚举/状态查询（`sdk.c` 的 `ce_hud_slot_log_all()` 用它打整表）：
+ *   · `ce_hud_slot_count()`：现在有几块（含 pinned）；
+ *   · `ce_hud_slot_enum(i, &id, &slot)`：按 **id 升序**取第 i 块（i 从 0 起；越界返回 0）；
+ *   · `ce_hud_band_dim_dimmed()`：当前淡化闩锁（1 = 自机在带里 ⇒ 整条带淡着）。*/
+int  ce_hud_slot_count(void);
+int  ce_hud_slot_enum(int nth, uint32_t *out_id, ce_hud_slot_t *out);
+int  ce_hud_band_dim_dimmed(void);
 int  ce_hud_slot_claim_ex(uint32_t card_id, const ce_hud_block_t *blk,
                           int priority, int own_row, ce_hud_slot_t *out);
 /* ★ **自带锚点认领**（`blk->side == CE_HUD_SIDE_PINNED`）：按用户按截图量过的固定位置登记。

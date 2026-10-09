@@ -942,6 +942,35 @@ static const hud_font_t HUD_FONTS[] = {
 };
 
 /* 默认字形集 = TH18 font 2（所有既有调用点走这里，行为一个字节不变）。*/
+/* ★★★ 2026-10-03r（owner：「你加一下 log，因为**十二合一是测试的终极形态**」）——
+ *   **HUD 台账整表**：谁认领了、块多大、在哪一行、PINNED 还是货架（降级）、带的矩形与淡化状态。
+ *   118（挑战・十二合一）一次把十二张系统卡发齐 ⇒ 这份日志就是那次排布的**唯一现场**。*/
+void ce_hud_slot_log_all(const char *tag)
+{
+    int i, n = ce_hud_slot_count();
+    float bx, by, bw, bh;
+    const int card_face = hud_card_present(*(void *const *)(CE_ABILITY_MGR() + CE_MGR_SELECTED_ACTIVE));
+    ce_log("hud: ===== %s —— %d slot(s) claimed  (native active-card face %s) =====",
+           tag ? tag : "hud", n, card_face ? "PRESENT @68..116" : "absent");
+    for (i = 0; i < n; ++i) {
+        uint32_t id = 0;
+        ce_hud_slot_t sl;
+        if (!ce_hud_slot_enum(i, &id, &sl)) break;
+        ce_log("hud:   #%-2d card %-3u %-6s surface (%.0f,%.0f) %.0fx%.0f  =>  x %.0f..%.0f  y %.0f..%.0f",
+               i, (unsigned)id,
+               sl.side == CE_HUD_SIDE_PINNED ? "PINNED" :
+               sl.side == CE_HUD_SIDE_RIGHT  ? "RIGHT" : "LEFT",
+               (double)sl.x, (double)sl.y, (double)sl.w, (double)sl.h,
+               (double)sl.x, (double)(sl.x + sl.w),
+               (double)(sl.y - sl.h), (double)sl.y);
+    }
+    ce_hud_band_rect(&bx, &by, &bw, &bh);
+    ce_log("hud:   band x %.0f..%.0f  y %.0f..%.0f  (%.0fx%.0f)  dim=%d alpha=%d  fallbacks=%d",
+           (double)bx, (double)(bx + bw), (double)(by - bh), (double)by, (double)bw, (double)bh,
+           ce_hud_band_dim_dimmed(), (int)ce_hud_band_dim_alpha(), ce_hud_slot_fallbacks());
+    ce_log("hud: ===== end =====");
+}
+
 void ce_hud_vm_text_set(ce_hud_vm_text_t *t, float x, float y, uint32_t bgra,
                         int align_h, float scale, const char *s, const char *tag)
 {
@@ -2410,7 +2439,18 @@ int __cdecl BP_ce_item_frame(x86_reg_t *regs, void *bp_info)
     /* ★★★ 2026-10-03q（owner：「所有左下角 HUD 应当是**一块 HUD**」）：整条带的**共享淡化**
      *   每帧算一次（矩形 = 所有已认领块的并集 ∪ 原生卡面）⇒ 各卡读 `ce_hud_band_dim_alpha()`。*/
     ce_site_trail("if/ce_hud_band_dim_tick");
-    ce_hud_band_dim_tick(ce_player_pos());
+    {   /* ★ 2026-10-03r：带的淡化**翻转**时打一行（不刷屏；配合 `ce_hud_slot_log_all` 看整表）*/
+        static int s_dim_was = -1;
+        const int dim_before = ce_hud_band_dim_dimmed();
+        int dim_now;
+        ce_hud_band_dim_tick(ce_player_pos());
+        dim_now = ce_hud_band_dim_dimmed();
+        if (s_dim_was != dim_now) {
+            ce_log("hud: band dim %s (alpha %d, was %d)", dim_now ? "ON" : "OFF",
+                   (int)ce_hud_band_dim_alpha(), dim_before);
+            s_dim_was = dim_now;
+        }
+    }
     /* ★ 帧初：清「这次死亡由谁救」闩锁（用户 2026-09-12 定案：救援层 107 → 117 → 决死 B → 113；
      * 113 只在没人认领时才动手 —— 否则会「别人救了你、113 的窗口结束时又把你杀掉」）。*/
     ce_rescue_note_reset();

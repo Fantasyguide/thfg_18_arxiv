@@ -1463,6 +1463,41 @@ void ce_hud_band_dim_tick(const float *pp)
     (void)hud_dim_tick(&s_band_dim, &r, pp);
 }
 
+int ce_hud_slot_count(void)
+{
+    int i, n = 0;
+    for (i = 0; i <= CE_SDK_CARD_ID_MAX; ++i) if (s_hud[i].used) ++n;
+    return n;
+}
+
+int ce_hud_slot_enum(int nth, uint32_t *out_id, ce_hud_slot_t *out)
+{
+    int i, n = 0;
+    if (nth < 0) return 0;
+    for (i = 0; i <= CE_SDK_CARD_ID_MAX; ++i) {
+        if (!s_hud[i].used) continue;
+        if (n++ != nth) continue;
+        if (out_id) *out_id = (uint32_t)i;
+        if (out) {
+            out->x = s_hud[i].x;
+            out->y = s_hud[i].y;
+            out->x640 = s_hud[i].x * CE_HUD_640_SCALE;
+            out->y640 = s_hud[i].y * CE_HUD_640_SCALE;
+            out->w = s_hud[i].w;
+            out->h = s_hud[i].h;
+            out->side = s_hud[i].side;
+        }
+        return 1;
+    }
+    return 0;
+}
+
+int ce_hud_band_dim_dimmed(void)
+{
+    if (!s_band_dim_inited) return 0;
+    return s_band_dim.dim ? 1 : 0;
+}
+
 int32_t ce_hud_band_dim_alpha(void)
 {
     if (!s_band_dim_inited) return HUD_DIM_ALPHA_FULL;

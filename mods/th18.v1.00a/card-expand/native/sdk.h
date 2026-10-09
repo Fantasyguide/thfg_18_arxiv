@@ -1159,14 +1159,23 @@ static inline void *ce_spawn_enemy(const char *ecl_name, const void *spawn_param
 
 /* ★ 2026-10-03k：带**美观规则**的认领（priority / own_row，语义见 `sdk_core.h`）——
  *   109 的 452 宽蓄力槽用 `_ex(…, 100, 1)`：优先级最高 + 独占底边那一行。*/
+/* ★ 2026-10-03r（owner：「你加一下 log，因为**十二合一是测试的终极形态**」）：
+ *   HUD 台账整表（定义在 `sdk.c`）。三个认领包装里**台账数量一变就打一份** ⇒
+ *   118（十二合一）把十二张卡陆续发齐的过程会留下一串排布现场。*/
+void ce_hud_slot_log_all(const char *tag);
+
 static inline int ce_hud_slot_claim_card_ex(uint32_t card_id, const ce_hud_block_t *blk,
                                             int priority, int own_row, ce_hud_slot_t *out)
 {
     /* 与 `ce_hud_slot_claim_card()` 逐字同款（关卡纪元 + 原生「当前卡」UI 在场声明），
      * 只多把**美观规则**（priority / own_row）透给分配器。*/
     ce_hud_stage_begin(CE_CURRENT_STAGE());
+    int n_before, ok;
     ce_hud_card_set(hud_card_present(*(void *const *)(CE_ABILITY_MGR() + CE_MGR_SELECTED_ACTIVE)));
-    return ce_hud_slot_claim_ex(card_id, blk, priority, own_row, out);
+    n_before = ce_hud_slot_count();
+    ok = ce_hud_slot_claim_ex(card_id, blk, priority, own_row, out);
+    if (ce_hud_slot_count() != n_before) ce_hud_slot_log_all("claim_ex");
+    return ok;
 }
 
 static inline int ce_hud_slot_claim_card(uint32_t card_id, const ce_hud_block_t *blk, ce_hud_slot_t *out)
@@ -1178,8 +1187,12 @@ static inline int ce_hud_slot_claim_card(uint32_t card_id, const ce_hud_block_t 
      *   —— 排布只在认领时算一次，所以在这里设一次就够。判据 = `ABILITY_MANAGER->+0x38`（一手，
      *   见 `engine/card/th18/15-selected-card-hud.md` §2/§3）。*/
     ce_hud_stage_begin(CE_CURRENT_STAGE());
+    int n_before, ok;
     ce_hud_card_set(hud_card_present(*(void *const *)(CE_ABILITY_MGR() + CE_MGR_SELECTED_ACTIVE)));
-    return ce_hud_slot_claim(card_id, blk, out);
+    n_before = ce_hud_slot_count();
+    ok = ce_hud_slot_claim(card_id, blk, out);
+    if (ce_hud_slot_count() != n_before) ce_hud_slot_log_all("claim");
+    return ok;
 }
 
 /* ★ 自带锚点认领（`CE_HUD_SIDE_PINNED`）：按用户量过的固定位置登记（117 用）。
@@ -1188,8 +1201,12 @@ static inline int ce_hud_slot_claim_pinned_card(uint32_t card_id, const ce_hud_b
                                                 float anchor_x, float anchor_y, ce_hud_slot_t *out)
 {
     ce_hud_stage_begin(CE_CURRENT_STAGE());
+    int n_before, ok;
     ce_hud_card_set(hud_card_present(*(void *const *)(CE_ABILITY_MGR() + CE_MGR_SELECTED_ACTIVE)));
-    return ce_hud_slot_claim_pinned(card_id, blk, anchor_x, anchor_y, out);
+    n_before = ce_hud_slot_count();
+    ok = ce_hud_slot_claim_pinned(card_id, blk, anchor_x, anchor_y, out);
+    if (ce_hud_slot_count() != n_before) ce_hud_slot_log_all("claim_pinned");
+    return ok;
 }
 
 static inline void ce_hud_slot_pos640(const ce_hud_slot_t *s, float *x640, float *y640)
