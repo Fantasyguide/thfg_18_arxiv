@@ -464,6 +464,18 @@ static int ipow10(int n) { int v = 1; while (n-- > 0) v *= 10; return v; }
 static int32_t s_hud_chg_label_vm, s_hud_chg_cur_vm, s_hud_chg_slash_vm, s_hud_chg_max_vm;
 static int32_t s_hud_chg_hold;      /* 蓄力键连续按住的帧数（一手：满 10 帧才显示 ✓）*/
 
+/* ★★★★ 2026-10-08 TH09 **自机上方「Gauge Filled / level」提示**（一手 script72–74 ✓）：
+ *   3 台 VM，随自机移动、中心锚点 ✓：
+ *     标签 `Gauge Filled` (0,−40) ✓／标签 `level` (−8,−28) ✓／档位数字 (+18,−28) ✓；
+ *   出现：★ **档位上涨那一帧** ✓（一手 `FUN_0041bc90` ⇒ `0x41bd26` 调 `0x41a320` 装这 3 支脚本 ✓）；
+ *   动画：淡入 `alphaTime(3,0,192)` ✓；`Gauge Filled` 灰(224,224,224)↔白、`level` 与数字 灰(160,160,160)↔白，
+ *         周期 **30 帧** ✓（一手 script72/73/74 的 `ins_37(计时器, 30)` ✓ —— 与 A 组的 10 帧不同 ✓）。
+ *   ❓显示时长一手没给（脚本是无限循环 ✓）⇒ 本卡取 **60 帧**（= 1 s 提示 ✓）**❓自定**，已登记 ✓。*/
+#define POFV_HUD_LV_SHOW 60
+static int32_t s_hud_lv_gf_vm, s_hud_lv_label_vm, s_hud_lv_digit_vm;
+static int32_t s_hud_lv_left;       /* 提示剩余帧 ✓ */
+static int32_t s_hud_lv_last_tier;  /* 上次看到的档位（检测上涨沿 ✓）*/
+
 static int32_t s_hud_bonus_vm;   /* ★ TH09 `Bonus!`（一手原图 th09 ascii.anm sprite107 ✓）*/
 static int32_t s_hud_ag_fill_vm, s_hud_ag_dot_vm[4];   /* TH19 gauge fill + 4 threshold markers (original art) */   /* TH19 Bonus label (cut from original art) */   /* ★ TH19 hits 标签（**切自原作字体** ✓ ascii.png y=56 行 ✓）*/   /* ★ TH09 連擊槽条 / TH19 攻击槽条（卡自建 VM ⇒ 必须在 clear_card 里真删 ✓ 铁律）*/
 static ce_hud_vm_text_t s_hud_hits_lbl;
@@ -2326,6 +2338,49 @@ static int on_tick_2(ce_card_t *c)
         }
     }
 
+    /* ★★★★ 2026-10-08 B 组「Gauge Filled / level」（一手 script72–74 ✓）*/
+    {
+        int32_t tier = (int32_t)(s_aura_charge / 50.0f);
+        if (tier < 0) tier = 0;
+        if (tier > POFV_HUD_CHG_MAX_TIER) tier = POFV_HUD_CHG_MAX_TIER;
+        if (tier > s_hud_lv_last_tier) s_hud_lv_left = POFV_HUD_LV_SHOW;   /* ★ 上涨沿 ⇒ 提示 60 帧 ✓ */
+        s_hud_lv_last_tier = tier;
+        if (s_hud_lv_left > 0) {
+            const float *pp = ce_player_pos();
+            float bx = pp ? pp[0] : 0.0f, by = pp ? pp[1] : 0.0f;
+            const int flash = ((s_card_frames / 30) & 1) ? 1 : 0;          /* 一手：30 帧一轮 ✓ */
+            --s_hud_lv_left;
+            if (!s_hud_lv_gf_vm)
+                s_hud_lv_gf_vm    = (int32_t)hud_vm_spawn(CE_ANM_ABILITY_SCRIPT_HUD_GLYPH, bx, by - 40.0f);
+            if (!s_hud_lv_label_vm)
+                s_hud_lv_label_vm = (int32_t)hud_vm_spawn(CE_ANM_ABILITY_SCRIPT_HUD_GLYPH, bx - 8.0f, by - 28.0f);
+            if (!s_hud_lv_digit_vm)
+                s_hud_lv_digit_vm = (int32_t)hud_vm_spawn(CE_ANM_ABILITY_SCRIPT_HUD_GLYPH, bx + 18.0f, by - 28.0f);
+            if (s_hud_lv_gf_vm) {
+                ce_anm_set_pos((uint32_t)s_hud_lv_gf_vm, bx, by - 40.0f, 0.0f);
+                ce_anm_set_sprite(CE_ABILITY_ANM(), (uint32_t)s_hud_lv_gf_vm,
+                                  CE_ANM_ABILITY_SPRITE_POFV109_TH09_UI_GAUGEFILLED);
+                ce_anm_set_color((uint32_t)s_hud_lv_gf_vm, flash ? 0xFFFFFFFFu : 0xFFE0E0E0u);
+            }
+            if (s_hud_lv_label_vm) {
+                ce_anm_set_pos((uint32_t)s_hud_lv_label_vm, bx - 8.0f, by - 28.0f, 0.0f);
+                ce_anm_set_sprite(CE_ABILITY_ANM(), (uint32_t)s_hud_lv_label_vm,
+                                  CE_ANM_ABILITY_SPRITE_POFV109_TH09_UI_LEVELLABEL);
+                ce_anm_set_color((uint32_t)s_hud_lv_label_vm, flash ? 0xFFFFFFFFu : 0xFFA0A0A0u);
+            }
+            if (s_hud_lv_digit_vm) {
+                ce_anm_set_pos((uint32_t)s_hud_lv_digit_vm, bx + 18.0f, by - 28.0f, 0.0f);
+                ce_anm_set_sprite(CE_ABILITY_ANM(), (uint32_t)s_hud_lv_digit_vm,
+                                  CE_ANM_ABILITY_SPRITE_POFV109_TH09_UI_DIGIT_0 + (uint32_t)tier);
+                ce_anm_set_color((uint32_t)s_hud_lv_digit_vm, flash ? 0xFFFFFFFFu : 0xFFA0A0A0u);
+            }
+        } else {
+            if (s_hud_lv_gf_vm)    { ce_anm_delete((uint32_t)s_hud_lv_gf_vm);    s_hud_lv_gf_vm = 0; }
+            if (s_hud_lv_label_vm) { ce_anm_delete((uint32_t)s_hud_lv_label_vm); s_hud_lv_label_vm = 0; }
+            if (s_hud_lv_digit_vm) { ce_anm_delete((uint32_t)s_hud_lv_digit_vm); s_hud_lv_digit_vm = 0; }
+        }
+    }
+
     /* ★ HUD hits：锁存 + 寿命递减（一手 120 帧 ✓）*/
     /* ★★ 调试 UI（owner）：事件列表（暴风延迟 ✓ / 击破·固灵 3 s ✓）+ 幽灵列表（只有内容、无位置 ✓）*/
     {
@@ -2473,6 +2528,7 @@ static int on_tick_2(ce_card_t *c)
         hs[nh++] = &s_hud_c2_vm; hs[nh++] = &s_hud_sp_frame_vm; hs[nh++] = &s_hud_sp_hit_vm;
         hs[nh++] = &s_hud_chg_label_vm; hs[nh++] = &s_hud_chg_cur_vm;
         hs[nh++] = &s_hud_chg_slash_vm; hs[nh++] = &s_hud_chg_max_vm;
+        hs[nh++] = &s_hud_lv_gf_vm; hs[nh++] = &s_hud_lv_label_vm; hs[nh++] = &s_hud_lv_digit_vm;
         for (ih = 0; ih < 6; ++ih) hs[nh++] = &s_hud_sp_digit_vm[ih];
         for (ih = 0; ih < 3; ++ih) hs[nh++] = &s_hud_hit_digit_vm[ih];
         for (ih = 0; ih < nh; ++ih)
