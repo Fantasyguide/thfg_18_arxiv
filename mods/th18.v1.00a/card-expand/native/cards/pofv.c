@@ -95,6 +95,21 @@ typedef void (__attribute__((thiscall)) *pofv_fn_bullet_cancel_t)(void *bullet, 
  *   （原版「被消的白弹投到对手场地」在单机没有对应 ⇒ 用户口径改成转成分）。 */
 #define POFV_BULLET_CANCEL_MODE     1
 
+/* ============================================================ 灵力道具（自建实体池）
+ * 纯逻辑在 `pofv_core.h` 的 §E（`pofv_power_*`）—— 这里只放**卡侧接线**：
+ *   · 池（文件级 `s_power`）；
+ *   · 两个**生成口**（owner 2026-10-08 定案）：① 击破敌人 ⇒ 1 颗（位置 = 敌机位置）；
+ *     ② 固灵结界碰到敌方弹幕 ⇒ 从**该弹的原位**撒（**必定掉、不做概率模型** ✗）；
+ *   · 每帧推进 + 收取入账（本卡的「攻击槽」= `s_ex_gauge`）；
+ *   · `clear_card()` 收干净（铁律：长持续效果删卡要交代）。
+ * ⚠ 视觉：**没有跟随 VM** —— 被删前那份用的是 `ability.anm` 脚本（当时的 374），
+ *   现在那个脚本号已被别的卡占用，而本批**不许改 `assets/`（任何资源）/ `sdk.h`** ⇒ 先只做逻辑，
+ *   视觉留到脚本号到位（❓ 未接，见 `TUNING.md` 登记）。*/
+#define POFV_POWER_SE_GET       0x25   /* ★ 一手：收取音（TH16 季节道具的拾取音 `0x25`）*/
+#define POFV_POWER_SE_LEVEL     0x3f   /* ★ 一手：**升档音** —— TH16 季节道具升档（`item_collect_season`）
+                                        *   播 `0x3f`（116 `season.c` 的 `SEASON_SE_LEVEL` 同源；
+                                        *   借做法已登记 `AUDIT §BE #166`）。本卡的对照事件 = EX 就绪阈值。*/
+
 /* ★★ 伤害：一手 = `0x53b7ef movss xmm2,[0x5aa368]`（**64.0**）+ `push 1` → `FUN_00530c60(blob, 64.0, 1)`，
  *   而 `FUN_00530c60` 把 `xmm2` 与最后的 `1` 转给每个目标的 `vft+0x30(pos, 64.0, 0, 1)`
  *   ⇒ **TH19 的暴风没有「扁平伤害数」**：它是「每帧、每台、半径 64 的一次命中、参数 = 1」，
@@ -122,6 +137,15 @@ typedef void (__attribute__((thiscall)) *pofv_fn_bullet_cancel_t)(void *bullet, 
  *   × 3 台 VM；照 116 / 117 的先例（`animal.c` 的 `s_tok`）。
  *   代价：所有清理必须**不依赖 tick** ⇒ 全在 `clear_card()` 里。 */
 static pofv_storm_pool_t s_storm;
+/* ★★ 2026-10-01（口径 5）：**灵力道具池**（自建实体，**不在引擎道具池里** ⇒ 只能本卡自己清）。
+ *   owner 2026-10-08 定案的两个生成口见 `on_enemy_death`（击破）与 `on_tick_2`（结界碰弹）。*/
+static pofv_power_pool_t  s_power;
+static int32_t            s_power_got;      /* 本次段累计收取的灵力道具颗数（诊断）*/
+static int                s_power_logged;   /* 「灵力道具池满丢弃」只记一行（防刷屏）*/
+static int32_t            s_aura_bullets;   /* 结界累计碰到的敌弹颗数（诊断）*/
+/* ★ 结界的**逐弹闩锁**：每颗弹只算一次（一手 TH19 `FUN_004ee770` 之后弹就没了 ⇒ 天然一次；
+ *   我们只「碰」不消 ⇒ 必须自己闩锁，否则同一颗弹每帧都会掉道具 ✗）。*/
+static uint8_t            s_aura_bullet_done[CE_BM_BULLET_COUNT];
 /* ★★ A 路（owner 2026-10-05 选）：灵 = **引擎真敌机**（`ce_spawn_enemy`，108 使魔/112 令牌同款原语）。
  *   ⚠ SDK 明令：**禁止在敌人死亡栈里调** `ce_spawn_enemy`（DEATH §2.4 重入）⇒
  *     死亡回调里**只入队**（`s_spirit_q`），真正的生成放在 `on_tick_2`。 */
@@ -869,6 +893,37 @@ static int cancel_white_in_circle(const float *pos, float r, int max_count, int 
     return n;
 }
 
+/* ★★ 固灵结界碰敌弹（owner 口径 6 ③「掉灵力道具」）—— 扫一遍弹池，把「**在结界内且本颗还没算过**」
+ *   的弹标成已算，最多把 `cap` 个位置抄进 `ox/oy`。返回本帧**新命中**的颗数。
+ *   ⚠ 与 `cancel_white_in_circle` 不同：这里**不消弹、只碰**（一手 TH19 的领域消弹会顺手消掉，
+ *     本卡不接管别人的弹）⇒ 用 `s_aura_bullet_done[]` 闩锁保证每颗弹只算一次。
+ *   几何 = `pofv_aura_hit_here()`（逐角色形状：圆 / 竖带 / 圆×扇形），`pad` = **这颗弹自己的半径**
+ *   （一手 TH19 传 `bullet+0x674`）。中心 = **自机**（本卡的结界就是挂在自机处）。*/
+static int aura_scan_bullets(const float *center, int cap, float *ox, float *oy)
+{
+    uint8_t *bm = CE_BULLET_MGR();
+    uint32_t i;
+    int n = 0;
+
+    if (!bm || !center || !ox || !oy || cap <= 0 || s_aura_r <= 0.0f) return 0;
+    for (i = 0; i < CE_BM_BULLET_COUNT; ++i) {
+        uint8_t *b = bm + CE_BM_BULLETS + (size_t)i * CE_BULLET_STRIDE;
+        uint16_t state = *(const uint16_t *)(b + CE_BULLET_STATE);
+        float br, bx, by;
+        if (state != 1 && state != 2) { s_aura_bullet_done[i] = 0; continue; }  /* 空槽 / 别的状态：清闩锁 */
+        if (s_aura_bullet_done[i]) continue;                                    /* ★ 这颗弹已经算过 */
+        br = *(const float *)(b + POFV_BULLET_RADIUS_OFF);
+        if (!(br > 0.0f)) continue;                                             /* 半径 0 的哨兵弹种：不算 */
+        bx = *(const float *)(b + CE_BULLET_POS);
+        by = *(const float *)(b + CE_BULLET_POS + 4);
+        if (!pofv_aura_hit_here(bx - center[0], by - center[1], br)) continue;
+        s_aura_bullet_done[i] = 1;
+        if (n < cap) { ox[n] = bx; oy[n] = by; }
+        ++n;
+    }
+    return n;
+}
+
 /* ============================ 伤害（一手：每帧每台一次半径 64 的命中、参数 = 1） ============================
  * 矩形**先裁到场地内**（否则场心靠边时会把还没进屏的敌人打死）。 */
 static int storm_hit_clipped(float cx, float cy, float r, int dmg)
@@ -985,6 +1040,20 @@ static void clear_card(ce_card_t *c)
         for (k = 0; k < POFV_STORM_VM_PARTS; ++k)
             if (s_storm_vm[i][k]) { ce_anm_delete((uint32_t)s_storm_vm[i][k]); s_storm_vm[i][k] = 0; }
     pofv_storm_pool_init(&s_storm);
+    /* ★★ 2026-10-01（口径 5）+ 铁律「长持续效果删卡要交代」：**灵力道具池**也是卡自建的实体
+     *   （不在引擎道具池里 ⇒ 没人替我们清）⇒ 删卡 / 换关 / 重开都在这里清干净。
+     *   ⚠ 与暴风不同：道具**没有跟随 VM**（本批没接视觉，见文件头的说明）⇒ 清了池就没有残留。*/
+    if (s_power.spawned || s_power_got || s_power.expired || s_power.dropped)
+        ce_log("pofv: power run done - %d made, %d picked (+%d pts), %d gone, %d packed away (pool %d)",
+               (int)s_power.spawned, (int)s_power.absorbed, (int)s_power_got,
+               (int)s_power.expired, (int)s_power.dropped, POFV_POWER_MAX);
+    if (s_aura_bullets)
+        ce_log("pofv: aura run done - %d enemy bullets touched by the barrier", (int)s_aura_bullets);
+    pofv_power_clear(&s_power);
+    s_power_got = 0; s_power_logged = 0; s_aura_bullets = 0;
+    {   int z9; for (z9 = 0; z9 < CE_BM_BULLET_COUNT; ++z9) s_aura_bullet_done[z9] = 0; }
+    /* （结界闩锁：与弹池一起清 ⇒ 删卡后不留幽灵标记；不引 `<string.h>` 的 `memset`，
+     *   与别的清池循环同一写法。）*/
     s_spirit_q_n = 0;                  /* 灵（真敌机）的待生成队列 */
     s_point_q = 0;
     pofv_acc_init(&s_acc); s_acc_last_x = 0.0f; s_acc_last_y = 0.0f;
@@ -1104,6 +1173,20 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
         return;                                             /* 离场**不算击破** ✓（不喂累计器 ✓）*/
     }
     if (!(ev->flags & CE_EDEATH_F_REAL)) return;           /* 真敌人（哨兵/特殊对象不算）*/
+    /* ★★★ owner 2026-10-08 定案（生成口 ①）：**击破敌人 ⇒ 撒 1 颗灵力道具** ——
+     *   位置 = **敌机位置**（`ev->x/ev->y`）、角度 **−π/2**、速度 **2.2**（= 一手 `FUN_00521d60`
+     *   的实参，见 `pofv_core.h` 的 `POFV_POWER_DROP_ANGLE/_SPEED`）。
+     *   ⚠ 放在 boss 早退**之前**：owner 的字面口径是「击破**敌人**」，boss 也是敌人
+     *     （被删前那份同样没有 boss 门 ⇒ 这里保持同口径；boss 死了也只多这一颗，20 分）。
+     *   成本 = 一次线性找空槽（≤ `POFV_POWER_MAX` 次比较）—— 清场帧 100–300 次也够便宜
+     *   （被删前那份的同一个取舍）。*/
+    if (pofv_power_spawn_dir(&s_power, ev->x, ev->y, POFV_POWER_PTS_KILL, POFV_POWER_SRC_KILL,
+                             POFV_POWER_DROP_ANGLE, POFV_POWER_DROP_SPEED) < 0) {
+        if (!s_power_logged) {
+            ce_log("pofv: power pool full (%d) — kill drop lost", POFV_POWER_MAX);
+            s_power_logged = 1;
+        }
+    }
     if (ev->enemy &&
         (*(const uint32_t *)((const uint8_t *)ev->enemy + CE_ENEMY_FLAGS) & CE_ENEMY_FLAG_BOSS))
         return;                                            /* ★ 杂鱼口径：boss 不起暴风 */
@@ -2982,6 +3065,57 @@ static int on_tick_2(ce_card_t *c)
     }
     pofv_storm_tick(&s_storm);
     storm_vm_sync();
+
+    /* ★★★ 生成口 ②（owner 2026-10-08 定案）：「**固灵结界碰到敌方弹幕 ⇒ 从该弹幕位置撒 1 颗**」，
+     *   **必定掉** —— ★ owner 明确「必定掉一颗」⇒ **不做概率模型** ✗
+     *   （一手 `FUN_004ee9b0` 的 `param_3 == 1` 支就是无条件的；`n%5` 那套属于 `param_3 == 4`，
+     *    别混）。
+     *   ⚠ 放在**本帧结界半径算完之后**（结界更新在上面）：这样位置/判定用的是**同一帧**的半径
+     *     （= 判定 = 绘制 ✓，一手口径）。
+     *   每帧上限 = `POFV_AURA_ITEMS_PER_FRAME`（❓ 自定护栏）；被截断的**面值不丢**
+     *   （`pofv_power_spawn_packed_at` 把余数摊到已撒的那几颗上）。*/
+    {
+        const float *ppa = ce_player_pos();
+        if (ppa && pofv_charge_key() && s_aura_r > 0.0f) {
+            float ox[POFV_AURA_ITEMS_PER_FRAME], oy[POFV_AURA_ITEMS_PER_FRAME];
+            int hit = aura_scan_bullets(ppa, POFV_AURA_ITEMS_PER_FRAME, ox, oy);
+            if (hit > 0) {
+                int32_t apts = 0;
+                pofv_power_spawn_packed_at(&s_power, ox, oy, hit, POFV_POWER_PTS_AURA,
+                                           POFV_AURA_ITEMS_PER_FRAME, POFV_POWER_SRC_AURA, &apts);
+                s_aura_bullets += hit;
+                if (hit >= POFV_AURA_ITEMS_PER_FRAME)     /* 每帧上限生效时留一行（诊断）*/
+                    ce_log("pofv: aura touched %d bullets (frame cap %d, packed %d pts)",
+                           hit, POFV_AURA_ITEMS_PER_FRAME, (int)apts);
+            }
+        }
+    }
+
+    /* ★★ 灵力道具推进（口径 5）：待发射 / 飞散 / 飘落 / 回收线 / 吸引 / 收取。
+     *   **回收线** = 现读 SDK 的 live 字段（`ce_poc_height_semantic()` —— SDK 纪律：我们自己的
+     *   判据读**语义高度**，不直写/直读 `player+0x47998`）⇒ 原版那张降 PoC 的卡改线时，本卡的道具
+     *   跟着变（用户 2026-09-15 口径）。本层是纯逻辑 ⇒ 这个值只能由卡侧传进去。
+     *   收取的面值进本卡的**攻击槽** `s_ex_gauge`（= TH19「灵力」在本卡的对应物；
+     *   ⚠ 这是**适配**，被删前那份进的是旧的「气槽」，当前架构已没有那个量 —— 见 `TUNING.md`）。*/
+    {
+        int32_t got_pts = 0;
+        int got_n = pofv_power_tick(&s_power, ce_player_pos(), ce_poc_height_semantic(), &got_pts);
+        if (got_n > 0 && got_pts > 0) {
+            const int32_t gauge0 = s_ex_gauge;
+            ce_play_sound(POFV_POWER_SE_GET, ce_player_x());   /* ★ 一手：收取音 */
+            s_ex_gauge += got_pts;
+            if (s_ex_gauge > POFV_EX_GAUGE_MAX) s_ex_gauge = POFV_EX_GAUGE_MAX;
+            /* ★ 一手：**升档**另有音（TH16 季节道具升档播 `0x3f`）—— 本卡的对照事件 = **EX 就绪**
+             *   （`s_ex_gauge` 首次到 `POFV_EX_FIRE_AT`）；❓ 这只是「本卡哪个事件算升档」的适配，
+             *   音本身与触发方式都是一手（登记 `TUNING.md`）。*/
+            if (gauge0 < POFV_EX_FIRE_AT && s_ex_gauge >= POFV_EX_FIRE_AT)
+                ce_play_sound(POFV_POWER_SE_LEVEL, ce_player_x());
+            s_power_got += got_n;
+            ce_log("pofv: power +%d (%d items, gauge %d/%d)", (int)got_pts, got_n,
+                   (int)s_ex_gauge, POFV_EX_GAUGE_MAX);
+        }
+    }
+
     return 0;
 }
 

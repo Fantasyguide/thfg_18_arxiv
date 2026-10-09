@@ -813,3 +813,341 @@ int pofv_scan_count_white(const float *radii, int n)
     for (i = 0; i < n; ++i) if (pofv_is_white_bullet(radii[i])) ++c;
     return c;
 }
+
+/* ============================================================ 灵力道具（自建实体池，见 pofv_core.h §E） */
+
+/* 8 方向单位向量（一批多颗时铺开用；**不引 libm** —— 0.70710678f = √2/2 字面量）。*/
+static const float s_power_dir[8][2] = {
+    {  1.0f,        0.0f       }, {  0.70710678f,  0.70710678f },
+    {  0.0f,        1.0f       }, { -0.70710678f,  0.70710678f },
+    { -1.0f,        0.0f       }, { -0.70710678f, -0.70710678f },
+    {  0.0f,       -1.0f       }, {  0.70710678f, -0.70710678f }
+};
+
+/* ★ 飞散方向 = **随机角**（一手：`randf_minus_pi_to_pi()`）的近似：**64 向单位向量表**取随机下标
+ *   = 5.6° 一档，肉眼与连续随机角无异。
+ *   ⚠ 表是**算出来的常数**（构建前用 Python `math.cos/sin` 生成一次、写死在这里）——
+ *     这是被删前那份的原始做法，**照搬不动**（改用 `cosf/sinf` 也等价，但没必要动已对齐的常数）。*/
+static const float s_scatter_dir[POFV_POWER_SCATTER_DIRS][2] = {
+    { -0.998795f, -0.049068f },
+    { -0.989177f, -0.146730f },
+    { -0.970031f, -0.242980f },
+    { -0.941544f, -0.336890f },
+    { -0.903989f, -0.427555f },
+    { -0.857729f, -0.514103f },
+    { -0.803208f, -0.595699f },
+    { -0.740951f, -0.671559f },
+    { -0.671559f, -0.740951f },
+    { -0.595699f, -0.803208f },
+    { -0.514103f, -0.857729f },
+    { -0.427555f, -0.903989f },
+    { -0.336890f, -0.941544f },
+    { -0.242980f, -0.970031f },
+    { -0.146730f, -0.989177f },
+    { -0.049068f, -0.998795f },
+    {  0.049068f, -0.998795f },
+    {  0.146730f, -0.989177f },
+    {  0.242980f, -0.970031f },
+    {  0.336890f, -0.941544f },
+    {  0.427555f, -0.903989f },
+    {  0.514103f, -0.857729f },
+    {  0.595699f, -0.803208f },
+    {  0.671559f, -0.740951f },
+    {  0.740951f, -0.671559f },
+    {  0.803208f, -0.595699f },
+    {  0.857729f, -0.514103f },
+    {  0.903989f, -0.427555f },
+    {  0.941544f, -0.336890f },
+    {  0.970031f, -0.242980f },
+    {  0.989177f, -0.146730f },
+    {  0.998795f, -0.049068f },
+    {  0.998795f,  0.049068f },
+    {  0.989177f,  0.146730f },
+    {  0.970031f,  0.242980f },
+    {  0.941544f,  0.336890f },
+    {  0.903989f,  0.427555f },
+    {  0.857729f,  0.514103f },
+    {  0.803208f,  0.595699f },
+    {  0.740951f,  0.671559f },
+    {  0.671559f,  0.740951f },
+    {  0.595699f,  0.803208f },
+    {  0.514103f,  0.857729f },
+    {  0.427555f,  0.903989f },
+    {  0.336890f,  0.941544f },
+    {  0.242980f,  0.970031f },
+    {  0.146730f,  0.989177f },
+    {  0.049068f,  0.998795f },
+    { -0.049068f,  0.998795f },
+    { -0.146730f,  0.989177f },
+    { -0.242980f,  0.970031f },
+    { -0.336890f,  0.941544f },
+    { -0.427555f,  0.903989f },
+    { -0.514103f,  0.857729f },
+    { -0.595699f,  0.803208f },
+    { -0.671559f,  0.740951f },
+    { -0.740951f,  0.671559f },
+    { -0.803208f,  0.595699f },
+    { -0.857729f,  0.514103f },
+    { -0.903989f,  0.427555f },
+    { -0.941544f,  0.336890f },
+    { -0.970031f,  0.242980f },
+    { -0.989177f,  0.146730f },
+    { -0.998795f,  0.049068f },
+};
+
+/* ★ 飞散方向/初速的伪随机源（xorshift32；**纯整数** ⇒ 单测可复现）。*/
+static uint32_t power_rng_next(pofv_power_pool_t *p)
+{
+    uint32_t x = p->rng ? p->rng : 0x1234567u;
+    x ^= x << 13; x ^= x >> 17; x ^= x << 5;
+    p->rng = x;
+    return x;
+}
+static float power_rng_unit(pofv_power_pool_t *p)      /* → [0, 1) */
+{
+    return (float)(power_rng_next(p) >> 8) * (1.0f / 16777216.0f);
+}
+
+void pofv_power_pool_init(pofv_power_pool_t *p)
+{
+    if (!p) return;
+    memset(p, 0, sizeof *p);
+}
+
+/* 内部：占一个空槽并写公共字段。返回槽号，−1 = 池满。 */
+static int power_take_slot(pofv_power_pool_t *p, float x, float y, int32_t value, int32_t src)
+{
+    int i;
+    for (i = 0; i < POFV_POWER_MAX; ++i) {
+        pofv_power_t *it = &p->s[i];
+        if (it->active) continue;
+        memset(it, 0, sizeof *it);
+        it->active = 1;
+        it->x = x;
+        it->y = y;
+        it->value = value;
+        it->life = POFV_POWER_LIFE;
+        it->src = src;
+        it->delay = POFV_POWER_LAUNCH_DELAY;   /* ★ 一手：出生 `item+0xc50 = 6` ⇒ 待发射 6 帧 */
+        it->st = 0;                           /* 出生在「飞散」态 */
+        ++p->seq;
+        ++p->live;
+        ++p->spawned;
+        return i;
+    }
+    return -1;                                /* 池满（打包撒会先算余量，正常到不了这里）*/
+}
+
+int pofv_power_spawn(pofv_power_pool_t *p, float x, float y, int32_t value, int32_t src)
+{
+    int i;
+    if (!p) return -1;
+    i = power_take_slot(p, x, y, value, src);
+    if (i < 0) return -1;
+    {
+        /* ★ 一手：出生角 = **随机 ±π**（`randf_minus_pi_to_pi()`）⇒ 用 64 向表取随机下标近似；
+         *   初速 = **`rand×1.9 + 0.2` ⇒ 0.2..2.1**（`0x41d880`–`0x41d8bb`）。*/
+        uint32_t di = power_rng_next(p) % POFV_POWER_SCATTER_DIRS;
+        p->s[i].dx = s_scatter_dir[di][0];
+        p->s[i].dy = s_scatter_dir[di][1];
+        p->s[i].lr = power_rng_unit(p) * POFV_POWER_SPEED_SCALE + POFV_POWER_SPEED_MIN;
+    }
+    return i;
+}
+
+int pofv_power_spawn_dir(pofv_power_pool_t *p, float x, float y, int32_t value, int32_t src,
+                         float ang, float spd)
+{
+    int i;
+    if (!p) return -1;
+    i = power_take_slot(p, x, y, value, src);
+    if (i < 0) return -1;
+    /* ★ 一手 `FUN_00521d60` 的实参就是「角度 + 速度」两个显式量 ⇒ 这里直接算单位向量
+     *   （层里已允许 libm：`cosf/sinf`，见本文件头的 `#include <math.h>`）。*/
+    p->s[i].dx = cosf(ang);
+    p->s[i].dy = sinf(ang);
+    p->s[i].lr = spd;
+    return i;
+}
+
+static int power_free_slots(const pofv_power_pool_t *p)
+{
+    int i, n = 0;
+    if (!p) return 0;
+    for (i = 0; i < POFV_POWER_MAX; ++i) if (!p->s[i].active) ++n;
+    return n;
+}
+
+int pofv_power_spawn_packed(pofv_power_pool_t *p, float x, float y, int32_t n_units,
+                            int32_t pts_each, int32_t max_spawn, int32_t src, int32_t *out_pts)
+{
+    int32_t total, k, base, rem, i, got = 0;
+    int free_slots;
+
+    if (out_pts) *out_pts = 0;
+    if (!p || n_units <= 0 || pts_each <= 0 || max_spawn <= 0) return 0;
+    total = n_units * pts_each;
+    if (total <= 0) {                            /* 溢出保护：真溢出就什么都不撒（不撒垃圾面值）*/
+        p->dropped += n_units;
+        return 0;
+    }
+    free_slots = power_free_slots(p);
+    k = n_units < max_spawn ? n_units : max_spawn;
+    if (k > free_slots) k = free_slots;
+    if (k <= 0) { p->dropped += n_units; return 0; }
+
+    /* ★ 打包：total 分摊到 k 颗上，**余数给第一颗** ⇒ Σ面值 == total（一颗都不少给）。*/
+    base = total / k;
+    rem  = total - base * k;
+    for (i = 0; i < k; ++i) {
+        float px = x, py = y;
+        int32_t v = base + (i == 0 ? rem : 0);
+        if (k > 1) {                             /* 多颗时铺开（只有一颗时原地 = 事件位置）*/
+            const float *d = s_power_dir[i & 7];
+            float rr = POFV_POWER_SPAWN_R * (float)((i / 8) + 1);
+            px += d[0] * rr;
+            py += d[1] * rr;
+        }
+        if (pofv_power_spawn(p, px, py, v, src) < 0) break;
+        got += v;
+    }
+    if (i < n_units) p->dropped += (n_units - i);
+    if (out_pts) *out_pts = got;
+    return (int)i;
+}
+
+int pofv_power_spawn_packed_at(pofv_power_pool_t *p, const float *ox, const float *oy,
+                               int32_t n_units, int32_t pts_each, int32_t max_spawn,
+                               int32_t src, int32_t *out_pts)
+{
+    int32_t total, k, base, rem, i, got = 0;
+    int free_slots;
+
+    if (out_pts) *out_pts = 0;
+    if (!p || !ox || !oy || n_units <= 0 || pts_each <= 0 || max_spawn <= 0) return 0;
+    total = n_units * pts_each;
+    if (total <= 0) { p->dropped += n_units; return 0; }
+    free_slots = power_free_slots(p);
+    k = n_units < max_spawn ? n_units : max_spawn;
+    if (k > free_slots) k = free_slots;
+    if (k <= 0) { p->dropped += n_units; return 0; }
+    base = total / k;
+    rem  = total - base * k;
+    for (i = 0; i < k; ++i) {                    /* 位置由调用方给（命中点原位）*/
+        int32_t v = base + (i == 0 ? rem : 0);
+        if (pofv_power_spawn_dir(p, ox[i], oy[i], v, src,
+                                 POFV_POWER_DROP_ANGLE, POFV_POWER_DROP_SPEED) < 0) break;
+        got += v;
+    }
+    if (i < n_units) p->dropped += (n_units - i);
+    if (out_pts) *out_pts = got;
+    return (int)i;
+}
+
+int pofv_power_tick(pofv_power_pool_t *p, const float *player, float poc_y, int32_t *out_pts)
+{
+    int i, got = 0;
+    int32_t pts = 0;
+    const float absorb2 = POFV_POWER_ABSORB_R * POFV_POWER_ABSORB_R;
+
+    if (out_pts) *out_pts = 0;
+    if (!p) return 0;
+    for (i = 0; i < POFV_POWER_MAX; ++i) {
+        pofv_power_t *it = &p->s[i];
+        if (!it->active) continue;
+        ++it->age;
+        /* ══ TH16 季节道具的状态机（owner：「**动态这块按照季节点做就行**」）════════════════════
+         *   一手逐条见 `engine/season/th16/01-season-data-and-tables.md` §4：
+         *     state 0 待发射 → 出生 `item+0xc50 = 6` ⇒ 6 帧不动、不建 VM
+         *     state 0 飞散   → pos += vel、速度 −0.03/帧、**无重力**、**角度不变**（`0x42f82c`–`0x42f83f`）
+         *     state 1 飘落   → **重力 0.03**（`0x4b90a4`）、`vy > 2.0 → 2.0`（`0x494558`）、
+         *                      `vy ≥ 0 ⇒ vx = 0`（`0x42fb5f` 起）＝只有竖直运动
+         *     state 4 回收线 → `player.y < POC` ⇒ 速度 = `sht+8` = 6.0（实读 `pl00.sht` 的 +8）
+         *     state 5 吸引   → 进吸引矩形 ⇒ 速度 = `sht+8/3` = 2.0，**每帧 +0.2、上限 12.0**（`0x4945d4`）
+         *   出界 = y 472 / |x| 200（比寿命更早释放）。
+         * ⚠ 「朝自机」的方向用 **Chebyshev 归一**（除以 |dx|,|dy| 的较大者）—— 走的是被删前那份的
+         *   原始写法（**不是**单位向量，但走向正确）；这是本实现唯一的近似，登记 `TUNING.md`。*/
+        if (it->delay > 0) { --it->delay; continue; }        /* 待发射 6 帧：什么都不做 */
+
+        if (player) {
+            float dx = player[0] - it->x;
+            float dy = player[1] - it->y;
+            float d2 = dx * dx + dy * dy;
+            if (d2 <= absorb2) {                 /* 收取：点入账、槽当场释放 */
+                pts += it->value;
+                it->active = 0;
+                --p->live;
+                ++p->absorbed;
+                ++got;
+                continue;
+            }
+            if (player[1] < poc_y) {
+                if (it->st != 2) it->st = 2;                  /* 过回收线（一手 state 4）*/
+            } else if (it->st != 3 &&
+                       dx >= -POFV_POWER_BOX_HALF_W && dx <= POFV_POWER_BOX_HALF_W &&
+                       dy >= -POFV_POWER_BOX_HALF_H && dy <= POFV_POWER_BOX_HALF_H) {
+                it->st = 3;                                   /* 进吸引矩形（一手 state 5）*/
+                if (it->mspd < POFV_POWER_MAG_SPEED0) it->mspd = POFV_POWER_MAG_SPEED0;
+            }
+        }
+
+        switch (it->st) {
+        case 0:                                              /* 飞散（定角、无重力）*/
+            it->x += it->dx * it->lr;
+            it->y += it->dy * it->lr;
+            it->lr -= POFV_POWER_DECEL;
+            if (it->lr <= 0.0f) { it->lr = 0.0f; it->st = 1; it->vy = 0.0f; }
+            break;
+        case 1:                                              /* ★ 飘落（加速下落 + 封顶）*/
+            it->vy += POFV_POWER_GRAVITY;
+            if (it->vy > POFV_POWER_FALL_MAX) it->vy = POFV_POWER_FALL_MAX;
+            it->y += it->vy;                                 /* `vy ≥ 0 ⇒ vx = 0`：只动 y */
+            break;
+        case 2:                                              /* 过回收线：朝自机 6.0/帧 */
+            if (player) {
+                float dx = player[0] - it->x, dy = player[1] - it->y;
+                float m = (dx < 0.0f ? -dx : dx), ay = (dy < 0.0f ? -dy : dy);
+                if (ay > m) m = ay;
+                if (m > 0.0001f) { it->x += dx / m * POFV_POWER_LINE_SPEED;
+                                   it->y += dy / m * POFV_POWER_LINE_SPEED; }
+            } else { it->st = 1; }                           /* 没有自机（单测/过场）：回去飘落 */
+            break;
+        default:                                             /* 吸引：每帧加速、上限 12.0 */
+            if (player) {
+                float dx = player[0] - it->x, dy = player[1] - it->y;
+                float m = (dx < 0.0f ? -dx : dx), ay = (dy < 0.0f ? -dy : dy);
+                it->mspd += POFV_POWER_MAG_ACCEL;
+                if (it->mspd > POFV_POWER_MAG_SPEED_MAX) it->mspd = POFV_POWER_MAG_SPEED_MAX;
+                if (ay > m) m = ay;
+                if (m > 0.0001f) { it->x += dx / m * it->mspd; it->y += dy / m * it->mspd; }
+            } else { it->st = 1; }
+            break;
+        }
+
+        /* ★ 一手：出界 = y **472** / |x| **200** ⇒ 释放（比寿命更早、更符合原版）。*/
+        if (it->y > POFV_POWER_OUT_Y ||
+            it->x <= -POFV_POWER_OUT_X || it->x >= POFV_POWER_OUT_X) {
+            it->active = 0; --p->live; ++p->expired; continue;
+        }
+        if (it->age >= it->life) { it->active = 0; --p->live; ++p->expired; }
+    }
+    if (out_pts) *out_pts = pts;
+    return got;
+}
+
+int pofv_power_clear(pofv_power_pool_t *p)
+{
+    int n;
+    if (!p) return 0;
+    n = p->live;
+    pofv_power_pool_init(p);
+    return n;
+}
+
+int32_t pofv_power_value_cancel(int32_t n_white, int32_t chain)
+{
+    int32_t c;
+    if (n_white <= 0) return 0;
+    c = clamp_i32(chain, 1, POFV_POWER_CHAIN_MAX);
+    return n_white * POFV_POWER_PTS_CANCEL * c;
+}

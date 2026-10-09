@@ -525,6 +525,259 @@ static void check_sp(void)
     CHECK(pofv_sp_take(NULL) == 0 && pofv_sp_threshold(NULL) == 0);
 }
 
+/* ---- 灵力道具（自建实体池）----
+ * 底本 = 被删前那份的单测（`ad1928bd^` 的 `tests/test_pofv_core.c` §G/§O），按当前架构适配：
+ *   ① **回收线**改由参数传入（`poc_y`）—— 本层是纯逻辑，卡侧现读 SDK 的 live 字段；
+ *   ② 生成实参改走一手值（角度 −π/2、速度 2.2）⇒ 新增 `pofv_power_spawn_dir()` 的用例。
+ * 钉住 owner 要的四件事：**状态机三段** / **回收线** / **吸引加速封顶** / **出界删**。*/
+static void power_launch(pofv_power_pool_t *q, const float *pp, float poc_y, int32_t *pts)
+{
+    int k;
+    for (k = 0; k < POFV_POWER_LAUNCH_DELAY; ++k) pofv_power_tick(q, pp, poc_y, pts);
+}
+
+static void check_power(void)
+{
+    pofv_power_pool_t pool;
+    /* `far`：自机在场地中段（y=200）—— 既不在回收线上方（200 ≥ POC），也与道具的 x 拉开 > 吸引盒半宽。*/
+    float far[3] = { 0.0f, 200.0f, 0.0f };
+    float pu[3]  = { 0.0f, 400.0f, 0.0f };    /* 同列、dy ≤ 120 ⇒ 进吸引盒 */
+    float pu3[3] = { 0.0f, 150.0f, 0.0f };    /* 线下方（150 ≥ POC 128）且 dy > 半高 ⇒ 都不进 */
+    float pc[3]  = { 0.0f, 200.0f, 0.0f };
+    int32_t pts = 0;
+    int j, k;
+
+    /* 常量 = 一手值（删掉任何一个都会让上面的状态机走形）*/
+    CHECK(POFV_POWER_DECEL == 0.03f);
+    CHECK(POFV_POWER_GRAVITY == 0.03f);
+    CHECK(POFV_POWER_FALL_MAX == 2.0f);
+    CHECK(POFV_POWER_SPEED_SCALE == 1.9f && POFV_POWER_SPEED_MIN == 0.2f);
+    CHECK(POFV_POWER_LAUNCH_DELAY == 6);
+    CHECK(POFV_POWER_MAG_SPEED0 == 2.0f && POFV_POWER_MAG_ACCEL == 0.2f);
+    CHECK(POFV_POWER_MAG_SPEED_MAX == 12.0f);
+    CHECK(POFV_POWER_OUT_Y == 472.0f && POFV_POWER_OUT_X == 200.0f);
+    CHECK(POFV_POWER_DROP_SPEED == 2.2f);
+    CHECK(POFV_POWER_DROP_ANGLE < -1.57f && POFV_POWER_DROP_ANGLE > -1.58f);   /* −π/2 */
+    CHECK(POFV_POWER_SCATTER_DIRS == 64);
+
+    /* 消弹面值：`n × PTS_CANCEL × clamp(chain,1,4)`（连爆档越界钳到 1 / 上限）*/
+    CHECK(pofv_power_value_cancel(0, 1) == 0);
+    CHECK(pofv_power_value_cancel(-3, 1) == 0);
+    CHECK(pofv_power_value_cancel(1, 1) == POFV_POWER_PTS_CANCEL);
+    CHECK(pofv_power_value_cancel(1, 3) == 3 * POFV_POWER_PTS_CANCEL);
+    CHECK(pofv_power_value_cancel(2, 2) == 4 * POFV_POWER_PTS_CANCEL);
+    CHECK(pofv_power_value_cancel(1, 0) == POFV_POWER_PTS_CANCEL);
+    CHECK(pofv_power_value_cancel(1, 99) == POFV_POWER_CHAIN_MAX * POFV_POWER_PTS_CANCEL);
+
+    /* ---- 池的不变式 + 一手生成实参（−π/2 / 2.2）---- */
+    pofv_power_pool_init(&pool);
+    CHECK(pool.live == 0 && pool.spawned == 0 && pool.dropped == 0);
+    CHECK(pofv_power_spawn_dir(&pool, 10.0f, 20.0f, POFV_POWER_PTS_KILL, POFV_POWER_SRC_KILL,
+                               POFV_POWER_DROP_ANGLE, POFV_POWER_DROP_SPEED) == 0);
+    CHECK(pool.live == 1 && pool.s[0].active == 1);
+    CHECK(pool.s[0].x == 10.0f && pool.s[0].y == 20.0f);
+    CHECK(pool.s[0].value == POFV_POWER_PTS_KILL && pool.s[0].life == POFV_POWER_LIFE);
+    CHECK(pool.s[0].src == POFV_POWER_SRC_KILL);
+    CHECK(pool.s[0].st == 0 && pool.s[0].delay == POFV_POWER_LAUNCH_DELAY);
+    CHECK(feq(pool.s[0].dx, 0.0f) && feq(pool.s[0].dy, -1.0f));           /* 角度 −π/2 ⇒ 正上方 */
+    CHECK(feq(pool.s[0].lr, POFV_POWER_DROP_SPEED));
+    CHECK(pofv_power_clear(&pool) == 1);
+    CHECK(pool.live == 0);
+
+    /* 随机出生（TH16 口味）：初速 = `rand×1.9+0.2` ⇒ 0.2..2.1、方向 = 64 向表的单位向量 */
+    pofv_power_pool_init(&pool);
+    CHECK(pofv_power_spawn(&pool, 0.0f, 0.0f, 1, POFV_POWER_SRC_AURA) == 0);
+    CHECK(pool.s[0].lr >= POFV_POWER_SPEED_MIN - 1e-6f &&
+          pool.s[0].lr <= POFV_POWER_SPEED_MIN + POFV_POWER_SPEED_SCALE + 1e-6f);
+    { float L = pool.s[0].dx * pool.s[0].dx + pool.s[0].dy * pool.s[0].dy;
+      CHECK(L > 0.98f && L < 1.02f); }
+
+    /* 打包撒：颗数被 `max_spawn` 截断，但**总面值守恒**（多的摊到已撒的那几颗上）*/
+    pofv_power_pool_init(&pool);
+    k = pofv_power_spawn_packed(&pool, 50.0f, 60.0f, 10, POFV_POWER_PTS_CANCEL, 4,
+                                POFV_POWER_SRC_CANCEL, &pts);
+    CHECK(k == 4 && pool.live == 4);
+    CHECK(pts == 10 * POFV_POWER_PTS_CANCEL);
+    { int32_t sum = 0;
+      for (j = 0; j < POFV_POWER_MAX; ++j) if (pool.s[j].active) sum += pool.s[j].value;
+      CHECK(sum == 10 * POFV_POWER_PTS_CANCEL); }
+    /* 只有一颗时**在原地**（不铺开）*/
+    pofv_power_pool_init(&pool);
+    CHECK(pofv_power_spawn_packed(&pool, 7.0f, 8.0f, 1, 20, 4, POFV_POWER_SRC_KILL, &pts) == 1);
+    CHECK(pts == 20 && pool.s[0].x == 7.0f && pool.s[0].y == 8.0f && pool.s[0].value == 20);
+    /* 非法入参：什么都不做 */
+    pofv_power_pool_init(&pool);
+    CHECK(pofv_power_spawn_packed(&pool, 0.0f, 0.0f, 0, 10, 4, 0, &pts) == 0 && pts == 0);
+    CHECK(pofv_power_spawn_packed(&pool, 0.0f, 0.0f, 5, 0, 4, 0, &pts) == 0 && pts == 0);
+    CHECK(pofv_power_spawn_packed(&pool, 0.0f, 0.0f, 5, 10, 0, 0, &pts) == 0 && pts == 0);
+    CHECK(pool.live == 0);
+
+    /* 多位置打包撒（结界碰敌弹）：位置 = 被碰到的弹的**原位**、面值守恒、方向 = 一手实参 */
+    {
+        const float ox[4] = { 1.0f, 2.0f, 3.0f, 4.0f };
+        const float oy[4] = { 10.0f, 20.0f, 30.0f, 40.0f };
+        pofv_power_pool_init(&pool);
+        CHECK(pofv_power_spawn_packed_at(&pool, ox, oy, 8, POFV_POWER_PTS_AURA, 4,
+                                         POFV_POWER_SRC_AURA, &pts) == 4);
+        CHECK(pts == 8 * POFV_POWER_PTS_AURA && pool.live == 4);
+        { int32_t sum = 0;
+          for (j = 0; j < 4; ++j) sum += pool.s[j].value;
+          CHECK(sum == 8 * POFV_POWER_PTS_AURA); }
+        CHECK(pool.s[0].x == 1.0f && pool.s[1].x == 2.0f && pool.s[3].y == 40.0f);
+        CHECK(feq(pool.s[0].dx, 0.0f) && feq(pool.s[0].dy, -1.0f));
+        CHECK(feq(pool.s[0].lr, POFV_POWER_DROP_SPEED));
+        /* 非法入参 / NULL 安全 */
+        CHECK(pofv_power_spawn_packed_at(&pool, ox, oy, 0, 5, 4, 0, &pts) == 0 && pts == 0);
+        CHECK(pofv_power_spawn_packed_at(0, ox, oy, 4, 5, 4, 0, &pts) == 0);
+        CHECK(pofv_power_spawn_packed_at(&pool, 0, oy, 4, 5, 4, 0, &pts) == 0);
+        CHECK(pofv_power_spawn_packed_at(&pool, ox, 0, 4, 5, 4, 0, &pts) == 0);
+        CHECK(pofv_power_spawn_packed_at(&pool, ox, oy, 4, 0, 4, 0, &pts) == 0);
+        CHECK(pofv_power_spawn_packed_at(&pool, ox, oy, 4, 5, 0, 0, &pts) == 0);
+    }
+
+    /* 池余量参与截断：只剩 2 格 ⇒ 只撒 2 颗，面值仍然全给；全满 ⇒ 一颗都撒不出、记账不崩 */
+    pofv_power_pool_init(&pool);
+    for (j = 0; j < POFV_POWER_MAX - 2; ++j) pofv_power_spawn(&pool, 0.0f, 0.0f, 1, 0);
+    CHECK(pool.live == POFV_POWER_MAX - 2);
+    k = pofv_power_spawn_packed(&pool, 0.0f, 0.0f, 10, 10, 4, POFV_POWER_SRC_CANCEL, &pts);
+    CHECK(k == 2 && pool.live == POFV_POWER_MAX && pts == 100);
+    CHECK(pofv_power_spawn_packed(&pool, 0.0f, 0.0f, 10, 10, 4, POFV_POWER_SRC_CANCEL, &pts) == 0);
+    CHECK(pts == 0 && pool.dropped >= 10);
+
+    /* 池满 / NULL 安全 */
+    pofv_power_pool_init(&pool);
+    for (j = 0; j < POFV_POWER_MAX; ++j)
+        CHECK(pofv_power_spawn_dir(&pool, (float)j, 0.0f, 1, 0, 0.0f, 1.0f) == j);
+    CHECK(pofv_power_spawn_dir(&pool, 0.0f, 0.0f, 1, 0, 0.0f, 1.0f) == -1);
+    CHECK(pool.live == POFV_POWER_MAX);
+    CHECK(pofv_power_clear(&pool) == POFV_POWER_MAX);
+    CHECK(pool.live == 0);
+    CHECK(pofv_power_spawn(0, 0.0f, 0.0f, 1, 0) == -1);
+    CHECK(pofv_power_spawn_dir(0, 0.0f, 0.0f, 1, 0, 0.0f, 1.0f) == -1);
+    CHECK(pofv_power_spawn_packed(0, 0.0f, 0.0f, 1, 1, 1, 0, &pts) == 0);
+    CHECK(pofv_power_spawn_packed_at(0, pc, pc + 1, 1, 1, 1, 0, &pts) == 0);
+    CHECK(pofv_power_tick(0, far, 128.0f, &pts) == 0 && pts == 0);
+    CHECK(pofv_power_clear(0) == 0);
+    pofv_power_pool_init(0);                            /* NULL 安全 */
+
+    /* 收取：进收取半径 ⇒ 点入账、槽当场释放（待发射 6 帧里还吸不走）*/
+    pofv_power_pool_init(&pool);
+    pofv_power_spawn_dir(&pool, 100.0f, 200.0f, 30, POFV_POWER_SRC_KILL, 0.0f, 0.0f);
+    pc[0] = 100.0f; pc[1] = 200.0f; pc[2] = 0.0f;       /* 自机就站在道具上 */
+    power_launch(&pool, pc, 100.0f, &pts);
+    CHECK(pool.live == 1 && pts == 0);
+    CHECK(pofv_power_tick(&pool, pc, 100.0f, &pts) == 1);
+    CHECK(pts == 30 && pool.live == 0 && pool.absorbed == 1);
+
+    /* ---- 状态机①：待发射 6 帧（一手 `item+0xc50 = 6`）→ 飞散（定角、速度 −0.03/帧、无重力）----
+     * 用「角 0 = +x」的道具，飞散段就是纯水平 ⇒ 断言 x 的位移与方向/重力的关系都干净。*/
+    pofv_power_pool_init(&pool);
+    pofv_power_spawn_dir(&pool, 0.0f, 0.0f, 10, POFV_POWER_SRC_KILL, 0.0f, 2.0f);
+    {   float x0 = pool.s[0].x, y0 = pool.s[0].y;
+        int g = 0;
+        while (pool.s[0].delay > 0 && g < 20) { pofv_power_tick(&pool, far, 128.0f, &pts); ++g; }
+        CHECK(g == POFV_POWER_LAUNCH_DELAY);            /* 整整 6 帧 */
+        CHECK(pool.s[0].delay == 0);
+        CHECK(pool.s[0].x == x0 && pool.s[0].y == y0); }  /* 待发射里一步不动 */
+    {   float l0 = pool.s[0].lr, x0 = pool.s[0].x, dx0 = pool.s[0].dx, dy0 = pool.s[0].dy;
+        pofv_power_tick(&pool, far, 128.0f, &pts);
+        CHECK(pool.s[0].st == 0);
+        CHECK(feq(pool.s[0].lr, l0 - POFV_POWER_DECEL));       /* 剩余速度每帧 −0.03 */
+        CHECK(feq(pool.s[0].x, x0 + dx0 * l0));                /* 位移 = 方向 × 剩余速度 */
+        CHECK(feq(pool.s[0].y, 0.0f + dy0 * l0));
+        CHECK(pool.s[0].dx == dx0 && pool.s[0].dy == dy0);     /* 角度不变 */
+        CHECK(pool.s[0].vy == 0.0f); }                         /* 飞散**无重力** */
+
+    /* ---- 状态机②：速度耗尽 ⇒ 飘落（重力 0.03/帧、vy 上限 2.0、`vy ≥ 0 ⇒ 只动 y`）---- */
+    for (k = 0; k < 200 && pool.s[0].st == 0; ++k) pofv_power_tick(&pool, far, 128.0f, &pts);
+    CHECK(pool.s[0].st == 1);
+    {   float x0 = pool.s[0].x, v0 = pool.s[0].vy;
+        pofv_power_tick(&pool, far, 128.0f, &pts);
+        CHECK(pool.s[0].x == x0);                              /* `vy ≥ 0 ⇒ vx = 0` */
+        CHECK(pool.s[0].vy > v0);
+        CHECK(pool.s[0].vy < v0 + POFV_POWER_GRAVITY + 1e-5f); }
+    for (k = 0; k < 400; ++k) pofv_power_tick(&pool, far, 128.0f, &pts);
+    CHECK(pool.s[0].vy <= POFV_POWER_FALL_MAX + 1e-6f);        /* 封顶 2.0 */
+
+    /* ---- 状态机③：过回收线（一手 `player.y < POC`）⇒ 全速（`sht+8` = 6.0）朝自机飞 ---- */
+    pofv_power_pool_init(&pool);
+    pofv_power_spawn_dir(&pool, 0.0f, 300.0f, 10, POFV_POWER_SRC_KILL, 0.0f, 2.0f);
+    {   float pu2[3] = { 0.0f, 100.0f, 0.0f };     /* 自机 y=100 < POC 128 ⇒ 在回收线上方 */
+        power_launch(&pool, pu2, 128.0f, &pts);
+        pofv_power_tick(&pool, pu2, 128.0f, &pts);
+        CHECK(pool.s[0].st == 2);
+        { float y0 = pool.s[0].y;
+          pofv_power_tick(&pool, pu2, 128.0f, &pts);
+          CHECK(pool.s[0].y < y0); } }             /* 朝自机（上）走 */
+    /* 线下方（自机 y ≥ POC）⇒ 不进回收线态（仍走飞散）*/
+    pofv_power_pool_init(&pool);
+    pofv_power_spawn_dir(&pool, 0.0f, 300.0f, 10, POFV_POWER_SRC_KILL, 0.0f, 2.0f);
+    {   /* 150 ≥ 128，且 dy=150 > 半高 120 ⇒ 也不进吸引盒 */
+        power_launch(&pool, pu3, 128.0f, &pts);
+        pofv_power_tick(&pool, pu3, 128.0f, &pts);
+        CHECK(pool.s[0].st == 0); }
+    /* POC 是**参数**：把线抬到 400 ⇒ 同一个站位（自机 y=150）就过线了 */
+    pofv_power_pool_init(&pool);
+    pofv_power_spawn_dir(&pool, 0.0f, 300.0f, 10, POFV_POWER_SRC_KILL, 0.0f, 2.0f);
+    power_launch(&pool, pu3, 400.0f, &pts);
+    pofv_power_tick(&pool, pu3, 400.0f, &pts);
+    CHECK(pool.s[0].st == 2);
+
+    /* ---- 状态机④：吸引盒 ⇒ 起步 2.0、每帧 +0.2、上限 12.0 ---- */
+    pofv_power_pool_init(&pool);
+    pofv_power_spawn_dir(&pool, POFV_POWER_BOX_HALF_W * 0.5f, 300.0f, 10, POFV_POWER_SRC_KILL,
+                         0.0f, 2.0f);
+    pu[0] = 0.0f; pu[1] = 400.0f; pu[2] = 0.0f;    /* 同列、dy = 100 ≤ 半高 120 ⇒ 进盒 */
+    power_launch(&pool, pu, 128.0f, &pts);
+    pofv_power_tick(&pool, pu, 128.0f, &pts);
+    CHECK(pool.s[0].st == 3);
+    CHECK(feq(pool.s[0].mspd, POFV_POWER_MAG_SPEED0 + POFV_POWER_MAG_ACCEL));  /* 起步 2.0，本帧 +0.2 */
+    { float m0 = pool.s[0].mspd;
+      pofv_power_tick(&pool, pu, 128.0f, &pts);
+      CHECK(feq(pool.s[0].mspd, m0 + POFV_POWER_MAG_ACCEL)); }
+    /* 封顶：把速度推到 11.9 ⇒ 这一帧只能到 12.0（不能更多）*/
+    pool.s[0].active = 1; pool.s[0].st = 3; pool.s[0].mspd = 11.9f;
+    pool.s[0].x = 0.0f; pool.s[0].y = 300.0f;
+    pofv_power_tick(&pool, pu, 128.0f, &pts);
+    CHECK(feq(pool.s[0].mspd, POFV_POWER_MAG_SPEED_MAX));
+    /* 放进收取半径 ⇒ 必被收（盒内朝自机走 ⇒ 有限帧内收干净）*/
+    pofv_power_pool_init(&pool);
+    pofv_power_spawn_dir(&pool, POFV_POWER_BOX_HALF_W * 0.5f, 300.0f, 10, POFV_POWER_SRC_AURA,
+                         0.0f, 2.0f);
+    power_launch(&pool, pu, 128.0f, &pts);
+    { int n2 = 0;
+      while (pool.live > 0 && n2 < 200) { pofv_power_tick(&pool, pu, 128.0f, &pts); ++n2; }
+      CHECK(pool.live == 0 && pts >= 10 && pool.absorbed == 1); }
+
+    /* ---- 出界删（一手：y 472 / |x| 200）⇒ 比寿命更早释放 ---- */
+    pofv_power_pool_init(&pool);
+    pofv_power_spawn_dir(&pool, 0.0f, POFV_POWER_OUT_Y - 1.0f, 10, POFV_POWER_SRC_KILL,
+                         1.5707964f, POFV_POWER_DROP_SPEED);     /* 角 +π/2 = 正下方 */
+    power_launch(&pool, far, 128.0f, &pts);
+    for (k = 0; k < 20 && pool.live > 0; ++k) pofv_power_tick(&pool, far, 128.0f, &pts);
+    CHECK(pool.live == 0 && pool.expired >= 1);
+    CHECK(pool.s[0].age < POFV_POWER_LIFE);                     /* 不是等寿命到的 */
+    pofv_power_pool_init(&pool);
+    pofv_power_spawn_dir(&pool, POFV_POWER_OUT_X - 1.0f, 300.0f, 10, POFV_POWER_SRC_KILL,
+                         0.0f, POFV_POWER_DROP_SPEED);          /* 角 0 = +x */
+    power_launch(&pool, far, 128.0f, &pts);
+    for (k = 0; k < 20 && pool.live > 0; ++k) pofv_power_tick(&pool, far, 128.0f, &pts);
+    CHECK(pool.live == 0 && pool.expired >= 1);
+    /* 没有自机（过场 / 单测）：只飘落，不吸引也不收取 */
+    pofv_power_pool_init(&pool);
+    pofv_power_spawn(&pool, 0.0f, 0.0f, 10, POFV_POWER_SRC_AURA);
+    power_launch(&pool, 0, 128.0f, &pts);
+    { float x0 = pool.s[0].x, y0 = pool.s[0].y;
+      CHECK(pofv_power_tick(&pool, 0, 128.0f, &pts) == 0 && pts == 0);
+      CHECK(pool.s[0].x != x0 || pool.s[0].y != y0); }
+
+    /* 寿命：到点自行消失（不刷屏）并记账 */
+    pofv_power_pool_init(&pool);
+    pofv_power_spawn_dir(&pool, 0.0f, 0.0f, 10, POFV_POWER_SRC_AURA, 0.0f, 0.0f);
+    for (k = 0; k < POFV_POWER_LIFE; ++k) pofv_power_tick(&pool, 0, 128.0f, &pts);
+    CHECK(pool.live == 0 && pool.expired == 1 && pts == 0);
+}
+
 int main(void)
 {
     check_ease();
@@ -543,6 +796,7 @@ int main(void)
     check_acc();
     check_hits();
     check_sp();
+    check_power();
     printf("pofv_core: %d passed, %d failed\n", s_pass, s_fail);
     return s_fail ? 1 : 0;
 }

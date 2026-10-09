@@ -418,6 +418,169 @@ void    pofv_acc_add2c(pofv_acc_t *a, int32_t n);
 int     pofv_acc_take30(pofv_acc_t *a, int32_t diff);
 int     pofv_acc_take2c(pofv_acc_t *a, int32_t diff);
 
+/* ════════════════════════════════════════════════════════════ 灵力道具（自建实体池；§E）
+ * ★★ 来路：这一段是 **2026-10-01「口径 5：灵力道具用 A」那一批**的复刻 —— 被「全删 109 卡」
+ *   (`ad1928bd`) 删掉之前它是**完整且已对齐一手**的（= `ad1928bd^`）。本次按符号逐个搬回，
+ *   并适配到当前架构（当前已没有 `pofv_state_t` / 连爆档 / 原生道具槽位）。
+ *
+ * 为什么**自建实体池**（而不是走原生道具）：一手核对（`SPEC-109-FUSION.md` §8.1）——
+ *   TH18 **没有干净的原生道具空号**：type 1/3 = 110/111 的满 P 转换目标、type 9..0xe = 107 的 ★
+ *   + 114 的点数载体、7 = 112 的整炸弹、8 = 115 的满 P、4/6/0x10/0x11 = 117/115/111 的碎片
+ *   ⇒ 用任何一号都会与别人的卡**串账**。先例：`cards/faith.c`（110/111 绿点）、
+ *   `cards/ufo.c`（112 令牌）、`cards/animal.c`（117 动物灵）。
+ *
+ * 经济口径（与「直接加点」等价，只是中间插了一层可拾取的实体）：
+ *   · **击破**：1 颗 × `POFV_POWER_PTS_KILL`（卡侧 `on_enemy_death` 撒，位置 = 敌机位置）；
+ *   · **固灵结界碰到敌弹**：从**该弹的原位**撒，**无条件掉**（owner 2026-10-08：
+ *     一手 `FUN_004ee9b0` 的 `param_3 == 1` 支就是无条件的 ⇒ **不做概率模型**；
+ *     `n%5` 那套属于 `param_3 == 4`，别混）；
+ *   · **消弹**（暴风蓝圈消掉的白弹）：`n × POFV_POWER_PTS_CANCEL`（`pofv_power_value_cancel()`）
+ *     —— ⚠ 本卡的**卡侧当前不接这条**（owner 2026-10-08 把生成口定案成上面两条）⇒
+ *     函数与单测保留、卡侧不调用（见 `TUNING.md` 的登记）。
+ *   一次事件要撒的颗数按「每帧上限 / 池余量」截断，**总面值不丢**（余数摊到已撒的几颗上）
+ *   —— 照 107 小樱点的打包先例（`pofv_power_spawn_packed*`）。
+ *
+ * ⚠ 池是**文件级**还是卡内由卡侧决定（本文件只给纯逻辑）；卡侧必须在删卡/换关路径上
+ *   （`on_delete` / `on_run_reset`）调 `pofv_power_clear()` —— METHOD 铁律「长持续效果删卡要收干净」
+ *   （这里没有 VM ⇒ 清了池就没有残留）。*/
+
+/* ★★ 2026-10-01（owner：「池满可以开大」「你得按连锁」）：同屏上限 48 → **192**。
+ *   理由：一颗只是一小组 float，扫一遍 O(192) 很便宜；48 在一波清场时会频繁「池满丢弃」。
+ *   ❓ 自定（池上限本身不是一手值；一手 TH19 的道具在管理器的固定数组里）。*/
+#define POFV_POWER_MAX              192
+/* ★ 一次事件**同一帧**最多撒几颗（防一帧把池子吃光；面值仍守恒 —— 多出来的并进已撒的那几颗）。*/
+#define POFV_POWER_KILL_SPAWN_MAX     8
+/* ❓ 自定（三个源每颗的**基准面值**；一手未给「道具 → 灵力/攻击槽」的换算，见 `TUNING.md` §2.0v-1 #2）：
+ *   · CANCEL = 旧实现的「消弹 +10」；KILL = 旧「击破 +20」；AURA = 口径 6 的结界源（最小一档）。*/
+#define POFV_POWER_PTS_CANCEL        10
+#define POFV_POWER_PTS_KILL          20
+#define POFV_POWER_PTS_AURA           5
+/* ❓ 自定（消弹源的每帧上限；口径 6 的护栏之一）*/
+#define POFV_POWER_SPAWN_PER_FRAME    4
+/* ❓ 自定（一批多颗时的铺开半径）*/
+#define POFV_POWER_SPAWN_R           24.0f
+
+/* ★ 飞散方向表长度：**64 向**单位向量（≈5.6° 一档）—— 一手要的是「角在 ±π 上随机」
+ *   （`randf_minus_pi_to_pi()`）⇒ 用**取随机下标**近似随机角（表体 = 构建前算好的常数数组）。*/
+#define POFV_POWER_SCATTER_DIRS        64
+/* ★ 一手：飞散期**剩余速度每帧 −0.03**（TH16 `item+0xc20`，`0x42f82c`–`0x42f83f`）——
+ *   ⇒ 飞散距离 = 速度²/(2×0.03)（初速 0.2..2.1 代入 = 0.7..73 px），**无重力**。*/
+#define POFV_POWER_DECEL              0.03f
+/* ★ 一手（TH16 季节道具 state 1「飘落」）：重力 `0.03`/帧（`0x4b90a4`）。*/
+#define POFV_POWER_GRAVITY            0.03f
+/* ★ 一手（同上）：`vy > 2.0 → 2.0`（`0x494558`）⇒ 从 0 加速到 2.0 封顶（约 67 帧）。*/
+#define POFV_POWER_FALL_MAX           2.0f
+/* ★ 一手（TH16 出生）：初速 = `randf_0_to_1() × 1.9 + 0.2` ⇒ **0.2..2.1**（`0x41d880`–`0x41d8bb`）。*/
+#define POFV_POWER_SPEED_SCALE        1.9f
+#define POFV_POWER_SPEED_MIN          0.2f
+/* ★ 一手：出生的道具 `item+0xc50 = 6` ⇒ **待发射 6 帧**（期间不动、不建 VM）。*/
+#define POFV_POWER_LAUNCH_DELAY         6
+/* ★ 一手：`player.y < POC` 过**回收线** ⇒ 飞向自机、速度 = `sht+8` ——
+ *   实读零售 `pl00.sht` 的 `+8` = **6.0**（`2.0, 6.0, 28.0, 4.5` 里的第二个）。*/
+#define POFV_POWER_LINE_SPEED         6.0f
+/* ★ 一手：进**吸引矩形** ⇒ 速度 = `sht+8 / 3` = **2.0**，**每帧 +0.2、上限 12.0**（`0x4945d4`）。*/
+#define POFV_POWER_MAG_SPEED0         2.0f
+#define POFV_POWER_MAG_ACCEL          0.2f
+#define POFV_POWER_MAG_SPEED_MAX     12.0f
+/* ❓ 自定：吸引**矩形**的半宽/半高 —— 一手只写「`item_attract_box_focused/unfocused` 矩形」，
+ *   矩形的具体数值本仓还没逆到 ⇒ 先给一组手感值（比旧的圆半径 56 更宽、更扁）。*/
+#define POFV_POWER_BOX_HALF_W        56.0f
+#define POFV_POWER_BOX_HALF_H       120.0f
+/* ★ 一手：出界判据 = y **472** / |x| **200** ⇒ 比寿命更早释放。*/
+#define POFV_POWER_OUT_Y            472.0f
+#define POFV_POWER_OUT_X            200.0f
+/* ❓ 自定（收取半径：进这个圈就算收到、槽当场释放）。*/
+#define POFV_POWER_ABSORB_R          12.0f
+/* ❓ 自定（寿命帧；到点自行消失，不刷屏）。*/
+#define POFV_POWER_LIFE             600
+/* ★★ 一手（owner 2026-10-08 定案：道具**从原位往正上方弹**）：
+ *   `FUN_00521d60(kind=2, pos, …, **−π/2**, **2.2f**, …)`（TH19 `0x4eeb04`，`06-aura.md` §8.4 表）
+ *   ＝ TH18 原生 main-drop 的实参（`sdk.h:410` 同一条注：`(type, 敌pos, 垃圾, −π/2, 2.2f, 0)`）
+ *   ⇒ 本卡的**击破源 / 结界碰弹源**都用这一对（角度 −π/2 = 正上方；速度 2.2）。*/
+#define POFV_POWER_DROP_ANGLE   (-1.5707964f)
+#define POFV_POWER_DROP_SPEED         2.2f
+/* ★ 一手（TH09 `POFV_BLAST_CHAIN_MAX` = 4）：`pofv_power_value_cancel()` 的连爆档上限。
+ *   ⚠ 当前架构的暴风已没有「连爆档」这个量（`pofv_storm_t` 只有 target/tween/dmg、没有 chain）
+ *     ⇒ 卡侧**恒传 1**（无乘数）；`clamp` 保留是为了这个函数的语义完整 + 单测。*/
+#define POFV_POWER_CHAIN_MAX            4
+/* ❓ 自定（结界「每帧上限」；口径 6 的护栏之一）—— 也是「擦弹掉道具」的每帧颗数上限。*/
+#define POFV_AURA_ITEMS_PER_FRAME       4
+
+/* 撒道具的三个来源（诊断 / 日志口径）。*/
+typedef enum {
+    POFV_POWER_SRC_CANCEL = 0,   /* 消弹（暴风蓝圈消掉的白弹）*/
+    POFV_POWER_SRC_KILL   = 1,   /* 击破敌人 */
+    POFV_POWER_SRC_AURA   = 2    /* 固灵结界碰到敌弹（口径 6）*/
+} pofv_power_src_t;
+
+typedef struct {
+    int32_t active;
+    float   x, y;        /* 世界坐标（卡侧维护 + 画 VM）*/
+    int32_t value;       /* 收取时加的充能点（**打包值**，可能 > 基准面值）*/
+    int32_t age;
+    int32_t life;        /* 寿命帧（到点自行消失）*/
+    int32_t src;         /* pofv_power_src_t（诊断 / 日志）*/
+    /* ★★ TH16 季节道具的状态机字段（owner：「动态这块按照季节点做就行」✓）：
+     *   0 = 飞散 / 1 = 飘落 / 2 = 过回收线 / 3 = 被吸引。*/
+    int32_t st;
+    float   vy;          /* 飘落阶段的竖直速度（重力累加、上限 `POFV_POWER_FALL_MAX`）*/
+    float   mspd;        /* 吸引阶段的速度（每帧 +0.2、上限 12.0）*/
+    int32_t delay;       /* 待发射的延时（> 0 时本帧不动）*/
+    float   dx, dy;      /* 飞散方向的单位向量（= TH16 `item+0xc24` 那个角）*/
+    float   lr;          /* ★ 剩余速度（= TH16 `item+0xc20`，每帧 −`POFV_POWER_DECEL`）*/
+} pofv_power_t;
+
+typedef struct {
+    uint32_t rng;                    /* ★ 飞散方向/初速的伪随机源（xorshift32；单测可复现）*/
+    pofv_power_t s[POFV_POWER_MAX];
+    int32_t seq;         /* 出生序号（诊断）*/
+    int32_t live;
+    int32_t spawned;     /* 累计撒出颗数（诊断）*/
+    int32_t absorbed;    /* 累计收取颗数（诊断）*/
+    int32_t expired;     /* 累计出界 / 寿命到期消失颗数（诊断）*/
+    int32_t dropped;     /* 因池满 / 每帧上限被**打包吞掉**的颗数（诊断；面值不丢）*/
+} pofv_power_pool_t;
+
+void pofv_power_pool_init(pofv_power_pool_t *p);
+
+/* ★ 消弹源要撒的**总面值**（打包前的账）：`n_white × POFV_POWER_PTS_CANCEL × clamp(chain,1,4)`。
+ *   保留原来「连爆质量越高、同样的白弹给得越多」的味道（旧 `pofv_account_blast` 的 `× c`）。*/
+int32_t pofv_power_value_cancel(int32_t n_white, int32_t chain);
+
+/* 撒一颗（`value` = 面值；方向 = 随机 ±π、初速 = `rand×1.9+0.2`）。返回槽号，−1 = 池满。*/
+int  pofv_power_spawn(pofv_power_pool_t *p, float x, float y, int32_t value, int32_t src);
+
+/* ★ 撒一颗**指定角/速**的（一手 `FUN_00521d60` 的实参；`ang` 单位弧度 ——
+ *   本引擎约定 0 = +x、π/2 = +y 正下方）。击破源 / 结界碰弹源走这条。返回槽号，−1 = 池满。*/
+int  pofv_power_spawn_dir(pofv_power_pool_t *p, float x, float y, int32_t value, int32_t src,
+                          float ang, float spd);
+
+/* ★ **打包撒**：把「`n_units` 份 × `pts_each`」的总面值摊到最多 `max_spawn` 颗实体上
+ * （在 (x,y) 周围 `POFV_POWER_SPAWN_R` 内铺开；只有一颗时就在原点）。
+ * 实际颗数还会被池余量钳住 ⇒ **面值守恒**（余数给第一颗）；一颗都撒不出时 `*out_pts = 0`。
+ * 返回实际撒出的颗数。*/
+int  pofv_power_spawn_packed(pofv_power_pool_t *p, float x, float y, int32_t n_units,
+                             int32_t pts_each, int32_t max_spawn, int32_t src, int32_t *out_pts);
+
+/* ★ **多位置打包撒**（结界碰弹用）：把「`n_units` 份 × `pts_each`」的总面值摊到
+ * `k = min(n_units, max_spawn, 池余量)` 个**调用方给的位置**上（`ox`/`oy` 至少这么多个）。
+ * 方向/速度走一手实参（`POFV_POWER_DROP_ANGLE` / `_DROP_SPEED`）。
+ * 总面值守恒（余数给第一颗）；`*out_pts` = 实际撒出的总面值。返回实际撒出的颗数。*/
+int  pofv_power_spawn_packed_at(pofv_power_pool_t *p, const float *ox, const float *oy,
+                                int32_t n_units, int32_t pts_each, int32_t max_spawn,
+                                int32_t src, int32_t *out_pts);
+
+/* 每帧推进：待发射 → **飞散**（定角、速度每帧 −0.03、无重力）→ **飘落**（重力 0.03、`vy` 上限 2.0、
+ * `vy ≥ 0 ⇒ vx = 0`）+ 过**回收线**全速吸 + 吸引盒内加速吸 + 到收取半径**收取**（点累加进 `*out_pts`）。
+ * `player` = 自机 float3（NULL 时只飘落、不吸引也不收取 ⇒ 供单测/无自机帧）；
+ * `poc_y` = **回收线高度** —— 卡侧现读 SDK 的 live 字段（`ce_poc_height_semantic()`）传进来：
+ *   本层是**纯逻辑**（不含引擎地址）⇒ 不自己读全局。`player[1] < poc_y` = 自机在回收线上方。
+ * 返回本帧收取的**颗数**；`*out_pts` = 本帧收取的总面值（卡侧入账）。*/
+int  pofv_power_tick(pofv_power_pool_t *p, const float *player, float poc_y, int32_t *out_pts);
+
+/* 删除所有实体（`clear_card()` / `on_delete` 用；返回清掉的颗数）。*/
+int  pofv_power_clear(pofv_power_pool_t *p);
+
 /* ============================================================ 可消弹的判据（TH18 侧）*/
 
 /* ★★ owner 口径：「**th18 不存在白弹**，用我之前设计过的**能消那些弹**的判据」。
