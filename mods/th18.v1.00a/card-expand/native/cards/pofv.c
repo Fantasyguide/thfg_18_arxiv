@@ -2848,8 +2848,17 @@ static void on_delete(ce_card_t *c)    { clear_card(c); }
  *   不进释放态 ⇒ **按 C 什么都不发生** ✓。真正的蓄力（按住 C 的电平）以后由卡侧自己读键驱动。 */
 static int on_activate(ce_card_t *c)
 {
+    /* ★★★★ 2026-10-08 owner：「但是这个 **refused 不能触发那个 refused 的音效**」✗ ⇒ 改法 ✓：
+     *   原先 `return CE_ACTIVATE_REFUSED` ⇒ **引擎原生**会放「主动卡发动被拒」的音效 ✗
+     *   （⚠ 注意：本卡**从来没有调过** `ce_refuse()` —— 那个 `0x10` 音是 SDK 的 `ce_refuse` 放的 ✓，
+     *     我们的裸常量不走它 ✗ ⇒ 所以那声音是**引擎自己**的 ✓）。
+     *   ⇒ 改成 **`return 0`**：SDK 视作「**发动成功、且立即不持续**」✓
+     *     （`ce_sdk_active_tick`: `a->state = sustain ? 1 : 2` ⇒ 直接进释放态 ✓）
+     *     ⇒ **引擎认为发动过了 ⇒ 不发拒绝音** ✓，而卡侧依旧**什么都不做** ✓（真正蓄力靠卡侧自己读 C 电平 ✓）。
+     *   ❓副作用：发动成功 ⇒ 引擎/SDK 会走一次「释放」收尾 + 可能进 `active_recharge` 的冷却 ✓
+     *     （109 的 `active_recharge` 很小 ⇒ 实测若无感就保持 ✓；有冷却感则在 TUNING 登记后调 ✓）。*/
     (void)c;
-    return CE_ACTIVATE_REFUSED;      /* 占位：不做任何事 */
+    return 0;                        /* 发动成功、立即结束 ⇒ 无拒绝音 ✓ */
 }
 
 /* ★★★ 固灵结界的**输入**（一手 §3.5：长按 CHARGE 展开，与蓄力同时）。
