@@ -1302,6 +1302,16 @@ int main(void)
      * ⇒ 阈值 `YK_EMIT_WAVE_GAP`(24) 能把「波内 12 帧」与「波间 ≥60 帧」分开。*/
     CHECK(YK_EMIT_WAVE_GAP == 24);
     CHECK(YK_EMIT_WAVE_GAP > 12 && YK_EMIT_WAVE_GAP < 60);   /* 一手两个间隔之间 */
+    /* ★★★ 2026-10-01（#209 · owner 主需求「打死使魔 ⇒ 关闭发射口」）：**自适应判据**
+     *   `yk_emit_gap_is_new_wave(eton_gap, gap_ref)` = 间隔 ≥ 24 **且** ≥ `4 × gap_ref`
+     *   ⇒ **缓发敌人（波内间隔就有 30/60 帧）不会被误判成「新一波」而白放行**。*/
+    CHECK(yk_emit_gap_is_new_wave(10, 5) == 0);      /* 波内（短间隔）*/
+    CHECK(yk_emit_gap_is_new_wave(24, 5) == 1);      /* 24 ≥ max(24, 20) ⇒ 新波 */
+    CHECK(yk_emit_gap_is_new_wave(24, 12) == 0);     /* ★ st4 类：波内 12 帧 ⇒ 24 **不算**新波 */
+    CHECK(yk_emit_gap_is_new_wave(60, 12) == 1);     /* 真波间（60 ≥ 48）*/
+    CHECK(yk_emit_gap_is_new_wave(30, 30) == 0);     /* ★ 缓发敌人：30 帧节奏 ⇒ 30 不放行 */
+    CHECK(yk_emit_gap_is_new_wave(200, 30) == 1);    /* 缓发敌人的真波间 */
+    CHECK(yk_emit_gap_is_new_wave(300, 0) == 1);     /* 还没观测到节奏 ⇒ 只用绝对阈值 */
     yk_map_reset(&m);
     yk_frame_begin(&m);
     CHECK(yk_note_slot(&m, 850, 0, 1, p1, &a) == 1 && a.kind == YK_ACT_CREATE);
@@ -1311,20 +1321,31 @@ int main(void)
         unsigned gbase = yk_map_gap_releases(&m);
         unsigned i;
         CHECK(yk_shot_slot_gate(&m, 850, 0, 0) == 1);           /* 本波第一条 etOn：照掐 */
-        /* 波内：连跑 `YK_EMIT_WAVE_GAP-1` 帧再问 ⇒ **不**放行（还是同一波）*/
-        for (i = 1; i < (unsigned)YK_EMIT_WAVE_GAP; ++i) {
+        /* 先在**波内**打两发（间隔 5 帧）⇒ 让闸学到「这一槽的常规节奏 = 5 帧」*/
+        for (i = 0; i < 2; ++i) {
+            int f;
+            for (f = 0; f < 5; ++f) { yk_frame_begin(&m); CHECK(yk_note_slot(&m, 850, 0, 1, p1, &a) == 0); }
+            CHECK(yk_shot_slot_gate(&m, 850, 0, 0) == 1);       /* 5 帧间隔 ⇒ 波内 ⇒ 仍掐 */
+        }
+        CHECK(yk_map_gap_releases(&m) == gbase);
+        /* 波内长间隔（24 帧 < 4×5=20? 不成立 ⇒ 24 ≥ 20 会放行；这里用 23 帧验证「不够长不放行」）*/
+        for (i = 0; i < (unsigned)(YK_EMIT_WAVE_GAP - 1); ++i) {
             yk_frame_begin(&m);
-            CHECK(yk_note_slot(&m, 850, 0, 1, p1, &a) == 0);     /* broken ⇒ 不重建 */
+            (void)yk_note_slot(&m, 850, 0, 1, p1, &a);
         }
         CHECK(yk_shot_slot_gate(&m, 850, 0, 0) == 1);           /* 间隔 < 阈值 ⇒ 仍掐 */
         CHECK(yk_map_gap_releases(&m) == gbase);
-        /* 跨过阈值：再攒够帧数 ⇒ 判定「新的一波」⇒ **放行**（这一发照发）+ 记账 */
+        /* 跨过阈值（≥24 且 ≥ 4×5=20）⇒ 判定「新的一波」⇒ **放行**（这一发照发）+ 记账 */
         for (i = 0; i < (unsigned)YK_EMIT_WAVE_GAP; ++i) {
             yk_frame_begin(&m);
             (void)yk_note_slot(&m, 850, 0, 1, p1, &a);          /* 每帧的卡 tick（年龄在这里涨）*/
         }
         CHECK(yk_shot_slot_gate(&m, 850, 0, 0) == 0);           /* ★ 放行（关键断言）*/
         CHECK(yk_map_gap_releases(&m) == gbase + 1);            /* ★ 记一笔「间隔 ⇒ 波次」*/
+        /* ★ #209 端到端账：#209 的判据行 = 「这一槽放行前被否决过几条 etOn」*/
+        CHECK(yk_map_last_release_slot(&m) == 0);
+        CHECK(yk_map_last_release_enemy(&m) == 850);
+        CHECK(yk_map_last_release_vetoed(&m) >= 4);             /* 夹持期里确实被否决过多条 */
         CHECK(yk_shot_slot_suppressed(&m, 850, 0, 0) == 0);     /* 夹持态已清 ⇒ 闸恒放 */
         /* 使魔在下一帧被 1:1 映射重建；重建后再打死 ⇒ 新一波照旧从 0 起算 */
         CHECK(yk_note_slot(&m, 850, 0, 1, p1, &a) == 1 && a.kind == YK_ACT_CREATE);
@@ -1364,7 +1385,8 @@ int main(void)
 
     /* ============ ★★★ 2026-10-01（owner 拍板 **D2 = 插值跟随**）：`yk_follow_step()` ============
      * 一手量级 = TH08 `moveRandTime(60, 4, 1.0f)`（60 帧飞过去）；语义见 `youkai_core.h`。*/
-    CHECK(YK_EMIT_FOLLOW_FRAMES == 60);
+    /* ★ 2026-10-01 晚：owner 拍「那还是瞬移吧」⇒ 发布默认 = **0 = 硬钉**（D2 插值代码保留，旋钮调 >0 即启用）。*/
+    CHECK(YK_EMIT_FOLLOW_FRAMES == 0);
     {
         float p[2];
         /* ① `frames = 0` ⇒ 硬钉（旧行为）*/
@@ -1401,6 +1423,21 @@ int main(void)
         CHECK(p[0] == 30.0f && p[1] == 40.0f);
         /* ⑥ 空指针安全 */
         yk_follow_step(0, 0.0f, 0.0f, 1.0f, 1.0f, 1, 60);
+    }
+
+    /* ============ ★★★ 2026-10-01（owner：「瞬移不会重建血量吧」）：重建判据与位置无关 ============
+     * `yk_shell_needs_rebuild(have_shell, broken)` **入参里没有位置** —— 这就是「瞬移不重建」的结构性证明；
+     * 位置那条路（`yk_pin_follow_step`/`yk_pin_familiar`）只写 `CE_ENEMY_POS_X/Y` 与 `YK_ENEMY_ABS_POS`。*/
+    CHECK(yk_shell_needs_rebuild(0, 0) == 1);      /* 没壳、没被打死 ⇒ 建 */
+    CHECK(yk_shell_needs_rebuild(1, 0) == 0);      /* 有活壳 ⇒ **绝不**重建（无论它挪到哪）*/
+    CHECK(yk_shell_needs_rebuild(1, 1) == 0);
+    CHECK(yk_shell_needs_rebuild(0, 1) == 0);      /* 被打死 ⇒ 由闸/波次边沿决定，不在这里重建 */
+    /* 位置变化不影响任何寿命/重建判据：`yk_follow_step` 只写 xy[0]/xy[1]（结构上无别的出口）。*/
+    {
+        float q[2];
+        q[0] = 3.0f; q[1] = 4.0f;
+        yk_follow_step(q, 0.0f, 0.0f, 60.0f, 0.0f, 30, 60);
+        CHECK(q[0] == 30.0f && q[1] == 0.0f);       /* 只有位置被写 */
     }
 
     /* ============ §3.10 人妖槽（TH08 `youkaiGauge`；限值/判定/几何全部一手）============ */

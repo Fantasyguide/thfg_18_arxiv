@@ -448,6 +448,11 @@ unsigned yk_map_rearms(const yk_map_t *m)
 }
 
 /* ★★★ 2026-10-01（owner 实跑 ②）：`etOn` 间隔判出来的「波次边沿」放行了几次（只增不清）。*/
+/* ★ #209：放行上下文（卡侧打 `youkai/emit: slot i ... vetoed K etOns` 那一行用）。*/
+unsigned yk_map_last_release_enemy(const yk_map_t *m)  { return m ? m->last_rel_enemy : 0u; }
+unsigned yk_map_last_release_slot(const yk_map_t *m)   { return m ? (unsigned)m->last_rel_slot : 0u; }
+unsigned yk_map_last_release_vetoed(const yk_map_t *m) { return m ? (unsigned)m->last_rel_vetoed : 0u; }
+
 unsigned yk_map_gap_releases(const yk_map_t *m)
 {
     return m ? m->gap_releases : 0u;
@@ -523,6 +528,9 @@ static void yk_fill_action(yk_action_t *a, int kind, const yk_slot_t *e)
     a->y = e->y;
 }
 
+/* ★ #209：放行上下文记录（定义在下面闸那一节；这里先声明，`yk_note_slot` 也要用）。*/
+static void yk_note_release(yk_map_t *m, const yk_slot_t *e, int kind);
+
 int yk_note_slot(yk_map_t *m, uint32_t enemy_id, int slot, int active, const float xy[2],
                  yk_action_t *act)
 {
@@ -564,7 +572,11 @@ int yk_note_slot(yk_map_t *m, uint32_t enemy_id, int slot, int active, const flo
     if (active && !was_active) {
         e->broken = 0; e->fam_seen = 0; e->no_fam_frames = 0;
         e->eton_gap = 0;                                  /* ★ owner ②：重开 = 新的 etOn 间隔起算 */
+        e->gap_ref = 0;
+        {   unsigned idx = (unsigned)(e - m->e);
+            if (idx < YK_FAM_MAX) m->vetoed[idx] = 0; }
         e->rearm_pending = 0;                             /* P1：夹持态一并拆掉（它现在只是记账）*/
+        yk_note_release(m, e, 1);                         /* ★ #209：ECL 重新武装 = 主复位口 ① */
     }
 
     /* ★★★ 2026-10-01（P1，owner 拍板）：**route A 的「消费 `rearm_pending` ⇒ 清闸 + 重建」已删** ——
@@ -588,6 +600,10 @@ int yk_note_slot(yk_map_t *m, uint32_t enemy_id, int slot, int active, const flo
             e->broken = 0;                                /* 允许重建（下面那条分支本帧就建）*/
             e->rearm_pending = 0;                         /* 下一个夹持期从头记账 */
             e->eton_gap = 0;
+            e->gap_ref = 0;
+            {   unsigned idx = (unsigned)(e - m->e);
+                if (idx < YK_FAM_MAX) m->vetoed[idx] = 0; }
+            yk_note_release(m, e, 4);                     /* ★ #209：TTL 放行 */
             ++m->heals;                                   /* ★ 记账：卡侧每帧读一次打日志（P1 验收）*/
         }
     } else {
@@ -603,7 +619,7 @@ int yk_note_slot(yk_map_t *m, uint32_t enemy_id, int slot, int active, const flo
         return 1;
     }
     /* 活跃、没有使魔、也没被打死过 ⇒ 建。*/
-    if (active && !e->fam_id && !e->broken) {
+    if (active && yk_shell_needs_rebuild(e->fam_id ? 1 : 0, e->broken ? 1 : 0)) {
         yk_fill_action(act, YK_ACT_CREATE, e);
         return 1;
     }
@@ -743,6 +759,18 @@ int yk_shot_slot_suppressed(const yk_map_t *m, uint32_t enemy_id, int slot, uint
  *   `rearm_pending` 因此只是**记账**（这个夹持期已数过一次），不再驱动放行。
  * ⚠ 代价（明确写清）：从「每次使魔死亡最多丢 1 条 `etOn`」变成「**该槽在这个夹持期里一条都不发**」
  *   —— 这正是 owner 要的「一波内不再从那个口发弹」；上限由长期 TTL 兜住（防终符被永久清空）。*/
+/* ★★★ 2026-10-01（#209）：把「最近一次放行的上下文」记进表（卡侧靠它打 `slot i ... vetoed K etOns`）。*/
+static void yk_note_release(yk_map_t *m, const yk_slot_t *e, int kind)
+{
+    unsigned idx;
+    if (!m || !e) return;
+    idx = (unsigned)(e - m->e);
+    m->last_rel_enemy = e->enemy_id;
+    m->last_rel_slot  = (uint16_t)e->slot;
+    m->last_rel_vetoed = (idx < YK_FAM_MAX) ? m->vetoed[idx] : 0u;
+    m->last_rel_kind  = (uint8_t)kind;
+}
+
 int yk_shot_slot_gate(yk_map_t *m, uint32_t enemy_id, int slot, uint32_t have_fam_id)
 {
     yk_slot_t *e;
@@ -754,16 +782,27 @@ int yk_shot_slot_gate(yk_map_t *m, uint32_t enemy_id, int slot, uint32_t have_fa
      *   ⇒ 判定「新的一波」：清夹持态并**放行本帧这一条 `etOn`**（新波第一发不该白丢），
      *   1:1 映射下一帧把使魔建回来。⇒ 「打光一波的使魔 ⇒ 该波不再发弹；下一波开始重建」。
      *   ⚠ 顺序在「记账」之前：本帧既不算一次夹持（`rearms`），也不算一次间隔。*/
-    if (e && e->fam_seen && e->eton_gap >= (uint16_t)YK_EMIT_WAVE_GAP) {
+    if (e && e->fam_seen && yk_emit_gap_is_new_wave((int)e->eton_gap, (int)e->gap_ref)) {
         e->fam_seen = 0;
         e->broken = 0;
         e->no_fam_frames = 0;
         e->eton_gap = 0;
         e->rearm_pending = 0;
+        e->gap_ref = 0;
         ++m->gap_releases;                   /* ★ 与 `releases`（enmKillAll）分开记账：实跑可分辨 */
+        yk_note_release(m, e, 3);            /* ★ #209：记「放行上下文」（卡侧打一行）*/
         return 0;                            /* 放行：新波的第一发照发 */
     }
-    if (e) e->eton_gap = 0;                  /* 本帧这一次 `etOn` ⇒ 间隔计时归零（无论掐不掐）*/
+    if (e) {
+        /* ★ #209：夹持期里维护「波内间隔最小值」，并累计否决条数（端到端判据）。*/
+        {   unsigned idx = (unsigned)(e - m->e);
+            if (idx < YK_FAM_MAX && m->vetoed[idx] < 255u) ++m->vetoed[idx]; }
+        if (e->fam_seen && !e->fam_id) {
+            unsigned g = e->eton_gap;
+            if (g > 0 && (e->gap_ref == 0 || g < e->gap_ref)) e->gap_ref = (uint8_t)(g > 255u ? 255u : g);
+        }
+        e->eton_gap = 0;                     /* 本帧这一次 `etOn` ⇒ 间隔计时归零（无论掐不掐）*/
+    }
     if (e && !e->rearm_pending) {
         e->rearm_pending = 1;                /* ★ 纯记账：这个夹持期已经数过一次（不再驱动放行）*/
         ++m->rearms;                         /* ★ 记账（只增不清）：涨了 = 有槽被夹住过 */
@@ -790,6 +829,8 @@ int yk_fam_wave_clear(yk_map_t *m, uint32_t fam_id)
     e->broken = 0;                   /* 允许重建 */
     e->no_fam_frames = 0;
     e->eton_gap = 0;
+    e->gap_ref = 0;
+    yk_note_release(m, e, 2);        /* ★ #209：波次边沿（`enmKillAll` = 主复位口 ②）*/
     e->rearm_pending = 0;            /* 新波：夹持记账从头开始 */
     e->prev_life = YK_LIFE_UNSAMPLED;
     ++m->releases;                   /* ★ 记账：波次边沿放行了几次（卡侧打日志）*/
@@ -870,6 +911,20 @@ int yk_is_real_bomb(int bomb_active, int started_in_deathbomb)
 
 /* ★★★★ 2026-10-01（D2 插值跟随）：纯函数，详见 `youkai_core.h` 的同名小节。
  * ⚠ 不返回 float（i686 上 float 返回值必过 x87）；就地写 `xy[0]/xy[1]`。*/
+/* ★★★ 2026-10-01（owner：「瞬移不会重建血量吧」）：**重建判据与位置无关**（纯函数，见头文件）。*/
+/* ★★★ 2026-10-01（#209）：「间隔算不算新一波」的**自适应**判据（纯函数，见头文件）。*/
+int yk_emit_gap_is_new_wave(int eton_gap, int gap_ref)
+{
+    if (eton_gap < YK_EMIT_WAVE_GAP) return 0;
+    if (gap_ref > 0 && eton_gap < 4 * gap_ref) return 0;    /* 缓发敌人的常规间隔 ⇒ 不认新波 */
+    return 1;
+}
+
+int yk_shell_needs_rebuild(int have_shell, int broken)
+{
+    return (!have_shell && !broken) ? 1 : 0;
+}
+
 void yk_follow_step(float *xy, float sx, float sy, float tx, float ty, int age, int frames)
 {
     float dx, dy, k;

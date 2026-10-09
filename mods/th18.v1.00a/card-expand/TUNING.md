@@ -15595,4 +15595,19 @@ owner 质疑「这个小点的混合模式应当不是 0 吧」⇒ **复核结�
 | 不变量 | 目标变化**不** CREATE/WITHDRAW 壳（身份 = 槽）；`k = age/frames ∈ [0,1]` ⇒ **不会越过目标**；剩余 < 1 px ⇒ 吸附（末段不抖）；`frames=0` ⇒ 精确等于旧硬钉 |
 | ❓ 自定 | 「60 帧线性」是**照一手的量级自定**的曲线（TH08 的 `moveRandTime` 具体曲线没逐帧复刻）⇒ 观感不对只改这一格 |
 | 「弹从壳出」那条 | **本次不做**（owner 拍板留作后续选项）：地址与方案记在 `AUDIT.md` §BE #207 |
-| 登记 | `AUDIT.md` §BE #207；`HANDOFF-108.md` §3 第 94 行 |
+| **发布默认** | ★ 2026-10-01 晚 owner 拍「**那还是瞬移吧**」⇒ 本旋钮**发版值 = 0（硬钉/瞬移）**；D2 代码保留（调 >0 即启用），单测仍覆盖两种行为 |
+| ★ **瞬移不重建** | 沿 `yk_pin_familiar()`（`youkai.c:716` 起）**只写** `CE_ENEMY_POS_X/Y` + `YK_ENEMY_ABS_POS`，绝不创建/撤销/写 life；重建判据 `yk_shell_needs_rebuild(have,broken)` **入参无位置**；偏移变化不参与任何寿命判定（§BE #208）|
+| 判据 | 日志 `youkai/emit: move N create N withdraw N hp_reset N` ⇒ 六面开头小怪 / 四面道中 boss 跑一段：**`move` 很大而 `create/withdraw/hp_reset ≈ 0`**（`hp_reset` 是「壳还活着却又建了一次」的计数，正常恒 0）|
+| 登记 | `AUDIT.md` §BE #207（D2 本身）+ **#208（瞬移不重建的证明与计数）**；`HANDOFF-108.md` §3 第 94 行 |
+
+### 2.1ccc-40 ★★ 2026-10-01（卡 108 · **主功能**）：**打掉使魔 ⇒ 关闭它对应的发射口**
+
+owner 逐字：「**我真正想做的是：当我打掉了使魔，我能关闭这个发射口**」。
+
+| 项 | 说明 |
+| --- | --- |
+| 机制 | 击破映射使魔 ⇒ `yk_fam_broken()` 置 `broken`（KILLED/BOMB_KILL；`KILL_ALL` 走 `yk_fam_wave_clear()` = 波次边沿）⇒ 站点 `0x433ffa` 起闸（返回 1 ⇒ SDK 置 `retaddr = 0x43402d`）⇒ **该槽这一波不再发弹** |
+| **重开只有四种** | ① ECL 重新武装（`type` 0→1）② 波次边沿（`enmKillAll`）③ 相位边沿④ **TTL `YK_EMIT_REBUILD_TTL`=600 帧**兜底 |
+| ★ 本轮修的误放行 | 原 `YK_EMIT_WAVE_GAP`(24) 只看绝对间隔 ⇒ **缓发敌人（波内 30/60 帧）被误判成新波而立刻重开** = 「打死了却没关掉」。现自适应：`≥24 且 ≥4×gap_ref`（`gap_ref` = 本夹持期最小波内间隔）|
+| 端到端判据 | 日志 `youkai/emit: slot i of enemy_id N released by <WAVE-EDGE / WAVE-GAP(adaptive) / TTL(600f)> after vetoing K etOn(s)` ⇒ **K 在涨**且该槽那一波不再出弹；`released by` 只应在①②③④出现 |
+| 登记 | `AUDIT.md` §BE #209；`HANDOFF-108.md` §3 第 95 行 |

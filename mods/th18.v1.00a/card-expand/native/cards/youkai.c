@@ -720,6 +720,14 @@ static uint8_t g_fam_nodmg_state = 0xff;   /* ★ 批次 2：上一次记过的�
  *   语义见 `youkai_core.h` 的 `yk_follow_step()`：目标 = 该槽**当前世界坐标**（`sl->x/sl->y`，
  *   它由 `enemy+0x4e58+i*0x0c` 的偏移向量派生 ⇒ 偏移一变、目标就变，这正是 owner 要的
  *   「用偏移向量的帧间变化当换地方信号」），起点 = 变化那一刻壳在哪 ⇒ 60 帧滑过去。*/
+/* ★★★★ 2026-10-01（owner：「至少得确定瞬移不会重建血量吧」）——**实跑可核**的三个计数（只加日志）：
+ *   `emit move` = 「目标（= 槽世界坐标，由 `enemy+0x4e58+i*0x0c` 的偏移向量派生）变化过几次」；
+ *   `create` / `withdraw` = 我们的壳建立/撤销次数（复用既有 `s->spawns` / `s->lost + s->silent`）；
+ *   `emit hp_reset` = **壳还活着却又走了一次建壳（= 会给它重设 life）的次数** —— 结构上不可能，正常恒 0。
+ *   判据：六面开头小怪 / 四面道中 boss 跑一段 ⇒ **`move` 很大而 `create/withdraw/hp_reset ≈ 0`**。*/
+static unsigned s_emit_move;
+static unsigned s_emit_hp_reset;
+
 typedef struct { uint32_t fam_id; float cx, cy, sx, sy, tx, ty; uint16_t age; } yk_pin_follow_t;
 static yk_pin_follow_t s_pin_follow[YK_FAM_MAX];
 
@@ -735,7 +743,12 @@ static void yk_pin_follow_step(yk_pin_follow_t *pf, uint32_t fam_id, float tx, f
         pf->age = 0;
         return;
     }
-    if (tx != pf->tx || ty != pf->ty) {                /* 目标变了（= 槽偏移变了）⇒ 捕获起点、重新计时 */
+    if (tx != pf->tx || ty != pf->ty) {
+        /* 目标变了（= 槽偏移向量变了）⇒ 捕获起点、重新计时。★ **不变量：这里只动位置**——
+         *   绝不 CREATE/WITHDRAW、绝不写 life/flags（重建判据见 `yk_shell_needs_rebuild()`，
+         *   它的入参里**没有**位置；`WAVE_GAP`/`broken`/`rearm` 只由 `etOn` 事件与死亡事件驱动，
+         *   与偏移无关）⇒ 「瞬移不重建血量」。*/
+        ++s_emit_move;
         pf->sx = pf->cx; pf->sy = pf->cy;
         pf->tx = tx; pf->ty = ty;
         pf->age = 0;
@@ -2260,6 +2273,12 @@ static void yk_run_action(yk_card_t *s, const yk_action_t *act)   /* s 可为 NU
         int32_t hp_now = yk_enemy_hp_max_by_id(act->enemy_id);
         int32_t life = (hp_now > 0) ? (int32_t)yk_map_fam_hp((int)hp_now, yk_current_character())
                                     : (int32_t)YK_FAM_LIFE;
+        /* ★ owner：「瞬移不会重建血量吧」—— 若走到这里时那一格**还有活壳**，说明有路径在重建
+         *   （那才会重设 life）⇒ 记账（`emit hp_reset`，正常恒 0，是实跑判据）。*/
+        {
+            yk_slot_t *slc = yk_map_find(&s_map, act->enemy_id, act->slot);
+            if (slc && slc->fam_id) ++s_emit_hp_reset;
+        }
         uint8_t *f = yk_spawn_familiar(act->x, act->y, life);
         uint32_t fid;
         if (!f) {
@@ -7222,6 +7241,13 @@ static int on_tick_2(ce_card_t *c)
     }
     yk_side_lock_tick();                                  /* ★ owner ④：锁形态（B / 灵界 / 咆哮）*/
     yk_bullet_hit_flush(s);                               /* ★ 修法 B：命中回调排队的刻符在这里落地 */
+    /* ★ 2026-10-01（owner：「瞬移不会重建血量吧」）实跑判据行（每 120 帧、只在有活动时打）：
+     *   `move` 涨 = 槽在换位置（瞬移或插值）；`create/withdraw/hp_reset` 不涨 = **没有重建、没有重置血量**。*/
+    if ((s_ledger_frame % 120u) == 0u && (s_emit_move || s->spawns || s->lost || s->silent)) {
+        ce_log("youkai/emit: move %u create %u withdraw %u hp_reset %u (position-only pinning: "
+               "offset changes never rebuild the shell nor reset its HP; AUDIT §BE #208)",
+               s_emit_move, s->spawns, s->lost + s->silent, s_emit_hp_reset);
+    }
     focused = yk_focused();                               /* ★ owner ④：本卡眼中的侧（锁期间钉住）*/
     /* ★★ 2026-09-22（人妖槽 + 永点）：每帧三件事 + 一件声明，全部是**普通内存读写**（不新增站点）。
      *   ① 刻符运动 / 收集（`yk_orbs_tick`，一手运动方程见 core §3.11）；
@@ -7840,6 +7866,11 @@ static int on_tick_2(ce_card_t *c)
             ce_log("youkai: emitter gate released %u slot(s) on the WAVE edge (enmKillAll broadcast, "
                    "total %u) - new wave: clamp flags cleared, the 1:1 mapping rebuilds those slots",
                    rel - s->releases_seen, rel);
+            ce_log("youkai/emit: slot %d of enemy_id %u released by WAVE-EDGE(enmKillAll) after "
+                   "vetoing %u etOn(s) (owner's main feature: kill the familiar => the emitter is "
+                   "closed until a wave/phase edge or the %d-frame TTL)",
+                   (int)yk_map_last_release_slot(&s_map), yk_map_last_release_enemy(&s_map),
+                   (unsigned)yk_map_last_release_vetoed(&s_map), (int)YK_EMIT_REBUILD_TTL);
             s->releases_seen = rel;
         }
     }
@@ -7851,9 +7882,12 @@ static int on_tick_2(ce_card_t *c)
     {
         uint32_t gap = yk_map_gap_releases(&s_map);
         if (gap != s->gap_releases_seen) {
-            ce_log("youkai: emitter gate released %u slot(s) on an etOn GAP >= %d frames (wave edge "
-                   "heuristic; total %u) - those slots fire again and rebuild next tick",
-                   gap - s->gap_releases_seen, (int)YK_EMIT_WAVE_GAP, gap);
+            ce_log("youkai: emitter gate released %u slot(s) on an etOn GAP (adaptive: >= %d frames "
+                   "AND >= 4x this slot's own in-wave gap; total %u) - those slots fire again and "
+                   "rebuild next tick", gap - s->gap_releases_seen, (int)YK_EMIT_WAVE_GAP, gap);
+            ce_log("youkai/emit: slot %d of enemy_id %u released by WAVE-GAP(adaptive) after vetoing "
+                   "%u etOn(s)", (int)yk_map_last_release_slot(&s_map),
+                   yk_map_last_release_enemy(&s_map), (unsigned)yk_map_last_release_vetoed(&s_map));
             s->gap_releases_seen = gap;
         }
     }
@@ -7868,7 +7902,11 @@ static int on_tick_2(ce_card_t *c)
                    "(P1 auto-rebuild, owner 2026-10-01; total %u) - those emitters fire again",
                    heals - s->heals_seen, (int)YK_EMIT_REBUILD_TTL, heals);
             s->heals_seen = heals;
-        }
+                    ce_log("youkai/emit: slot %d of enemy_id %u released by TTL(%d frames) after vetoing "
+                   "%u etOn(s)", (int)yk_map_last_release_slot(&s_map),
+                   yk_map_last_release_enemy(&s_map), (int)YK_EMIT_REBUILD_TTL,
+                   (unsigned)yk_map_last_release_vetoed(&s_map));
+}
     }
     return 0;
 }

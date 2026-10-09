@@ -29124,3 +29124,56 @@ TH16 `09-drawing.md` §3.3：外顶点恒 `color_1`、内顶点在 `(flags_lo & 
 
 **单测**：`yk_follow_step` 六组（`frames=0` 硬钉 / 首帧不动 / 60 帧单调收敛且精确到位 /
 不越过目标 / 剩余 <1 px 吸附 / 空指针安全）。
+
+## §BE 详录 #208（2026-10-01）：**瞬移不重建 ≠ 不重置血量** —— 代码级证明 + 实跑计数
+
+**背景**：D2 插值跟随被 owner 回滚（「那还是瞬移吧」，发版 `YK_EMIT_FOLLOW_FRAMES = 0` = 硬钉），
+但追加一条**必须证**的事：「**至少得确定瞬移不会重建血量**」。
+
+**① 代码级证明（位置那条路只写位置）**：
+| 处 | 写入的字段 | 会不会碰寿命/重建 |
+| --- | --- | --- |
+| `yk_pin_familiar()`（`youkai.c:716` 起）| `CE_ENEMY_POS_X` / `CE_ENEMY_POS_Y`（`final_pos`）、`YK_ENEMY_ABS_POS`(+4)（`abs_pos`）、以及**免伤位** `CE_ENEMY_FLAGS` bit4（人/妖侧口径，与本议题无关）| **只位置 + 免伤位**；**不写** life（`+0x6220/24/28`）、不写 state、不调任何 spawn/kill |
+| 每帧钉位调用点（`youkai.c` 的映射循环）| 同上（只传插值/槽坐标）| 同上 |
+| `yk_pin_follow_step()` | 只更新 `s_pin_follow[i]` 的**位置/计时**字段 + `s_emit_move` 计数 | 无 |
+| **重建判据** | `yk_shell_needs_rebuild(have_shell, broken)`（core）——**入参里没有位置** | 结构性证明 |
+
+**② 偏移变化不参与寿命判定**：`broken` 只由 `yk_fam_broken()`（玩家击破）与 `yk_fam_wave_clear()`（`enmKillAll`）写；
+`fam_seen` 由创建/死亡写；`eton_gap` 只由 **`etOn` 事件**推进（`yk_shot_slot_gate` 归零、`yk_note_slot` 递增）——
+**槽偏移（`enemy+0x4e58+i*0x0c`）的变化不写这三个格里的任何一个** ⇒ 不会触发重建、也不会重置 life。
+`YK_EMIT_WAVE_GAP` 只在「两次 `etOn` 间隔 ≥24 帧」时放行（那两个案例间隔 2/5 帧 ⇒ 本来就不触发）。
+
+**③ 实跑判据（新增计数行，只加日志）**：
+`youkai/emit: move N create N withdraw N hp_reset N (position-only pinning: offset changes never rebuild the shell nor reset its HP; AUDIT §BE #208)`
+· `move` = 目标（槽世界坐标）变化次数；`create` = `s->spawns`；`withdraw` = `s->lost + s->silent`；
+· `hp_reset` = **壳还活着却又走了一次建壳**（唯一会重设 life 的路）的次数 —— 结构性不可能，正常恒 0。
+
+**判据**：六面开头小怪 / 四面道中 boss 跑一段 ⇒ **`move` 很大而 `create/withdraw/hp_reset ≈ 0`**。
+
+**单测**：`yk_shell_needs_rebuild` 四条真值表（含「有活壳 ⇒ 绝不重建，无论它挪到哪」）+
+「`yk_follow_step` 只写位置」断言；`YK_EMIT_FOLLOW_FRAMES == 0`（发布=硬钉）也被单测钉住。
+
+## §BE 详录 #209（2026-10-01）：**主功能「打掉使魔 ⇒ 关闭对应发射口」端到端核实 + 误放行修复**
+
+**owner 逐字**：「我真正想做的是：**当我打掉了使魔，我能关闭这个发射口**」。
+
+**① 现状端到端核（读代码）**：
+· 击破映射使魔 ⇒ 死亡广播 `CE_EDEATH_KILLED` / `BOMB_KILL` ⇒ `on_enemy_death` ⇒ `yk_fam_broken()`：
+  清 `fam_id`、置 `broken=1`、年龄归零（`KILL_ALL` 另一支 = `yk_fam_wave_clear()` = 放行，属设计）；
+· 之后该槽每次 `etOn` 到站点 `0x433ffa` ⇒ `yk_shot_slot_gate()`：`fam_seen && !have_fam_id` ⇒ 返回 1
+  ⇒ SDK 置 `retaddr = 0x43402d` ⇒ **本帧这一条 `etOn` 被否决**（日志 `emitter gate CLAMPED`）。
+
+**② ★ 找到的真正缺口 = `YK_EMIT_WAVE_GAP` 误放行**：原判据只看「距上次 `etOn` ≥ 24 帧」，
+而**缓发敌人**（波内间隔就有 30/60 帧，例如 st4 二段 `wait($H)` 那类）每条 `etOn` 都满足 ⇒
+闸**每条都被放行** ⇒ 观感 = 「打死了却没关掉」。修法 = **自适应判据**
+`yk_emit_gap_is_new_wave(eton_gap, gap_ref)`（纯函数，单测 7 条）= 间隔 ≥ 24 **且** ≥ `4 × gap_ref`，
+其中 `gap_ref` = **本夹持期内观察到的最小波内间隔**（新字段 `yk_slot_t.gap_ref`，塞在原有 2 B 对齐空洞里
+⇒ `sizeof` 仍 32 B）。⇒ 缓发敌人 30 帧节奏要 ≥120 帧才算新波（真波间可达），st4 类 12 帧节奏要 ≥48 帧 ✓。
+
+**③ 端到端判据（新增，实跑可核）**：每槽否决计数 `yk_map_t.vetoed[]`（饱和 255）+ 最近一次放行的
+`(敌人, 槽, 否决数, 原因)`；卡侧在三个放行口各打一行：
+`youkai/emit: slot i of enemy_id N released by <WAVE-EDGE(enmKillAll) / WAVE-GAP(adaptive) / TTL(600 frames)> after vetoing K etOn(s)`。
+判据：**K 在涨且那一波该槽不再出弹**；`released by …` 只应在 ①重新武装 ②波次边沿 ③相位边沿 ④TTL 出现。
+
+**单测**：自适应判据 7 条（含「缓发敌人 30 帧节奏不放行」与「st4 波内 12 帧时 24 帧不算新波」）+
+夹持期否决计数与放行上下文断言（`yk_map_last_release_*`）。

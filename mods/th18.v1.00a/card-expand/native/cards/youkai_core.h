@@ -1130,7 +1130,12 @@ typedef struct {
                           *   它的前提「卡 tick 只在聚焦时跑」早已不成立（tick 两侧都跑）⇒ 两边各 ++ 会
                           *   让 600 帧的计时器在**每帧都有 `etOn`** 时以 2× 速度走（≈5 s），
                           *   与 owner 要的「相对长（≈10 s）」不符。*/
-} yk_slot_t;             /* 28 B × YK_FAM_MAX（2026-09-12 加 fam_seen 后 24→28，见该字段注）*/
+    uint8_t  gap_ref;    /* ★★★ 2026-10-01（owner 主需求「打死使魔 ⇒ 关闭发射口」：#209）：
+                          *   **本夹持期内观察到的最小「波内 `etOn` 间隔」**（饱和到 255；0 = 还没观测到）。
+                          *   用来把 `YK_EMIT_WAVE_GAP` 变成**自适应**判据：只有当间隔 ≥
+                          *   `4 × gap_ref` 时才认「新一波」⇒ **缓发敌人（间隔 >24 帧）不会被误判成新波**。
+                          *   位置 = `no_fam_frames` 之后那 2 字节对齐空洞 ⇒ **`sizeof` 仍 32 B**。*/
+} yk_slot_t;             /* 32 B × YK_FAM_MAX（见各字段注；单测盯着 sizeof）*/
 
 typedef struct {
     yk_slot_t e[YK_FAM_MAX];
@@ -1145,6 +1150,11 @@ typedef struct {
     uint32_t  gap_releases; /* ★★★ 2026-10-01（owner 实跑 ②）：**「`etOn` 间隔 ≥ `YK_EMIT_WAVE_GAP`
                           *   帧」那条波次边沿放行了几次**（只增不清）。与 `releases`（`enmKillAll`）分开，
                           *   这样实跑里一眼分清「是真清场、还是靠间隔猜的波次」（owner 要判据）。*/
+    uint8_t   vetoed[YK_FAM_MAX];  /* ★★★ #209：每槽**被否决过多少条 `etOn`**（饱和 255）—— 端到端判据 */
+    uint32_t  last_rel_enemy;      /* ★ #209：最近一次放行的 (敌人, 槽) 与该槽当时的否决数（卡侧打日志用）*/
+    uint16_t  last_rel_slot;
+    uint8_t   last_rel_vetoed;
+    uint8_t   last_rel_kind;       /* 1 = ECL 重新武装 / 2 = 波次边沿(KILL_ALL) / 3 = 距波次(自适应) / 4 = TTL */
     uint32_t  releases;  /* ★★★ 2026-10-01（P1）：闸被**主复位口之一**放行的次数（只增不清）。
                           *   现在只在**波次边沿**（`yk_fam_wave_clear()`，卡侧收到 `enmKillAll` 广播）
                           *   里 ++；与 `rearms` 成对：`rearms` 涨 = 掐过，`releases` 涨 = 新波开始、
@@ -1156,6 +1166,9 @@ unsigned   yk_map_heals(const yk_map_t *m);      /* 长期 TTL 自动重建计�
 unsigned   yk_map_rearms(const yk_map_t *m);     /* 「掐掉过几次」计数（夹持期数；NULL ⇒ 0）*/
 unsigned   yk_map_releases(const yk_map_t *m);   /* 「波次边沿放行」计数（P1 记账；NULL ⇒ 0）*/
 unsigned   yk_map_gap_releases(const yk_map_t *m); /* 「etOn 间隔 ⇒ 波次」放行计数（NULL ⇒ 0）*/
+unsigned   yk_map_last_release_enemy(const yk_map_t *m);  /* #209：最近放行的敌人 id（NULL ⇒ 0）*/
+unsigned   yk_map_last_release_slot(const yk_map_t *m);   /* #209：最近放行的槽 */
+unsigned   yk_map_last_release_vetoed(const yk_map_t *m); /* #209：该槽放行前被否决过多少条 etOn */
 
 /* ★★★ 2026-09-22（P1，实跑日志直证）：**只读**判据「这个 id 是不是我表里的使魔」。
  *
@@ -1305,6 +1318,17 @@ int        yk_side_switch_allowed(int trance, int roar, int real_bomb);
 #define YK_EMIT_FOLLOW_FRAMES 0
 #define YK_EMIT_FOLLOW_SNAP_PX 1.0f
 void yk_follow_step(float *xy, float sx, float sy, float tx, float ty, int age, int frames);
+/* ★★★ 2026-10-01（owner：「**至少得确定瞬移不会重建血量吧**」）：**壳的重建判据**（纯函数）。
+ *   语义 = 1:1 映射那条：**只有当这一格没有壳、且它没被打死(`broken`)** 才建新的；
+ *   **位置/目标变化完全不参与** —— 本函数**没有**位置参数，这就是「瞬移不重建」的结构性证明
+ *   （沿 `yk_pin_familiar()` 那条路只写位置字段，见 `AUDIT.md` §BE #208 的逐行表）。*/
+int  yk_shell_needs_rebuild(int have_shell, int broken);
+/* ★★★ 2026-10-01（#209 · **主功能**：打死使魔 ⇒ 关闭该发射口）：**「这一条 `etOn` 算不算新一波」**（纯函数）。
+ *   判据 = 间隔 ≥ `YK_EMIT_WAVE_GAP`(24) **且** 间隔 ≥ `4 × gap_ref`（该槽自己的波内间隔最小值；
+ *   `gap_ref <= 0` = 还没观测到 ⇒ 只用绝对阈值）。⇒ **缓发敌人（波内间隔就有 30/60 帧）不会被误放行**，
+ *   而那正是「打死了却看起来没关掉」的来源（`AUDIT §BE #209`）。*/
+int  yk_emit_gap_is_new_wave(int eton_gap, int gap_ref);
+
 
 int32_t    yk_clamp_spawn_life(int32_t life);
 
