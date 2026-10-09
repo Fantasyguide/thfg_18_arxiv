@@ -1374,6 +1374,47 @@ static void vm_set_world_pos(uint32_t id, float wx, float wy)
  *   （`pofv_is_white_bullet()`），命中判据逐字照抄引擎 `0x429370`：
  *   `state ∈ {1,2}`、`dist² ≤ (弹半径 × 0.5 + R)²`（判定式里的弹半径用**这颗弹自己的**）。
  * 成本：2000 槽 × 一次比较（早停于 max_count）——每帧最多 3 台（暴风的 3 个圈）。 */
+/* ================= ③ 消弹火花（`etbreak`）—— **一手原生 8 帧** =================
+ * ★ 一手（`HANDOFF-109-C1-C4.md` 之外，逐条见脚本 431 的注释 ✓）：消弹时**每消掉一颗弹**
+ *   就在**那颗弹的位置**播一次 `effect/etbreak.png` 的 8 帧火花 ✓（`bullet.anm` 的 `script162/163` ✓）。
+ *   ⇒ ★ 一手的"消弹圈"**没有**什么大圆环 ✗ —— ★ 就是这些**灰白尖刺火花** ✓
+ *   （★ 我上一轮自己烤的红环已废 ✗，owner 实跑问的正是它 ✓）。
+ * ★ 本卡：★ 火花由**脚本自己**在第 16 帧 `delete()` ✓ ⇒ 卡侧只管
+ *   ① 起 VM（放在被消弹的坐标 ✓）、② 记一个**略长于 16 帧**的占位计时器 ✓、
+ *   ③ 到期把句柄清掉（★ 用 `ce_anm_get_vm()` 先判活 ✓ —— 脚本可能已自删 ✗，不能盲删 ✓）。
+ * ★ 池子满了就**丢最新的**（宁可少一朵花，也不挤掉刚起的 ✓）。*/
+#define POFV_SPARK_MAX   32
+#define POFV_SPARK_LIFE  18      /* ★ 略长于脚本的 16 帧 ✓ */
+static int32_t s_spark_vm[POFV_SPARK_MAX];
+static int     s_spark_ttl[POFV_SPARK_MAX];
+
+/* ★ 在被消掉的那颗弹的位置起一朵火花 ✓（一手：逐颗 ✓）*/
+static void pofv_spark_spawn(float x, float y)
+{
+    int k, slot = -1;
+    for (k = 0; k < POFV_SPARK_MAX; ++k) if (s_spark_ttl[k] <= 0) { slot = k; break; }
+    if (slot < 0) return;                          /* 池满 ⇒ 这朵不放了 ✓ */
+    s_spark_vm[slot] = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
+                        CE_ANM_ABILITY_SCRIPT_POFV109_ETBREAK,
+                        6);   /* ★ 世界层 6（与脚本 431 的 layer(6) 一致 ✓；常量定义在文件后面，这里用字面量 ✓）*/
+    if (!s_spark_vm[slot]) return;
+    ce_anm_set_pos((uint32_t)s_spark_vm[slot], x, y, 0.0f);
+    s_spark_ttl[slot] = POFV_SPARK_LIFE;
+}
+
+/* ★ 每帧：占位计时器递减；到期把句柄清掉（**先判活** ✗ 不盲删 ✓）。*/
+static void pofv_spark_tick(void)
+{
+    int k;
+    for (k = 0; k < POFV_SPARK_MAX; ++k) {
+        if (s_spark_ttl[k] <= 0) continue;
+        if (--s_spark_ttl[k] > 0) continue;
+        if (s_spark_vm[k] && ce_anm_get_vm((uint32_t)s_spark_vm[k]))
+            ce_anm_delete((uint32_t)s_spark_vm[k]);
+        s_spark_vm[k] = 0;
+    }
+}
+
 static int cancel_white_in_circle(const float *pos, float r, int max_count, int mode)
 {
     uint8_t *bm = CE_BULLET_MGR();
@@ -1392,7 +1433,13 @@ static int cancel_white_in_circle(const float *pos, float r, int max_count, int 
         dy = *(const float *)(b + CE_BULLET_POS + 4) - pos[1];
         rr = br * 0.5f + r;                            /* 照 0x429370 的判定式 */
         if (dx * dx + dy * dy > rr * rr) continue;
-        ((pofv_fn_bullet_cancel_t)POFV_FN_BULLET_CANCEL)(b, mode);
+        {
+            /* ★★ 一手：**每消一颗**就在**那颗弹的位置**播一次 `etbreak` 火花 ✓（见上面那节 ✓）*/
+            const float bx = *(const float *)(b + CE_BULLET_POS);
+            const float by = *(const float *)(b + CE_BULLET_POS + 4);
+            ((pofv_fn_bullet_cancel_t)POFV_FN_BULLET_CANCEL)(b, mode);
+            pofv_spark_spawn(bx, by);
+        }
         if (++n >= max_count) break;
     }
     return n;
@@ -1858,7 +1905,6 @@ typedef struct {
     int active;      /* 1 = C2 生效中 */
     int age;         /* 0..`POFV_C2_TOTAL`−1（一手 `EXReigekiInf+0x5c` ✓）*/
     int invuln;      /* 剩余无敌帧（一手 40 ✓；逐帧声明给 SDK 的声明层 ✓）*/
-    int ring_vm;     /* 可见扩张环的 VM 句柄（❓自定画法：脚本 396）*/
 } pofv_c2_t;
 static pofv_c2_t s_c2;
 /* ★ C1/C2 **共用**的「结界键张开上升沿」闩锁（一手两档同一次蓄力释放 ⇒ 同一次张开都放 ✓）。
@@ -1897,28 +1943,14 @@ static int c2_cancel_drop(const float *pos, float r)
 #define POFV_C_RING_TEX_R       55.04f
 #define POFV_C_RING_SCRIPT      CE_ANM_ABILITY_SCRIPT_POFV109_C_RING
 
-static void c2_ring_vm_sync(float r)
-{
-    if (!s_c2.ring_vm) {
-        const uint32_t id = ce_anm_spawn(CE_ABILITY_ANM(), POFV_C_RING_SCRIPT, POFV_C2_VM_LAYER);
-        if (!id) return;                       /* 建失败 ⇒ 少一台装饰环，逻辑照走（下一帧再试 ✓）*/
-        s_c2.ring_vm = (int32_t)id;
-        ce_anm_set_color(id, 0xffffffffu);     /* ★ 颜色在贴图里（红环）⇒ 顶点色恒白 ✓ */
-    }
-    {
-        const float *p = ce_player_pos();
-        if (p) vm_set_world_pos((uint32_t)s_c2.ring_vm, p[0], p[1]);
-        ce_anm_set_scale((uint32_t)s_c2.ring_vm, r / POFV_C_RING_TEX_R, r / POFV_C_RING_TEX_R);
-    }
-}
+/* ★★ 2026-10-10 owner 实跑：「**消弹圈怎么着都不对**」✗ + 核一手后确认 ——
+ *   ★ 一手 `EXReigekiInf` 的消弹**没有**这样一个大圆环 ✗：它的可见物是
+ *   ① **3 个绕行的点**（一手 3 × 类型 `0x14` 的对象 ✓）、② **每消一颗弹一朵 `etbreak` 火花** ✓
+ *   （脚本 431 ✓，已在 `cancel_white_in_circle` 里逐颗放 ✓）。
+ *   ⇒ ★ 那两个函数（`c2_ring_vm_sync` / `c2_ring_vm_release`）与 `s_c2.ring_vm` 字段**全部删掉** ✓。
+ *   ★ 自烤的红环贴图/脚本（`POFV109_C_RING` / 脚本 430）**保留在库里但不再有人引用** ❓
+ *   —— C3/C4 的弹当前还借它当占位观感 ✓（那两档的观感是否要换，等 owner 说 ✓）。*/
 
-/* 收掉可见环：发事件 1（脚本 396：`alphaTime(10,0,0)` ⇒ 10 帧淡出 ⇒ 脚本自删 ✓），**只丢句柄** ✓。*/
-static void c2_ring_vm_release(void)
-{
-    if (!s_c2.ring_vm) return;
-    if (ce_anm_get_vm((uint32_t)s_c2.ring_vm)) ce_anm_interrupt((uint32_t)s_c2.ring_vm, 1);
-    s_c2.ring_vm = 0;
-}
 
 /* 释放（结界张开的上升沿那一帧）：复位状态 + 本侧 40 帧无敌（一手 ✓）。环在帧 45 才起 ⇒ 此处不建 VM ✓。*/
 static void pofv_c2_fire(void)
@@ -1973,7 +2005,6 @@ static void pofv_c2_tick(uint32_t id)
         pos[0] = p[0]; pos[1] = p[1]; pos[2] = 0.0f;
         (void)c2_cancel_drop(pos, r);
         (void)storm_hit_clipped(p[0], p[1], r, POFV_C2_RING_DMG);
-        c2_ring_vm_sync(r);
     }
 
     /* ④ 无敌（一手 40 帧 ✓）：**逐帧**声明剩余帧数（SDK 在帧界取最大值落笔 ✓，`sdk.h:1045`）*/
@@ -1982,7 +2013,6 @@ static void pofv_c2_tick(uint32_t id)
 
     /* ⑤ 收尾（105 帧到 ⇒ 环淡出、无敌撤声明、状态归零 ✓）*/
     if (++s_c2.age >= POFV_C2_TOTAL) {
-        c2_ring_vm_release();
         ce_invuln_request(id, 0);
         s_c2.active = 0;
         s_c2.age = 0;
@@ -1994,10 +2024,6 @@ static void pofv_c2_tick(uint32_t id)
  * 收干净」✓ —— 本函数的跨帧遗留物 = ① 可见环 VM ② 无敌**声明层**的一格 ③ 上升沿闩锁 ✓）。*/
 static void pofv_c2_clear(void)
 {
-    if (s_c2.ring_vm) {
-        if (ce_anm_get_vm((uint32_t)s_c2.ring_vm)) ce_anm_delete((uint32_t)s_c2.ring_vm);
-        s_c2.ring_vm = 0;
-    }
     s_c2.active = 0; s_c2.age = 0; s_c2.invuln = 0;
     s_aura_rise_prev = 0;                 /* 删卡后不留幽灵闩锁 ⇒ 下次张开仍算上升沿 ✓ */
     ce_invuln_request(POFV_CARD_ID, 0);   /* 撤无敌声明（声明层是**粘性**的 ⇒ 必须显式撤 ✓）*/
@@ -2231,7 +2257,9 @@ static void pofv_c1_fire(void)
         if (s_c1_vm[t]) {
             ce_anm_set_pos((uint32_t)s_c1_vm[t], s_c1_x[t], s_c1_y[t], 0.0f);
             ce_anm_set_scale((uint32_t)s_c1_vm[t], 1.0f, 1.0f);   /* ★ 贴图 = 一手 30x30 ⇒ 1:1 ✓ */
-            /* ★ C1 放出的是弹、不是消弹圈 ⇒ 不染色（红的是各档的消弹圈，见 c2_ring_vm_sync / C3）*/
+            /* ★ C1 放出的是**弹**、不是消弹的火花 ⇒ 不染色 ✓。
+             *   ★ 注：★ 各档的"消弹圈"**已改为一手原生的 `etbreak` 8 帧火花** ✓（脚本 431，
+             *   在 `cancel_white_in_circle` 里**逐颗**放 ✓）—— ★ 早先那个自烤红环已废 ✗。*/
         }
     }
 }
@@ -3360,6 +3388,11 @@ static void clear_card(ce_card_t *c)
     pofv_c4m_clear();       /* ★ 铁律：魔理沙 C4 的激光与扫射弹 VM ⇒ 全收 ✓ */
     pofv_c2s_clear();       /* ★ 铁律：早苗 C2 的整圈 VM ⇒ 全收 ✓ */
     pofv_c3s_clear();       /* ★ 铁律：早苗 C3/C4 的刷弹 VM ⇒ 全收 ✓ */
+    {   int sp; for (sp = 0; sp < POFV_SPARK_MAX; ++sp) {          /* ★ 铁律：火花也收 ✓ */
+            if (s_spark_vm[sp] && ce_anm_get_vm((uint32_t)s_spark_vm[sp]))
+                ce_anm_delete((uint32_t)s_spark_vm[sp]);
+            s_spark_vm[sp] = 0; s_spark_ttl[sp] = 0;
+    } }
     /* ★★★★ 2026-10-10 owner：灵力（上限量 = 一手 `S+0x24`）**初值 = C1（不是 0 ✗）**
      *   ⇒ 开局有基础灵力 ⇒ 蓄力/结界不会被封到 0 ✓（C1 数值 = ❓自定，见 `POFV_REI_C1` ✓）。*/
     s_reiryoku = POFV_REI_C1;
@@ -5700,6 +5733,7 @@ static int on_tick_2(ce_card_t *c)
     }
     pofv_storm_tick(&s_storm);
     storm_vm_sync();
+    pofv_spark_tick();   /* ★ ③ 消弹火花：占位计时器 + 到期清句柄 ✓ */
 
     /* ★★★ 生成口 ②（owner 2026-10-08 定案）：「**固灵结界碰到敌方弹幕 ⇒ 从该弹幕位置撒 1 颗**」，
      *   **必定掉** —— ★ owner 明确「必定掉一颗」⇒ **不做概率模型** ✗

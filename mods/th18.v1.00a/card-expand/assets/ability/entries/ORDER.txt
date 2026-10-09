@@ -1289,3 +1289,11 @@ POFV109_C1_BULLET            ability/POFV109_C1_BULLET.png            30x30
 POFV109_BARRIER_DISC     ability/barrier/BARRIER_DISC.png         96x96
 POFV109_BARRIER_GLOW     ability/barrier/BARRIER_GLOW.png         128x128
 POFV109_C_RING           ability/cring/C_RING.png                 128x128
+POFV109_ETBREAK_0        ability/etbreak/ETBREAK_0.png            62x62
+POFV109_ETBREAK_1        ability/etbreak/ETBREAK_1.png            62x62
+POFV109_ETBREAK_2        ability/etbreak/ETBREAK_2.png            62x62
+POFV109_ETBREAK_3        ability/etbreak/ETBREAK_3.png            62x62
+POFV109_ETBREAK_4        ability/etbreak/ETBREAK_4.png            62x62
+POFV109_ETBREAK_5        ability/etbreak/ETBREAK_5.png            62x62
+POFV109_ETBREAK_6        ability/etbreak/ETBREAK_6.png            62x62
+POFV109_ETBREAK_7        ability/etbreak/ETBREAK_7.png            62x62
