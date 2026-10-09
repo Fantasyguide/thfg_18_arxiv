@@ -503,8 +503,10 @@ static int   s_boss_prev;   /* ★ owner 2026-10-05：boss 表 0→1 的**边沿
  *   ⑤ **一共 4 个标** = 「蓄力到这里是 **C1 / C2 / C3 / C4**」，颜色就用上面那 4 组段位色 ✓；
  *   ⑥ **每个角色的 4 个标位置并不完全一样** ⇒ 位置**按角色给**（见 `POFV_HUD_CHG_TICK_POS` ✓）。
  *   ⇒ 卡侧用**两支脚本**：**422**（一个 **1×1** 的 `drawRectGrad` 图元 ⇒ 卡侧 `scale` 直接写**表面 px** ✓）
- *     画底槽/蓝填充/白段，**425**（`drawPoly(1.0f,4)` = 小菱形）画 4 枚标，**426** 画越过时的一次性光晕 ✓
- *     ⇒ 起 **1 台底槽 + 1 台蓝填充 + 1 台白段 + 4 台菱形标**（+ 越过瞬间最多 4 台一次性光晕），每帧按比例写 `scale` / 按目标写颜色 ✓。
+ *     画底槽/蓝填充/白段，**425**（**贴图** = 16×16 的底色菱形）画 4 枚标，**426** 画「蓄力 ≥ 标位」时的光晕 ✓
+ *     （★ 2026-10-11：**两支都从 `drawPoly` 几何改成贴图**，理由 = ❓E2/❓E5 + owner 裁决「菱形上贴图」✓）
+ *     ⇒ 起 **1 台底槽 + 1 台蓝填充 + 1 台白段 + 4 台菱形标**（+ 蓄力越过的那些标各 1 台光晕），
+ *     每帧按比例写 `scale` / 写白顶点色（颜色在贴图里 ✓）/ 按段位色 `ce_anm_set_sprite` ✓。
  *   ★ 块尺寸取**一手值 ×2**（owner：「先按一手宽度做」✓ + `HUD-LAYOUT.md` §1.1）⇒ 满宽 224→**448**、
  *     高 4→**8** 表面 px；底槽每边再放 `POFV_HUD_CHG_BORDER` ⇒ 认领块 **452×16 表面 px** ✓
  *     （16 = 条 12 + 刻度出头 4 ✓，见 `POFV_HUD_BLOCK_H_TOTAL_SURF`）。 */
@@ -531,8 +533,9 @@ static int   s_boss_prev;   /* ★ owner 2026-10-05：boss 表 0→1 的**边沿
  *   一手 = TH19 `aura.anm` **script5 / 7 / 9 / 11** 的 **`ins_617(1.0f, 4)` = 4 边形 = 菱形** ✓
  *   （`local/th19.v1.10c/_ext/aura.txt` 逐支读完，2026-10-10；**是几何、不是贴图** —— 那 8 支首行全是
  *    `sprite(-1)`，证据与「owner 说的贴图」的判定见 `TUNING.md` 的新 ❓ 条目）。
- *   ⇒ 本卡的标 = 脚本 **425**（`drawPoly(1.0f, 4)`，半径 1.0 ⇒ 卡侧 `scale` 就是**表面 px 半径**）；
- *     「越过瞬间的光晕」= 脚本 **426**（加算、一次性、自删，见下面 `s_hud_chg_halo_vm`）。
+ *   ⇒ 本卡的标 = 脚本 **425**（★ 2026-10-11 起 = **16×16 贴图** `POFV109_CHG_MARK_*`；VM 的 `scale`
+ *     是**矩形倍率** ⇒ 1.0 = 16 表面 px，见 `POFV_HUD_CHG_DIA_SCALE`）；
+ *     「越过时的光晕」= 脚本 **426**（加算、**电平常驻 + `jmp` 循环**，见下面 `s_hud_chg_halo_vm`）。
  *   ★ 一手那 4 支**从建槽那一刻就常显**（`FUN_004e9740` 起完根 VM 后立刻 `FUN_004cb7a0(root, 4)`，
  *     4 推给 12 台子 VM 的 `interruptLabel(4)`）⇒ **未越过时也显示底色菱形** ✓（owner 给的两选一里选这个）。*/
 #define POFV_HUD_CHG_TICKS       4
@@ -541,9 +544,15 @@ static int   s_boss_prev;   /* ★ owner 2026-10-05：boss 表 0→1 的**边沿
  *   ❓ **这里取 8（16×16）＝有意偏离一手比例**，唯一原因 = 本卡这块**认领块只有 16 高**
  *   （`POFV_HUD_BLOCK_H_TOTAL_SURF` = 条 12 + 刻度出头 4）—— 要照一手的 24 px 必须同时把块高
  *   16→24，而那会让**整排货架上抬 8 px**（`ce_hud_slots`：行高 = 该行最高块）⇒ 条的位置会跟着动 ✗。
- *   ⇒ 取 8 正好落在块内（0 溢出、不压邻居）。要改回一手比例：本宏 + 脚本 426 的起手 `scale(8,8)`
- *     两处一起改 12，并把 `POFV_HUD_CHG_TICK_UP` 一起抬到 12（块高 24）。已登记 `TUNING.md`。*/
+ *   ⇒ 取 8 正好落在块内（0 溢出、不压邻居）。要改回一手比例：本宏 + 贴图尺寸（生成器 `TEX`）两处
+ *     一起改 12，并把 `POFV_HUD_CHG_TICK_UP` 一起抬到 12（块高 24）。已登记 `TUNING.md`。
+ *   ★ 2026-10-11（贴图化）：本宏仍是「可见半对角」，但**贴图 16×16 的边长**要单独给
+ *     （`POFV_HUD_CHG_DIA_TEX`）—— VM 的 `scale` 现在乘的是**矩形宽**（`th18:0x481703`）。*/
 #define POFV_HUD_CHG_DIA_R       8.0f
+#define POFV_HUD_CHG_DIA_TEX    16.0f   /* ★ 贴图边长（表面 px）；半对角 = 8 = `DIA_R` ✓ */
+/* ★★ 菱形标的 `scale`：贴图路径下 `scale` = **矩形倍率**（屏幕宽 = 贴图宽 × scale）⇒ 1.0 = 16 px ✓。
+ *   写成公式是为了「贴图尺寸一改，可见大小不动」：`DIA_R / (贴图边长/2)`（16×16 时 = 8/8 = **1.0** ✓）。*/
+#define POFV_HUD_CHG_DIA_SCALE  (POFV_HUD_CHG_DIA_R / (POFV_HUD_CHG_DIA_TEX * 0.5f))   /* = 1.0 ✓ */
 #define POFV_HUD_CHG_TICK_UP     4.0f   /* 块比条高的那 4 px（**只给认领块高用**；菱形居中在块心，不用它定位）✓ */
 /* 菱形的中心 y（相对条左上角 `fy`）= **认领块的垂直中心**：
  *   块 = [`fy − TICK_UP`, `fy + BLOCK_H_SURF`] ⇒ 中心 = `fy + (BLOCK_H_SURF − TICK_UP)/2` = **fy + 4** ✓
@@ -563,14 +572,29 @@ static const float POFV_HUD_CHG_TICK_POS[4][POFV_HUD_CHG_TICKS] = {
     { 0.25f, 0.50f, 0.75f, 1.00f },   /* s_aura_kind 2 咲夜   —— ❓ 等分占位 */
     { 0.25f, 0.50f, 0.75f, 1.00f }    /* s_aura_kind 3 早苗   —— ❓ 等分占位 */
 };
-/* ★ 标的颜色 = 一手 `aura.anm` script5/7/9/11 的 `color2`（**4 组段位色**，owner 规格 ⑤ ✓）：
- *   索引 0..3 ↔ 浅蓝 / 紫 / 红 / 黄（= script5 / 7 / 9 / 11 ✓）。*/
-static const uint32_t POFV_HUD_CHG_TICK_COL[POFV_HUD_CHG_TICKS] = {
-    0xFF8080FFu,   /* script5  浅蓝 (128,128,255) ✓ */
-    0xFF8000FFu,   /* script7  紫   (128,0,255)   ✓ */
-    0xFFFF0000u,   /* script9  红   (255,0,0)     ✓ */
-    0xFFFFFF00u    /* script11 黄   (255,255,0)   ✓ */
+/* ★ 标的**颜色** = 一手 `aura.anm` script5/7/9/11 的 `color2`（**4 组段位色**，owner 规格 ⑤ ✓）：
+ *   索引 0..3 ↔ 浅蓝 `(128,128,255)` / 紫 `(128,0,255)` / 红 `(255,0,0)` / 黄 `(255,255,0)`
+ *   （= script5 / 7 / 9 / 11 ✓）。
+ *   ★★ 2026-10-11（贴图化）：颜色现在**烘在贴图里**（4 色各一套，生成器见
+ *     `assets/ability/make_pofv109_chg_mark_art.py`）⇒ 卡侧只按索引**选 sprite**，顶点色恒写白。
+ *   ⚠ **不做**「1 张白贴图 + `ce_anm_set_color` 染色」：底色菱形**有白芯**，染色会把白芯一起染掉 ✗
+ *     （owner 2026-10-11 点名）；光晕虽无白芯，但让两支同构（顶点色恒白）最不依赖脚本/卡侧的写色时序。*/
+static const int POFV_HUD_CHG_MARK_SPR[POFV_HUD_CHG_TICKS] = {
+    CE_ANM_ABILITY_SPRITE_POFV109_CHG_MARK_BLUE,      /* script5  浅蓝 ✓ */
+    CE_ANM_ABILITY_SPRITE_POFV109_CHG_MARK_PURPLE,    /* script7  紫   ✓ */
+    CE_ANM_ABILITY_SPRITE_POFV109_CHG_MARK_RED,       /* script9  红   ✓ */
+    CE_ANM_ABILITY_SPRITE_POFV109_CHG_MARK_YELLOW     /* script11 黄   ✓ */
 };
+/* 光晕同理：**每色一张**（16×16，边缘径向淡出、供 `blendMode(1)` 加算用 ✓）。*/
+static const int POFV_HUD_CHG_GLOW_SPR[POFV_HUD_CHG_TICKS] = {
+    CE_ANM_ABILITY_SPRITE_POFV109_CHG_GLOW_BLUE,
+    CE_ANM_ABILITY_SPRITE_POFV109_CHG_GLOW_PURPLE,
+    CE_ANM_ABILITY_SPRITE_POFV109_CHG_GLOW_RED,
+    CE_ANM_ABILITY_SPRITE_POFV109_CHG_GLOW_YELLOW
+};
+/* ★ 标的顶点色 = **恒白 + A=255**：颜色在贴图里（染色会染掉白芯 ✗）；A 通道留给「将来的压暗/淡出」
+ *   （一手 `alpha(255)` ⇒ 常态不透明 ✓；改动只动这一个宏 ✓）。两路都写（引擎早退判据看两路 ✓）。*/
+#define POFV_HUD_CHG_MARK_COL    0xFFFFFFFFu
 /* ★ 底槽 = 一手 script1 的 `color(0,0,0)` / `color2(0,0,64)`（暗蓝；观感就是 owner 说的「深灰/暗」✓）。
  *   ⚠ 两路都写：脚本 422 不写 `colorMode`（⇒ 0 = 用 color_1），但引擎的早退判据是
  *     `color_1.A == 0 && color_2.A == 0`（`sdk.h` 的 `ce_anm_mirror_color` 头注 ✓）⇒ 两路同写最稳 ✓。*/
@@ -711,10 +735,11 @@ static ce_hud_vm_text_t s_hud_hits_lbl;
  *   · `s_hud_chg_fill_vm`  = **蓝填充**（1 台；`scale.x` = **灵力比例 × 448** ✓、色 = 一手 script5/6 的蓝 ✓）；
  *   · `s_hud_chg_white_vm` = **白段**（1 台；`scale.x` = **蓄力比例 × 448** ✓、纯白 ✓；
  *     叠在蓝填充**之上**（生成序在后 ✓）、**左端起**长 ✓ —— owner 规格 ② ✓）；
- *   · `s_hud_chg_tick_vm[4]` = **C1..C4 四枚小菱形**（脚本 425；`scale` = 半径×半径 ✓、色/位置见
- *     `POFV_HUD_CHG_TICK_COL` / `POFV_HUD_CHG_TICK_POS`（**按角色** ✓））；
- *   · `s_hud_chg_halo_vm[4]` = **越过那一刻的一次性光晕**（脚本 426；加算菱形 16 帧放大 + 淡出 + 自删 ✓，
- *     卡侧**只在上升沿**起一台、不常驻 ✓ —— owner：「不要做成常驻大光晕」）。
+ *   · `s_hud_chg_tick_vm[4]` = **C1..C4 四枚小菱形**（脚本 425 = **贴图**；`scale` = 矩形倍率 1.0 ✓、
+ *     色 = **贴图里烘好的 4 套**（`POFV_HUD_CHG_MARK_SPR`）+ 顶点色恒白 ✓、位置见
+ *     `POFV_HUD_CHG_TICK_POS`（**按角色** ✓））；
+ *   · `s_hud_chg_halo_vm[4]` = **「蓄力 ≥ 标位」时的光晕**（脚本 426 = **贴图** + 加算 + `jmp` 循环 ✓；
+ *     ★ owner 2026-10-11 裁决：**电平**（「肯定是 `>=` 就行」✓）⇒ 卡侧**按条件起 / 真删**、**不常驻到永远** ✓）。
  *   ⚠ 必须放**文件作用域**（`clear_card` 要能看到 ⇒ 否则删卡/换局泄漏 ✗，同一文件 `:1157` 的教训 ✓）。
  *
  * ❓ **留口 ①（owner 规格 ③）**：一手这条槽上还有 **「Lv1」文字标签**（后两枚标的下方），
@@ -732,11 +757,11 @@ static int32_t s_hud_chg_track_vm;
 static int32_t s_hud_chg_fill_vm;
 static int32_t s_hud_chg_white_vm;
 static int32_t s_hud_chg_tick_vm[POFV_HUD_CHG_TICKS];
-/* ★ 越过瞬间的一次性光晕（脚本 426）：每格**各自**一台、只在**上升沿**起、**第 16 帧自删** ✓；
- *   `s_hud_chg_crossed[i]` = 「上一帧该格是否已越过」= 上升沿判据（`fc < 标位` 时清 0 ⇒ 蓄力归零后
- *   重新越过会再弹一次 ✓；不需要额外的 prev 比例变量）。 */
+/* ★ **「蓄力 ≥ 标位」时的光晕**（脚本 426；★ owner 2026-10-11 裁决 = **电平**，不是上升沿 ✗）：
+ *   每格**各自**一台；`fc >= 标位` ⇒ 起（若还没有）并**常驻**（脚本自带 `jmp` 循环一直呼吸 ✓）；
+ *   `fc < 标位`（松手/归零）⇒ **真删** + 句柄清 0 ⇒ 再越时会从头弹一次 ✓。
+ *   ⚠ 不需要「上一帧是否已越过」的判据（电平本来就每帧都成立）⇒ 上一轮的 `s_hud_chg_crossed[]` **已删** ✓。*/
 static int32_t s_hud_chg_halo_vm[POFV_HUD_CHG_TICKS];
-static uint8_t s_hud_chg_crossed[POFV_HUD_CHG_TICKS];
 /* HUD 管理器（`ce_hud_slot_claim_card`）发给这块的槽：`x/y` = **块左下角**（表面 px ✓，`HUD-LAYOUT.md` §3）。 */
 static ce_hud_slot_t s_hud_chg_slot;
 static int s_hud_chg_slot_ok;      /* 本关是否已认领到（0 ⇒ 每帧补认领一次 ✓）*/
@@ -796,11 +821,16 @@ static void pofv_hud_charge_bar(float fx, float fy, float ratio_rei, float ratio
     if (!s_hud_chg_white_vm)                    /* ★ 再白段（盖在蓝上 ✓）*/
         s_hud_chg_white_vm = (int32_t)hud_vm_spawn(CE_ANM_ABILITY_SCRIPT_POFV109_HUD_CHARGE, bx, by);
     for (i = 0; i < POFV_HUD_CHG_TICKS; ++i)    /* ★ 最后 4 枚菱形标（脚本 425；盖在最上 ✓）*/
-        if (!s_hud_chg_tick_vm[i])
+        if (!s_hud_chg_tick_vm[i]) {
             s_hud_chg_tick_vm[i] = (int32_t)hud_vm_spawn(
                 CE_ANM_ABILITY_SCRIPT_POFV109_CHG_MARK,
                 bx + POFV_HUD_CHG_FILL_W * POFV_HUD_CHG_TICK_POS[kind][i],
-                fy + POFV_HUD_CHG_DIA_CY);   /* ★ 菱形**居中在认领块的块心**（`drawPoly` 以 pos 为中心 ✓）*/
+                fy + POFV_HUD_CHG_DIA_CY);   /* ★ 菱形**居中在认领块的块心**（精灵默认锚 = 锚心 ✓）*/
+            /* ★ 4 色 4 张贴图 ⇒ 出生时按段位色选一次 sprite（下面每帧还会再写一遍，见 ④ ✓）*/
+            if (s_hud_chg_tick_vm[i])
+                ce_anm_set_sprite(CE_ABILITY_ANM(), (uint32_t)s_hud_chg_tick_vm[i],
+                                  POFV_HUD_CHG_MARK_SPR[i]);
+        }
     /* 两个比例各自钳到 0..1 ✓（卡侧兜住负值/超值 ✓）*/
     fr = (ratio_rei > 1.0f) ? 1.0f : ((ratio_rei > 0.0f) ? ratio_rei : 0.0f);
     fc = (ratio_chg > 1.0f) ? 1.0f : ((ratio_chg > 0.0f) ? ratio_chg : 0.0f);
@@ -826,40 +856,47 @@ static void pofv_hud_charge_bar(float fx, float fy, float ratio_rei, float ratio
         ce_anm_set_color((uint32_t)s_hud_chg_white_vm, POFV_HUD_CHG_WHITE_COL);
         ce_anm_set_color2((uint32_t)s_hud_chg_white_vm, POFV_HUD_CHG_WHITE_COL);
     }
-    /* ④ **C1..C4 四枚小菱形标**（规格 ⑤⑥ ✓；形状 = 一手 `ins_617(1.0f,4)` ⇒ 脚本 425 的 `drawPoly(1.0f,4)`）：
-     *    · 色 = 一手段位色（`POFV_HUD_CHG_TICK_COL`，两路同写 ✓）；位置 = **按角色**表 ✓、**居中在块心** ✓；
+    /* ④ **C1..C4 四枚小菱形标**（规格 ⑤⑥ ✓；形状 = 一手 `ins_617(1.0f,4)` 的菱形 ⇒ 脚本 425 的**贴图**）：
+     *    · 色 = **贴图里烘好的 4 套**（`POFV_HUD_CHG_MARK_SPR`，按索引选 sprite ✓）——
+     *      卡侧顶点色**恒白** `POFV_HUD_CHG_MARK_COL`（染色会把白芯一起染掉 ✗）；两路同写 ✓；
+     *    · 位置 = **按角色**表 ✓、**居中在块心** ✓；`scale` = **矩形倍率**（`POFV_HUD_CHG_DIA_SCALE` = 1.0 ✓）；
      *    · **未越过也常显**（一手 `FUN_004e9740` 建槽即 `interrupt 4` ⇒ 底色菱形常显 ✓）。
-     * ⑤ **越过瞬间的一次性光晕**（owner：「在充能越过这个标之后…发出菱形的光晕」+「交叉瞬间应有**一次**的
-     *    弹出感，**不要**做成常驻大光晕」）—— **上升沿**（本帧 `fc ≥ 标位` 且上一帧未越）⇒ 起一台脚本
-     *    **426**（`blendMode(1)` 加算 + 一手的 `scaleTime` 两段放大 8→36→48 + 末段 `alphaTime(8,0,0)` 淡出，
-     *    **第 16 帧自删** ✓）。**只在那一帧起** ⇒ 不是常驻大光晕 ✓；`fc < 标位`（松手归零）⇒ 复位判据，
-     *    再次越过会**再弹一次** ✓。⚠ 光晕**不写** `scale`（脚本自带在跑的 `scaleTime`，卡侧写会被盖掉 ✓，
-     *    `native/sdk.h` 的 `ce_anm_set_scale` 头注 ✓），也不进上面那组「部分死 ⇒ 整组重建」（它是**一次性**
-     *    的，混进去会被别的 VM 的重建连坐删掉 ✗）—— 它自己死掉后由每帧的句柄体检清 0 ✓。*/
+     * ⑤ **「蓄力 ≥ 标位」时的光晕**（★ owner 2026-10-11 **两条新裁决**）：
+     *    · **触发 = 电平**：「肯定是 **`>=`** 就行，**蓄力大于等于菱形对应的值**」⇒ 不再是上一轮的
+     *      「上升沿一次性」✗ ⇒ `fc >= 标位` 的**每一帧**都保证有一台脚本 **426**（**常驻**）；
+     *    · **光晕也走贴图**（「E4 光晕也可以贴图吧」✓）：脚本 426 = 加算 + **一手的 `jmp` 循环**
+     *      （呼吸式放大，常驻期间一直跑 ✓）；卡侧按段位色选 `POFV_HUD_CHG_GLOW_SPR[i]`、
+     *      顶点色同样恒白（加算下若写色会变成 `色²` ✗）。
+     *    ⚠ 光晕**不写** `scale`（脚本自带在跑的 `scaleTime`，卡侧写会被盖掉 ✓，
+     *    `native/sdk.h` 的 `ce_anm_set_scale` 头注 ✓），也不进上面那组「部分死 ⇒ 整组重建」
+     *    （它的生死**单独由电平条件管**，混进去会被别的 VM 的重建连坐删掉 ✗）。
+     *    ★ `fc < 标位`（松手/归零）⇒ **真删** + 句柄清 0 ⇒ 下次再越会从头弹一次 ✓。*/
     for (i = 0; i < POFV_HUD_CHG_TICKS; ++i) {
         const float tx = bx + POFV_HUD_CHG_FILL_W * POFV_HUD_CHG_TICK_POS[kind][i];
         const float ty = fy + POFV_HUD_CHG_DIA_CY;
         uint32_t vm = (uint32_t)s_hud_chg_tick_vm[i];
         if (vm) {
             ce_anm_set_pos(vm, tx, ty, 0.0f);
-            ce_anm_set_scale(vm, POFV_HUD_CHG_DIA_R, POFV_HUD_CHG_DIA_R);   /* 半径 1.0 的 4 边形 ⇒ 可见半径 = 本值 ✓ */
-            ce_anm_set_color(vm, POFV_HUD_CHG_TICK_COL[i]);
-            ce_anm_set_color2(vm, POFV_HUD_CHG_TICK_COL[i]);
+            ce_anm_set_scale(vm, POFV_HUD_CHG_DIA_SCALE, POFV_HUD_CHG_DIA_SCALE);   /* 16 texel × 1.0 = 16×16 ✓ */
+            ce_anm_set_color(vm, POFV_HUD_CHG_MARK_COL);
+            ce_anm_set_color2(vm, POFV_HUD_CHG_MARK_COL);
+            ce_anm_set_sprite(CE_ABILITY_ANM(), vm, POFV_HUD_CHG_MARK_SPR[i]);      /* 4 色 4 张 ✓ */
         }
-        if (fc >= POFV_HUD_CHG_TICK_POS[kind][i]) {          /* ★ 越过（或已在越过的状态）*/
-            if (!s_hud_chg_crossed[i]) {                     /* ★ 上升沿 ⇒ **只在这一帧**起光晕 ✓ */
-                s_hud_chg_crossed[i] = 1;
-                if (!s_hud_chg_halo_vm[i]) {                 /* 上一次的还活着（< 16 帧内再越同格）⇒ 不重复起 ✓ */
-                    s_hud_chg_halo_vm[i] = (int32_t)hud_vm_spawn(
-                        CE_ANM_ABILITY_SCRIPT_POFV109_CHG_GLOW, tx, ty);
-                    if (s_hud_chg_halo_vm[i]) {              /* 色 = 同一段位色（两路同写 ✓）；动画全在脚本里 ✓ */
-                        ce_anm_set_color((uint32_t)s_hud_chg_halo_vm[i], POFV_HUD_CHG_TICK_COL[i]);
-                        ce_anm_set_color2((uint32_t)s_hud_chg_halo_vm[i], POFV_HUD_CHG_TICK_COL[i]);
-                    }
-                }
+        if (fc >= POFV_HUD_CHG_TICK_POS[kind][i]) {          /* ★ 电平：蓄力 ≥ 标位 ⇒ 该标带光晕 ✓ */
+            if (!s_hud_chg_halo_vm[i]) {                     /* ★ 还没起过 ⇒ 起一台（起过就一直留着 ✓）*/
+                s_hud_chg_halo_vm[i] = (int32_t)hud_vm_spawn(
+                    CE_ANM_ABILITY_SCRIPT_POFV109_CHG_GLOW, tx, ty);
             }
-        } else {
-            s_hud_chg_crossed[i] = 0;                        /* 回到标位以下（松手/归零）⇒ 复位，下次再弹 ✓ */
+            if (s_hud_chg_halo_vm[i]) {                      /* 位置/选图/白顶点色：每帧写（脚本的 `sprite()` 只执行一次，
+                                                              * 逐帧写才与段位色绑定无关 ✓；动画全在脚本里 ✓）*/
+                ce_anm_set_pos((uint32_t)s_hud_chg_halo_vm[i], tx, ty, 0.0f);
+                ce_anm_set_color((uint32_t)s_hud_chg_halo_vm[i], POFV_HUD_CHG_MARK_COL);
+                ce_anm_set_color2((uint32_t)s_hud_chg_halo_vm[i], POFV_HUD_CHG_MARK_COL);
+                ce_anm_set_sprite(CE_ABILITY_ANM(), (uint32_t)s_hud_chg_halo_vm[i], POFV_HUD_CHG_GLOW_SPR[i]);
+            }
+        } else if (s_hud_chg_halo_vm[i]) {                   /* ★ 掉回标位以下 ⇒ 真删（句柄清 0 ⇒ 下次再起 ✓）*/
+            ce_anm_delete((uint32_t)s_hud_chg_halo_vm[i]);
+            s_hud_chg_halo_vm[i] = 0;
         }
     }
 }
@@ -1863,11 +1900,10 @@ static void clear_card(ce_card_t *c)
     if (s_hud_chg_white_vm) { ce_anm_delete((uint32_t)s_hud_chg_white_vm); s_hud_chg_white_vm = 0; }
     { int i9; for (i9 = 0; i9 < POFV_HUD_CHG_TICKS; ++i9)
         if (s_hud_chg_tick_vm[i9]) { ce_anm_delete((uint32_t)s_hud_chg_tick_vm[i9]); s_hud_chg_tick_vm[i9] = 0; } }
-    /* ★ 越过光晕（脚本 426，一次性）：**在飞的那一台也要真删** ✓（不然删卡瞬间正好卡在 16 帧里 ⇒ 泄漏）；
-     *   顺带把上升沿判据复位（下一局/换个角色回来时不会因为「上一局已经越过」而漏掉第一次弹出 ✓）。*/
-    { int i9; for (i9 = 0; i9 < POFV_HUD_CHG_TICKS; ++i9) {
-        if (s_hud_chg_halo_vm[i9]) { ce_anm_delete((uint32_t)s_hud_chg_halo_vm[i9]); s_hud_chg_halo_vm[i9] = 0; }
-        s_hud_chg_crossed[i9] = 0; } }
+    /* ★ 光晕（脚本 426，**电平常驻**）：**在飞的那几台也要真删** ✓（否则删卡/换局 ⇒ 泄漏 ✗，
+     *   铁律「长持续效果必须交代删掉会怎样」；下一局 `pofv_hud_charge_bar()` 会按电平重新起 ✓）。*/
+    { int i9; for (i9 = 0; i9 < POFV_HUD_CHG_TICKS; ++i9)
+        if (s_hud_chg_halo_vm[i9]) { ce_anm_delete((uint32_t)s_hud_chg_halo_vm[i9]); s_hud_chg_halo_vm[i9] = 0; } }
     /* ⚠ 槽位**本身**的释放不在这里做：SDK 的 `ce_layer_drop_card()` 在 `on_run_reset`/`on_delete`
      *   进入本回调**之前**已经调过 `ce_hud_slot_release(109)`（`sdk.h:1123`）✓。*/
     s_hud_chg_slot_ok = 0;
@@ -3546,7 +3582,7 @@ static int on_tick_2(ce_card_t *c)
         hs[nh++] = &s_hud_chg_fill_vm;                                                   /* ★ 蓄力槽：蓝填充（= 灵力比例）*/
         hs[nh++] = &s_hud_chg_white_vm;                                                  /* ★ 蓄力槽：白段（= 蓄力比例）*/
         for (ih = 0; ih < POFV_HUD_CHG_TICKS; ++ih) hs[nh++] = &s_hud_chg_tick_vm[ih];   /* ★ 蓄力槽：C1..C4 四枚菱形 */
-        for (ih = 0; ih < POFV_HUD_CHG_TICKS; ++ih) hs[nh++] = &s_hud_chg_halo_vm[ih];   /* ★ 越过光晕（一次性、自删 ⇒ 死了就清 0 ✓）*/
+        for (ih = 0; ih < POFV_HUD_CHG_TICKS; ++ih) hs[nh++] = &s_hud_chg_halo_vm[ih];   /* ★ 光晕（电平起、电平删 ⇒ 被收走就清 0 ✓）*/
         for (ih = 0; ih < nh; ++ih)
             if (*hs[ih] && !ce_anm_get_vm((uint32_t)*hs[ih])) *hs[ih] = 0;
     }
@@ -3555,8 +3591,9 @@ static int on_tick_2(ce_card_t *c)
      *   ★★★★ 2026-10-10 owner 的**结构规格**（推翻此前「两根粗条 + 大色块填充」✗）：
      *     · **一条细横条**；**蓝填充 = 灵力比例**（`s_reiryoku / POFV_REI_MAX` ✓，规格 ①）；
      *     · **白段 = 蓄力比例**（`s_aura_charge / POFV_AURA_TARGET_CHARGE` ✓，叠在蓝的左端 ✓，规格 ②）；
-     *     · **4 枚小菱形标** = C1..C4（浅蓝/紫/红/黄；位置**按角色** `s_aura_kind` ✓，规格 ⑤⑥）；
-     *     · **越过瞬间的一次性菱形光晕**（owner 2026-10-10 订正 ✓；脚本 426、加算、自删）；
+     *     · **4 枚小菱形标** = C1..C4（浅蓝/紫/红/黄 = **4 张底色贴图**；位置**按角色** `s_aura_kind` ✓，规格 ⑤⑥）；
+     *     · **「蓄力 ≥ 标位」时的菱形光晕**（★ owner 2026-10-11 裁决：**电平**；脚本 426、加算 + `jmp` 循环、
+     *       按段位色选**4 张光晕贴图** ✓）；
      *     · **无 Lv 标签 / 无星星**（两处**留口**见句柄处的 ❓ 注释 ✓，规格 ③④）。
      *   统一走 `pofv_hud_charge_bar()`（底槽 → 蓝 → 白 → 标 = 生成序 ⇒ 画序 ✓；部分死 ⇒ 整组重建 ✓，
      *   同时兜住**碰撞/复活**收走 HUD VM 那一路 ✓）。*/

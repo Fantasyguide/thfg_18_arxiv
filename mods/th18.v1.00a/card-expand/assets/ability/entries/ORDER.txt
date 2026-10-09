@@ -1266,3 +1266,22 @@ POFV109_TH09_UI_DIGIT_9   ability/th09front/TH09_HUD_DIGIT_9.png      12x12
 TH19_ITEM_KIND9   ability/th19item/TH19_ITEM_KIND9.png   14x14
 TH19_ITEM_KIND2A  ability/th19item/TH19_ITEM_KIND2A.png  14x14
 TH19_ITEM_KIND2B  ability/th19item/TH19_ITEM_KIND2B.png  14x14
+# ★★★★ 2026-10-11 卡 109：蓄力槽 **C1..C4 段位标（底色菱形）** 与 **越过光晕** 的贴图 ——
+#   ★ **照一手几何烤的**：一手 `aura.anm` script5..12 是 `ins_617(1.0f, 4)` 的**几何**（8 支首行全
+#     `sprite(-1)`）、**一手本身没有这两张图** ⇒ 这 8 张是**照一手的形状/配色烤出来的，不是切图**。
+#   为什么要贴图 = ❓E2（TH18 `drawPoly` 只吃一路半径、无径向渐变 ⇒ 画不出「白芯 + 段位色边」）
+#     + ❓E5（`drawPoly` 在 HUD 层 `layer(25)`/`resolutionMode(2)` 本仓无先例）
+#     + owner 2026-10-11 裁决「实在不行，**菱形上贴图**呢？」「**E4 光晕也可以贴图吧**」。
+#   生成器 = `assets/ability/make_pofv109_chg_mark_art.py`（**幂等**：纯确定性绘图，不联网、不读样本）。
+#   8 张 = **每色一套**（底色 4 + 光晕 4，各 **16×16**）；4 组段位色取一手 `aura.anm`
+#     script5/7/9/11 的 `color2` = 浅蓝 `(128,128,255)` / 紫 `(128,0,255)` / 红 `(255,0,0)` / 黄 `(255,255,0)` ✓。
+#   ⚠ **不做**「1 张白 + 卡侧 `ce_anm_set_color` 染色」：底色菱形**有白芯**，染色会把白芯一起染掉 ✗
+#     （owner 点名）；光晕虽无白芯，但让两支同构（顶点色恒白、颜色全在贴图里）最不依赖脚本/卡侧的写色时序。
+POFV109_CHG_MARK_BLUE        ability/chgmark/CHG_MARK_BLUE.png            16x16
+POFV109_CHG_GLOW_BLUE        ability/chgmark/CHG_GLOW_BLUE.png            16x16
+POFV109_CHG_MARK_PURPLE      ability/chgmark/CHG_MARK_PURPLE.png          16x16
+POFV109_CHG_GLOW_PURPLE      ability/chgmark/CHG_GLOW_PURPLE.png          16x16
+POFV109_CHG_MARK_RED         ability/chgmark/CHG_MARK_RED.png             16x16
+POFV109_CHG_GLOW_RED         ability/chgmark/CHG_GLOW_RED.png             16x16
+POFV109_CHG_MARK_YELLOW      ability/chgmark/CHG_MARK_YELLOW.png          16x16
+POFV109_CHG_GLOW_YELLOW      ability/chgmark/CHG_GLOW_YELLOW.png          16x16
