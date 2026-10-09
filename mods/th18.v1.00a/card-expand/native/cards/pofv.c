@@ -1659,7 +1659,7 @@ static void clear_card(ce_card_t *c)
     s_reiryoku = POFV_REI_C1;
     /* ★ B 组的**上升沿判据**要从 C1 对应的档位起步 —— 否则开局第一帧「档位 0 → C1 的档位」
      *   会被当成一次变化 ⇒ **假弹 78 帧** ✗（一手开局也不会弹 ✓）。*/
-    {   float r0 = s_reiryoku / POFV_AURA_TARGET_CHARGE;
+    {   float r0 = s_reiryoku / POFV_REI_MAX;   /* ★ 灵力量纲 = 0..2500 ✓（此前除 100 会恒满 ✗）*/
         int32_t t0;
         if (r0 < 0.0f) r0 = 0.0f;
         if (r0 > 1.0f) r0 = 1.0f;
@@ -3092,7 +3092,7 @@ static int on_tick_2(ce_card_t *c)
              * ★★★ 2026-10-10 owner：「A/B 两组比子机偏右、有一个恒定的 x 差」⇒ 再整体加 `POFV_HUD_TH09_DX`（❓自定 ✓）。*/
             float bx = POFV_HUD_SURF_X(pp ? pp[0] : 0.0f) + POFV_HUD_TH09_DX,
                   by = POFV_HUD_SURF_Y(pp ? pp[1] : 0.0f);
-            int32_t tier = (int32_t)(s_aura_charge / 50.0f);    /* ❓自定：0..200 ⇒ 每格 50 ✓ */
+            int32_t tier = (int32_t)(s_aura_charge / (POFV_AURA_TARGET_CHARGE / (float)POFV_HUD_CHG_MAX_TIER));   /* ★ 0..100 ⇒ 4 档（每档 25；此前除 50 只到 2 档 ✗）*/
             if (tier < 0) tier = 0;
             if (tier > POFV_HUD_CHG_MAX_TIER) tier = POFV_HUD_CHG_MAX_TIER;
             const int flash = ((s_card_frames / 10) & 1) ? 1 : 0;   /* 一手：每 10 帧一轮 ✓ */
@@ -3144,7 +3144,7 @@ static int on_tick_2(ce_card_t *c)
      *   · 触发 = `s_reiryoku` 的**档位数值变化**（不是"原始值变了就弹" ✓）；
      *   · 内容 = 档位（`clamp(灵力/满值 × 4)` ✓）；位置 = A/B 共同的左移 + 一手的自动避让 ✓。*/
     {
-        float rl_ratio = s_reiryoku / POFV_AURA_TARGET_CHARGE;
+        float rl_ratio = s_reiryoku / POFV_REI_MAX;   /* ★ 同上：灵力必须除 2500 ✓ */
         int32_t tier;
         if (rl_ratio < 0.0f) rl_ratio = 0.0f;
         if (rl_ratio > 1.0f) rl_ratio = 1.0f;
@@ -3399,7 +3399,7 @@ static int on_tick_2(ce_card_t *c)
          *   但**本卡**的蓄力现值只到 `POFV_AURA_TARGET_CHARGE` = **100**（owner 实跑定 ✓）
          *   ⇒ 除数必须用**本卡自己的满值** ✓，否则条永远只到 **50 %** ✗（两根同此 ✓）。*/
         const float ratio_chg = (s_aura_charge > 0.0f) ? (s_aura_charge / POFV_AURA_TARGET_CHARGE) : 0.0f;
-        const float ratio_rei = (s_reiryoku   > 0.0f) ? (s_reiryoku   / POFV_AURA_TARGET_CHARGE) : 0.0f;
+        const float ratio_rei = (s_reiryoku   > 0.0f) ? (s_reiryoku   / POFV_REI_MAX) : 0.0f;   /* ★ 灵力条：除 2500 ✓ */
         float fx;                 /* 货架块的左上角（表面 px ✓）；两根左边界相同 ✓ */
         float fy_chg;             /* **蓄力条**（下方那根，= 原位置 ✓）的框左上角 ✓ */
         float fy_rei;             /* **灵力条**（上方那根）的框左上角 ✓ */
