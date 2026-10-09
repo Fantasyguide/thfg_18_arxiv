@@ -444,6 +444,34 @@ static int   s_boss_prev;   /* ★ owner 2026-10-05：boss 表 0→1 的**边沿
 #define POFV_HUD_HITS_X      POFV_HUD_BAR_X
 #define POFV_HUD_HITS_Y      (POFV_HUD_SP_Y + 40.0f)
 #define POFV_HUD_C2_Y 438.0f   /* 连击条所在行（底部 ✓，参图 ✓）*/   /* ★ SP 下一行 ✓ */   /* ★ 重排：連擊槽行 y=46 ✓（原 36 ⇒ 条在 44 与 hits 撞 ✗）*/   /* ★ TH09 連擊槽（SP 正下方 ✓，一手 §2.1 ✓）*/
+/* ★★★★ 2026-10-08 owner：「TH19 一手」的**灵力 = 蓄力槽** HUD（卡 109）—— 复刻 TH19 `aura.anm`
+ *   script0 起那 12 支子脚本（一手 = `local/th19.v1.10c/_ext/aura.anm`，`thanm -l 19` 逐条）：
+ *     · script1..4 = 底/框：`drawRectGrad(224,4)` / `drawRectBorder(224,4)`、`pos(-113,0)`、
+ *       颜色 `(0,0,64)` / `(32,96,168)` / `(224,192,140)`；
+ *     · script5..12 = **8 个段位片**（每片一组「白芯 + 外发光」色，见 `POFV_HUD_CHG_SEG_COL2`）。
+ *   ⇒ 本卡用**一支脚本 422**（= 一个段位片；理由见该脚本头注②「一台 VM 只能画一个图元」）
+ *     起 **1 台底/框 + 8 台段位片**，每帧按比例写 `scale.x`、按段位写颜色 ✓。
+ *   ★ 块尺寸取**一手值**（owner：「TH19 单侧宽度实际低于 TH18，**先按一手宽度做**」✓）：
+ *     `224 × 4` = 一手 `drawRectGrad(224,4)` 的 w/h ✓（**没做**「单侧折半」❓ 见 `TUNING.md`）。 */
+#define POFV_HUD_CHG_BLOCK_W    224.0f   /* ★ 一手：`aura.anm` script1..4 的矩形宽 ✓ */
+#define POFV_HUD_CHG_BLOCK_H      4.0f   /* ★ 一手：同一对指令的高 ✓ */
+#define POFV_HUD_CHG_SEGMENTS       8    /* ★ 一手：script5..12 共 **8** 片 ✓ */
+/* ★ 每片的宽 = 满宽 ÷ 8 片 —— ❓自定**排布**：一手那 12 台的位置/缩放由 TH19 的游戏代码逐帧写
+ *   （未 dump 到）⇒ 这里按「8 片等分满宽」铺开（登记 `TUNING.md`）。 */
+#define POFV_HUD_CHG_SEG_W       (POFV_HUD_CHG_BLOCK_W / (float)POFV_HUD_CHG_SEGMENTS)   /* = 28 */
+/* ★ 一手 `aura.anm` script5..12 的 `color2`（外发光；相邻两片同色）—— 段位色序，卡侧每帧照抄 ✓。
+ *   索引 0..7 ↔ script5/6/7/8/9/10/11/12 = 蓝 蓝 紫 紫 红 红 黄 黄。 */
+static const uint32_t POFV_HUD_CHG_SEG_COL2[POFV_HUD_CHG_SEGMENTS] = {
+    0xFF8080FFu, 0xFF8080FFu,   /* script5/6   (128,128,255) 蓝 ✓ */
+    0xFF8000FFu, 0xFF8000FFu,   /* script7/8   (128,0,255)   紫 ✓ */
+    0xFFFF0000u, 0xFFFF0000u,   /* script9/10  (255,0,0)     红 ✓ */
+    0xFFFFFF00u, 0xFFFFFF00u    /* script11/12 (255,255,0)   黄 ✓ */
+};
+/* ★ 一手 script5/7/9/11 的 `color(255,255,255)`（每片的**白芯** ✓）—— 卡侧每帧照抄 ✓。 */
+#define POFV_HUD_CHG_SEG_COL1   0xFFFFFFFFu
+/* ★ 一手 script1/3 的底/框色（`color2(0,0,64)` + script3 的 `color(32,96,168)` ✓）。 */
+#define POFV_HUD_CHG_BASE_COL1  0xFF000040u   /* (0, 0, 64)   暗蓝 ✓ */
+#define POFV_HUD_CHG_BASE_COL2  0xFF2060A8u   /* (32, 96, 168) 蓝  ✓ */
 static int32_t s_sp;               /* 本侧 SP（0..999990 ✓）*/
 /* ★★★ 2026-10-08（交接 HANDOFF-109-HUD-STATE §3 的唯一 P0）：**HUD 的 VM 必须起在「UI 列表」** ✓
  *   —— 世界列表版（`ce_anm_spawn`）是给**场上效果**的 ✗；我原先用错了 ⇒ 整组 HUD 落在**屏幕中间** ✗
@@ -507,6 +535,37 @@ static int32_t s_hud_lv_last_tier;  /* 上次看到的档位（检测上涨沿 �
 static int32_t s_hud_bonus_vm;   /* ★ TH09 `Bonus!`（一手原图 th09 ascii.anm sprite107 ✓）*/
 static int32_t s_hud_ag_fill_vm, s_hud_ag_dot_vm[4];   /* TH19 gauge fill + 4 threshold markers (original art) */   /* TH19 Bonus label (cut from original art) */   /* ★ TH19 hits 标签（**切自原作字体** ✓ ascii.png y=56 行 ✓）*/   /* ★ TH09 連擊槽条 / TH19 攻击槽条（卡自建 VM ⇒ 必须在 clear_card 里真删 ✓ 铁律）*/
 static ce_hud_vm_text_t s_hud_hits_lbl;
+
+/* ★★★★ 2026-10-08 卡 109 的「灵力 = 蓄力槽」VM 句柄（共享脚本 422）：
+ *   · `s_hud_chg_track_vm` = **底/框**（1 台；`scale.x` 固定 = 8 ⇒ 满宽 224 ✓，颜色 = 一手底/框色 ✓）；
+ *   · `s_hud_chg_seg_vm[8]` = **8 个段位片**（各 28 px；`scale.x` = 该片的填充比例 0..1 ✓、颜色 = 一手段位色 ✓）。
+ *   ⚠ 必须放**文件作用域**（`clear_card` 要能看到 ⇒ 否则删卡/换局泄漏 ✗，同一文件 `:1157` 的教训 ✓）。*/
+static int32_t s_hud_chg_track_vm;
+static int32_t s_hud_chg_seg_vm[POFV_HUD_CHG_SEGMENTS];
+/* HUD 管理器（`ce_hud_slot_claim_card`）发给这块的槽：`x/y` = **块左下角**（表面 px ✓，`HUD-LAYOUT.md` §3）。 */
+static ce_hud_slot_t s_hud_chg_slot;
+static int s_hud_chg_slot_ok;      /* 本关是否已认领到（0 ⇒ 每帧补认领一次 ✓）*/
+static int s_hud_chg_slot_logged;  /* 认领日志只打一次（防刷屏）*/
+
+/* ★★★★ 2026-10-08 owner：「**注意这个得进那个 hud 管理器**」✓ —— 认领本卡的蓄力槽块
+ *   （**只认领这一条**；本卡其它 HUD 一律不动 ✗）。`ce_hud_slot_claim_card()` 会先把关卡号推进纪元
+ *   （关卡号一变 SDK 先清空整张表）⇒ 所以放进每关开场的 `on_load` 里，且**幂等**（重复调用返回同一个槽 ✓）。
+ *   块的宽高/锚点约定 = `HUD-LAYOUT.md` §3：「块 = w×h + 锚点 = 左下角表面 px」✓。 */
+static void pofv_hud_chg_claim(void)
+{
+    ce_hud_block_t blk;
+    blk.w = POFV_HUD_CHG_BLOCK_W;      /* 224（一手 `drawRectGrad(224,4)` 的宽 ✓）*/
+    blk.h = POFV_HUD_CHG_BLOCK_H;      /* 4   （同一对指令的高 ✓）*/
+    blk.side = CE_HUD_SIDE_LEFT;       /* 走底部货架（owner：「冲突是已知问题，就这么做」⇒ 不为避让改位置 ✓）*/
+    s_hud_chg_slot_ok = ce_hud_slot_claim_card(109, &blk, &s_hud_chg_slot);
+    if (!s_hud_chg_slot_logged) {
+        s_hud_chg_slot_logged = 1;
+        ce_log("pofv: HUD 灵力槽块 %.0fx%.0f claimed=%d at surface (%.1f, %.1f) side=%d",
+               (double)blk.w, (double)blk.h, s_hud_chg_slot_ok,
+               (double)s_hud_chg_slot.x, (double)s_hud_chg_slot.y, (int)blk.side);
+    }
+}
+
 /* ★★★ 2026-10-05 owner：**调试 UI** —— ① 镜像事件列表（镜像暴风**延迟**显示；镜像击破/固灵**停 3 s**再消失）
  *   ② 镜像幽灵列表（**只写「有什么」**，不涉及位置 ✓）。文字一律走**切贴图**（`ce_hud_vm_text_set` ✓，owner 规矩 ✓）*/
 #define POFV_UI_EV_MAX 5
@@ -1167,6 +1226,16 @@ static void clear_card(ce_card_t *c)
     { int i9; for (i9 = 0; i9 < 6; ++i9) if (s_hud_sp_digit_vm[i9]) { ce_anm_delete((uint32_t)s_hud_sp_digit_vm[i9]); s_hud_sp_digit_vm[i9] = 0; } }
     { int i9; for (i9 = 0; i9 < 3; ++i9) if (s_hud_hit_digit_vm[i9]) { ce_anm_delete((uint32_t)s_hud_hit_digit_vm[i9]); s_hud_hit_digit_vm[i9] = 0; } }
     if (s_hud_bonus_vm) { ce_anm_delete((uint32_t)s_hud_bonus_vm); s_hud_bonus_vm = 0; }   /* Bonus! ✓ */
+    /* ★★★★ 2026-10-08 卡 109 的「灵力 = 蓄力槽」（脚本 422：1 台底/框 + 8 台段位片）——
+     *   与上面那批同款：**卡自建 VM ⇒ 必须在 clear_card 里真删** ✓（铁律「长持续效果要交代删掉会怎样」；
+     *   `on_delete` / `on_run_reset` / `on_ctor` 三路都走本函数 ✓，不依赖 tick ✓）。
+     *   句柄清 0 + 认领标记复位（活着的帧下一帧会重新认领/重建 ✓；`on_delete` 那条路 tick 已停也无妨 ✓）。*/
+    if (s_hud_chg_track_vm) { ce_anm_delete((uint32_t)s_hud_chg_track_vm); s_hud_chg_track_vm = 0; }
+    { int i9; for (i9 = 0; i9 < POFV_HUD_CHG_SEGMENTS; ++i9)
+        if (s_hud_chg_seg_vm[i9]) { ce_anm_delete((uint32_t)s_hud_chg_seg_vm[i9]); s_hud_chg_seg_vm[i9] = 0; } }
+    /* ⚠ 槽位**本身**的释放不在这里做：SDK 的 `ce_layer_drop_card()` 在 `on_run_reset`/`on_delete`
+     *   进入本回调**之前**已经调过 `ce_hud_slot_release(109)`（`sdk.h:1123`）✓。*/
+    s_hud_chg_slot_ok = 0;
     ce_hud_vm_text_clear(&s_hud_hits_lbl);
     pofv_foe_spirit_init(s_foe, POFV_FOE_SPIRIT_MAX);
     pofv_foe_incoming_init(s_inc, POFV_FOE_INCOMING_MAX);
@@ -2666,15 +2735,88 @@ static int on_tick_2(ce_card_t *c)
      *   HUD 的 VM 收走 ✗，而句柄仍非 0 ⇒ 下面各处的 `if (!vm)` **永远不成立** ⇒ 再也不重建 ✓。
      *   ⇒ 每个 HUD 帧先做一次**句柄体检**：`ce_anm_get_vm` 查不到 ⇒ 清 0 ⇒ 自然重建 ✓（本仓 `animal.c` 先例 ✓）。*/
     {
-        int32_t *hs[16]; int nh = 0, ih;
+        /* ★★★★ 2026-10-08 卡 109 的「灵力 = 蓄力槽」（脚本 422：1 台底/框 + 8 台段位片）也进这台体检 ✓
+         *   （owner 要求：「把这台也加进去」✓；本块只**清 0**，重建在下面那节里 ✓ ⇒ 撞弹/复活后自愈 ✓）。
+         *   ⚠ 顺带修一处**既有越界写**：本数组原声明为 `hs[16]`，而上面已经 push 了 19 个指针
+         *   （3 + 4 + 3 + 6 + 3 = 19 ⇒ `hs[16..18]` 越界 ✗，写坏栈上相邻变量）⇒ 这里 16 → **32**。
+         *   现在再加 9 个（1 底/框 + 8 片）= **28 ≤ 32** ✓。 */
+        int32_t *hs[32]; int nh = 0, ih;
         hs[nh++] = &s_hud_c2_vm; hs[nh++] = &s_hud_sp_frame_vm; hs[nh++] = &s_hud_sp_hit_vm;
         hs[nh++] = &s_hud_chg_label_vm; hs[nh++] = &s_hud_chg_cur_vm;
         hs[nh++] = &s_hud_chg_slash_vm; hs[nh++] = &s_hud_chg_max_vm;
         hs[nh++] = &s_hud_lv_gf_vm; hs[nh++] = &s_hud_lv_label_vm; hs[nh++] = &s_hud_lv_digit_vm;
         for (ih = 0; ih < 6; ++ih) hs[nh++] = &s_hud_sp_digit_vm[ih];
         for (ih = 0; ih < 3; ++ih) hs[nh++] = &s_hud_hit_digit_vm[ih];
+        hs[nh++] = &s_hud_chg_track_vm;                                                  /* ★ 灵力槽：底/框 */
+        for (ih = 0; ih < POFV_HUD_CHG_SEGMENTS; ++ih) hs[nh++] = &s_hud_chg_seg_vm[ih];  /* ★ 灵力槽：8 片 */
         for (ih = 0; ih < nh; ++ih)
             if (*hs[ih] && !ce_anm_get_vm((uint32_t)*hs[ih])) *hs[ih] = 0;
+    }
+    /* ★★★★ 2026-10-08 卡 109 的「**灵力 = 蓄力槽**」HUD（owner：「照 TH19 一手」✓）——
+     *   复刻 `aura.anm` script0 起那套（1 底/框 + 8 段位片；脚本 422 = 一个段位片，见其头注）。
+     *   每帧：
+     *     ① 补认领 + 取**最新**锚点（货架按 card_id 排 ⇒ 同批后来的认领会重排 ⇒ 必须每帧 `get`，
+     *        与 `season.c` 的 `hud_slot_sync` 同口径 ✓）；
+     *     ② `ratio = s_aura_charge / POFV_AURA_CHARGE_MAX`（= 一手 `clamp(S+0x8c,0,200)` 的比例 ✓）；
+     *     ③ 底/框 `scale.x` 恒 **8**（8 片 ⇒ 满宽 224）；第 i 片 `scale.x = clamp(ratio×8 − i, 0, 1)`
+     *        （该片填充比例 0..1）⇒ **整条长度 = ratio × 224 px**，即要求里的「`scale.x` = `s_aura_charge/200`」
+     *        在整条上的等价量 ✓；
+     *     ④ 颜色照一手那组段位色（`POFV_HUD_CHG_SEG_COL2` ✓、白芯 `POFV_HUD_CHG_SEG_COL1` ✓）。
+     *   ★ 自愈：上面的体检块已把 9 个句柄都查过 ⇒ 这里发现「**部分死**」就**整组重建**
+     *     （底先、片后 ⇒ 同层生成序 = 底在下、片在上 ✓），同时兜住**碰撞/复活**收走 HUD VM 那一路 ✓。 */
+    {
+        /* ★★★ 2026-10-08 订正（子智能体标的 ❓C7 ✓）：一手 TH19 的槽范围是 `clamp(S+0x8c,0,200)` ✓，
+         *   但**本卡**的蓄力现值只到 `POFV_AURA_TARGET_CHARGE` = **100**（owner 实跑定，`pofv.c:2112` ✓）
+         *   ⇒ 除数必须用**本卡自己的满值** ✓，否则条永远只到 **50 %** ✗。*/
+        const float ratio = (s_aura_charge > 0.0f) ? (s_aura_charge / POFV_AURA_TARGET_CHARGE) : 0.0f;
+        float bx, by;
+        int i9, alive = 0, missing = 0;
+
+        if (!s_hud_chg_slot_ok) pofv_hud_chg_claim();                       /* 幂等补认领（纪元清空/认领失败）*/
+        if (s_hud_chg_slot_ok && !ce_hud_slot_get(109, &s_hud_chg_slot)) s_hud_chg_slot_ok = 0;
+
+        if (s_hud_chg_slot_ok) {
+            if (s_hud_chg_track_vm) ++alive; else ++missing;
+            for (i9 = 0; i9 < POFV_HUD_CHG_SEGMENTS; ++i9) {
+                if (s_hud_chg_seg_vm[i9]) ++alive; else ++missing;
+            }
+            if (alive > 0 && missing > 0) {                                 /* ★ 部分死 ⇒ 整组重建（保生成序）*/
+                if (s_hud_chg_track_vm) { ce_anm_delete((uint32_t)s_hud_chg_track_vm); s_hud_chg_track_vm = 0; }
+                for (i9 = 0; i9 < POFV_HUD_CHG_SEGMENTS; ++i9)
+                    if (s_hud_chg_seg_vm[i9]) { ce_anm_delete((uint32_t)s_hud_chg_seg_vm[i9]); s_hud_chg_seg_vm[i9] = 0; }
+                missing = POFV_HUD_CHG_SEGMENTS + 1;
+            }
+            /* 块左下角 = `s_hud_chg_slot.(x,y)`；脚本 422 用 `anchor(1,1)`（左·顶，一手口径 ✓）
+             * ⇒ VM 位置取**块顶边**，条身正好压在块底边上（y−4 .. y ✓）。 */
+            bx = s_hud_chg_slot.x;
+            by = s_hud_chg_slot.y - POFV_HUD_CHG_BLOCK_H;
+            if (missing > 0) {
+                if (!s_hud_chg_track_vm)
+                    s_hud_chg_track_vm = (int32_t)hud_vm_spawn(CE_ANM_ABILITY_SCRIPT_POFV109_HUD_CHARGE, bx, by);
+                for (i9 = 0; i9 < POFV_HUD_CHG_SEGMENTS; ++i9)
+                    if (!s_hud_chg_seg_vm[i9])
+                        s_hud_chg_seg_vm[i9] = (int32_t)hud_vm_spawn(CE_ANM_ABILITY_SCRIPT_POFV109_HUD_CHARGE,
+                                                                     bx + POFV_HUD_CHG_SEG_W * (float)i9, by);
+            }
+            /* ① 底/框：满宽（8 片）+ 一手底/框色（script1/3 的 (0,0,64) / (32,96,168) ✓）*/
+            if (s_hud_chg_track_vm) {
+                ce_anm_set_pos((uint32_t)s_hud_chg_track_vm, bx, by, 0.0f);
+                ce_anm_set_scale((uint32_t)s_hud_chg_track_vm, (float)POFV_HUD_CHG_SEGMENTS, 1.0f);
+                ce_anm_set_color((uint32_t)s_hud_chg_track_vm, POFV_HUD_CHG_BASE_COL1);
+                ce_anm_set_color2((uint32_t)s_hud_chg_track_vm, POFV_HUD_CHG_BASE_COL2);
+            }
+            /* ② 8 个段位片：第 i 片 `scale.x` = 该片填充比例（0..1）+ 一手段位色 ✓ */
+            for (i9 = 0; i9 < POFV_HUD_CHG_SEGMENTS; ++i9) {
+                float seg = ratio * (float)POFV_HUD_CHG_SEGMENTS - (float)i9;
+                if (seg < 0.0f) seg = 0.0f;
+                if (seg > 1.0f) seg = 1.0f;
+                if (!s_hud_chg_seg_vm[i9]) continue;
+                ce_anm_set_pos((uint32_t)s_hud_chg_seg_vm[i9], bx + POFV_HUD_CHG_SEG_W * (float)i9, by, 0.0f);
+                ce_anm_set_scale((uint32_t)s_hud_chg_seg_vm[i9], seg, 1.0f);
+                ce_anm_set_color((uint32_t)s_hud_chg_seg_vm[i9], POFV_HUD_CHG_SEG_COL1);
+                ce_anm_set_color2((uint32_t)s_hud_chg_seg_vm[i9], POFV_HUD_CHG_SEG_COL2[i9]);
+            }
+        }
     }
     {   /* ★★★ TH09 SP 行 —— **owner 给的格式原文**（2026-10-08）✓：
          *   「Hit 得是**红色**的，格式不是 000000 而是**一个红色的 `<3 格右对齐、前导空格>` 数字 + `Hit`**，
@@ -3182,6 +3324,19 @@ static int on_tick_2(ce_card_t *c)
     return 0;
 }
 
+/* ★★★★ 2026-10-08：HUD 槽位的认领放**每关开场**（`on_load`，虚表 `+0x20`）—— 与 116/117 同款
+ *   （`season.c:1584` 的 `hud_slot_claim` / `animal.c:4161` 的 `on_load`）：`ce_hud_slot_claim_card()`
+ *   在认领前会把**关卡号推进纪元**（关卡号一变 SDK 先清空整张表 ⇒ 不重认领的话本关
+ *   `ce_hud_slot_get()` 取不到槽位 ⇒ HUD 位置退回 (0,0) ✗）。
+ *   ⚠ `on_load` **不是「开局一次」**（`AbilityManager__notify_cards_on_load` 每关的商店/结算都会跑）
+ *     ⇒ 这里只做**幂等登记**（只认领**这条蓄力槽**），**不碰任何状态**（状态只在 `clear_card` 清 ✓）。 */
+static int on_load(ce_card_t *c)
+{
+    (void)c;
+    pofv_hud_chg_claim();
+    return 0;
+}
+
 static void on_run_reset(ce_card_t *c) { clear_card(c); }
 static void on_delete(ce_card_t *c)    { clear_card(c); }
 
@@ -3224,6 +3379,7 @@ CE_CARD(109, .on_active_tick = pofv_active_tick,
         .active_recharge = POFV_ACTIVE_RECHARGE,
         .on_activate = on_activate,
         .ctor = on_ctor,
+        .on_load = on_load,             /* ★ 2026-10-08：认领「灵力 = 蓄力槽」的 HUD 货架块（幂等 ✓）*/
         .on_enemy_death = on_enemy_death,
         .on_tick_2 = on_tick_2,
         .on_run_reset = on_run_reset,

@@ -282,6 +282,14 @@ void pofv_aura_spec(int32_t holding_c, pofv_aura_spec_t *o);
 
 /* 形状判定（一手：槽 7 的「某点是否落在オーラ内」）。本卡先做**圆**（咲夜的「锚定场」是同族）：
  *   `cx,cy` = 锚点（出生点）、`r` = 当前半径、`dx,dy` = 待判点相对锚点的位移。 */
+/* ★★★★ 2026-10-08 卡 109 的「灵力 = 蓄力槽」HUD（复刻 TH19 `aura.anm`）用的一手上限：
+ *   一手公式 = `clamp(S+0x8c, 0, **200**) × K / 100`（`engine/versus/th19/06-aura.md` §9.17 ✓，
+ *   也就是 `aura.anm` script0 起那套蓄力槽所驱动的同一个量）⇒ 蓄力槽比例的**分母** = **200** ✓。
+ *   ⚠ 本卡现值只有 `0 ↔ POFV_AURA_TARGET_CHARGE(100)` 两态（`pofv.c` 的 `:2043` / `:2085`）
+ *     ⇒ 满档时条走到 **50%**；任务书明确要求「`scale.x` = `s_aura_charge / 200`」⇒ 照办
+ *     （要满格只改这一处常量即可）。 */
+#define POFV_AURA_CHARGE_MAX 200.0f
+
 /* ★ 2026-10-06：一手 §7.3 的两种判定形状（本卡按角色取一套 ✓）*/
 #define POFV_AURA_SHAPE_CIRCLE 0   /* 灵梦：dx²+dy² <= r²+pad² ✓ */
 #define POFV_AURA_SHAPE_BAND   1   /* 魔理沙：|dx| <= r（无 y 项）✓ */
