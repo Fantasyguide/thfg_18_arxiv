@@ -1740,7 +1740,10 @@ static const pofv_c1_shot_t s_c1_table[POFV_C1_GROUPS][POFV_C1_SHOTS_PER_GROUP] 
 #define POFV_C1_HIT_LIFE   2
 #define POFV_C1_HIT_W      30.0f   /* ★ owner Q4：= 一手弹体 30x30 ✓ */
 #define POFV_C1_HIT_H      30.0f
-#define POFV_C1_BULLET_LIFE 90           /* ❓自定：一发弹的存活帧数（出屏即由裁剪切掉 ✓）*/
+#define POFV_C1_BULLET_LIFE 999          /* ★ 一手 ✓（`pl00.sht` 第 10 项的寿命 = 999）；
+                                          *   ★ 实际由"出屏即收"先触发 ⇒ 这个值只是上限 ✓ */
+#define POFV_C1_BOUNCE_MAX    4          /* ★ 一手 ✓ `EX_BOUNCE` 撞墙 4 次 */
+#define POFV_C1_BOUNCE_MASK  13          /* ★ 一手 ✓ walls = 13 = 上(1)|左(4)|右(8) ⇒ **不弹下边** ✓ */
 #define POFV_C1_VM_LAYER   6             /* ❓自定：与世界层对齐（暴风 `POFV_STORM_VM_LAYER` 同层 ✓）*/
 
 /* C1 各发的飞行状态（VM 句柄 + 位置 + 剩余寿命）；`clear_card()` 里真删 ✓。*/
@@ -2158,6 +2161,7 @@ static int s_c1_live[POFV_C1_SHOTS_PER_GROUP];      /* 每行一发：-1 = 空 *
 static float s_c1_x[POFV_C1_SHOTS_PER_GROUP], s_c1_y[POFV_C1_SHOTS_PER_GROUP];
 static float s_c1_vx[POFV_C1_SHOTS_PER_GROUP], s_c1_vy[POFV_C1_SHOTS_PER_GROUP];
 static int s_c1_age[POFV_C1_SHOTS_PER_GROUP];
+static int s_c1_bounce[POFV_C1_SHOTS_PER_GROUP];   /* ★ 一手 `EX_BOUNCE`：已撞墙次数 ✓ */
 static int32_t s_c1_vm[POFV_C1_SHOTS_PER_GROUP];
 
 static void pofv_c1_clear(void)
@@ -2192,6 +2196,7 @@ static void pofv_c1_fire(void)
         s_c1_vx[t] = s_c2_dir36[di][0] * r->spd;
         s_c1_vy[t] = s_c2_dir36[di][1] * r->spd;
         s_c1_age[t] = 0;
+        s_c1_bounce[t] = 0;
         s_c1_live[t] = 1;
         s_c1_vm[t] = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_POFV109_C1_BULLET, POFV_C1_VM_LAYER);
         if (s_c1_vm[t]) {
@@ -2212,6 +2217,16 @@ static void pofv_c1_tick(void)
         s_c1_x[t] += s_c1_vx[t];
         s_c1_y[t] += s_c1_vy[t];
         ++s_c1_age[t];
+        /* ★★ 一手 `EX_BOUNCE`（type 64、**4 次**、★ `walls = 13` = **上|左|右** ✓）：
+         *   撞到这三面就**反弹**（速度分量取反 ✓），最多 4 次；★ **下边不弹** ✗（一手 walls 没有"下" ✓）
+         *   —— 撞下边或次数用完就正常出屏收掉 ✓。*/
+        if (s_c1_bounce[t] < POFV_C1_BOUNCE_MAX) {
+            int hit = 0;
+            if ((POFV_C1_BOUNCE_MASK & 4) && s_c1_x[t] < -POFV_FIELD_HALF_W) { s_c1_x[t] = -POFV_FIELD_HALF_W; s_c1_vx[t] = -s_c1_vx[t]; hit = 1; }
+            if ((POFV_C1_BOUNCE_MASK & 8) && s_c1_x[t] >  POFV_FIELD_HALF_W) { s_c1_x[t] =  POFV_FIELD_HALF_W; s_c1_vx[t] = -s_c1_vx[t]; hit = 1; }
+            if ((POFV_C1_BOUNCE_MASK & 1) && s_c1_y[t] < 0.0f)                 { s_c1_y[t] = 0.0f;                 s_c1_vy[t] = -s_c1_vy[t]; hit = 1; }
+            if (hit) ++s_c1_bounce[t];
+        }
         if (s_c1_x[t] < -POFV_FIELD_HALF_W || s_c1_x[t] > POFV_FIELD_HALF_W ||
             s_c1_y[t] < 0.0f || s_c1_y[t] > POFV_FIELD_H || s_c1_age[t] >= POFV_C1_BULLET_LIFE) {
             if (s_c1_vm[t]) { ce_anm_delete((uint32_t)s_c1_vm[t]); s_c1_vm[t] = 0; }
