@@ -3053,6 +3053,94 @@ static void pofv_c4m_tick(void)
     }
 }
 
+/* ============ ② C2 —— **早苗**分支：更慢的 26 发整圈（一手 = shot 行 11）====================
+ * ★ 一手（`HANDOFF-109-C1-C4.md` §5.2）：★ `EXSanaeInf` 槽 4 = `0x418d20` **不建对象** ✗ ——
+ *   它做的是：★ 复位 C1 组、★ 把 **`EX+0xd8` 设成 `11`**（= ★ **改用 shot 行 11** ✓）、
+ *   ★ 快照自机坐标（写 `PlayerInf+0xc18/c1c = pos×128` ✓）⇒ ★ **走真自机弹系统** ✓。
+ * ★ 本卡不用真弹 ⇒ ★ **按 shot 行 11 的图案复刻** ✓。已核到的值（与 C1 的 set10 同构 ✓）：
+ *     `pl02` **set10**（= 她的 C1）= 26 行 / 伤害 **22** / 速度 **16** / anm 7 / 角 −180° 起每 30° ✓；
+ *     `pl02` **set11**（= 她的 C2）= 26 行 / **速度 3** / **anm 9** / **cls 5**（= 子机槽 5 ✓）。
+ *   ⇒ ★★ **她的 C2 = 与 C1 同一個 26 发整圈、但慢得多（3 vs 16）** ✓。
+ * ★ 一手的 `rate = 16` ⇒ ★ **每 16 帧放一圈** ✓ ⇒ ★ 本卡按"**放 3 圈**（≈ 48 帧）"近似 ✓（❓）。
+ * ❓自定：① 圈数 = 3；② 伤害沿用 C1 的 22（一手 set11 的伤害那格没读出来 ✗）；
+ *         ③ 视角用红环（脚本 430）✓（一手 anm 9 未取 ✗）。*/
+#define POFV_C2S_MAX      60
+#define POFV_C2S_SPEED   3.0f      /* ★ 一手 ✓ set11 的速度 */
+#define POFV_C2S_COUNT    26       /* ★ 一手 ✓ set11 的行数 */
+#define POFV_C2S_RINGS     3       /* ❓① */
+#define POFV_C2S_EVERY    16       /* ★ 一手 ✓ rate 16 ⇒ 每 16 帧一圈 */
+#define POFV_C2S_DMG      22.0f    /* ❓②：沿用她 C1 的 22 */
+
+typedef struct { int live, age, life; float x, y, vx, vy; int32_t vm; } pofv_c2s_t;
+static pofv_c2s_t s_c2s[POFV_C2S_MAX];
+static struct { int active, ring, timer; } s_c2s_st;
+
+static void pofv_c2s_clear(void)
+{
+    int k;
+    for (k = 0; k < POFV_C2S_MAX; ++k) {
+        if (s_c2s[k].vm) { ce_anm_delete((uint32_t)s_c2s[k].vm); s_c2s[k].vm = 0; }
+        s_c2s[k].live = 0; s_c2s[k].age = 0;
+    }
+    s_c2s_st.active = 0; s_c2s_st.ring = 0; s_c2s_st.timer = 0;
+}
+
+static void pofv_c2s_fire(void)
+{
+    s_c2s_st.active = 1; s_c2s_st.ring = 0; s_c2s_st.timer = 0;
+}
+
+static void pofv_c2s_ring(void)
+{
+    const float *pp = ce_player_pos();
+    int i;
+    if (!pp) return;
+    for (i = 0; i < POFV_C2S_COUNT; ++i) {
+        int k, a5;
+        for (k = 0; k < POFV_C2S_MAX; ++k) if (!s_c2s[k].live) break;
+        if (k >= POFV_C2S_MAX) return;
+        a5 = (int)((-180.0f + 30.0f * (float)i) * (36.0f / 360.0f)) % 36;
+        if (a5 < 0) a5 += 36;
+        s_c2s[k].live = 1; s_c2s[k].age = 0;
+        s_c2s[k].x = pp[0]; s_c2s[k].y = pp[1];
+        s_c2s[k].vx = s_c2_dir36[a5][0] * POFV_C2S_SPEED;
+        s_c2s[k].vy = s_c2_dir36[a5][1] * POFV_C2S_SPEED;
+        s_c2s[k].life = 150;
+        s_c2s[k].vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), POFV_C_RING_SCRIPT, POFV_C4_VM_LAYER);
+        if (s_c2s[k].vm) {
+            ce_anm_set_color((uint32_t)s_c2s[k].vm, 0xffffffffu);
+            ce_anm_set_scale((uint32_t)s_c2s[k].vm, 0.45f, 0.45f);
+        }
+    }
+}
+
+static void pofv_c2s_tick(void)
+{
+    int k;
+    if (s_c2s_st.active) {
+        if (s_c2s_st.timer == 0) pofv_c2s_ring();
+        if (++s_c2s_st.timer >= POFV_C2S_EVERY) {
+            s_c2s_st.timer = 0;
+            if (++s_c2s_st.ring >= POFV_C2S_RINGS) s_c2s_st.active = 0;
+        }
+    }
+    for (k = 0; k < POFV_C2S_MAX; ++k) {
+        pofv_c2s_t *b = &s_c2s[k];
+        float pos[3];
+        if (!b->live) continue;
+        b->x += b->vx; b->y += b->vy;
+        ++b->age;
+        if (b->x < -POFV_FIELD_HALF_W || b->x > POFV_FIELD_HALF_W ||
+            b->y < 0.0f || b->y > POFV_FIELD_H || b->age > b->life) {
+            if (b->vm) { ce_anm_delete((uint32_t)b->vm); b->vm = 0; }
+            b->live = 0; continue;
+        }
+        if (b->vm) ce_anm_set_pos((uint32_t)b->vm, b->x, b->y, 0.0f);
+        pos[0] = b->x; pos[1] = b->y; pos[2] = 0.0f;
+        (void)ce_damage_rect(pos, 0.0f, 2, POFV_C2S_DMG, 24.0f, 24.0f);
+    }
+}
+
 static void clear_card(ce_card_t *c)
 {
     int i, k;
@@ -3129,6 +3217,7 @@ static void clear_card(ce_card_t *c)
     pofv_c2m_clear();       /* ★ 铁律：魔理沙 C2 的 6 条激光 VM ⇒ 全收 ✓ */
     pofv_c3m_clear();       /* ★ 铁律：魔理沙 C3 的激光 VM ⇒ 全收 ✓ */
     pofv_c4m_clear();       /* ★ 铁律：魔理沙 C4 的激光与扫射弹 VM ⇒ 全收 ✓ */
+    pofv_c2s_clear();       /* ★ 铁律：早苗 C2 的整圈 VM ⇒ 全收 ✓ */
     /* ★★★★ 2026-10-10 owner：灵力（上限量 = 一手 `S+0x24`）**初值 = C1（不是 0 ✗）**
      *   ⇒ 开局有基础灵力 ⇒ 蓄力/结界不会被封到 0 ✓（C1 数值 = ❓自定，见 `POFV_REI_C1` ✓）。*/
     s_reiryoku = POFV_REI_C1;
@@ -4231,6 +4320,7 @@ static int on_tick_2(ce_card_t *c)
         static int s_c2m_lv;                    /* ★ ② C2 魔理沙分支：档闩锁 ✓ */
         static int s_c3m_lv;                    /* ★ ⑤ C3 魔理沙分支：档闩锁 ✓ */
         static int s_c4m_lv;                    /* ★ ⑤ C4 魔理沙分支：档闩锁 ✓ */
+        static int s_c2s_lv;                    /* ★ ② C2 早苗分支：档闩锁 ✓ */
         const float cap2  = POFV_AURA_TARGET_CHARGE * (s_reiryoku / POFV_REI_MAX);
         const float c1_at = cap2 * (POFV_C1_THRESH / POFV_REI_MAX);
         const float c2_at = cap2 * (POFV_C2_THRESH / POFV_REI_MAX);
@@ -4242,6 +4332,10 @@ static int on_tick_2(ce_card_t *c)
         if (s_aura_charge >= c2_at && s_aura_kind == 0) {
             if (!s_c2_lv) { pofv_c2_fire(); s_c2_lv = 1; }
         } else s_c2_lv = 0;
+        /* ★ ② C2 —— **早苗**分支（一手 = shot 行 11 = 更慢的 26 发整圈 ✓，见上）*/
+        if (s_aura_charge >= c2_at && s_aura_kind == 3) {
+            if (!s_c2s_lv) { pofv_c2s_fire(); s_c2s_lv = 1; }
+        } else s_c2s_lv = 0;
         /* ★ ② C2 —— **魔理沙**分支（一手 = 6 条 `EXLaserInf` ✓，见上）*/
         if (s_aura_charge >= c2_at && s_aura_kind == 1) {
             if (!s_c2m_lv) { pofv_c2m_fire(); s_c2m_lv = 1; }
@@ -4288,6 +4382,7 @@ static int on_tick_2(ce_card_t *c)
         pofv_c2m_tick();                    /* ★ ② C2 魔理沙：6 条激光 ✓ */
         pofv_c3m_tick();                    /* ★ ⑤ C3 魔理沙：横扫双镜像激光 ✓ */
         pofv_c4m_tick();                    /* ★ ⑤ C4 魔理沙：激光 + 扫射弹 ✓ */
+        pofv_c2s_tick();                    /* ★ ② C2 早苗：更慢的 26 发整圈 ✓ */
     }
     }   /* ← 2026-10-10 新增的两把键作用域块（`chg_held` / `aura_held`）收尾 ✓ */
     /* ★★ 2026-10-10 结界半径用的"有效蓄力"：见上面两把键的分工注释 ——
