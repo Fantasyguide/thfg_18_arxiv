@@ -784,6 +784,15 @@ static const float k_ufo_slot_x[UFO_SLOT_COUNT] = {
 #define UFO_HUD_BANNER_DX_SURF  (UFO_HUD_OWNER_DX_SURF - 12.0f)
 #define UFO_HUD_SLOT_Y 912.0f       /* = 456 ×2（一手槽 y）；槽高 16 单位 = 32 表面 px ⇒ 896..928 */
 _Static_assert(UFO_SLOT_COUNT == 3, "k_ufo_slot_x holds exactly the three TH12 slot columns");
+
+/* ★★★ 2026-10-03u（owner 十二合一实跑第 1 条：「112 …堆在左下角，甚至不听主动卡的话」）——
+ *   **认领 ≠ 画在哪**：本卡原来只记「认领成功」这一个 flag，**槽的坐标没存** ⇒ 槽的 VM 永远画在
+ *   常量 `k_ufo_slot_x[]` / `UFO_HUD_SLOT_Y` 上，分配器把块搬到哪都不动。
+ *   ⇒ 现在存住分配器给的槽（`s_hud_slot`），**所有 HUD 位置 = pin 声明值 + (槽 − pin)** ——
+ *     内部关系（槽距 42、与横幅的相对位移）一个像素不变，整组**跟着分配器走**（含碰撞回退）。*/
+static ce_hud_slot_t s_hud_slot;
+#define UFO_HUD_SLOT_DX ((s_hud_slot.x) - (UFO_HUD_PIN_X))
+#define UFO_HUD_SLOT_DY ((s_hud_slot.y) - (UFO_HUD_PIN_Y))
 /* 槽的 **sprite 基数**与**亮版偏移**：ORDER 里 457/458/459/460 = 空/红/蓝/绿，461..464 = 亮版
  * ⇒ 与一手 `FUN_00421690` 的 `59 + 四态 + (闪烁 ? 4 : 0)` **同一个算式**（`anm_ids.h` 生成）。 */
 #ifdef CE_ANM_ABILITY_SPRITE_SLOT_EMPTY
@@ -5170,6 +5179,8 @@ static uint32_t ufo_hud_vm_spawn(int script)
  * ⇒ 无论脚本那两项是 296 还是 0 还是别的，画面上三格都落在 296/338/380 × 912。
  * ⚠ 必须**每帧**算（`pos` 若哪天被中断改了就自动跟随），只在数值变了时才写（省 D3D 无关的写）。
  * ⚠ 浮点全是 `-` 运算、没有整→浮转换（本文件的零 x87 硬门）。 */
+static void ufo_hud_ensure_registered(void);   /* ★ 2026-10-03u：place_at 在它之前，先声明 */
+
 static void ufo_hud_place_at(int i, uint32_t id)
 {
     uint8_t *vm;
@@ -5177,13 +5188,15 @@ static void ufo_hud_place_at(int i, uint32_t id)
     float *ep, want_x, want_y;
 
     if (i < 0 || i >= UFO_SLOT_COUNT || !id) return;
+    ufo_hud_ensure_registered();                  /* ★ 每帧补认领（换关 / 纪元清表会自己回来）*/
+    (void)ce_hud_slot_get(UFO_ID_NUM, &s_hud_slot);    /* ★ 取最新槽：重排 / 碰撞回退都跟得上 */
     vm = ce_anm_get_vm(id);
     if (!vm) return;
     sp = (const float *)(vm + CE_ANM_VM_SCRIPT_POS);
     p2 = (const float *)(vm + CE_ANM_VM_POS_2);
     ep = (float *)(vm + CE_ANM_VM_POS);
-    want_x = k_ufo_slot_x[i] - (sp[0] + p2[0]);
-    want_y = UFO_HUD_SLOT_Y  - (sp[1] + p2[1]);
+    want_x = (k_ufo_slot_x[i] + UFO_HUD_SLOT_DX) - (sp[0] + p2[0]);   /* ★ 2026-10-03u：跟着分配器 */
+    want_y = (UFO_HUD_SLOT_Y  + UFO_HUD_SLOT_DY) - (sp[1] + p2[1]);
     if (ep[0] != want_x) ep[0] = want_x;
     if (ep[1] != want_y) ep[1] = want_y;
 }
@@ -5238,7 +5251,8 @@ static void ufo_hud_ensure(void)
             static int s_logged_banner;
             /* ★ owner 2026-09-23：横幅与槽是同一个视觉组 ⇒ 同量左移。写的是 **entity_pos**
              *   （脚本自己的 `pos(0,934)` / `posTime(60,4,256,934)` 一个字不改 ⇒ 淡入动画照旧）。*/
-            (void)ce_anm_set_pos(s_banner_id, UFO_HUD_BANNER_DX_SURF, 0.0f, 0.0f);
+            (void)ce_anm_set_pos(s_banner_id, UFO_HUD_BANNER_DX_SURF + UFO_HUD_SLOT_DX,
+                                UFO_HUD_SLOT_DY, 0.0f);   /* ★ 与槽同量平移（内部相对位移不变）*/
             if (!s_logged_banner) {
                 s_logged_banner = 1;
                 ce_log("ufo: brush banner under the slots up (ability.anm script %d <= front.anm script79, "
@@ -5507,6 +5521,7 @@ static void ufo_hud_ensure_registered(void)
         return;
     }
     s_hud_claimed = 1;
+    s_hud_slot = got;                    /* ★ 2026-10-03u：存住槽（画的位置由它推导）*/
     if (!s_hud_logged_ok) {
         s_hud_logged_ok = 1;
         ce_log("ufo: HUD block %.0fx%.0f claimed (pinned) at surface (%.0f, %.0f) (= 640 space "

@@ -4984,6 +4984,8 @@ UI 列表尾插、组内后生成者后画（§2b.4）。
 
 | 2026-10-03t | **117 动物灵**（`animal.c` 的 `hud_slot_sync()`：取不到槽就**补一次认领**）+ 十二合一实跑日志的**首轮判读** | 见下方「§BE 详录 #235」 |
 
+| 2026-10-03u | **112 星莲船**（`ufo.c`：**存住分配器给的槽** `s_hud_slot`，槽的 VM / 横幅全部改按「pin + (槽−pin)」推导 + 每帧补认领/取最新）| 见下方「§BE 详录 #236」 |
+
 
 > **§BE 详录 #42（2026-09-20 · P1「缺音效一批」8 条 + 音效表扩容新增 5 枚别作原版 SE）**
 >
@@ -29534,3 +29536,30 @@ TH16 `09-drawing.md` §3.3：外顶点恒 `color_1`、内顶点在 `(flags_lo & 
    与"107 没贴到第二行最左"这两条观感问题（owner 已明确问「能不能不用行，而是单纯的矩形排布」）。
 
 **验证**：`make check` **rc=0**（`test_sdk_core` 1422 passed / `anm-verify` / `capcheck` / `check-docs` 448）。
+
+---
+
+### §BE 详录 #236 —— 2026-10-03u：**112 改成"用槽推导"**（「认领 ≠ 画在哪」的样板修复）
+
+**谁改的**：统筹（goal `goal-1bb4eac7` 第 ① 步的样板）。**owner 十二合一实跑第 1 条**：
+「**112 117 108 113 的槽位全都堆在左下角，甚至不听主动卡的话**」。
+
+**根因（日志铁证，`AUDIT #235`）**：`ufo: HUD block 132x32 claimed (pinned) at surface (521, 924)…
+the slot VMs are pinned to surface (272/314/356, 912)` ——
+112 只把**块**交给分配器（给淡化/避让用），**槽的 VM 仍按常量** `k_ufo_slot_x[]` / `UFO_HUD_SLOT_Y` 摆
+（而且它连槽都没存：文件里只有一个 `s_hud_claimed` flag）⇒ 分配器把块搬到 521，画还在 68..200。
+
+| 落点 | 改动 |
+| --- | --- |
+| `native/cards/ufo.c` | 新增 `static ce_hud_slot_t s_hud_slot;` + `UFO_HUD_SLOT_DX/DY`（= 槽 − pin 的声明值）；认领成功时 `s_hud_slot = got` |
+| 同上 | `ufo_hud_place_at()`：开头 `ufo_hud_ensure_registered(); ce_hud_slot_get(UFO_ID_NUM,&s_hud_slot);`（**每帧补认领 + 取最新** ⇒ 换关/纪元清表/碰撞回退都跟得上）；槽心改成 `k_ufo_slot_x[i] + DX`、`UFO_HUD_SLOT_Y + DY` |
+| 同上 | 槽底毛笔横幅同量平移（`UFO_HUD_BANNER_DX_SURF + DX`、`DY`）⇒ **内部相对位移一个像素不变**，整组跟着分配器走 |
+| 同上 | 前向声明 `ufo_hud_ensure_registered()`（`place_at` 在它定义之前） |
+
+**语义**：**"用槽推导" = pin 声明值 + (槽 − pin)** —— 既保住逐值复刻的内部关系，又让整组**跟着分配器**
+（含被判定碰撞后回退到货架的情形）。**这是其余几卡（108 / 116 / 113）的样板。**
+
+**验证**：`make check` **rc=0**（`test_sdk_core` 1422 passed / `anm-verify` / `capcheck` / `check-docs` 448）。
+
+**下一步（本 goal 内）**：② 108 人妖槽 / 116 内部元素同款改；③ 113 进系统（注册 + 画在槽上 + 补认领）；
+④ 锚点 257 → 68；⑤ 行式 → skyline。
