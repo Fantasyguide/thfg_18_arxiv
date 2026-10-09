@@ -572,7 +572,10 @@ static void test_hud_slots(void)
         ce_hud_slots_reset();
         ce_hud_card_set(1);
         CHECK(ce_hud_slot_claim(120, &small, &p1));
-        CHECK(p0.x == CE_HUD_ANCHOR_X && p1.x == CE_HUD_ANCHOR_X);   /* 今天两者相同（锚点已让开）*/
+        /* ★★★ 2026-10-03v（锚点 257 → 68）：**两者不再相同** —— 锚点已经落到卡面那一片里了，
+         *   所以「让位」这条机制从"恒等"变成**真的在起作用**：没卡面 = 68、有卡面 = 124。*/
+        CHECK(p0.x == CE_HUD_ANCHOR_X);
+        CHECK(p1.x == HUD_CARD_POS_X + HUD_CARD_W + CE_HUD_GAP);     /* = 68 + 48 + 8 = 124 */
         CHECK(p1.x >= HUD_CARD_POS_X + HUD_CARD_W);                 /* ★ 且绝不压到那块 UI */
         ce_hud_card_set(0);
         ce_hud_slots_reset();
@@ -600,22 +603,28 @@ static void test_hud_slots(void)
     CHECK(again.x == a.x && again.y == a.y);
 
     /* ★★ 2026-10-03p（owner：「第二行第三行用起来，我建议是看看能不能搞一个**贪心**或什么的算法」）：
-     *   同优先级内改成 **宽降序**（first-fit-decreasing）⇒ **700 宽的 mid 先坐底边**，
-     *   108（108 宽）紧挨着它（965 ≤ 1040 ✓），111 放不下（965+108+8 = 1081 > 1040）⇒ 抬到第二行
-     *   （底边 924 − 20 − 8 = 896）。⚠ 旧断言假设「按 card_id 摆、软上限 1000」—— 已被本次口径取代。*/
-    ce_hud_block_t mid = { 700.0f, 20.0f, CE_HUD_SIDE_LEFT };
+     *   同优先级内改成 **宽降序**（first-fit-decreasing）⇒ **800 宽的 mid 先坐底边**（x = 68），
+     *   108（108 宽）紧挨着它（876+108 = 984 ≤ 1040 ✓），111 放不下（984+108+8 = 1100 > 1040）
+     *   ⇒ 抬到第二行（底边 924 − 20 − 8 = 896）。
+     * ⚠ 旧断言假设「按 card_id 摆、锚点 257、软上限 1000」—— 已被 2026-10-03p/v 两条口径取代。*/
+    ce_hud_block_t mid = { 800.0f, 20.0f, CE_HUD_SIDE_LEFT };
     CHECK(ce_hud_slot_claim(109, &mid, &again));
     CHECK(ce_hud_slot_get(109, &again) && ce_hud_slot_get(108, &b) && ce_hud_slot_get(111, &a));
     CHECK(again.x == CE_HUD_ANCHOR_X && again.y == CE_HUD_ANCHOR_Y);       /* 宽的先摆、坐底边 */
-    /* 965 + 108 = 1073 > 1040 ⇒ 108 抬到第二行（底边 924 − 20 − 8 = 896）、111 紧跟它右边 */
-    CHECK(b.x == CE_HUD_ANCHOR_X && b.y == CE_HUD_ANCHOR_Y - mid.h - CE_HUD_GAP);
-    CHECK(a.x == CE_HUD_ANCHOR_X + blk2.w + CE_HUD_GAP && a.y == b.y);
+    CHECK(b.x == CE_HUD_ANCHOR_X + mid.w + CE_HUD_GAP && b.y == CE_HUD_ANCHOR_Y);   /* 紧挨 800 那块 */
+    /* ★ 2026-10-03w skyline：111（108×36）填进 **109 上方那条缝**（底边 924 − 20 − 8 = 896），
+     *   而不是像行式那样被抬到 924 − 36 − 8 = 880 —— 这正是"不用行、用矩形排布"省下来的 16 px。*/
+    CHECK(a.x == CE_HUD_ANCHOR_X && a.y == CE_HUD_ANCHOR_Y - mid.h - CE_HUD_GAP);
 
     /* 局中删卡不当场重排（§4.4）：release 保留占位、别人坐标不变 */
     ce_hud_slot_release(108);
     CHECK(ce_hud_slot_claimed(108));                              /* 仍算已认领 */
     CHECK(ce_hud_slot_get(111, &again) && again.x == a.x && again.y == a.y);
-    CHECK(ce_hud_slot_get(108, &again) && again.x == CE_HUD_ANCHOR_X);
+    {   /* ★ 2026-10-03v：108 现在落在**行内**（不是锚点本身）⇒ 断言"与删卡前同一处" */
+        ce_hud_slot_t before;
+        CHECK(ce_hud_slot_get(108, &before));
+        CHECK(ce_hud_slot_get(108, &again) && again.x == before.x && again.y == before.y);
+    }
     /* 关卡开场 reset 才真正收回 */
     ce_hud_slots_reset();
     CHECK(!ce_hud_slot_claimed(108) && !ce_hud_slot_claimed(109) && !ce_hud_slot_claimed(111));
@@ -694,15 +703,16 @@ static void test_hud_slots(void)
     /* 硬约束（§4.2）：块右边缘不许越过 1040 ⇒ 声明宽度超限直接拒绝 */
     ce_hud_block_t too_wide = { CE_HUD_X_HARD_MAX - CE_HUD_ANCHOR_X + 1.0f, 36.0f, CE_HUD_SIDE_LEFT };
     CHECK(!ce_hud_slot_claim(110, &too_wide, &a));
-    /* 越软上限 1000 但仍合法 ⇒ 单独占一行（空行上的超大块不抬行） */
+    /* 越软上限 1000 但仍合法 ⇒ 单独占一行（空行上的超大块不抬行）
+     * ★ 2026-10-03v：锚点 68 ⇒ 900 宽的块（68+900 = 968）之后 100 宽的塞不下（968+100+8 > 1040）*/
     ce_hud_slots_reset();
-    ce_hud_block_t greed = { 780.0f, 36.0f, CE_HUD_SIDE_LEFT };   /* 257+780 ≤ 硬上限 1040 */
+    ce_hud_block_t greed = { 900.0f, 36.0f, CE_HUD_SIDE_LEFT };   /* 68+900 ≤ 硬上限 1040 */
 
     CHECK(ce_hud_slot_claim(110, &greed, &a));
     CHECK(a.x == CE_HUD_ANCHOR_X && a.y == CE_HUD_ANCHOR_Y);
     ce_hud_block_t next = { 100.0f, 36.0f, CE_HUD_SIDE_LEFT };
     CHECK(ce_hud_slot_claim(111, &next, &b));
-    CHECK(b.x == CE_HUD_ANCHOR_X);                                /* 1045 + 100 > 1000 ⇒ 抬行 */
+    CHECK(b.x == CE_HUD_ANCHOR_X);                                /* 968 + 100 + 8 > 1040 ⇒ 抬行 */
     CHECK(b.y == CE_HUD_ANCHOR_Y - greed.h - CE_HUD_GAP);
     ce_hud_block_t bad = { 0.0f, 36.0f, CE_HUD_SIDE_LEFT };
     CHECK(!ce_hud_slot_claim(110, &bad, &a));                     /* 尺寸非法 */
@@ -723,13 +733,22 @@ static void test_hud_slots(void)
         CHECK(ce_hud_slot_claim_ex(201, &blk_wide, 100, 1, &wide));        /* 优先级最高 + 独占一行 */
         CHECK(ce_hud_slot_claim_ex(202, &blk_hi, 1, 0, &hi));
         CHECK(ce_hud_slot_get(201, &wide) && ce_hud_slot_get(200, &lo) && ce_hud_slot_get(202, &hi));
-        CHECK(wide.x == CE_HUD_ANCHOR_X && wide.y == CE_HUD_ANCHOR_Y);          /* 优先级最高 ⇒ 底边行 */
-        CHECK(hi.y == CE_HUD_ANCHOR_Y - blk_wide.h - CE_HUD_GAP);               /* 独占行 ⇒ 别人上抬一行 */
-        CHECK(hi.x == CE_HUD_ANCHOR_X);
-        CHECK(lo.x == CE_HUD_ANCHOR_X + blk_hi.w + CE_HUD_GAP && lo.y == hi.y); /* 同优先级按 id 升序 */
+        CHECK(wide.x == CE_HUD_ANCHOR_X && wide.y == CE_HUD_ANCHOR_Y);          /* 优先级最高 ⇒ 底边最左 */
+        /* ★ 2026-10-03w skyline：wide 不再"独占一行" —— hi/lo 直接摆在它**右边**同一条底边
+         *   （452 宽右侧还有 520 px 空位）；`own_row` 的语义改成"**在已摆块之上**另起一条"。*/
+        CHECK(hi.x == CE_HUD_ANCHOR_X + blk_wide.w + CE_HUD_GAP && hi.y == CE_HUD_ANCHOR_Y);
+        CHECK(lo.x == hi.x + blk_hi.w + CE_HUD_GAP && lo.y == hi.y);
+        {   /* `own_row`（后摆、低优先级）⇒ 必须落在**所有已摆块之上**：底边 = 最高块上沿 − 间隙 */
+            ce_hud_slot_t own;
+            ce_hud_block_t blk_own = { 100.0f, 20.0f, CE_HUD_SIDE_LEFT };
+            CHECK(ce_hud_slot_claim_ex(203, &blk_own, 0, 1, &own));
+            CHECK(ce_hud_slot_get(203, &own));
+            CHECK(own.y == CE_HUD_ANCHOR_Y - blk_wide.h - CE_HUD_GAP);          /* 892 = 924 − 24 − 8 */
+            CHECK(own.x == CE_HUD_ANCHOR_X);
+        }
         /* 幂等：重复认领不改变优先级/独占行的结果 */
         CHECK(ce_hud_slot_claim_ex(201, &blk_wide, 100, 1, &wide));
-        CHECK(ce_hud_slot_get(202, &hi) && hi.y == CE_HUD_ANCHOR_Y - blk_wide.h - CE_HUD_GAP);
+        CHECK(ce_hud_slot_get(202, &hi) && hi.y == CE_HUD_ANCHOR_Y && hi.x == CE_HUD_ANCHOR_X + blk_wide.w + CE_HUD_GAP);
         ce_hud_slots_reset();
     }
 

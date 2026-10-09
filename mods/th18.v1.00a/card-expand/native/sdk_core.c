@@ -1526,37 +1526,90 @@ static int hud_rect_hit(float ax, float ay, float aw, float ah,
 
 void ce_hud_card_set(int present) { s_hud_card_present = present ? 1 : 0; }
 
+/* ★★★ 2026-10-03w（owner：「**能不能不用行，而是单纯的矩形排布问题？**」＋
+ *   「107 的位置并不在第二行最左侧，反而空出了一个大概还有一个 HUD 的位置」）——
+ *   **行式货架 → skyline / 左下填充（bottom-left fill）**：
+ *   · 不再有"行"和"行距"⇒ **没有行间空档**（旧行式：行距 = 上一行最高块 + 8 ⇒ 60 高与 36 高混排时白扔 16 px）；
+ *   · 每块的落点 = **能放下的、最低的** y（TH 坐标 y 越大越靠下）；同一高度上取**最左**的 x；
+ *   · 候选 y = 底边 ∪ {每个已摆块的**上沿 − 间隙**}（= 叠在它上面）；逐个候选按"从下往上"试；
+ *   · 水平方向：从起点向右扫，撞上已摆块就**跳到它右边 + 间隙**再扫（左侧）；右侧镜像向左扫；
+ *   · ⚠ 仍然**完全确定**：顺序 = (priority 降, 宽降, card_id 升)，候选 y 排序、x 单向扫 ⇒ 同输入同结果。
+ *   · `own_row`（口子保留）：该块的候选只剩"所有已摆块之上"那一条 ⇒ 仍然独占一条新行。*/
+static float s_hx[CE_SDK_CARD_ID_MAX + 1], s_hy[CE_SDK_CARD_ID_MAX + 1];
+static float s_hw[CE_SDK_CARD_ID_MAX + 1], s_hh[CE_SDK_CARD_ID_MAX + 1];
+static int   s_hside[CE_SDK_CARD_ID_MAX + 1];
+
+/* 在 `side` 这一侧给 `w×h` 找落点（纯矩形、无行）。成功返回 1。*/
+static int hud_place_scan(int side, float w, float h, float left0, int own_row,
+                          float *out_x, float *out_y)
+{
+    float cand[CE_SDK_CARD_ID_MAX + 2];
+    const float y_base = CE_HUD_ANCHOR_Y;
+    int ncand = 0, i, ic;
+    const float start = (side == 0) ? left0 : (CE_HUD_ANCHOR_X_RIGHT - w);
+
+    cand[ncand++] = y_base;
+    if (own_row) {                                     /* 独占一行：只留"所有已摆块之上"那一条 */
+        float top = y_base;
+        for (i = 0; i <= CE_SDK_CARD_ID_MAX; ++i) {
+            if (s_hw[i] <= 0.0f || s_hside[i] != side) continue;
+            if (s_hy[i] - s_hh[i] - CE_HUD_GAP < top) top = s_hy[i] - s_hh[i] - CE_HUD_GAP;
+        }
+        cand[0] = top; ncand = 1;
+    } else {
+        for (i = 0; i <= CE_SDK_CARD_ID_MAX; ++i) {
+            if (s_hw[i] <= 0.0f || s_hside[i] != side) continue;
+            cand[ncand++] = s_hy[i] - s_hh[i] - CE_HUD_GAP;    /* 叠在它上面（留间隙）*/
+        }
+    }
+    /* 候选按 y **降序**（y 大 = 更靠下 ⇒ 优先试更低的）——插入排序，纯浮点比较 */
+    for (i = 1; i < ncand; ++i) {
+        float key = cand[i];
+        int j = i - 1;
+        while (j >= 0 && cand[j] < key) { cand[j + 1] = cand[j]; --j; }
+        cand[j + 1] = key;
+    }
+    for (ic = 0; ic < ncand; ++ic) {
+        const float y = cand[ic];
+        float x = start;
+        int moved = 1, guard = 0;
+        while (moved && guard++ < 2 * CE_SDK_CARD_ID_MAX + 8) {
+            moved = 0;
+            for (i = 0; i <= CE_SDK_CARD_ID_MAX; ++i) {
+                float qx, qy, qw, qh;
+                if (s_hw[i] <= 0.0f || s_hside[i] != side) continue;
+                qx = s_hx[i]; qy = s_hy[i]; qw = s_hw[i]; qh = s_hh[i];
+                if (y <= qy - qh || qy <= y - h) continue;              /* 垂直不重叠 */
+                if (x + w + CE_HUD_GAP <= qx || qx + qw + CE_HUD_GAP <= x) continue;  /* 水平留够间隙 */
+                if (side == 0) x = qx + qw + CE_HUD_GAP;                 /* 撞上 ⇒ 跳到它右边 */
+                else           x = qx - CE_HUD_GAP - w;                  /* 右侧镜像：跳到它左边 */
+                moved = 1;
+            }
+        }
+        if (side == 0) { if (x + w <= CE_HUD_X_MAX) { *out_x = x; *out_y = y; return 1; } }
+        else           { if (x >= CE_HUD_X_MIN)     { *out_x = x; *out_y = y; return 1; } }
+    }
+    /* 兜底（理论到不了：底边那条候选在所有块之上时必然放得下）*/
+    *out_x = start; *out_y = y_base;
+    return 0;
+}
+
 static void hud_relayout(void)
 {
-    /* 底部货架（HUD-LAYOUT §2）：按 card_id 升序扫描（数组按 id 索引 ⇒ 天然有序），两侧各自算。
-     * 左列：cursor 从左锚点向右；右列：块的**右边缘**贴在 cursor 上、cursor 向左走。
-     * ★ 2026-09-22：左列的**起点**不再写死锚点，而是 `hud_card_shelf_x0()` —— 有当前卡时取
-     *   `max(锚点, 块右沿 + 间隙)`，没有时就是锚点（那块整体不存在，不占地方）。
-     *   现值代入是恒等（`HUD_CARD_POS_X + HUD_CARD_W` = 116，`+8` = 124 < 257）；
-     *   意义在**不变式**：谁把锚点左移过 124 或把块加宽到压过锚点，会立刻在这里让位。*/
-    float cx[2], row_bottom[2], row_h[2];
     float left0;
+    static int order[CE_SDK_CARD_ID_MAX + 1];    /* ⚠ 文件静态：钩子里的栈很紧 */
+    int n = 0, k, i;
     hud_card_shelf_x0(&left0, CE_HUD_ANCHOR_X, CE_HUD_GAP, s_hud_card_present);
-    cx[0] = left0;                   row_bottom[0] = CE_HUD_ANCHOR_Y; row_h[0] = 0.0f;
-    cx[1] = CE_HUD_ANCHOR_X_RIGHT;   row_bottom[1] = CE_HUD_ANCHOR_Y; row_h[1] = 0.0f;
 
-    /* ★★★ 2026-10-03k（owner：「首先得考虑某种**美观性**」）—— 摆放顺序 = (priority 降, card_id 升)。
-     *   为什么需要它：原来只按 card_id 排 ⇒ 谁先注册谁占底边行，**块有多宽、多重要都不影响**；
-     *   于是「109 那条 452 宽的蓄力槽」会和别人挤在同一行（右边吊着个小块，很难看）。
-     *   现在：优先级高的先摆 ⇒ 落在更下面的行；`own_row` 的块**独自占一行**。
-     *   实现用**插入排序**（N ≤ 255，纯整数比较）⇒ 不引进 qsort（宿主/目标两套 libc 行为差异）。*/
-    static int order[CE_SDK_CARD_ID_MAX + 1];    /* ⚠ 文件静态：钩子里的栈很紧（255×4 = 1 KB 不进栈）*/
-    int n = 0;
-    for (int id = 0; id <= CE_SDK_CARD_ID_MAX; ++id) {
-        if (!s_hud[id].used) continue;
-        if (s_hud[id].side == CE_HUD_SIDE_PINNED) continue;         /* 自带锚点：不参与货架排布 */
-        order[n++] = id;
+    for (i = 0; i <= CE_SDK_CARD_ID_MAX; ++i) {
+        s_hw[i] = 0.0f;                                  /* 清"已摆"表 */
+        if (!s_hud[i].used) continue;
+        if (s_hud[i].side == CE_HUD_SIDE_PINNED) continue;   /* 自带锚点：不参与排布 */
+        order[n++] = i;
     }
-    for (int i = 1; i < n; ++i) {                                   /* 插入排序：(priority 降, id 升) */
+    /* 顺序 = (priority 降, 宽降, card_id 升) —— 贪心 first-fit-decreasing（见 §2.1）*/
+    for (i = 1; i < n; ++i) {
         int key = order[i], j = i - 1;
-        /* ★ 2026-10-03p（owner：「第二行第三行用起来，我建议是看看能不能搞一个**贪心**或什么的算法」）：
-         *   同优先级内改成 **宽降序**（= 经典 first-fit-decreasing）⇒ 先摆宽的、窄的去补缝，
-         *   行被填得更满、往上抬的次数更少。仍然**完全确定**（宽度相同才回落到 id 升序）。*/
         while (j >= 0 && (s_hud[order[j]].priority < s_hud[key].priority ||
                           (s_hud[order[j]].priority == s_hud[key].priority &&
                            (s_hud[order[j]].w < s_hud[key].w ||
@@ -1566,42 +1619,15 @@ static void hud_relayout(void)
         }
         order[j + 1] = key;
     }
-
-    for (int k = 0; k < n; ++k) {
-        int id = order[k];
-        int side = (s_hud[id].side == CE_HUD_SIDE_RIGHT) ? 1 : 0;
-        int fits;
-        /* ★ `own_row`：**摆之前**先断行（把上一行封口），保证它从一条干净的行走起。*/
-        if (s_hud[id].own_row && row_h[side] > 0.0f) {
-            row_bottom[side] -= row_h[side] + CE_HUD_GAP;
-            cx[side] = (side == 0) ? left0 : CE_HUD_ANCHOR_X_RIGHT;
-            row_h[side] = 0.0f;
-        }
-        if (side == 0) fits = (cx[0] + s_hud[id].w <= CE_HUD_X_MAX);
-        else           fits = (cx[1] - s_hud[id].w >= CE_HUD_X_MIN);
-        /* 这一行放不下 ⇒ 上抬一行。空行上的「超大块」不抬（认领时已过 §4.2 硬约束），
-         * 否则单块就会被推到一条没意义的第 2 行上。*/
-        if (!fits && row_h[side] > 0.0f) {
-            row_bottom[side] -= row_h[side] + CE_HUD_GAP;
-            cx[side] = (side == 0) ? left0 : CE_HUD_ANCHOR_X_RIGHT;
-            row_h[side] = 0.0f;
-        }
-        if (side == 0) {
-            s_hud[id].x = cx[0];
-            s_hud[id].y = row_bottom[0];
-            cx[0] += s_hud[id].w + CE_HUD_GAP;
-        } else {
-            s_hud[id].x = cx[1] - s_hud[id].w;
-            s_hud[id].y = row_bottom[1];
-            cx[1] -= s_hud[id].w + CE_HUD_GAP;
-        }
-        if (s_hud[id].h > row_h[side]) row_h[side] = s_hud[id].h;
-        /* ★ `own_row`：**摆之后**也断行 ⇒ 后面的块绝不会贴到它右边。*/
-        if (s_hud[id].own_row) {
-            row_bottom[side] -= row_h[side] + CE_HUD_GAP;
-            cx[side] = (side == 0) ? left0 : CE_HUD_ANCHOR_X_RIGHT;
-            row_h[side] = 0.0f;
-        }
+    for (k = 0; k < n; ++k) {
+        const int id = order[k];
+        const int side = (s_hud[id].side == CE_HUD_SIDE_RIGHT) ? 1 : 0;
+        float x = 0.0f, y = 0.0f;
+        (void)hud_place_scan(side, s_hud[id].w, s_hud[id].h, left0, s_hud[id].own_row, &x, &y);
+        s_hud[id].x = x;
+        s_hud[id].y = y;
+        s_hx[id] = x; s_hy[id] = y; s_hw[id] = s_hud[id].w; s_hh[id] = s_hud[id].h;
+        s_hside[id] = side;
     }
 }
 
