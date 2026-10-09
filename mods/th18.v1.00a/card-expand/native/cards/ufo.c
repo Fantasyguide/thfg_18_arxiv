@@ -5244,6 +5244,12 @@ static void ufo_hud_kill(void)
 static void ufo_hud_ensure(void)
 {
     int i;
+    /* ★★★ 2026-10-03z5（owner：「**112 的背后的正方形部分和飞碟部分分离了**」）——
+     *   根因 = **顺序**：横幅（"背后的正方形"，脚本 315）在**槽还没取到**时就用差值
+     *   ⇒ `s_hud_slot` 还是 {0,0} ⇒ `DX = 0−68 = −68`、**`DY = 0−928 = −928`** ⇒ 横幅被甩飞、
+     *   与飞碟槽**分离**。⇒ 这里**先认领 + 取最新槽**，之后才允许用 `UFO_HUD_SLOT_DX/DY`。*/
+    ufo_hud_ensure_registered();
+    (void)ce_hud_slot_get(UFO_ID_NUM, &s_hud_slot);
     /* ★ #17：**先**起槽底那抹毛笔横幅（同一层 25 ⇒ 先生成的画在下面 = 「槽底下」）*/
     if (!s_banner_id || !ce_anm_get_vm(s_banner_id)) {
         s_banner_id = ufo_hud_vm_spawn(UFO_HUD_SCRIPT_BANNER);
@@ -5251,8 +5257,6 @@ static void ufo_hud_ensure(void)
             static int s_logged_banner;
             /* ★ owner 2026-09-23：横幅与槽是同一个视觉组 ⇒ 同量左移。写的是 **entity_pos**
              *   （脚本自己的 `pos(0,934)` / `posTime(60,4,256,934)` 一个字不改 ⇒ 淡入动画照旧）。*/
-            (void)ce_anm_set_pos(s_banner_id, UFO_HUD_BANNER_DX_SURF + UFO_HUD_SLOT_DX,
-                                UFO_HUD_SLOT_DY, 0.0f);   /* ★ 与槽同量平移（内部相对位移不变）*/
             if (!s_logged_banner) {
                 s_logged_banner = 1;
                 ce_log("ufo: brush banner under the slots up (ability.anm script %d <= front.anm script79, "
@@ -5261,6 +5265,12 @@ static void ufo_hud_ensure(void)
                        UFO_HUD_SCRIPT_BANNER, (double)UFO_HUD_BANNER_DX_SURF);
             }
         }
+    }
+    /* ★ 2026-10-03z5：横幅的落点**每帧**写一次（与三格同量平移；内部相对位移不变）——
+     *   原来只在 spawn 那一帧写 ⇒ 槽被分配器搬走（碰撞回退/换关重排）时横幅留在原地 = 分离。*/
+    if (s_banner_id && ce_anm_get_vm(s_banner_id)) {
+        (void)ce_anm_set_pos(s_banner_id, UFO_HUD_BANNER_DX_SURF + UFO_HUD_SLOT_DX,
+                             UFO_HUD_SLOT_DY, 0.0f);
     }
     for (i = 0; i < UFO_SLOT_COUNT; ++i)
         if (!s_slot_id[i] || !ce_anm_get_vm(s_slot_id[i])) {
