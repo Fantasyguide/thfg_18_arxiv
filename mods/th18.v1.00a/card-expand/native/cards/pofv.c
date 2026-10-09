@@ -3912,28 +3912,40 @@ static int on_tick_2(ce_card_t *c)
          *   ★ ★ **Shift 从此不再触发任何攻击** ✓ —— 它只开结界 ✓（一手如此 ✓）。*/
         static int s_c1_lv, s_c2_lv;
         static int s_c3_lv;                     /* ★ ⑤ C3：档闩锁（与 C1/C2 同形，按蓄力档 ✓）*/
+        static int s_c4_lv;                     /* ★ ⑤ C4：档闩锁 ✓ */
+        static int s_barrier_lv;                /* ★ ④ 罩子：档闩锁（与角色无关 ✓）*/
         const float cap2  = POFV_AURA_TARGET_CHARGE * (s_reiryoku / POFV_REI_MAX);
         const float c1_at = cap2 * (POFV_C1_THRESH / POFV_REI_MAX);
         const float c2_at = cap2 * (POFV_C2_THRESH / POFV_REI_MAX);
         const float c3_at = cap2 * (POFV_C3_THRESH / POFV_REI_MAX);
         if (s_aura_charge >= c1_at) { if (!s_c1_lv) { pofv_c1_fire(); s_c1_lv = 1; } } else s_c1_lv = 0;
-        if (s_aura_charge >= c2_at) { if (!s_c2_lv) { pofv_c2_fire(); s_c2_lv = 1; } } else s_c2_lv = 0;
+        /* ★★ 2026-10-10：一手**三人**的 C2 完全不同（灵梦 = `EXReigekiInf` ✓ / 魔理沙 = 6 条
+         *   `EXLaserInf` ✓ / 早苗 = 不建对象、改走 shot 行 11 ✓，见 §5.2）⇒ ★ **本卡的 C2 只对灵梦** ✓，
+         *   其余角色**先不放**（❓待补，见 TUNING）。★ 不这样做的话，魔理沙会放出**灵梦的**弹幕 ✗。*/
+        if (s_aura_charge >= c2_at && s_aura_kind == 0) {
+            if (!s_c2_lv) { pofv_c2_fire(); s_c2_lv = 1; }
+        } else s_c2_lv = 0;
         /* ★ ⑤ C3（ExtraAttack）：★ 按蓄力档（**不是**边沿 ✗ —— 旧 `pofv_aura_rise_edge()` 已被 owner 实跑否掉 ✓）*/
         /* ★ ⑤ C4：一手阈值 = 2500（= `pl00.sht +0x38` ×10 ✓，= 满 ✓）*/
         {
-            static int s_c4_lv;
             const float c4_at = cap2 * (2500.0f / POFV_REI_MAX);
-            if (s_aura_charge >= c4_at && s_aura_charge >= cap2 * (2499.0f / POFV_REI_MAX)) {
+            /* ★ 同上：一手三人的 C4 也不同 ⇒ ★ **只对灵梦** ✓（❓待补）。*/
+            if (s_aura_charge >= c4_at && s_aura_kind == 0) {
                 if (!s_c4_lv) { pofv_c4_fire(); s_c4_lv = 1; }
             } else s_c4_lv = 0;
         }
+        /* ★★ ④ 罩子：一手 `FUN_0040b420`（回罩）全 .text **只有两个调用点** = `0x4e8176`(阶段 3 EX) /
+         *   `0x4e7b8d`(阶段 4 BOSS) ✓ —— ★ 而一手是「**发动 EX 或 BOSS 就复活自动パリア**」✓
+         *   ⇒ ★ **与角色无关** ✓：本卡挂在 **C3 / C4 的阈值**上 ✓（★ 所以放在**角色门之外** ✓
+         *   —— 魔理沙/早苗的 C3/C4 还没做，但"蓄到这一档就回罩"是通的 ✓）。*/
         if (s_aura_charge >= c3_at) {
+            if (!s_barrier_lv) { pofv_barrier_fire(); s_barrier_lv = 1; }
+        } else s_barrier_lv = 0;
+
+        /* ★ 同上：一手三人的 C3 也不同（§10.1）⇒ ★ **只对灵梦** ✓（❓待补）。*/
+        if (s_aura_charge >= c3_at && s_aura_kind == 0) {
             if (!s_c3_lv) {
                 pofv_c3_fire(); s_c3_lv = 1;
-                /* ★★ ④ 罩子：一手 `FUN_0040b420` **只有 C3 / C4 两个调用点**（`0x4e8176` / `0x4e7b8d` ✓）
-                 *   ⇒ ★ **C3 一到就给盾** ✓（原来挂在结界边沿 ✗，是那个 Shift bug 的一部分 ✓）；
-                 *   ★ C4 落地后在它那一支里**同样**调 `pofv_barrier_fire()` ✓。*/
-                pofv_barrier_fire();
             }
         } else s_c3_lv = 0;
         /* ★ ④ 罩子：一手是「**C3/C4 才给盾**」✗（C3/C4 尚未实现）⇒ ★ **本轮先不给盾** ✓
