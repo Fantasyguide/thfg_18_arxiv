@@ -1,0 +1,16 @@
+script script429 {
+    // 109 · **罩子的外层**：**黄色的"外发光"** ✓（owner 2026-10-10 描述），比内层大一圈。
+    // ★ 贴图照描述烤（一手没有 ✗）；`blendMode(1)` 加算 ⇒ 叠在内层外面就是外发光 ✓。
+    // ★ 卡侧：两台 VM 同位置，外层的 `scale` 比内层大（本卡按 `POFV_BARRIER_*` 常量给 ✓）。
+    sprite(@POFV109_BARRIER_GLOW);
+    layer(5);                    // ★ 比内层(6)**低一层** ⇒ 画在内层下面 ✓（外发光在外面 ✓）
+    resampleMode(1);
+    blendMode(1);
+    zWriteDisable(1);
+    color(255, 255, 255);
+    alpha(255);
+    stop();
+    interruptLabel(1);
++8: // 8
+    delete();
+}
