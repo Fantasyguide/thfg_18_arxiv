@@ -278,4 +278,8 @@ thanm -x 19 pl00.anm player/pl00/pl00.png                  # ② 再从包里导
 
 ★ `th19.dat` 里 `pl00*` 只有 7 项：`pl00.anm` / `pl00b.anm` / `pl00f.anm` / `pl00st.msg` / `pl00vs.msg` / `pl00.ecl` / `pl00.sht`。
 ★ ❓ **未解**：`pl00.anm` **script10** 引用的 `sprite38`（`player/pl00/pl00.png` 的 `(1,81) 30×30`）切出来是**灵梦的立绘碎片**（红白缎带），**不像一颗弹** ⇒ 要么 ZUN 拿立绘当弹的观感，要么 `script10` 不是 C1 的弹（⚠ 与 §3.7 的「anm 侧信道」结论冲突，需再核）。
-★ 新线索：包里另有 **`pl00b.anm`**（"b" 很可能是 **bullet**）⇒ 下次查弹观感**先看它**。
+★ 新线索已查：**`pl00b.anm` 不是 bullet，是 boss** ✗ —— ★ 它装的是
+`player/pl00/boss/{eff04.png, eff04b.png, boss_reimu.png}` ⇒ ★★ **这正是 owner 模型里
+「送到对面那个 BOSS 态的我」的美术** ✓ ⇒ **留给 C3/C4 的 `BossAttack` 用** ✓。
+★ 于是 §3.7 的「anm 侧信道」**结论站得住** ✓：C1 那颗弹的观感**确实**取自玩家立绘
+（`pl00.png` 的 `sprite38`，切出来是红白缎带的碎片 ✓）—— 不是冲突 ✗。
