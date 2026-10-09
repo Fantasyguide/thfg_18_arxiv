@@ -1,6 +1,8 @@
 # HANDOFF-109-AURA-FORMS：固灵结界的「形态」（不是半径）
 
 > 状态：★ **逐角色一手已核完**（2026-10-10，只读调研 + anm/exe 直读）。
+> **版本**：TH19 v1.10c（imagebase `0x400000`）—— 本文所有裸地址均为该版本；TH09 相关另注明。
+
 > 相关：`engine/versus/th19/06-aura.md`（★ 该文有勘误，见 §4）、`MECHANICS-109.md`、`TUNING.md`。
 
 ## 0. owner 口径（权威）
