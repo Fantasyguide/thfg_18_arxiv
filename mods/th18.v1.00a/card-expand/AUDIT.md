@@ -30142,3 +30142,27 @@ scratch 八张真实尺寸 + 卡面在场 ⇒ **68..824、无重叠、110 落在
 (b) 自机侧碰撞入口跳过 ⇒ **属共享件，先报**；(c) 清零 `enemy+0x110 hurtbox_size` ⇒ 会连带打不到，**不用**，仅记录。
 
 **判据（未过）**：自机贴上去撞（含 shift）不掉命/不被击退/火力与无敌时间不变。
+
+## §BE 详录 #216（2026-10-01）：**无体术 = 照抄 109 灵的 `setHitbox(0,0)`**（bit1 写法作废）
+
+**owner 给的参照**：「无体术这块你查一下 **109 的幽灵**和其他灵，**它们是无体术的**」。
+**109 的原文（一手）**：`assets/ecl/spirit109.ecl.txt:75–81`
+```
+    anmSetSprite(0, -1);
+    setHurtbox(20.0f, 20.0f);
+    // ★★ 2026-10-05 owner 实跑：「有**体术**的灵」= bug ⇒ 灵**不该**有本体攻击。
+    //   ⇒ … **接触致伤**只应属于 EX（卡侧给 EX 装 `zEnemyData+0x118 = 24×24` ✓）
+    //   ⇒ 这里把 hitbox 归零（hurtbox 保留 = 自机弹仍能打中它 ✓）。
+    setHitbox(0.0f, 0.0f);
+```
+⇒ **字段 = `zEnemyData + 0x118` = `hitbox_size`**（两个 float），绝对 = `enemy + 0x122c + 0x118` = **`enemy + 0x1344`**。
+
+**我们的实现**：`yk_pin_familiar()` 里每帧 `hb[0] = hb[1] = 0.0f`（`YK_ENEMY_HITBOX_SIZE`）⇒ 出生→死亡/重建全程；
+只作用于 `yk_spawn_familiar()` 建的壳 ⇒ **不碰别人的敌人**；`hurtbox_size`（`+0x110`）**不动** ⇒ 仍可被打掉。
+
+**⛔ 作废**：之前写 `enemy+0x635c` 的 bit1（静态推的 `0x42f513 test [+0x5130],0x22`）—— owner 实跑证明**没生效** ⇒ 已删。
+
+**运行期验证（已加，前 8 只壳）**：`youkai: hitbox fam_id=… before=(…, …) after=(0.0, 0.0) => no body attack (109's setHitbox(0,0) …)`；
+下一帧：`youkai: hitbox fam_id=… NEXT-FRAME before=(…, …) => engine did NOT clobber (still 0x0) / ENGINE CLOBBERED hitbox (write too late)`。
+
+**判据**：自机贴上去撞（含 shift）不掉命/不被击退、火力与无敌时间不变；壳仍可被自机弹打掉。

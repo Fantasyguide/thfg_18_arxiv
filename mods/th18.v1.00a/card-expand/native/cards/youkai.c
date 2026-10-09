@@ -884,7 +884,10 @@ static void yk_pin_follow_step(yk_pin_follow_t *pf, uint32_t fam_id, float tx, f
     if (pf->age < 0xffffu) ++pf->age;
 }
 
-#define YK_ENEMY_FLAG_NO_BODY     0x00000002u  /* ★ bit1：体术闸 `0x42f513 test [+0x5130],0x22` */
+#define YK_ENEMY_HITBOX_SIZE      (0x122c + 0x118)  /* ★ `zEnemyData+0x118` = hitbox_size（体术盒）；
+                                                   *   一手：109 的灵 ECL `setHitbox(0.0f,0.0f)`
+                                                   *   （`assets/ecl/spirit109.ecl.txt:76–81`）= 无体术，
+                                                   *   受击盒 `hurtbox_size`（`+0x110`）保留 ⇒ 仍可被打掉。*/
 
 static void yk_pin_familiar(uint8_t *f, float x, float y)
 {
@@ -905,56 +908,47 @@ static void yk_pin_familiar(uint8_t *f, float x, float y)
     {
         uint32_t *fl = (uint32_t *)(f + CE_ENEMY_FLAGS);
         int want = yk_focused() ? 1 : 0;
-        /* ★★★★ 2026-10-01（owner：「**所有使魔应当没有体术**」）：一手 —— 敌本体接触判定（体术）
-         *   的前置闸在 `EnemyData__step_game_logic` `0x42ed40`：`0x42f513` 一条是
-         *   **`enemy+0x5130 & 0x22`**（`zEnemyData` 基址 ⇒ 绝对 `enemy+0x635c` 的 bit1/bit5）；
-         *   任一位置上 ⇒ **整段接触判定跳过**。我们只置 **bit1（`0x2`）**：
-         *     · 它**不在**伤害闸 `test 0x21`（bits 0/5）里 ⇒ 使魔**照旧可被打掉**（人侧口径不变）；
-         *     · 它**不在**最近敌搜索的跳过掩码 `0xc000021`（bits 0/5/30/31）里 ⇒ 照旧可被锁定/判定；
-         *   ⇒ 只关「体术」这一件事，副作用为零。**只对我们的壳**写（本函数只作用于 `yk_spawn_familiar` 建的敌人）。*/
-        /* ★★★ 2026-10-01 晚（owner：「似乎也还有体术」）——**运行期验证**（owner 要求先看数据）：
-         *   写入**前后**各读一次，并在**下一帧**再读（判断引擎有没有把它盖回去）；只对前 8 只壳打。*/
+        /* ★★★★ 2026-10-01 晚（**owner 给了参照实现 ⇒ 照抄 109 的幽灵**）：
+         *   owner：「无体术这块你查一下 **109 的幽灵**和其他灵，**它们是无体术的**」。
+         *   109 的做法（一手，`assets/ecl/spirit109.ecl.txt:76–81`，注释就是同一件事）：
+         *     `setHurtbox(20.0f, 20.0f);`   ← 受击盒保留 = 自机弹仍能打中它 ✓
+         *     `setHitbox(0.0f, 0.0f);`      ← ★ **体术/接触盒归零 = 无体术** ✓
+         *   字段（109 注释里的原话）：**`zEnemyData + 0x118` = `hitbox_size`**（两个 float）
+         *   ⇒ 绝对 = `enemy + 0x122c + 0x118` = **`enemy + 0x1344`**（`hurtbox_size` 在 `+0x110`、我们**不动**）。
+         *   我们**只对自己的壳**写（本函数只作用于 `yk_spawn_familiar()` 建的敌人），**每帧重钉都带**，
+         *   所以「出生 → 死亡 / 重建」全程无体术。**不再写 `enemy+0x635c` 的 bit1**
+         *   （那条是静态推的、owner 实跑证明**没有生效** ⇒ 换成 109 这条已被实跑验证过的做法）。*/
         {
-            uint32_t before = *fl, after;
-            *fl |= YK_ENEMY_FLAG_NO_BODY;
-            after = *fl;
+            float *hb = (float *)(f + YK_ENEMY_HITBOX_SIZE);
+            float bx = hb[0], by = hb[1];
+            hb[0] = 0.0f;
+            hb[1] = 0.0f;
             if (s_bodywrite_logged < 8u) {
                 ++s_bodywrite_logged;
-                ce_log("youkai: body_flags fam_id=%u WRITE before=0x%08x after=0x%08x "
-                       "(bit1 set=%d, gate_mask&0x22=0x%02x)",
-                       *(const uint32_t *)(f + CE_ENEMY_ID), (unsigned)before, (unsigned)after,
-                       (after & YK_ENEMY_FLAG_NO_BODY) ? 1 : 0,
-                       (unsigned)(after & 0x22u));
+                ce_log("youkai: hitbox fam_id=%u (enemy+0x1344 = zEnemyData+0x118) before=(%.1f,%.1f) "
+                       "after=(%.1f,%.1f) => no body attack (109's `setHitbox(0,0)`, spirit109.ecl.txt:81); "
+                       "hurtbox (enemy+0x133c) untouched",
+                       *(const uint32_t *)(f + CE_ENEMY_ID), (double)bx, (double)by,
+                       (double)hb[0], (double)hb[1]);
             }
-            /* 上一帧我们写过的值，这一帧还在不在？（不在 = 被引擎盖回 ⇒ 我们的时机不对）*/
-            {
+            {   /* 下一帧再核一次：引擎有没有把它盖回去（盖回 ⇒ 时机不对，要挪到更早）。*/
                 unsigned k;
                 uint32_t fid = *(const uint32_t *)(f + CE_ENEMY_ID);
                 for (k = 0; k < YK_BODYCHK_N; ++k) {
                     if (s_bodychk_fam[k] == fid && s_bodychk_done[k] == 0u) {
                         s_bodychk_done[k] = 1u;
-                        ce_log("youkai: body_flags fam_id=%u NEXT-FRAME before=0x%08x (bit1 still set=%d; "
-                               "previous after=0x%08x) => %s",
-                               fid, (unsigned)before, (before & YK_ENEMY_FLAG_NO_BODY) ? 1 : 0,
-                               (unsigned)s_bodychk_after[k],
-                               (before & YK_ENEMY_FLAG_NO_BODY) ? "engine did NOT clobber bit1"
-                                                                : "ENGINE CLOBBERED bit1 (write too late/too early)");
+                        ce_log("youkai: hitbox fam_id=%u NEXT-FRAME before=(%.1f,%.1f) => %s", fid,
+                               (double)bx, (double)by,
+                               (bx == 0.0f && by == 0.0f) ? "engine did NOT clobber (still 0x0)"
+                                                           : "ENGINE CLOBBERED hitbox (write too late)");
                         break;
                     }
                 }
-                /* 记下这一帧的值，供下一帧核对 */
                 {   unsigned idx = s_bodychk_head % YK_BODYCHK_N;
                     s_bodychk_head = (s_bodychk_head + 1u) % YK_BODYCHK_N;
-                    s_bodychk_fam[idx] = fid; s_bodychk_after[idx] = after; s_bodychk_done[idx] = 0u;
+                    s_bodychk_fam[idx] = fid; s_bodychk_after[idx] = 0u; s_bodychk_done[idx] = 0u;
                 }
             }
-        }
-        if (g_fam_nobody_state != 1) {
-            g_fam_nobody_state = 1;
-            ce_log("youkai: familiar BODY ATTACK disabled (owner 2026-10-01: all familiars must have no "
-                   "body attack) - `enemy+0x635c` |= 0x2 (bit1); engine gate `0x42f513 test [..+0x5130],0x22` "
-                   "skips the contact check entirely; bit1 is NOT in the damage gate (0x21) nor in the "
-                   "nearest-enemy skip mask (0xc000021), so the shell is still shootable/targetable");
         }
         if (want) *fl |= CE_ENEMY_FLAG_NO_DAMAGE;
         else      *fl &= ~(uint32_t)CE_ENEMY_FLAG_NO_DAMAGE;
