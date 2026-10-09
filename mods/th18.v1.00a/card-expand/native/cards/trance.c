@@ -1234,6 +1234,12 @@ static int32_t s_hud_vm[TRANCE_HUD_N];
  *     整块**跟着分配器走**（撞了就回退货架、和主动卡面冲突也一样让开）。*/
 static ce_hud_slot_t s_hud_slot;
 static uint8_t s_hud_slot_ok;
+/* ★★★ 2026-10-03z（owner 实跑：「113 的 UI 也有奇怪的**分离**问题」）——
+ *   面板是 4 支**按需分别 spawn** 的脚本 VM：先建的那批带**旧基点**、后建的那批带**新基点**
+ *   ⇒ 分配器一动（认领落定 / 碰撞回退 / 换关重排）整组就**裂开**。
+ *   ⇒ 改成**增量式**：`s_hud_applied_*` 记「已经加进所有活 VM 的差值」；
+ *     每次只把 **(目标差值 − 已加)** 补到每一支活 VM 上（新 spawn 的当场补上当前差值）⇒ 永远同步。*/
+static float s_hud_applied_dx, s_hud_applied_dy;
 #define TRANCE_HUD_DX ((s_hud_slot.x) - (TRANCE_HUD_BASE_X))
 #define TRANCE_HUD_DY ((s_hud_slot.y) - (TRANCE_HUD_BLOCK_BOTTOM))
 
@@ -3907,6 +3913,24 @@ static void trance_hud_tick(const trance_card_t *s)
     /* ★★★ 2026-10-03x：每帧补认领 + 取最新槽（换关 / 纪元清表 / 碰撞回退都跟得上）*/
     trance_hud_claim();
     (void)ce_hud_slot_get(TRANCE_NUM, &s_hud_slot);
+    /* ★★★ 2026-10-03z：**整组同步** —— 只把"目标差值 − 已加"补到每一支活 VM（见上面静态区的注）*/
+    {
+        const float step_x = TRANCE_HUD_DX - s_hud_applied_dx;
+        const float step_y = TRANCE_HUD_DY - s_hud_applied_dy;
+        if (step_x != 0.0f || step_y != 0.0f) {
+            int q;
+            for (q = 0; q < TRANCE_HUD_N; ++q) {
+                uint8_t *qvm = s_hud_vm[q] ? ce_anm_get_vm((uint32_t)s_hud_vm[q]) : 0;
+                float *qep;
+                if (!qvm) continue;
+                qep = (float *)(qvm + CE_ANM_VM_POS);
+                qep[0] += step_x;
+                qep[1] += step_y;
+            }
+            s_hud_applied_dx = TRANCE_HUD_DX;
+            s_hud_applied_dy = TRANCE_HUD_DY;
+        }
+    }
     /* ★ 2026-09-15g：门 = 「自机的体量碰到本卡指示槽的块」——矩形每帧现算（块是死的，
      * 但走共享件 = 与别的卡同一套动态）；alpha 仍在 anm 脚本里（见下面 ⑤ 的注释）。*/
     int hidden;
@@ -3932,8 +3956,16 @@ static void trance_hud_tick(const trance_card_t *s)
         if (s_hud_vm[k] && ce_anm_get_vm((uint32_t)s_hud_vm[k])) continue;
         if (s_hud_vm[k]) ++s_hud_respawn;      /* 之前有 id、现在追不回 ⇒ 记一笔（危险信号）*/
         {
-            const float base[3] = { TRANCE_HUD_BASE_X + TRANCE_HUD_DX, TRANCE_HUD_BASE_Y + TRANCE_HUD_DY, 0.0f };
+            const float base[3] = { TRANCE_HUD_BASE_X, TRANCE_HUD_BASE_Y, 0.0f };
             s_hud_vm[k] = (int32_t)ce_anm_spawn_ui(anm, trance_hud_script(k), base);
+            if (s_hud_vm[k]) {                 /* ★ 2026-10-03z：新建的当场补上"已生效差值" */
+                uint8_t *nvm = ce_anm_get_vm((uint32_t)s_hud_vm[k]);
+                if (nvm) {
+                    float *nep = (float *)(nvm + CE_ANM_VM_POS);
+                    nep[0] += s_hud_applied_dx;
+                    nep[1] += s_hud_applied_dy;
+                }
+            }
         }
         if (!s_hud_vm[k]) {                    /* anm 没装载 / 建失败 ⇒ 下一帧再试（有上限）*/
             if (s_hud_tries >= TRANCE_HUD_SPAWN_TRIES) {

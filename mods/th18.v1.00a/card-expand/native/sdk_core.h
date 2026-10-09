@@ -744,7 +744,12 @@ typedef struct {
 #define CE_HUD_ANCHOR_X_RIGHT 1040.0f   /* ❓ 右侧镜像锚点（§6.2 无先例卡验证过）*/
 #define CE_HUD_ANCHOR_Y        924.0f   /* 行底边 */
 #define CE_HUD_GAP               8.0f   /* 行内/行间间隙 */
-#define CE_HUD_X_MAX        1040.0f   /* 左列软上限（排不下就上抬一行）*/
+/* ★★★ 2026-10-03z2（owner 实跑：「**还是有些跑到右侧游玩区边界外了**」）——
+ *   左列软上限 **1040 → 1024**：**游玩区右边界**。一手 viewport = `(128, 16, 384, 448)`
+ *   （`engine/anm/th18/02-render-stages.md`）⇒ surface ×2 = **x 256..1024 / y 32..928**。
+ *   1040 是"卡图标列前留 16 px"的旧口径 ⇒ 排到 1036 的块会**探出游玩区**（owner 看到的那条）。
+ *   ⚠ `CE_HUD_X_HARD_MAX`（认领校验用）**不动**：它是结构上限，右列锚点 1040 那一族还要用。*/
+#define CE_HUD_X_MAX        1024.0f   /* 左列软上限（= 游玩区右边界；排不下就叠到上面）*/
 #define CE_HUD_X_HARD_MAX     1040.0f   /* 硬约束：块右边缘不许越过（§4.2）*/
 #define CE_HUD_X_MIN            68.0f   /* 右列向左排的软下限（★ 2026-10-03v：与左锚点同步 257→68）*/
 
