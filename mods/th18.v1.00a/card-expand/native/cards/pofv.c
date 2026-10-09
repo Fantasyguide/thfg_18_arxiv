@@ -2181,6 +2181,67 @@ static void pofv_c1_tick(void)
     }
 }
 
+/* ================= ④ 罩子（防护罩，owner 2026-10-10 亲写）=================
+ * ★ 一手（TH19，见 `HANDOFF-109-C1-C4.md` §1.4/§11）：
+ *   · **C3/C4 才给盾**（一手 `FUN_0040b420` 全 .text 只有 C3/C4 两个调用点）；**挡 1 发**、**最优先吃盾**；
+ *   · **破罩 = 类死亡三件事（全部一手）**：**禁主动移动 40 帧** + **无敌 100 帧** +
+ *     **背向命中点位移**（速度 `2.0` 线性衰减 40 帧 × **128** 单位）。
+ * ★ 本仓没有"玩家受击"钩子 ✗ ⇒ 挡弹照 **`blue_eyes.c`（青眼白龙）** 的范式：
+ *   在半径内**提前消掉**来袭弹（★ 用卡自己的 `cancel_white_in_circle`，`max_count = 1` ⇒ 挡 1 发）。
+ * ★ 无敌走声明式 **`ce_invuln_request(id, frames)`**（`sdk.h:1048`，注释里就写着用于 109 爆风 ✓）。
+ * ❓自定（登记 TUNING）：
+ *   ① 触发 = **结界张开的上升沿**（一手是"C3/C4 才给盾"，而 C3/C4 尚未实现）；
+ *   ② "命中点"取不到（消弹接口不返回坐标 ✗）⇒ 位移方向先取**正下**；
+ *   ③ 盾半径 / 视觉（一手是 `PlayerInf+0x18` 的对象，视觉=白圆+黄外发光，本轮先不做 VM）。*/
+#define POFV_BARRIER_R          40.0f    /* ❓自定：盾半径 */
+#define POFV_BARRIER_BREAK_N    40       /* ★ 一手 ✓ 禁主动移动 40 帧 */
+#define POFV_BARRIER_INVULN_N   100      /* ★ 一手 ✓ 无敌 100 帧 */
+#define POFV_BARRIER_PUSH       128.0f   /* ★ 一手 ✓ 位移单位 */
+#define POFV_BARRIER_PUSH_V     2.0f     /* ★ 一手 ✓ 初速（线性衰减到 0）*/
+static int   s_barrier_on;               /* 盾在不在 */
+static int   s_barrier_brk;              /* 破罩计时（>0 = 禁移 + 位移中）*/
+static float s_barrier_dx, s_barrier_dy; /* ❓自定：位移方向（先取正下）*/
+
+static void pofv_barrier_clear(void)
+{
+    s_barrier_on = 0; s_barrier_brk = 0; s_barrier_dx = 0.0f; s_barrier_dy = 0.0f;
+}
+
+/* ★ 给盾（一手：C3/C4 才给；本卡先挂在结界张开上升沿 ❓）*/
+static void pofv_barrier_fire(void)
+{
+    s_barrier_on = 1;
+}
+
+/* ★ 每帧：盾挡 1 发 ⇒ 破罩；破罩后跑那三件事 */
+static void pofv_barrier_tick(void)
+{
+    const float *pp = ce_player_pos();
+    if (!pp) return;
+    if (s_barrier_on) {
+        /* ★ 挡弹 = 在半径内提前消掉（★ 只消 1 颗 ⇒ 挡 1 发 ✓）*/
+        int n = cancel_white_in_circle(pp, POFV_BARRIER_R, 1, POFV_BULLET_CANCEL_MODE);
+        if (n > 0) {
+            s_barrier_on = 0;
+            s_barrier_brk = POFV_BARRIER_BREAK_N;
+            s_barrier_dx = 0.0f; s_barrier_dy = 1.0f;     /* ❓自定：正下（拿不到命中点 ✗）*/
+            ce_invuln_request(POFV_CARD_ID, POFV_BARRIER_INVULN_N);   /* ★ 一手 ✓ 无敌 100 帧 */
+        }
+    }
+    if (s_barrier_brk > 0) {
+        /* ★ 一手 ✓：禁主动移动（当帧写 0；`on_tick_2` 先于 `Player::on_tick` ⇒ 当帧生效）+ 背向位移 */
+        float f = (float)(POFV_BARRIER_BREAK_N - s_barrier_brk);
+        float v = POFV_BARRIER_PUSH_V * (1.0f - f / (float)POFV_BARRIER_BREAK_N);
+        float *mult = (float *)(CE_PLAYER() + CE_PLAYER_SPEED_MULT);
+        float *px;
+        if (CE_PLAYER()) *mult = 0.0f;            /* ★ 一手 ✓：禁主动移动（当帧生效）*/
+        px = (float *)(CE_PLAYER() + CE_PLAYER_X); /* ★ 与 `ce_player_pos()` 同一指针 ✓ */
+        px[0] += s_barrier_dx * v * POFV_BARRIER_PUSH;
+        px[1] += s_barrier_dy * v * POFV_BARRIER_PUSH;
+        --s_barrier_brk;
+    }
+}
+
 static void clear_card(ce_card_t *c)
 {
     int i, k;
@@ -2251,6 +2312,7 @@ static void clear_card(ce_card_t *c)
      *   ⚠ 本函数**不依赖 tick** ⇒ 商店里删卡（倒吊人 / 弃整副牌）也收得到 ✓。*/
     pofv_c2_clear();
     pofv_c1_clear();   /* ★ 铁律：长持续效果（C1 的 VM + 伤害源）删卡要收干净 ✓ */
+    pofv_barrier_clear();   /* ★ 铁律：罩子（盾/破罩计时）删卡要收干净 ✓ */
     /* ★★★★ 2026-10-10 owner：灵力（上限量 = 一手 `S+0x24`）**初值 = C1（不是 0 ✗）**
      *   ⇒ 开局有基础灵力 ⇒ 蓄力/结界不会被封到 0 ✓（C1 数值 = ❓自定，见 `POFV_REI_C1` ✓）。*/
     s_reiryoku = POFV_REI_C1;
@@ -3337,8 +3399,10 @@ static int on_tick_2(ce_card_t *c)
     {
         const int aura_edge = pofv_aura_rise_edge(aura_held);
         if (aura_edge) pofv_c2_fire();
+        if (aura_edge) pofv_barrier_fire();   /* ★ ④ 罩子：❓自定挂在同一上升沿 ✓ */
         if (aura_edge) pofv_c1_fire();   /* ★ C1（owner 2026-10-10 落地）：共用同一闩锁 ✓ */
         pofv_c2_tick(POFV_CARD_ID);
+        pofv_barrier_tick();
         pofv_c1_tick();                     /* ★ C1：前进 + 伤害源 + 收尾 ✓ */
     }
     }   /* ← 2026-10-10 新增的两把键作用域块（`chg_held` / `aura_held`）收尾 ✓ */
