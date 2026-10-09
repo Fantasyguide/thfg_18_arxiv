@@ -1288,3 +1288,4 @@ POFV109_CHG_GLOW_YELLOW      ability/chgmark/CHG_GLOW_YELLOW.png          24x48
 POFV109_C1_BULLET            ability/POFV109_C1_BULLET.png            30x30
 POFV109_BARRIER_DISC     ability/barrier/BARRIER_DISC.png         96x96
 POFV109_BARRIER_GLOW     ability/barrier/BARRIER_GLOW.png         128x128
+POFV109_C_RING           ability/cring/C_RING.png                 128x128

@@ -1,0 +1,20 @@
+script script430 {
+    // 109 · **各档 C 的消弹圈**：扩张的**红色圆环** ✓（owner 2026-10-10 实跑订正）。
+    // ★ 贴图照描述烤（一手没有这张图 ✗，见 `make_pofv109_c_ring_art.py` 文件头）；
+    //   一手 TH19 的消弹（`Ecl_EtBreakLv2` 8/12/16/20 四帧；`EXReigekiInf` 的 128→192）是**程序化圆**
+    //   + 逐命中点火花，★ "红环"是 owner 给的**观感**口径 ✓。
+    // ★ 用法：卡侧每帧只写 **位置 + `scale`**（半径），本支不管尺寸 ✓
+    //   （本仓老规矩：`scale` 由外部每帧写，先例 = 暴风脚本 396 / VM 缩放 `vm+0x54` ✓）。
+    // ★ `blendMode(1)`（加算）：红色发光才有"能量环"感 ✓。
+    sprite(@POFV109_C_RING);
+    layer(6);                    // ★ 与世界层对齐（同 396/427 ✓）
+    resampleMode(1);             // ★ 最近邻（像素图老规矩 ✓）
+    blendMode(1);
+    zWriteDisable(1);
+    color(255, 255, 255);        // ★ 恒白：颜色在贴图里（要染色再经 `ce_anm_set_color` ✓）
+    alpha(255);
+    stop();
+    interruptLabel(1);
++8: // 8
+    delete();
+}
