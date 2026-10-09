@@ -921,6 +921,14 @@ int yk_emit_gap_is_new_wave(int eton_gap, int gap_ref)
 }
 
 /* ★★★★ 2026-10-01（owner 硬约束 ②）：符卡名是不是「时符」（详注见头文件）。纯字节比较、无浮点。*/
+/* ★★★★ 2026-10-01（owner 真判据）：`bit3`（耐久符卡 / 超时不算 bonus failed）优先，名字兜底。*/
+int yk_spell_xfer_block(int spell_flags, int name_is_time)
+{
+    if (spell_flags & YK_SPELL_FLAG_SURVIVAL) return YK_XFER_BLOCK_FLAG;   /* ★ 程序内判据（优先）*/
+    if (name_is_time) return YK_XFER_BLOCK_NAME;                           /* 字符串兜底 */
+    return YK_XFER_BLOCK_NONE;
+}
+
 int yk_spell_name_is_time(const uint8_t *name, int maxlen)
 {
     static const unsigned char P_UTF16_T[4] = { 0x42, 0x66, 0x26, 0x7B };  /* 時符（UTF-16LE）*/

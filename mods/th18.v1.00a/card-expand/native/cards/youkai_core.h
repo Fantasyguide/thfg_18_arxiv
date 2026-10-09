@@ -1332,6 +1332,19 @@ int  yk_shell_needs_rebuild(int have_shell, int broken);
  *     或 Shift-JIS `8E 9E 95 84`）。⚠ 实测 TH18 的 `*.ecl` 里**没有**这些序列（0 命中）⇒
  *     实跑若从不触发，就用日志里的 `name=` 十六进制看真实编码，再补判据（已登记 `AUDIT §BE #212`）。*/
 int  yk_spell_name_is_time(const uint8_t *name, int maxlen);
+/* ★★★★ 2026-10-01（**owner 给的真判据**）：「有一个**关键判定标准：超时不算 bonus failed**」
+ *   ＋「六面的**虹人环**应该是所谓时符」。
+ *   **一手**（`th18:0x42efb0`–`0x42f039`，符卡超时那一段）：`test cl,0x8`（`zSpellcard+0x78` **bit3**）
+ *   ⇒ 置位就跳 `0x42f016`，**不置 bit7（已超时）、不清 `+0x7c`（奖励）**；未置位那支才
+ *   `or [edx+0x78],0x80` + 60 帧后 `and eax,0xffffffdd` + `mov [edx+0x7c],0` ⇒ **奖励清零 = bonus failed**。
+ *   ⇒ **bit3 = 耐久符卡 = 超时按收符卡算 = owner 的「超时不算 bonus failed」** ✓
+ *     （这一位本仓早就登记为 `CE_SPELL_FLAG_SURVIVAL`，值 8；ECL 542 置它）。
+ *   本函数把两类判据合成一个**三态**返回：**0 = 不抑制；1 = 按 flag（真判据）；2 = 按名字（兜底）**。*/
+#define YK_SPELL_FLAG_SURVIVAL 8   /* = engine.h 的 `CE_SPELL_FLAG_SURVIVAL`（core 不 include engine.h）*/
+#define YK_XFER_BLOCK_NONE 0
+#define YK_XFER_BLOCK_FLAG 1
+#define YK_XFER_BLOCK_NAME 2
+int  yk_spell_xfer_block(int spell_flags, int name_is_time);
 /* ★★★ 2026-10-01（#209 · **主功能**：打死使魔 ⇒ 关闭该发射口）：**「这一条 `etOn` 算不算新一波」**（纯函数）。
  *   判据 = 间隔 ≥ `YK_EMIT_WAVE_GAP`(24) **且** 间隔 ≥ `4 × gap_ref`（该槽自己的波内间隔最小值；
  *   `gap_ref <= 0` = 还没观测到 ⇒ 只用绝对阈值）。⇒ **缓发敌人（波内间隔就有 30/60 帧）不会被误放行**，

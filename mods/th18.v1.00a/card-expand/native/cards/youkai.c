@@ -2635,13 +2635,22 @@ static int yk_transfer_spell_blocked(void)
     if (!sc) return 0;
     if (!(*(const int32_t *)(sc + CE_SPELL_FLAGS) & CE_SPELL_FLAG_ACTIVE)) return 0;
     nm = (const uint8_t *)(sc + 0x34);
-    if (!yk_spell_name_is_time(nm, 64)) return 0;
-    {   int32_t id = *(const int32_t *)(sc + CE_SPELL_ID);
+    {   int32_t fl = *(const int32_t *)(sc + CE_SPELL_FLAGS);
+        int by = yk_spell_xfer_block(fl, yk_spell_name_is_time(nm, 64));
+        int32_t id;
+        if (!by) return 0;
+        id = *(const int32_t *)(sc + CE_SPELL_ID);
         if (id != logged_id) {
             logged_id = id;
-            ce_log("youkai/xfer: spell %d => transfer SUPPRESSED (time spell; owner 2026-10-01: familiar "
-                   "damage must NOT go back to the enemy) name[0..7]=%02x %02x %02x %02x %02x %02x %02x %02x",
-                   (int)id, nm[0], nm[1], nm[2], nm[3], nm[4], nm[5], nm[6], nm[7]);
+            /* ★ 判据行（owner 要的 `by=`）：`flag` = `zSpellcard+0x78` bit3（耐久符卡 = **超时不算
+             *   bonus failed**，一手 `0x42efb0`–`0x42f039`）；`name` = 名字以 時符/时符 开头（兜底）。
+             *   `name[0..7]` 十六进制保留 ⇒ 实跑可反查 TH18 真实编码（交叉验证 flag 判据）。*/
+            ce_log("youkai/xfer: spell %d => transfer SUPPRESSED (by=%s; flags=0x%x survival_bit=%d; "
+                   "owner 2026-10-01: familiar damage must NOT go back to the enemy on time spells) "
+                   "name[0..7]=%02x %02x %02x %02x %02x %02x %02x %02x",
+                   (int)id, (by == YK_XFER_BLOCK_FLAG) ? "flag" : "name", (unsigned)fl,
+                   (fl & CE_SPELL_FLAG_SURVIVAL) ? 1 : 0,
+                   nm[0], nm[1], nm[2], nm[3], nm[4], nm[5], nm[6], nm[7]);
         }
     }
     return 1;
