@@ -1905,6 +1905,7 @@ typedef struct {
     int active;      /* 1 = C2 生效中 */
     int age;         /* 0..`POFV_C2_TOTAL`−1（一手 `EXReigekiInf+0x5c` ✓）*/
     int invuln;      /* 剩余无敌帧（一手 40 ✓；逐帧声明给 SDK 的声明层 ✓）*/
+    int ring_vm;     /* ★★ 消弹**范围圈**的 VM（★ 一手正解 = 一台 VM + `texArcEven(64)`，见 §15 ✓）*/
 } pofv_c2_t;
 static pofv_c2_t s_c2;
 /* ★ C1/C2 **共用**的「结界键张开上升沿」闩锁（一手两档同一次蓄力释放 ⇒ 同一次张开都放 ✓）。
@@ -1962,6 +1963,9 @@ static void pofv_c2_fire(void)
 }
 
 /* 每帧推进（105 帧）。`id` = 本卡卡号（无敌声明层的键 ✓）。**不依赖结界键电平** ✓（一次性 105 帧）。*/
+static void c2_ring_vm_sync(float r);   /* 定义在后（装回范围圈时加的 ✓）*/
+static void c2_ring_vm_release(void);   /* 定义在后（装回范围圈时加的 ✓）*/
+
 static void pofv_c2_tick(uint32_t id)
 {
     const float *p;
@@ -2001,6 +2005,7 @@ static void pofv_c2_tick(uint32_t id)
         const float r = POFV_C2_RING_R0
                       + (POFV_C2_RING_R1 - POFV_C2_RING_R0)
                         * (float)(s_c2.age - POFV_C2_POINT_END) / POFV_C2_RING_FRAMES;
+        c2_ring_vm_sync(r);   /* ★★ 范围圈：每帧按**真实消弹半径**写 `scale.y`（判定=绘制 ✓）*/
         float pos[3];
         pos[0] = p[0]; pos[1] = p[1]; pos[2] = 0.0f;
         (void)c2_cancel_drop(pos, r);
@@ -2013,6 +2018,7 @@ static void pofv_c2_tick(uint32_t id)
 
     /* ⑤ 收尾（105 帧到 ⇒ 环淡出、无敌撤声明、状态归零 ✓）*/
     if (++s_c2.age >= POFV_C2_TOTAL) {
+        c2_ring_vm_release();  /* ★ 范围圈：随 C2 一起收（淡出后由 clear 兜底 ✓）*/
         ce_invuln_request(id, 0);
         s_c2.active = 0;
         s_c2.age = 0;
@@ -2022,8 +2028,43 @@ static void pofv_c2_tick(uint32_t id)
 
 /* 清干净（`clear_card()` = `on_ctor` / `on_run_reset` / `on_delete` 三路共用；铁律「长持续效果必须
  * 收干净」✓ —— 本函数的跨帧遗留物 = ① 可见环 VM ② 无敌**声明层**的一格 ③ 上升沿闩锁 ✓）。*/
+/* ================= ③ 消弹**范围圈**（标注消弹半径的那个环）=================
+ * ★★ 一手正解（§15 ✓）：★ **一台 VM** 把一条 **16×768 的红竖条**（TH09 `etama3.png` 第 3 列 ✓）
+ *   **扫成一段弧** ✓ —— ★ TH18 的对应物 = **`texArcEven(段数)`** ✓（anmm 601 ✓，脚本 432 ✓），
+ *   ★ 段数 = **64** ✓（一手 `iset([10000],64)` ⇒ 落在 `vm+0x100` = 引擎读的段数 ✓）。
+ * ★ 本卡：★ **半径由卡侧每帧写 `scale.y`** ✓（= 该档**真实的消弹半径** ⇒ **判定=绘制** ✓，
+ *   与暴风/C2 的既有做法同款 ✓）；★ `scale.x` = 环带宽度（❓旋钮，一手是 16 px 的条 ✓）。
+ * ⚠ 上一轮我误以为"一手没有这个圈"而把它整个删了 ✗ —— 那位 owner 说的**正是它** ✓（已装回 ✓）。*/
+#define POFV_C2_RING_BAND_W   1.0f     /* ❓旋钮：环带宽度（× 贴图宽 16 px）*/
+static void c2_ring_vm_sync(float r)
+{
+    const float *p = ce_player_pos();
+    if (r <= 0.0f) return;
+    if (!s_c2.ring_vm) {
+        const uint32_t id = ce_anm_spawn(CE_ABILITY_ANM(),
+                            CE_ANM_ABILITY_SCRIPT_POFV109_C_RING_ARC, 6);
+        if (!id) return;
+        s_c2.ring_vm = (int32_t)id;
+    }
+    if (!p) return;
+    vm_set_world_pos((uint32_t)s_c2.ring_vm, p[0], p[1]);
+    /* ★ 判定=绘制：`scale.y` = 半径（世界单位）；`scale.x` = 环带宽度 ✓ */
+    ce_anm_set_scale((uint32_t)s_c2.ring_vm, POFV_C2_RING_BAND_W, r);
+}
+
+static void c2_ring_vm_release(void)
+{
+    if (!s_c2.ring_vm) return;
+    if (ce_anm_get_vm((uint32_t)s_c2.ring_vm)) ce_anm_interrupt((uint32_t)s_c2.ring_vm, 1);
+    s_c2.ring_vm = 0;
+}
+
 static void pofv_c2_clear(void)
 {
+    if (s_c2.ring_vm) {                                       /* ★ 铁律：范围圈 VM 也收 ✓ */
+        if (ce_anm_get_vm((uint32_t)s_c2.ring_vm)) ce_anm_delete((uint32_t)s_c2.ring_vm);
+        s_c2.ring_vm = 0;
+    }
     s_c2.active = 0; s_c2.age = 0; s_c2.invuln = 0;
     s_aura_rise_prev = 0;                 /* 删卡后不留幽灵闩锁 ⇒ 下次张开仍算上升沿 ✓ */
     ce_invuln_request(POFV_CARD_ID, 0);   /* 撤无敌声明（声明层是**粘性**的 ⇒ 必须显式撤 ✓）*/
