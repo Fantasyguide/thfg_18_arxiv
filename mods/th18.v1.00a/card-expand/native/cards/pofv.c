@@ -452,6 +452,18 @@ static int32_t s_hud_hitsf_vm;
 static int32_t s_hud_sp_frame_vm, s_hud_sp_digit_vm[6], s_hud_sp_hit_vm;
 static int32_t s_hud_hit_digit_vm[3];   /* ★ 固定 **3 格**（前导留空 ✓ owner 格式 ✓）*/   /* ★ TH09 的 **红色 hits 数字**（红套 721–730 ✓ owner 口径）*/   /* TH09 SP row: frame 720 / digits 709+d / Hit 719 */   /* TH19 hits black outline (ascii_bigf, cut) */
 static int ipow10(int n) { int v = 1; while (n-- > 0) v *= 10; return v; }
+/* ★★★★ 2026-10-08 TH09 **自机上方「Charge 当前档/上限档」指示**（一手 script68–71 ✓）：
+ *   4 台 VM，随自机移动（+ 偏移）、中心锚点 ✓：
+ *     标签 `Charge` (0,−40) ✓／当前档 (−12,−28) ✓／斜杠 `/` (0,−28) ✓／上限档 (+12,−28) ✓；
+ *   出现：**按住蓄力键（C∨Shift ✓）满 10 帧** ✓；松手 ⇒ `interrupt(…,1)` 收掉 ✓；
+ *   动画：淡入 `alphaTime(10,0,192)` ✓；标签与当前档 **绿(128,255,128)↔白 每 10 帧** ✓；
+ *         上限档与斜杠 **灰 (192,192,192) 静态** ✓。
+ *   档位：一手 1 格 = 100（0..400 ⇒ 0..4）✓；本卡 `s_aura_charge` 是 **0..200** ⇒ 每格取 **50**、
+ *         显示上限固定 **4** ⇒ 观感与一手同形 ✓（❓自定换算，已登记 ✓）。*/
+#define POFV_HUD_CHG_MAX_TIER 4
+static int32_t s_hud_chg_label_vm, s_hud_chg_cur_vm, s_hud_chg_slash_vm, s_hud_chg_max_vm;
+static int32_t s_hud_chg_hold;      /* 蓄力键连续按住的帧数（一手：满 10 帧才显示 ✓）*/
+
 static int32_t s_hud_bonus_vm;   /* ★ TH09 `Bonus!`（一手原图 th09 ascii.anm sprite107 ✓）*/
 static int32_t s_hud_ag_fill_vm, s_hud_ag_dot_vm[4];   /* TH19 gauge fill + 4 threshold markers (original art) */   /* TH19 Bonus label (cut from original art) */   /* ★ TH19 hits 标签（**切自原作字体** ✓ ascii.png y=56 行 ✓）*/   /* ★ TH09 連擊槽条 / TH19 攻击槽条（卡自建 VM ⇒ 必须在 clear_card 里真删 ✓ 铁律）*/
 static ce_hud_vm_text_t s_hud_hits_lbl;
@@ -2240,7 +2252,57 @@ static int on_tick_2(ce_card_t *c)
      *   ⇒ **latch 永远不更新** ⇒ HUD 显示（读 `latch` ✓）**恒 0** ✓。
      *   ⇒ 本卡在场时把它置 1 即可（一手 `+0x227c` 的 active 门 ✓；这里没有"濒死"概念 ⇒ 恒 1 ✓）。*/
     s_hits.active = 1;
-    pofv_hits_tick(&s_hits);                     /* ★ HUD hits：锁存 + 寿命递减（一手 120 帧 ✓）*/
+    pofv_hits_tick(&s_hits);                     /* ★★★★ 2026-10-08 A 组「Charge 当前档/上限档」（一手 script68–71 ✓）*/
+    {
+        const int held = pofv_charge_key();
+        s_hud_chg_hold = held ? (s_hud_chg_hold + 1) : 0;
+        if (s_hud_chg_hold >= 10 && s_aura_charge > 0.0f) {     /* 一手：满 10 帧 + 当前值≠0 ✓ */
+            const float *pp = ce_player_pos();
+            float bx = pp ? pp[0] : 0.0f, by = pp ? pp[1] : 0.0f;
+            int32_t tier = (int32_t)(s_aura_charge / 50.0f);    /* ❓自定：0..200 ⇒ 每格 50 ✓ */
+            if (tier < 0) tier = 0;
+            if (tier > POFV_HUD_CHG_MAX_TIER) tier = POFV_HUD_CHG_MAX_TIER;
+            const int flash = ((s_card_frames / 10) & 1) ? 1 : 0;   /* 一手：每 10 帧一轮 ✓ */
+            if (!s_hud_chg_label_vm)
+                s_hud_chg_label_vm = (int32_t)hud_vm_spawn(CE_ANM_ABILITY_SCRIPT_HUD_GLYPH, bx, by - 40.0f);
+            if (!s_hud_chg_cur_vm)
+                s_hud_chg_cur_vm   = (int32_t)hud_vm_spawn(CE_ANM_ABILITY_SCRIPT_HUD_GLYPH, bx - 12.0f, by - 28.0f);
+            if (!s_hud_chg_slash_vm)
+                s_hud_chg_slash_vm = (int32_t)hud_vm_spawn(CE_ANM_ABILITY_SCRIPT_HUD_GLYPH, bx, by - 28.0f);
+            if (!s_hud_chg_max_vm)
+                s_hud_chg_max_vm   = (int32_t)hud_vm_spawn(CE_ANM_ABILITY_SCRIPT_HUD_GLYPH, bx + 12.0f, by - 28.0f);
+            if (s_hud_chg_label_vm) {
+                ce_anm_set_pos((uint32_t)s_hud_chg_label_vm, bx, by - 40.0f, 0.0f);
+                ce_anm_set_sprite(CE_ABILITY_ANM(), (uint32_t)s_hud_chg_label_vm, CE_ANM_ABILITY_SPRITE_POFV109_TH09_UI_CHARGE);
+                ce_anm_set_color((uint32_t)s_hud_chg_label_vm, flash ? 0xFF80FF80u : 0xFFFFFFFFu);
+            }
+            if (s_hud_chg_cur_vm) {
+                ce_anm_set_pos((uint32_t)s_hud_chg_cur_vm, bx - 12.0f, by - 28.0f, 0.0f);
+                ce_anm_set_sprite(CE_ABILITY_ANM(), (uint32_t)s_hud_chg_cur_vm,
+                                  CE_ANM_ABILITY_SPRITE_POFV109_TH09_UI_DIGIT_0 + (uint32_t)tier);
+                ce_anm_set_color((uint32_t)s_hud_chg_cur_vm, flash ? 0xFF80FF80u : 0xFFFFFFFFu);
+            }
+            if (s_hud_chg_slash_vm) {
+                ce_anm_set_pos((uint32_t)s_hud_chg_slash_vm, bx, by - 28.0f, 0.0f);
+                ce_anm_set_sprite(CE_ABILITY_ANM(), (uint32_t)s_hud_chg_slash_vm, CE_ANM_ABILITY_SPRITE_POFV109_TH09_UI_SLASH);
+                ce_anm_set_color((uint32_t)s_hud_chg_slash_vm, 0xFFC0C0C0u);   /* 灰静态 ✓ */
+            }
+            if (s_hud_chg_max_vm) {
+                ce_anm_set_pos((uint32_t)s_hud_chg_max_vm, bx + 12.0f, by - 28.0f, 0.0f);
+                ce_anm_set_sprite(CE_ABILITY_ANM(), (uint32_t)s_hud_chg_max_vm,
+                                  CE_ANM_ABILITY_SPRITE_POFV109_TH09_UI_DIGIT_0 + POFV_HUD_CHG_MAX_TIER);
+                ce_anm_set_color((uint32_t)s_hud_chg_max_vm, 0xFFC0C0C0u);     /* 灰静态 ✓ */
+            }
+        } else {
+            /* 松手/未满 10 帧 ⇒ 一手用 `interrupt(…,1)` 收掉 ✓（我们自己删 VM、句柄清 0 ✓）*/
+            if (s_hud_chg_label_vm) { ce_anm_delete((uint32_t)s_hud_chg_label_vm); s_hud_chg_label_vm = 0; }
+            if (s_hud_chg_cur_vm)   { ce_anm_delete((uint32_t)s_hud_chg_cur_vm);   s_hud_chg_cur_vm = 0; }
+            if (s_hud_chg_slash_vm) { ce_anm_delete((uint32_t)s_hud_chg_slash_vm); s_hud_chg_slash_vm = 0; }
+            if (s_hud_chg_max_vm)   { ce_anm_delete((uint32_t)s_hud_chg_max_vm);   s_hud_chg_max_vm = 0; }
+        }
+    }
+
+    /* ★ HUD hits：锁存 + 寿命递减（一手 120 帧 ✓）*/
     /* ★★ 调试 UI（owner）：事件列表（暴风延迟 ✓ / 击破·固灵 3 s ✓）+ 幽灵列表（只有内容、无位置 ✓）*/
     {
         int32_t i2, j2;
@@ -2385,6 +2447,8 @@ static int on_tick_2(ce_card_t *c)
     {
         int32_t *hs[16]; int nh = 0, ih;
         hs[nh++] = &s_hud_c2_vm; hs[nh++] = &s_hud_sp_frame_vm; hs[nh++] = &s_hud_sp_hit_vm;
+        hs[nh++] = &s_hud_chg_label_vm; hs[nh++] = &s_hud_chg_cur_vm;
+        hs[nh++] = &s_hud_chg_slash_vm; hs[nh++] = &s_hud_chg_max_vm;
         for (ih = 0; ih < 6; ++ih) hs[nh++] = &s_hud_sp_digit_vm[ih];
         for (ih = 0; ih < 3; ++ih) hs[nh++] = &s_hud_hit_digit_vm[ih];
         for (ih = 0; ih < nh; ++ih)
