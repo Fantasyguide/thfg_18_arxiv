@@ -1834,19 +1834,23 @@ static int c2_cancel_drop(const float *pos, float r)
  *   ⇒ 各档的「圈」是**红色**的（旧记「一手无可视扩张环」✗ 作废）。卡里既有约定
  *   `0xffffff00` = 黄 ⇒ 同字节序下 **红 = `0xffff0000`**（AARRGGBB）。*/
 #define POFV_C_RING_COLOR       0xffff0000u
+/* ★★ 贴图版红环（脚本 430 / `POFV109_C_RING`）：贴图里环心在 **r = 0.86 × 64 = 55.04 px**
+ *   ⇒ 卡侧要显示半径 `r`，`scale = r / 55.04` ✓（脚本 430 不管尺寸，scale 由外部每帧写 ✓）。*/
+#define POFV_C_RING_TEX_R       55.04f
+#define POFV_C_RING_SCRIPT      CE_ANM_ABILITY_SCRIPT_POFV109_C_RING
 
 static void c2_ring_vm_sync(float r)
 {
     if (!s_c2.ring_vm) {
-        const uint32_t id = ce_anm_spawn(CE_ABILITY_ANM(), POFV_C2_RING_SCRIPT, POFV_C2_VM_LAYER);
+        const uint32_t id = ce_anm_spawn(CE_ABILITY_ANM(), POFV_C_RING_SCRIPT, POFV_C2_VM_LAYER);
         if (!id) return;                       /* 建失败 ⇒ 少一台装饰环，逻辑照走（下一帧再试 ✓）*/
         s_c2.ring_vm = (int32_t)id;
-        ce_anm_set_color(id, POFV_C_RING_COLOR);   /* ★ owner：扩张的**红色**圆环 ✓ */
+        ce_anm_set_color(id, 0xffffffffu);     /* ★ 颜色在贴图里（红环）⇒ 顶点色恒白 ✓ */
     }
     {
         const float *p = ce_player_pos();
         if (p) vm_set_world_pos((uint32_t)s_c2.ring_vm, p[0], p[1]);
-        ce_anm_set_scale((uint32_t)s_c2.ring_vm, r, r);
+        ce_anm_set_scale((uint32_t)s_c2.ring_vm, r / POFV_C_RING_TEX_R, r / POFV_C_RING_TEX_R);
     }
 }
 
@@ -2161,7 +2165,7 @@ static void pofv_c1_fire(void)
         if (s_c1_vm[t]) {
             ce_anm_set_pos((uint32_t)s_c1_vm[t], s_c1_x[t], s_c1_y[t], 0.0f);
             ce_anm_set_scale((uint32_t)s_c1_vm[t], 1.0f, 1.0f);   /* ★ 贴图 = 一手 30x30 ⇒ 1:1 ✓ */
-            ce_anm_set_color((uint32_t)s_c1_vm[t], POFV_C_RING_COLOR);  /* ★ owner：红色 ✓ */
+            /* ★ C1 放出的是弹、不是消弹圈 ⇒ 不染色（红的是各档的消弹圈，见 c2_ring_vm_sync / C3）*/
         }
     }
 }
@@ -2419,18 +2423,50 @@ static void pofv_c3_tick(void)
 /* ★ ⑤ C3 的阈值（一手 `pl00.sht` 的 `+0x34` = 170 ⇒ ×10 = 1700，与 `S+0x24/0x28/0x2c/0x30`
  *   同量纲 0..2500 ✓；触发形状照 C1/C2 = **按蓄力档**、只在**上升**那一帧放一次 ✓）。*/
 #define POFV_C3_THRESH          1700.0f
-#define POFV_BARRIER_R          40.0f    /* ❓自定：盾半径 */
+#define POFV_BARRIER_R          40.0f
+#define POFV_BARRIER_VM_LAYER_DISC  6    /* ★ 内层：与世界层对齐（脚本里也写 layer(6) ✓）*/
+#define POFV_BARRIER_VM_LAYER_GLOW  5    /* ★ 外层：低一层 ⇒ 画在内层下面 ✓ */    /* ❓自定：盾半径 */
 #define POFV_BARRIER_BREAK_N    40       /* ★ 一手 ✓ 禁主动移动 40 帧 */
 #define POFV_BARRIER_INVULN_N   100      /* ★ 一手 ✓ 无敌 100 帧 */
 #define POFV_BARRIER_PUSH       128.0f   /* ★ 一手 ✓ 位移单位 */
 #define POFV_BARRIER_PUSH_V     2.0f     /* ★ 一手 ✓ 初速（线性衰减到 0）*/
+static int32_t s_barrier_vm_disc;        /* ★ 内层：白圆（脚本 428）*/
+static int32_t s_barrier_vm_glow;        /* ★ 外层：黄外发光（脚本 429）*/
 static int   s_barrier_on;               /* 盾在不在 */
 static int   s_barrier_brk;              /* 破罩计时（>0 = 禁移 + 位移中）*/
 static float s_barrier_dx, s_barrier_dy; /* ❓自定：位移方向（先取正下）*/
 
 static void pofv_barrier_clear(void)
 {
+    if (s_barrier_vm_disc) { ce_anm_delete((uint32_t)s_barrier_vm_disc); s_barrier_vm_disc = 0; }
+    if (s_barrier_vm_glow) { ce_anm_delete((uint32_t)s_barrier_vm_glow); s_barrier_vm_glow = 0; }
     s_barrier_on = 0; s_barrier_brk = 0; s_barrier_dx = 0.0f; s_barrier_dy = 0.0f;
+}
+
+/* ★ 罩子的视觉（owner：**一个白色透明圆形 + 外面黄色的外发光** ✓，参考咲夜的固灵领域 ✓）：
+ *   内层 `POFV109_BARRIER_DISC`（96×96 白圆，脚本 428）+ 外层 `POFV109_BARRIER_GLOW`
+ *   （128×128 黄空心环，脚本 429）⇒ ★ 两台 VM 同位置、**外层 scale 更大** ✓。
+ *   ❓自定：半径取 `POFV_BARRIER_R`（= 判定半径 ✓，一手是 `PlayerInf+0x18` 对象，观感未取）。*/
+static void pofv_barrier_vm_sync(void)
+{
+    const float *p = ce_player_pos();
+    float k;
+    if (!p) return;
+    k = POFV_BARRIER_R / 48.0f;               /* 贴图内层半径 = 96/2 = 48 px ⇒ 1:1 映射 ✓ */
+    if (!s_barrier_vm_glow)
+        s_barrier_vm_glow = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
+                             CE_ANM_ABILITY_SCRIPT_POFV109_BARRIER_GLOW, POFV_BARRIER_VM_LAYER_GLOW);
+    if (!s_barrier_vm_disc)
+        s_barrier_vm_disc = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
+                             CE_ANM_ABILITY_SCRIPT_POFV109_BARRIER_DISC, POFV_BARRIER_VM_LAYER_DISC);
+    if (s_barrier_vm_glow) {
+        vm_set_world_pos((uint32_t)s_barrier_vm_glow, p[0], p[1]);
+        ce_anm_set_scale((uint32_t)s_barrier_vm_glow, k * (128.0f / 96.0f), k * (128.0f / 96.0f));
+    }
+    if (s_barrier_vm_disc) {
+        vm_set_world_pos((uint32_t)s_barrier_vm_disc, p[0], p[1]);
+        ce_anm_set_scale((uint32_t)s_barrier_vm_disc, k, k);
+    }
 }
 
 /* ★ 给盾（一手：C3/C4 才给；本卡先挂在结界张开上升沿 ❓）*/
@@ -2447,8 +2483,12 @@ static void pofv_barrier_tick(void)
     if (s_barrier_on) {
         /* ★ 挡弹 = 在半径内提前消掉（★ 只消 1 颗 ⇒ 挡 1 发 ✓）*/
         int n = cancel_white_in_circle(pp, POFV_BARRIER_R, 1, POFV_BULLET_CANCEL_MODE);
+        pofv_barrier_vm_sync();   /* ★ 视觉：白圆 + 黄外发光（每帧跟随自机 ✓）*/
         if (n > 0) {
             s_barrier_on = 0;
+            /* ★ 破罩 ⇒ 视觉先收（两台 VM 真删 ✓，铁律）*/
+            if (s_barrier_vm_disc) { ce_anm_delete((uint32_t)s_barrier_vm_disc); s_barrier_vm_disc = 0; }
+            if (s_barrier_vm_glow) { ce_anm_delete((uint32_t)s_barrier_vm_glow); s_barrier_vm_glow = 0; }
             s_barrier_brk = POFV_BARRIER_BREAK_N;
             s_barrier_dx = 0.0f; s_barrier_dy = 1.0f;     /* ❓自定：正下（拿不到命中点 ✗）*/
             ce_invuln_request(POFV_CARD_ID, POFV_BARRIER_INVULN_N);   /* ★ 一手 ✓ 无敌 100 帧 */
