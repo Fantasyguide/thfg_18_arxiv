@@ -1341,10 +1341,16 @@ int  yk_spell_name_is_time(const uint8_t *name, int maxlen);
  *     （这一位本仓早就登记为 `CE_SPELL_FLAG_SURVIVAL`，值 8；ECL 542 置它）。
  *   本函数把两类判据合成一个**三态**返回：**0 = 不抑制；1 = 按 flag（真判据）；2 = 按名字（兜底）**。*/
 #define YK_SPELL_FLAG_SURVIVAL 8   /* = engine.h 的 `CE_SPELL_FLAG_SURVIVAL`（core 不 include engine.h）*/
-#define YK_XFER_BLOCK_NONE 0
-#define YK_XFER_BLOCK_FLAG 1
-#define YK_XFER_BLOCK_NAME 2
-int  yk_spell_xfer_block(int spell_flags, int name_is_time);
+/* ★★★★ 2026-10-01 晚（owner 拍板「**要的**」）：**无敌期间也抑制转嫁**。
+ *   目标敌人（母机）`enemy+0x635c` 的 **bit24**（`0x01000000`）= 免伤/无敌位 —— 一手：耐久符卡结束时
+ *   `th18:0x42f016`–`0x42f027` `and eax,0xfeffffff` + `mov [ecx+0x635c],eax` ⇒ **期间是置上的**。
+ *   （与我们用在**使魔**上的 bit4 免伤位是**同一寄存器的不同位**，不冲突。）
+ *   返回值是**位掩码**（可能同时命中多个原因）：flag（耐久符卡，优先于名字）| name | invuln。*/
+#define YK_XFER_BLOCK_NONE   0
+#define YK_XFER_BLOCK_FLAG   1     /* `zSpellcard+0x78` bit3（耐久符卡 = 超时不算 bonus failed）*/
+#define YK_XFER_BLOCK_NAME   2     /* 名字以 時符/时符 开头（兜底）*/
+#define YK_XFER_BLOCK_INVULN 4     /* 母机 `enemy+0x635c` bit24（无敌/免伤）*/
+int  yk_spell_xfer_block(int spell_flags, int name_is_time, int boss_no_damage);
 /* ★★★ 2026-10-01（#209 · **主功能**：打死使魔 ⇒ 关闭该发射口）：**「这一条 `etOn` 算不算新一波」**（纯函数）。
  *   判据 = 间隔 ≥ `YK_EMIT_WAVE_GAP`(24) **且** 间隔 ≥ `4 × gap_ref`（该槽自己的波内间隔最小值；
  *   `gap_ref <= 0` = 还没观测到 ⇒ 只用绝对阈值）。⇒ **缓发敌人（波内间隔就有 30/60 帧）不会被误放行**，

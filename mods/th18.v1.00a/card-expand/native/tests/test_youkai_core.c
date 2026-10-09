@@ -1457,11 +1457,18 @@ int main(void)
         CHECK(yk_spell_name_is_time(u16_t, 3) == 0);      /* 太短 ⇒ 不判 */
         /* ★★★ 2026-10-01（owner 真判据）：「**超时不算 bonus failed**」= `zSpellcard+0x78` **bit3**
          *   （耐久符卡；一手 `0x42efb0`–`0x42f039`：bit3 ⇒ 不置 bit7、不清 `+0x7c`）⇒ 优先于名字。*/
-        CHECK(yk_spell_xfer_block(0, 0) == YK_XFER_BLOCK_NONE);
-        CHECK(yk_spell_xfer_block(0, 1) == YK_XFER_BLOCK_NAME);       /* 只有名字命中 ⇒ 兜底 */
-        CHECK(yk_spell_xfer_block(YK_SPELL_FLAG_SURVIVAL, 0) == YK_XFER_BLOCK_FLAG);   /* ★ 真判据 */
-        CHECK(yk_spell_xfer_block(YK_SPELL_FLAG_SURVIVAL, 1) == YK_XFER_BLOCK_FLAG);   /* flag 优先 */
-        CHECK(yk_spell_xfer_block(1, 0) == YK_XFER_BLOCK_NONE);       /* bit0(进行中) 本身不抑制 */
+        CHECK(yk_spell_xfer_block(0, 0, 0) == YK_XFER_BLOCK_NONE);
+        CHECK(yk_spell_xfer_block(0, 1, 0) == YK_XFER_BLOCK_NAME);       /* 只有名字命中 ⇒ 兜底 */
+        CHECK(yk_spell_xfer_block(YK_SPELL_FLAG_SURVIVAL, 0, 0) == YK_XFER_BLOCK_FLAG);   /* ★ 真判据 */
+        CHECK(yk_spell_xfer_block(YK_SPELL_FLAG_SURVIVAL, 1, 0) == YK_XFER_BLOCK_FLAG);   /* flag 优先 */
+        CHECK(yk_spell_xfer_block(1, 0, 0) == YK_XFER_BLOCK_NONE);       /* bit0(进行中) 本身不抑制 */
+        /* ★ owner「要的」：**母机无敌（bit24）也抑制** —— 4 种组合 + 叠加 */
+        CHECK(yk_spell_xfer_block(0, 0, 1) == YK_XFER_BLOCK_INVULN);                       /* 仅无敌 */
+        CHECK(yk_spell_xfer_block(YK_SPELL_FLAG_SURVIVAL, 0, 1)
+              == (YK_XFER_BLOCK_FLAG | YK_XFER_BLOCK_INVULN));                            /* 时符+无敌 */
+        CHECK(yk_spell_xfer_block(0, 1, 1) == (YK_XFER_BLOCK_NAME | YK_XFER_BLOCK_INVULN));/* 名字+无敌 */
+        CHECK(yk_spell_xfer_block(YK_SPELL_FLAG_SURVIVAL, 1, 1)
+              == (YK_XFER_BLOCK_FLAG | YK_XFER_BLOCK_INVULN));                            /* flag 仍优先于名字 */
     }
 
     /* ============ §3.10 人妖槽（TH08 `youkaiGauge`；限值/判定/几何全部一手）============ */

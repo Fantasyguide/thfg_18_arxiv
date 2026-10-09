@@ -2627,33 +2627,54 @@ static yk_xfam_t *yk_xfam_find(uint32_t id)
  *   ⇒ 命中即**不转嫁**：量进 `dropped` 账、`transferred` 不涨；进入时打一行（含 `spell id` 与名字前
  *     8 字节的十六进制 ⇒ 实跑可反查真实编码）。⚠ 实测 TH18 的 `*.ecl` 里没有这些序列（0 命中）⇒
  *     若实跑从不触发，用那行十六进制补判据（登记 `AUDIT §BE #212`）。*/
-static int yk_transfer_spell_blocked(void)
+#define YK_ENEMY_FLAG_NO_DAMAGE24 0x01000000u  /* ★ 母机无敌/免伤位（bit24）——一手 `0x42f016`–`0x42f027` */
+
+/* ★★★★ 2026-10-01 晚（owner 拍板「**要的**」）：**抑制转嫁的统一判据**（返回值 = 位掩码，0 = 正常转嫁）。
+ *   来源三种：① `zSpellcard+0x78` bit3（耐久符卡 = 超时不算 bonus failed，**优先**）
+ *             ② 符卡名以「時符/时符」开头（兜底）③ 母机 `enemy+0x635c` bit24（无敌/免伤）。
+ *   命中 ⇒ 整笔 pending 进 `dropped`（**不建** `ce_damage_rect`、**不抬**每敌每帧上限）。*/
+static int yk_xfer_suppress_reason(void)
 {
     uint8_t *sc = CE_SPELLCARD();
-    const uint8_t *nm;
-    static int32_t logged_id = -1;
-    if (!sc) return 0;
-    if (!(*(const int32_t *)(sc + CE_SPELL_FLAGS) & CE_SPELL_FLAG_ACTIVE)) return 0;
-    nm = (const uint8_t *)(sc + 0x34);
-    {   int32_t fl = *(const int32_t *)(sc + CE_SPELL_FLAGS);
-        int by = yk_spell_xfer_block(fl, yk_spell_name_is_time(nm, 64));
-        int32_t id;
-        if (!by) return 0;
-        id = *(const int32_t *)(sc + CE_SPELL_ID);
-        if (id != logged_id) {
-            logged_id = id;
-            /* ★ 判据行（owner 要的 `by=`）：`flag` = `zSpellcard+0x78` bit3（耐久符卡 = **超时不算
-             *   bonus failed**，一手 `0x42efb0`–`0x42f039`）；`name` = 名字以 時符/时符 开头（兜底）。
-             *   `name[0..7]` 十六进制保留 ⇒ 实跑可反查 TH18 真实编码（交叉验证 flag 判据）。*/
-            ce_log("youkai/xfer: spell %d => transfer SUPPRESSED (by=%s; flags=0x%x survival_bit=%d; "
-                   "owner 2026-10-01: familiar damage must NOT go back to the enemy on time spells) "
-                   "name[0..7]=%02x %02x %02x %02x %02x %02x %02x %02x",
-                   (int)id, (by == YK_XFER_BLOCK_FLAG) ? "flag" : "name", (unsigned)fl,
-                   (fl & CE_SPELL_FLAG_SURVIVAL) ? 1 : 0,
-                   nm[0], nm[1], nm[2], nm[3], nm[4], nm[5], nm[6], nm[7]);
-        }
+    uint8_t *boss = yk_boss();
+    int flags = 0, name_hit = 0, invuln = 0;
+    if (sc) {
+        flags = *(const int32_t *)(sc + CE_SPELL_FLAGS);
+        if (flags & CE_SPELL_FLAG_ACTIVE) name_hit = yk_spell_name_is_time((const uint8_t *)(sc + 0x34), 64);
+        else flags = 0;                       /* 不在符卡里 ⇒ 只可能按无敌抑制 */
     }
-    return 1;
+    if (boss) {
+        uint32_t fl = *(const uint32_t *)(boss + CE_ENEMY_FLAGS);
+        invuln = (fl & YK_ENEMY_FLAG_NO_DAMAGE24) ? 1 : 0;
+    }
+    return yk_spell_xfer_block(flags, name_hit, invuln);
+}
+
+/* 判据行（**同一敌人连续抑制只打一次**；抑制解除后再进入会再打一次）。*/
+static void yk_xfer_suppress_log(int reason)
+{
+    static uint32_t logged_enemy;
+    static int      logged_reason;
+    static int32_t  logged_spell = -1;
+    uint8_t *sc = CE_SPELLCARD();
+    uint8_t *boss = yk_boss();
+    uint32_t eid = boss ? *(const uint32_t *)(boss + CE_ENEMY_ID) : 0u;
+    int32_t  sid = sc ? *(const int32_t *)(sc + CE_SPELL_ID) : -1;
+    int fl = sc ? *(const int32_t *)(sc + CE_SPELL_FLAGS) : 0;
+    const uint8_t *nm = sc ? (const uint8_t *)(sc + 0x34) : (const uint8_t *)"";
+    if (reason == 0) { logged_enemy = 0u; logged_reason = 0; logged_spell = -1; return; }
+    if (eid == logged_enemy && reason == logged_reason && sid == logged_spell) return;   /* 不刷屏 */
+    logged_enemy = eid; logged_reason = reason; logged_spell = sid;
+    ce_log("youkai/xfer: spell %d => transfer SUPPRESSED (by=%s%s%s; flags=0x%x survival_bit=%d "
+           "boss_no_damage_bit=%d; owner 2026-10-01: familiar damage must NOT go back to the enemy "
+           "on time spells / while it is invulnerable) name[0..7]=%02x %02x %02x %02x %02x %02x %02x %02x",
+           (int)sid,
+           (reason & YK_XFER_BLOCK_FLAG) ? "flag" : "",
+           (reason & YK_XFER_BLOCK_NAME) ? ((reason & YK_XFER_BLOCK_FLAG) ? "+name" : "name") : "",
+           (reason & YK_XFER_BLOCK_INVULN) ? (((reason & (YK_XFER_BLOCK_FLAG | YK_XFER_BLOCK_NAME))) ? "+invuln" : "invuln") : "",
+           (unsigned)fl, (fl & CE_SPELL_FLAG_SURVIVAL) ? 1 : 0,
+           (reason & YK_XFER_BLOCK_INVULN) ? 1 : 0,
+           nm[0], nm[1], nm[2], nm[3], nm[4], nm[5], nm[6], nm[7]);
 }
 
 static void __attribute__((noinline)) yk_transfer_tick(yk_card_t *s)
@@ -2798,11 +2819,14 @@ static void __attribute__((noinline)) yk_transfer_tick(yk_card_t *s)
         }
     }
     if (s->tr.pending <= 0) return;
-    /* ★ 硬约束 ②：时符期间 ⇒ 整笔待转嫁量丢进 `dropped`（不建伤害源、不抬上限）。*/
-    if (yk_transfer_spell_blocked()) {
-        s->dropped += (uint32_t)s->tr.pending;
-        s->tr.pending = 0;
-        return;
+    /* ★ 硬约束 ② + owner「要的」：时符**或母机无敌**期间 ⇒ 整笔待转嫁量丢进 `dropped`。*/
+    {   int why = yk_xfer_suppress_reason();
+        yk_xfer_suppress_log(why);
+        if (why) {
+            s->dropped += (uint32_t)s->tr.pending;
+            s->tr.pending = 0;
+            return;
+        }
     }
     /* ★★★ 2026-10-01：**落点 = 使魔自己的母机**（`s_xfer_parent`）——一手语义就是「转给它的主人」，
      *   不再要求母机在 boss 表里（道中大妖精 / 道中 boss / leveledit 米斯蒂亚那批都能落地）。

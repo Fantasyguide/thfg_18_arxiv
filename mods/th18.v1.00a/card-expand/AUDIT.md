@@ -29387,3 +29387,18 @@ TH16 `09-drawing.md` §3.3：外顶点恒 `color_1`、内顶点在 `(flags_lo & 
 **影响面**：只动共享件里 pinned 的碰撞分支 + 一个测试；`s_hud_card_present` 由卡侧包装在认领前设好
 （`ce_hud_slot_claim_pinned_card()`）⇒ 判定用的是**认领那一刻**的状态（§4.4：同一关内不重排）。
 验证：`make check` **rc=0**（`test_sdk_core` **1411 passed** / `anm-verify` / `capcheck` / `check-docs` 448）。
+
+### #212 追加之二（2026-10-01 晚）：**无敌期间也抑制转嫁**（owner 拍板「要的」）
+
+**判据**：目标敌人（母机）`enemy+0x635c` **bit24**（`0x01000000`，免伤/无敌）—— 一手同 #212 追加：
+`th18:0x42f016`–`0x42f027` 耐久符卡结束时 `and eax,0xfeffffff` + `mov [ecx+0x635c],eax`（清该位）
+⇒ 符卡期间它是置上的。（与我们用在**使魔**上的 bit4 免伤位是同一寄存器的不同位，不冲突。）
+
+**实现**：纯函数 `yk_spell_xfer_block(spell_flags, name_is_time, boss_no_damage)` 返回**位掩码**
+（`FLAG=1` / `NAME=2` / `INVULN=4`；flag 优先于 name）；卡侧 `yk_xfer_suppress_reason()` 组装三源，
+命中 ⇒ 整笔 pending 进 `dropped`（不建 `ce_damage_rect`、不抬上限）；判据行统一为
+`youkai/xfer: spell <id> => transfer SUPPRESSED (by=flag|name|invuln; flags=0x… survival_bit=… boss_no_damage_bit=…; …)`，
+**同一敌人连续抑制只打一次**（抑制解除后再进入会再打一次 ⇒ 不刷屏但不漏事件）。
+
+**单测**（`yk_spell_xfer_block`，共 9 条）：仅无敌 ⇒ 抑制；仅时符 ⇒ 抑制；仅名字 ⇒ 抑制；两者皆有 ⇒ 抑制；
+都无 ⇒ 转嫁（`NONE`）；flag 优先于 name 维持；bit0（进行中）本身不抑制。

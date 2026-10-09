@@ -922,11 +922,13 @@ int yk_emit_gap_is_new_wave(int eton_gap, int gap_ref)
 
 /* ★★★★ 2026-10-01（owner 硬约束 ②）：符卡名是不是「时符」（详注见头文件）。纯字节比较、无浮点。*/
 /* ★★★★ 2026-10-01（owner 真判据）：`bit3`（耐久符卡 / 超时不算 bonus failed）优先，名字兜底。*/
-int yk_spell_xfer_block(int spell_flags, int name_is_time)
+int yk_spell_xfer_block(int spell_flags, int name_is_time, int boss_no_damage)
 {
-    if (spell_flags & YK_SPELL_FLAG_SURVIVAL) return YK_XFER_BLOCK_FLAG;   /* ★ 程序内判据（优先）*/
-    if (name_is_time) return YK_XFER_BLOCK_NAME;                           /* 字符串兜底 */
-    return YK_XFER_BLOCK_NONE;
+    int r = YK_XFER_BLOCK_NONE;
+    if (spell_flags & YK_SPELL_FLAG_SURVIVAL) r |= YK_XFER_BLOCK_FLAG;     /* ★ 程序内判据（优先）*/
+    else if (name_is_time) r |= YK_XFER_BLOCK_NAME;                        /* 字符串兜底（flag 优先）*/
+    if (boss_no_damage) r |= YK_XFER_BLOCK_INVULN;                         /* ★ owner「要的」：无敌也抑制 */
+    return r;
 }
 
 int yk_spell_name_is_time(const uint8_t *name, int maxlen)
