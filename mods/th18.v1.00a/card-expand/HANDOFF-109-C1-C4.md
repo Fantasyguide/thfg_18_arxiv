@@ -439,4 +439,12 @@ stop();
 ★ 即：★ **构建/校验那侧把子目录丢了** ✗（它找 `ability/POFV109_C1_BULLET.png`，★ 不是 `ability/c1bullet/…` ✓）。
 ★ 而 **`chgmark` 的行同样带子目录却没事** ✓（`ability/chgmark/CHG_MARK_BLUE.png` ✓）⇒ ★ 差异**未查明** ❓。
 ⇒ ★ **本轮先把 ORDER 行与贴图撤掉** ✓（★ 检查复绿 ✓），★ **生成器留着** ✓；★ **C1 观感继续用占位脚本 ✓**。
-★ 下次要接真观感时：★ 先弄清这条差异（★ 试**平铺**到 `assets/ability/<名字>.png` ✗ 或 ★ 查 `build_ability.py`/`verify.py` 的路径拼法 ✓）。
+★★ **已查明并解决**（2026-10-10）：
+★ **真因 = anm 只打包"被脚本 `sprite(@…)` 引用到"的贴图** ✗ ——
+光在 `ORDER.txt` 加一行、**没有脚本引用它**，贴图会被**丢掉**（回读自然失败 ✓）。
+★ 校验器 `build_ability.py:310/459` 的拼法 `ability/<NAME>.png`（非图集）/ `ability/atlas/<NAME>.png`（图集）
+**本来就是对的** ✓ —— 我一度改它、把别的条目也改红了 ✗，**已回退**（`git diff` 干净 ✓）。
+★ **正解**：★ 给该贴图写一支**引用它的脚本** ✓ —— 见
+`assets/ability/scripts/427_pofv109_c1_bullet.anm.txt`（★ 一手 `pl00.anm` script10 的观感：
+`sprite(@POFV109_C1_BULLET)` + `angleVel(0.4712389f,…)` = **27°/帧自转** ✓ + `layer(6)` ✓）。
+★ 于是 C1 的弹**观感已换成一手贴图** ✓（原来借脚本 396 占位 ✗ 已废）。

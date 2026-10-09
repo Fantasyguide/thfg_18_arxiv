@@ -2120,7 +2120,8 @@ static void power_vm_sync(void)
  *   行内 `rate = 100` 而槽 11 对象只活 21 帧 ⇒ 实际**只发一次**。
  * ★ 路线（owner 定）：**纯伤害源 `ce_damage_rect` + anm VM**。
  * ★ 观感：★ 暂用本卡现成脚本 396（暴风圈、程序化 drawPoly、零贴图）占位 ❓ ——
- *   一手那颗弹的贴图 = `pl00.png` 的 `sprite38`（切出来是玩家立绘碎片），★ 待换。
+ *   ★ **已换成一手贴图**：脚本 427 画 `pl00.png` 的 `sprite38`（30×30，切图见
+ *     `make_pofv109_c1_bullet_art.py` / §6.2 ✓），并照一手 `angleVel` **27°/帧自转** ✓。
  * ★ 三角函数：★ 用 C2 的预计算 **`s_c2_dir36`**（36 向表）✗ 不用 `cosf/sinf`
  *   —— 守本仓 `dllx87` 的"零 x87"硬规则 ✓。*/
 static int s_c1_live[POFV_C1_SHOTS_PER_GROUP];      /* 每行一发：-1 = 空 */
@@ -2156,10 +2157,10 @@ static void pofv_c1_fire(void)
         s_c1_vy[t] = s_c2_dir36[di][1] * r->spd;
         s_c1_age[t] = 0;
         s_c1_live[t] = 1;
-        s_c1_vm[t] = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_POFV109_STORM, POFV_C1_VM_LAYER);
+        s_c1_vm[t] = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_POFV109_C1_BULLET, POFV_C1_VM_LAYER);
         if (s_c1_vm[t]) {
             ce_anm_set_pos((uint32_t)s_c1_vm[t], s_c1_x[t], s_c1_y[t], 0.0f);
-            ce_anm_set_scale((uint32_t)s_c1_vm[t], 0.25f, 0.25f);   /* ❓自定：占位观感的尺寸 */
+            ce_anm_set_scale((uint32_t)s_c1_vm[t], 1.0f, 1.0f);   /* ★ 贴图 = 一手 30x30 ⇒ 1:1 ✓ */
             ce_anm_set_color((uint32_t)s_c1_vm[t], POFV_C_RING_COLOR);  /* ★ owner：红色 ✓ */
         }
     }
@@ -2188,6 +2189,217 @@ static void pofv_c1_tick(void)
     }
 }
 
+/* ================= ⑤ C3：ExtraAttack（★ 本轮只做**灵梦**）=================
+ * ★ 一手：`HANDOFF-109-C1-C4.md` §10（素材 = `local/th19.v1.10c/_ext/ecl/pl00.txt:642`
+ *   的 `void ExtraAttack()`，CP932；opcode 名取 `thecl10.c:th13_fmts` ✓）。
+ *   ★ 一手逐条（照抄 ✓）：
+ *     · 开头 `flagSet(172)` + `ins_1034()`（= **刷新档位** `clamp(S+0x38,0,7)` 写入 `E+0x5168`，§10.2 ✓）；
+ *     · `ins_400(0.0f, 128.0f)` ⇒ **载体移到自机上方 128**（ECL 的 y+ = 上 ⇒ 本作屏幕 y 向下 ⇒ **−128** ✓）；
+ *       ★ 发弹原点 = **载体自身**（一手没有 `etOffset` ✗）⇒ 一波里的每颗都从**同一个环心**出 ✓；
+ *     · `ins_570($C, 6,8,6,8,6,8,6,8)` = 每波颗数、`ins_570($D, 1,1,2,2,3,3,4,4)` = 波数
+ *       （`ins_570` = **按档取表** `dst = v[clamp(S+0x38,0,7)]`，§10.2 ✓）；
+ *     · 每波：`ins_602($A, 46/47, 0)`（**奇偶换 sprite**，波序号 `$G` 从 0 起 ⇒ 第 1 波 = 46）
+ *       + `%F = [-9998.0f]`（**重掷基准角**）+ `$C` 次「`ins_604($A, 2π·i/$C + %F, 0)` ⇒ `ins_601($A)`」
+ *       = **同一帧把 C 颗全放出去（环）、一颗一发** ✓（★ 不是逐帧一顆 ✗）；
+ *     · 每波末 wait（`!0..!7` 的 switch、**8 例 ⇒ 下标 = 档位**）⇒ `{60,60,60,60,50,50,40,40}` ✓；
+ *     · `ins_605($A, 2.3f, 1.0f)` = `etSpeed(第一层, 最后一层)`（`ECL-info.md:37` ✓）——
+ *       本卡每波是 `ins_606($A,1,1)`（**1 层**）⇒ 取第一层 **2.3** ✓；
+ *     · `ins_611(...)` = `etEx`（`ECL-info.md:52`）：**反弹 / 加速 / 无敌**三条（§10.5），见下面 §效果。
+ *
+ * ❓自定 / 存疑（逐条进 `TUNING.md`）：
+ *   ① **档位** = `POFV_C3_LEVEL_DEFAULT`(=1)：一手档位是**每局按难度**取常数（§10.2 实测 `∈{1,3}`）✗
+ *      本卡没有那个量 ⇒ 先固定档 1（⇒ `$D=1`、`$C=8`、wait=60 ✓）；
+ *   ② **伤害值** = `POFV_C3_HIT_DMG`(=14)：一手 `ExtraAttack` 这一段**没给伤害** ✗ ⇒ 借 C1 的一手口径
+ *      （灵梦本体主炮 = **14** ✓，`HANDOFF-109-C1-C4.md` §3.7）；
+ *   ③ **`%B = [-9888.0f]`** 未定位（一手只用在**加速度系数**上，用法像 0..1 归一化标量）
+ *      ⇒ 取 **0.0** ✓（§10.5）⇒ 加速率 = `0.01f` ✓；
+ *   ④ **观感** = 现成脚本 **396**（= C1/C2 的占位同款；**不新切贴图 / 不动 `ORDER.txt`** ✗）；
+ *      ★ owner 定「C 的圈 = **扩张的红色圆环**」⇒ `ce_anm_set_color(vm, POFV_C_RING_COLOR)` ✓；
+ *   ⑤ **每波奇偶换贴图**（一手 `etSprite(46)/(47)`）：本卡**不能换色**（owner 定红 ✗）⇒ 用**奇偶波尺寸**
+ *      近似两个 sprite 的外观差（`POFV_C3_VM_SCALE_EVEN/ODD`）❓；
+ *   ⑥ **寿命** `POFV_C3_BULLET_LIFE`(=600)：一手没给弹寿命 ✗ ⇒ 取 `EX_ACCEL` 的 600 帧当兜底
+ *      （撞墙 4 次通常更早就收）❓；**环心是否跟随自机**一手未明 ⇒ 本卡**每波取当前自机位置** ❓；
+ *   ⑦ **`EX_INVULN` 240 帧**：一手是「弹**不会被打掉**」的效果 ✗ —— 本卡的弹是**伤害源**、没有
+ *      「被消」这个状态 ⇒ **跳过** ✓（§10.5）；同 `ins_611($A,0,8,120,…)`（type 8）**未解码** ⇒ 不落地 ❓；
+ *   ⑧ **三角函数**：★ 用 C2 的预计算 **`s_c2_dir36`**（36 向表）+ **5° 中点插值** ✗ 不用 `cosf/sinf`
+ *      —— 守本仓 `dllx87` 的"零 x87"硬规则 ✓（`2π·i/8` = 45° 不是 10° 的整数倍 ⇒ 见 `c3_dir5()`）；
+ *   ⑨ **消弹**：C3 一手这一支**没有**消弹圈 ✗（消弹在发动瞬间的 `Ecl_EtBreakLv3`，本轮不做）❓。
+ *
+ * ★ 清理（铁律「长持续效果删卡要交代」✓）：跨帧遗留物 = **每颗弹一台 VM** ⇒ `pofv_c3_clear()` 全真删 ✓
+ *   （`on_ctor` / `on_run_reset` / `on_delete` 三路共用 `clear_card()` ✓；伤害源 life=2 自灭、无残留 ✓）。
+ */
+#define POFV_C3_LEVEL_DEFAULT       1      /* ❓①：档索引 0..7（一手 = 每局按难度取常数）*/
+#define POFV_C3_MAX_BULLETS        48      /* ❓自定：同屏弹池上限（一手无上限：最多 $D×$C = 4×8 = 32）*/
+#define POFV_C3_CARRIER_DY     (-128.0f)   /* ★ 一手 ✓ `ins_400(0.0f, 128.0f)`：环心 = 自机上方 128 */
+#define POFV_C3_SPEED              2.3f    /* ★ 一手 ✓ `ins_605($A, 2.3f, 1.0f)` 的第一层 */
+#define POFV_C3_ACCEL_RATE        0.01f    /* ★ 一手 ✓ `0.01f + %B*0.02f`，而 %B ❓= 0.0 */
+#define POFV_C3_ACCEL_FRAMES       600     /* ★ 一手 ✓ `ins_611($A, 0, 4, 600, …)` 的 600 */
+#define POFV_C3_BOUNCE_MAX           4     /* ★ 一手 ✓ §10.5「EX_BOUNCE（4 次撞墙）」*/
+#define POFV_C3_BULLET_LIFE        600     /* ❓⑥：兜底寿命（= 加速时长）*/
+#define POFV_C3_HIT_DMG             14     /* ❓②：借 C1 的一手口径（灵梦主炮 14）*/
+#define POFV_C3_HIT_LIFE             2     /* 同 C1：伤害源每帧按当前位置重发 ⇒ life 2 */
+#define POFV_C3_HIT_W             32.0f    /* 同 C1 ❓自定（一手 `pl00.anm` script10 弹体 30×30）*/
+#define POFV_C3_HIT_H             32.0f
+#define POFV_C3_VM_LAYER             6     /* ❓自定：同 C1/C2/暴风 */
+#define POFV_C3_VM_SCALE_EVEN     0.25f    /* ❓⑤：偶波（一手 `etSprite(46)`）*/
+#define POFV_C3_VM_SCALE_ODD      0.35f    /* ❓⑤：奇波（一手 `etSprite(47)`）*/
+
+/* ★ 8 档表（★ 一手逐字照抄，§10.3 ✓）：`ins_570` 的下标 = `clamp(S+0x38, 0, 7)` */
+static const unsigned char s_c3_waves[8]  = { 1, 1, 2, 2, 3, 3, 4, 4 };            /* $D ✓ */
+static const unsigned char s_c3_count[8]  = { 6, 8, 6, 8, 6, 8, 6, 8 };            /* $C ✓ */
+static const unsigned char s_c3_wait[8]   = { 60, 60, 60, 60, 50, 50, 40, 40 };    /* 每波末 wait ✓ */
+
+/* ★ 5° 网格（72 档）查表：偶数档 = `s_c2_dir36` 直取；奇数档 = 相邻两向的**中点**
+ *   （两单位向量夹角 10° ⇒ 中点模长 = cos5° = 0.9962 ⇒ 随速度 0.4% 误差，可忽略 ✓）。
+ *   **不引 `cosf/sinf`、不做 `sqrtf`** ⇒ 守 `dllx87` 的零 x87 不变式 ✓。*/
+static void c3_dir5(int idx5, float *dx, float *dy)
+{
+    int k = idx5 % 72;
+    if (k < 0) k += 72;
+    if ((k & 1) == 0) {
+        *dx = s_c2_dir36[k / 2][0];
+        *dy = s_c2_dir36[k / 2][1];
+    } else {
+        const int a = (k / 2) % 36;
+        const int b = (a + 1) % 36;
+        *dx = 0.5f * (s_c2_dir36[a][0] + s_c2_dir36[b][0]);
+        *dy = 0.5f * (s_c2_dir36[a][1] + s_c2_dir36[b][1]);
+    }
+}
+
+/* 一颗弹：方向**单位向量** + 速率（`EX_ACCEL` 只改速率、方向不变 ⇒ 不必重算三角 ✓）。*/
+typedef struct {
+    int   live;
+    int   age;
+    int   bounces;      /* 已撞墙次数（一手 EX_BOUNCE = 4 ⇒ 第 5 次收 ✓）*/
+    float x, y;
+    float dx, dy;       /* 单位方向 */
+    float spd;          /* 当前速率（2.3 → 每帧 +0.01）*/
+    int32_t vm;
+} pofv_c3_bullet_t;
+static pofv_c3_bullet_t s_c3_b[POFV_C3_MAX_BULLETS];
+
+/* C3 波次机（一手：一波 = 同一帧连发 `$C` 颗 ⇒ 等 `wait` 帧 ⇒ 下一波 ⇒ 共 `$D` 波）。*/
+typedef struct {
+    int active;
+    int level;      /* 档索引 0..7 */
+    int wave;       /* 已发出的波数 */
+    int wait;       /* 距下一波的剩余帧（0 = 本帧发）*/
+    int parity;     /* 波奇偶（近似一手 `etSprite(46)/(47)`，见 ❓⑤）*/
+} pofv_c3_t;
+static pofv_c3_t s_c3;
+
+static void pofv_c3_clear(void)
+{
+    int k;
+    for (k = 0; k < POFV_C3_MAX_BULLETS; ++k) {
+        if (s_c3_b[k].vm) { ce_anm_delete((uint32_t)s_c3_b[k].vm); s_c3_b[k].vm = 0; }
+        s_c3_b[k].live = 0; s_c3_b[k].age = 0; s_c3_b[k].bounces = 0;
+    }
+    s_c3.active = 0; s_c3.level = 0; s_c3.wave = 0; s_c3.wait = 0; s_c3.parity = 0;
+}
+
+/* 发一波：★ 一手 = 同一帧把 `$C` 颗按 `2π·i/$C + %F` 全放出去（环），每颗**一颗一发** ✓。
+ *  `%F` 每波**重掷**（一手波内 `%F = [-9998.0f]` ⇒ 取那一颗 ✓）。*/
+static void c3_fire_wave(void)
+{
+    const float *p = ce_player_pos();
+    const int n = (int)s_c3_count[s_c3.level];
+    const int base5 = (int)(ce_rand() % 72u);          /* ★ 一手 ✓ 基准角 `%F`（本卡量化到 5° 网格 ❓）*/
+    const float scale = (s_c3.parity & 1) ? POFV_C3_VM_SCALE_ODD : POFV_C3_VM_SCALE_EVEN;
+    int i;
+    if (!p) return;
+    for (i = 0; i < n; ++i) {
+        pofv_c3_bullet_t *b = 0;
+        int k;
+        for (k = 0; k < POFV_C3_MAX_BULLETS; ++k) if (!s_c3_b[k].live) { b = &s_c3_b[k]; break; }
+        if (!b) break;                                  /* 池满 ⇒ 本波少几颗（一手无池上限，本卡兜底）*/
+        {
+            const int idx5 = (base5 + (72 * i) / n) % 72;   /* `2π·i/$C + %F`（$C ∈ {6,8} ⇒ 整除 ✓）*/
+            c3_dir5(idx5, &b->dx, &b->dy);
+        }
+        b->x = p[0];
+        b->y = p[1] + POFV_C3_CARRIER_DY;               /* ★ 发弹原点 = 载体自身（自机上方 128）✓ */
+        b->spd = POFV_C3_SPEED;
+        b->age = 0; b->bounces = 0; b->live = 1;
+        b->vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_POFV109_STORM, POFV_C3_VM_LAYER);
+        if (b->vm) {
+            ce_anm_set_pos((uint32_t)b->vm, b->x, b->y, 0.0f);
+            ce_anm_set_scale((uint32_t)b->vm, scale, scale);                     /* ❓⑤ 奇偶近似 */
+            ce_anm_set_color((uint32_t)b->vm, POFV_C_RING_COLOR);                /* ★ owner：红 ✓ */
+        }
+    }
+}
+
+/* 释放（按蓄力档到 C3 那一帧）：复位波次机 ★ 当帧就发第 1 波（与一手"释放即生效"同形 ✓）。*/
+static void pofv_c3_fire(void)
+{
+    s_c3.active = 1;
+    s_c3.level = POFV_C3_LEVEL_DEFAULT;   /* ❓① 一手 = `clamp(S+0x38,0,7)`（每局按难度取常数）*/
+    if (s_c3.level < 0) s_c3.level = 0;
+    if (s_c3.level > 7) s_c3.level = 7;
+    s_c3.wave = 0;
+    s_c3.wait = 0;
+    s_c3.parity = 0;
+}
+
+/* 每帧：① 波次机（发波 / 波末 wait）② 每颗弹（加速 + 撞墙反弹 + 伤害源）。
+ * ⚠ **不依赖结界键电平** ✓；波发完（`active=0`）后**已飞的弹要继续走完** ⇒ 不能在这里 early-return ✗。*/
+static void pofv_c3_tick(void)
+{
+    int k, busy = 0;
+    for (k = 0; k < POFV_C3_MAX_BULLETS; ++k) if (s_c3_b[k].live) { busy = 1; break; }
+    if (!s_c3.active && !busy) return;
+
+    /* ① 波次（一手：`$D` 波；每波末 wait —— **最后一波也等完才收** ✓）*/
+    if (s_c3.active) {
+        if (s_c3.wait > 0) --s_c3.wait;
+        if (s_c3.wait == 0) {
+            if (s_c3.wave < (int)s_c3_waves[s_c3.level]) {
+                c3_fire_wave();
+                s_c3.wait = (int)s_c3_wait[s_c3.level];
+                ++s_c3.wave;
+                ++s_c3.parity;
+            } else {
+                s_c3.active = 0;
+            }
+        }
+    }
+
+    /* ② 弹（池里**所有**弹都要推进 —— 与"当前波"无关 ✓）*/
+    for (k = 0; k < POFV_C3_MAX_BULLETS; ++k) {
+        pofv_c3_bullet_t *b = &s_c3_b[k];
+        float pos[3];
+        int hit = 0;
+        if (!b->live) continue;
+        ++b->age;
+        /* ★ 一手 ✓ `EX_ACCEL`（600 帧）：**只改速率、不改方向**（⇒ 不必重算三角 ✓）。
+         *   速率 = `0.01f + %B*0.02f`（%B ❓= 0.0）⇒ 每帧 +0.01 ✓。*/
+        if (b->age <= POFV_C3_ACCEL_FRAMES) b->spd += POFV_C3_ACCEL_RATE;
+        b->x += b->dx * b->spd;
+        b->y += b->dy * b->spd;
+        /* ★ 一手 ✓ `EX_BOUNCE`（4 次撞墙）：自己判撞墙改向；**第 5 次撞墙 ⇒ 收掉** ✓
+         *   （一手是引擎弹 VM 的 `wall_bounce`，本卡照 owner 路线**卡侧逐帧驱动** ✓）*/
+        if (b->x < -POFV_FIELD_HALF_W)     { b->x = -POFV_FIELD_HALF_W; b->dx = -b->dx; hit = 1; }
+        else if (b->x > POFV_FIELD_HALF_W) { b->x =  POFV_FIELD_HALF_W; b->dx = -b->dx; hit = 1; }
+        if (b->y < 0.0f)                   { b->y = 0.0f;   b->dy = -b->dy; hit = 1; }
+        else if (b->y > POFV_FIELD_H)      { b->y = POFV_FIELD_H; b->dy = -b->dy; hit = 1; }
+        if (hit && ++b->bounces > POFV_C3_BOUNCE_MAX) {
+            if (b->vm) { ce_anm_delete((uint32_t)b->vm); b->vm = 0; }
+            b->live = 0;
+            continue;
+        }
+        if (b->age >= POFV_C3_BULLET_LIFE) {              /* ❓⑥ 兜底寿命 */
+            if (b->vm) { ce_anm_delete((uint32_t)b->vm); b->vm = 0; }
+            b->live = 0;
+            continue;
+        }
+        if (b->vm) ce_anm_set_pos((uint32_t)b->vm, b->x, b->y, 0.0f);
+        pos[0] = b->x; pos[1] = b->y; pos[2] = 0.0f;
+        (void)ce_damage_rect(pos, 0.0f, POFV_C3_HIT_LIFE, POFV_C3_HIT_DMG, POFV_C3_HIT_W, POFV_C3_HIT_H);
+    }
+}
+
 /* ================= ④ 罩子（防护罩，owner 2026-10-10 亲写）=================
  * ★ 一手（TH19，见 `HANDOFF-109-C1-C4.md` §1.4/§11）：
  *   · **C3/C4 才给盾**（一手 `FUN_0040b420` 全 .text 只有 C3/C4 两个调用点）；**挡 1 发**、**最优先吃盾**；
@@ -2204,6 +2416,9 @@ static void pofv_c1_tick(void)
  *   与 `S+0x24/0x28` 同量纲 0..2500 ✓，见 HANDOFF-109-C1-C4.md §1.5）。*/
 #define POFV_C1_THRESH          500.0f
 #define POFV_C2_THRESH          1000.0f
+/* ★ ⑤ C3 的阈值（一手 `pl00.sht` 的 `+0x34` = 170 ⇒ ×10 = 1700，与 `S+0x24/0x28/0x2c/0x30`
+ *   同量纲 0..2500 ✓；触发形状照 C1/C2 = **按蓄力档**、只在**上升**那一帧放一次 ✓）。*/
+#define POFV_C3_THRESH          1700.0f
 #define POFV_BARRIER_R          40.0f    /* ❓自定：盾半径 */
 #define POFV_BARRIER_BREAK_N    40       /* ★ 一手 ✓ 禁主动移动 40 帧 */
 #define POFV_BARRIER_INVULN_N   100      /* ★ 一手 ✓ 无敌 100 帧 */
@@ -2323,6 +2538,7 @@ static void clear_card(ce_card_t *c)
      *   ⚠ 本函数**不依赖 tick** ⇒ 商店里删卡（倒吊人 / 弃整副牌）也收得到 ✓。*/
     pofv_c2_clear();
     pofv_c1_clear();   /* ★ 铁律：长持续效果（C1 的 VM + 伤害源）删卡要收干净 ✓ */
+    pofv_c3_clear();   /* ★ 铁律：C3 每一颗弹都带一台 VM ⇒ 删卡/换关/重开全收 ✓ */
     pofv_barrier_clear();   /* ★ 铁律：罩子（盾/破罩计时）删卡要收干净 ✓ */
     /* ★★★★ 2026-10-10 owner：灵力（上限量 = 一手 `S+0x24`）**初值 = C1（不是 0 ✗）**
      *   ⇒ 开局有基础灵力 ⇒ 蓄力/结界不会被封到 0 ✓（C1 数值 = ❓自定，见 `POFV_REI_C1` ✓）。*/
@@ -3420,17 +3636,22 @@ static int on_tick_2(ce_card_t *c)
          *   ★ **每档只在上升时放一次** ✓（掉回阈下再涨才重放 ✓）。
          *   ★ ★ **Shift 从此不再触发任何攻击** ✓ —— 它只开结界 ✓（一手如此 ✓）。*/
         static int s_c1_lv, s_c2_lv;
+        static int s_c3_lv;                     /* ★ ⑤ C3：档闩锁（与 C1/C2 同形，按蓄力档 ✓）*/
         const float cap2  = POFV_AURA_TARGET_CHARGE * (s_reiryoku / POFV_REI_MAX);
         const float c1_at = cap2 * (POFV_C1_THRESH / POFV_REI_MAX);
         const float c2_at = cap2 * (POFV_C2_THRESH / POFV_REI_MAX);
+        const float c3_at = cap2 * (POFV_C3_THRESH / POFV_REI_MAX);
         if (s_aura_charge >= c1_at) { if (!s_c1_lv) { pofv_c1_fire(); s_c1_lv = 1; } } else s_c1_lv = 0;
         if (s_aura_charge >= c2_at) { if (!s_c2_lv) { pofv_c2_fire(); s_c2_lv = 1; } } else s_c2_lv = 0;
+        /* ★ ⑤ C3（ExtraAttack）：★ 按蓄力档（**不是**边沿 ✗ —— 旧 `pofv_aura_rise_edge()` 已被 owner 实跑否掉 ✓）*/
+        if (s_aura_charge >= c3_at) { if (!s_c3_lv) { pofv_c3_fire(); s_c3_lv = 1; } } else s_c3_lv = 0;
         /* ★ ④ 罩子：一手是「**C3/C4 才给盾**」✗（C3/C4 尚未实现）⇒ ★ **本轮先不给盾** ✓
          *   （旧版挂在结界边沿 ✗ ⇒ 也是那个 Shift bug 的一部分 ✓ 已一并去掉 ✓）。
          *   C3/C4 做好后在这里按 C3/C4 阈值给盾 ✓，或直接调 `pofv_barrier_fire()` ✓。*/
         pofv_c2_tick(POFV_CARD_ID);
         pofv_barrier_tick();
         pofv_c1_tick();                     /* ★ C1：前进 + 伤害源 + 收尾 ✓ */
+        pofv_c3_tick();                     /* ★ C3：波次机 + 每颗弹（加速/反弹/伤害源）+ 收尾 ✓ */
     }
     }   /* ← 2026-10-10 新增的两把键作用域块（`chg_held` / `aura_held`）收尾 ✓ */
     /* ★★ 2026-10-10 结界半径用的"有效蓄力"：见上面两把键的分工注释 ——

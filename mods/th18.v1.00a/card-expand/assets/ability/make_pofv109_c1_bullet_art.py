@@ -26,7 +26,9 @@ for _ in range(8):
         break
     _root = _root.parent
 SRC = _root / "local/th19.v1.10c/anm/pl00f/player/pl00/pl00.png"
-OUT = ROOT / "c1bullet" / "POFV109_C1_BULLET.png"
+OUT = ROOT / "POFV109_C1_BULLET.png"   # ★ 文件名 = ORDER 的 NAME
+                                       #   ⇒ anm 内部名 = `ability/POFV109_C1_BULLET.png` ✓
+                                       #   （build_ability.py:459 就是这么拼的 ✓）
 RECT = (1, 81, 1 + 30, 81 + 30)      # ★ 一手 sprite38
 
 def main() -> int:
@@ -46,7 +48,7 @@ def main() -> int:
     name = "POFV109_C1_BULLET"
     print(f"出图：{OUT}  {cut.width}x{cut.height}")
     print("\n要抄进 entries/ORDER.txt 末尾的那一行：")
-    print(f"{name:<28} ability/c1bullet/{OUT.name:<28} {cut.width}x{cut.height}")
+    print(f"{name:<28} ability/{OUT.name:<28} {cut.width}x{cut.height}")
     return 0
 
 if __name__ == "__main__":

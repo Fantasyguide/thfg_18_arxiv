@@ -1285,3 +1285,4 @@ POFV109_CHG_MARK_RED         ability/chgmark/CHG_MARK_RED.png             4x24
 POFV109_CHG_GLOW_RED         ability/chgmark/CHG_GLOW_RED.png             24x48
 POFV109_CHG_MARK_YELLOW      ability/chgmark/CHG_MARK_YELLOW.png          4x24
 POFV109_CHG_GLOW_YELLOW      ability/chgmark/CHG_GLOW_YELLOW.png          24x48
+POFV109_C1_BULLET            ability/POFV109_C1_BULLET.png            30x30
