@@ -1718,16 +1718,6 @@ static const pofv_c1_shot_t s_c1_table[POFV_C1_GROUPS][POFV_C1_SHOTS_PER_GROUP] 
 #define POFV_C1_VM_LAYER   6             /* ❓自定：与世界层对齐（暴风 `POFV_STORM_VM_LAYER` 同层 ✓）*/
 
 /* C1 各发的飞行状态（VM 句柄 + 位置 + 剩余寿命）；`clear_card()` 里真删 ✓。*/
-typedef struct {
-    int   vm;            /* anm VM 句柄（0 = 空槽）*/
-    int   alive;
-    int   life;
-    int   dmg;
-    float x, y;
-    float ang, spd;
-} pofv_c1_fly_t;
-static pofv_c1_fly_t s_c1_fly[POFV_C1_MAX];
-static int           s_c1_prev = 0;      /* ★ 结界键的上一帧值（上升沿检测 ✓）*/
 
 /* ============================ C2：霊撃（★ 本轮只做灵梦）============================
  * ★ 一手（`HANDOFF-109-C1-C4.md` §5；过程件 `engine/versus/th19/02-self-field-systems.md` §2.3，
@@ -2118,6 +2108,79 @@ static void power_vm_sync(void)
 }
 
 /* ============================ 清理（删卡 / 换关 / 重开） ============================ */
+/* ================= C1 的发射 / 推进 / 收尾（owner 2026-10-10 亲写）=================
+ * ★ 一手（三路验证，见 `HANDOFF-109-C1-C4.md` §3.7）：灵梦 = **4 发**、伤害 **7**、速度 **14**、
+ *   角度 **−120° / −100° / −80° / −60°**（★ −π/2 = 正上），anm = `pl00.anm` script10，寿命 999；
+ *   行内 `rate = 100` 而槽 11 对象只活 21 帧 ⇒ 实际**只发一次**。
+ * ★ 路线（owner 定）：**纯伤害源 `ce_damage_rect` + anm VM**。
+ * ★ 观感：★ 暂用本卡现成脚本 396（暴风圈、程序化 drawPoly、零贴图）占位 ❓ ——
+ *   一手那颗弹的贴图 = `pl00.png` 的 `sprite38`（切出来是玩家立绘碎片），★ 待换。
+ * ★ 三角函数：★ 用 C2 的预计算 **`s_c2_dir36`**（36 向表）✗ 不用 `cosf/sinf`
+ *   —— 守本仓 `dllx87` 的"零 x87"硬规则 ✓。*/
+static int s_c1_live[POFV_C1_SHOTS_PER_GROUP];      /* 每行一发：-1 = 空 */
+static float s_c1_x[POFV_C1_SHOTS_PER_GROUP], s_c1_y[POFV_C1_SHOTS_PER_GROUP];
+static float s_c1_vx[POFV_C1_SHOTS_PER_GROUP], s_c1_vy[POFV_C1_SHOTS_PER_GROUP];
+static int s_c1_age[POFV_C1_SHOTS_PER_GROUP];
+static int32_t s_c1_vm[POFV_C1_SHOTS_PER_GROUP];
+
+static void pofv_c1_clear(void)
+{
+    int t;
+    for (t = 0; t < POFV_C1_SHOTS_PER_GROUP; ++t) {
+        if (s_c1_vm[t]) { ce_anm_delete((uint32_t)s_c1_vm[t]); s_c1_vm[t] = 0; }
+        s_c1_live[t] = 0; s_c1_age[t] = 0;
+    }
+}
+
+/* ★ 一轮 C1：一次放完一手那 4 行（★ 只发一次，不是逐帧 ✗）*/
+static void pofv_c1_fire(void)
+{
+    const float *pp = ce_player_pos();
+    int t;
+    if (!pp) return;
+    for (t = 0; t < POFV_C1_SHOTS_PER_GROUP; ++t) {
+        const pofv_c1_shot_t *r = &s_c1_table[POFV_C1_GROUP_REI][t];
+        int di;                                   /* ★ 角度 → 36 向表下标（一手 -pi/2 = 正上）*/
+        if (s_c1_vm[t]) { ce_anm_delete((uint32_t)s_c1_vm[t]); s_c1_vm[t] = 0; }
+        di = (int)(r->ang * (36.0f / 6.2831853f)) % 36;
+        if (di < 0) di += 36;
+        s_c1_x[t] = pp[0] + r->x;
+        s_c1_y[t] = pp[1] + r->y;
+        s_c1_vx[t] = s_c2_dir36[di][0] * r->spd;
+        s_c1_vy[t] = s_c2_dir36[di][1] * r->spd;
+        s_c1_age[t] = 0;
+        s_c1_live[t] = 1;
+        s_c1_vm[t] = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_POFV109_STORM, POFV_C1_VM_LAYER);
+        if (s_c1_vm[t]) {
+            ce_anm_set_pos((uint32_t)s_c1_vm[t], s_c1_x[t], s_c1_y[t], 0.0f);
+            ce_anm_set_scale((uint32_t)s_c1_vm[t], 0.25f, 0.25f);   /* ❓自定：占位观感的尺寸 */
+        }
+    }
+}
+
+/* ★ 每帧：前进 + 伤害源 + 到期/出屏收尾 */
+static void pofv_c1_tick(void)
+{
+    int t;
+    for (t = 0; t < POFV_C1_SHOTS_PER_GROUP; ++t) {
+        float pos[3];
+        if (!s_c1_live[t]) continue;
+        s_c1_x[t] += s_c1_vx[t];
+        s_c1_y[t] += s_c1_vy[t];
+        ++s_c1_age[t];
+        if (s_c1_x[t] < -POFV_FIELD_HALF_W || s_c1_x[t] > POFV_FIELD_HALF_W ||
+            s_c1_y[t] < 0.0f || s_c1_y[t] > POFV_FIELD_H || s_c1_age[t] >= POFV_C1_BULLET_LIFE) {
+            if (s_c1_vm[t]) { ce_anm_delete((uint32_t)s_c1_vm[t]); s_c1_vm[t] = 0; }
+            s_c1_live[t] = 0;
+            continue;
+        }
+        if (s_c1_vm[t]) ce_anm_set_pos((uint32_t)s_c1_vm[t], s_c1_x[t], s_c1_y[t], 0.0f);
+        pos[0] = s_c1_x[t]; pos[1] = s_c1_y[t]; pos[2] = 0.0f;
+        ce_damage_rect(pos, 0.0f, POFV_C1_HIT_LIFE, (float)s_c1_table[POFV_C1_GROUP_REI][t].dmg,
+                       POFV_C1_HIT_W, POFV_C1_HIT_H);
+    }
+}
+
 static void clear_card(ce_card_t *c)
 {
     int i, k;
@@ -2187,6 +2250,7 @@ static void clear_card(ce_card_t *c)
      *   · 结界张开上升沿的闩锁 ⇒ 归 0（不留幽灵闩锁）。
      *   ⚠ 本函数**不依赖 tick** ⇒ 商店里删卡（倒吊人 / 弃整副牌）也收得到 ✓。*/
     pofv_c2_clear();
+    pofv_c1_clear();   /* ★ 铁律：长持续效果（C1 的 VM + 伤害源）删卡要收干净 ✓ */
     /* ★★★★ 2026-10-10 owner：灵力（上限量 = 一手 `S+0x24`）**初值 = C1（不是 0 ✗）**
      *   ⇒ 开局有基础灵力 ⇒ 蓄力/结界不会被封到 0 ✓（C1 数值 = ❓自定，见 `POFV_REI_C1` ✓）。*/
     s_reiryoku = POFV_REI_C1;
@@ -3272,8 +3336,10 @@ static int on_tick_2(ce_card_t *c)
      *     触发帧先 `fire()` 再 `tick()` ⇒ 那一帧就推进 `age = 0`（与一手"释放当帧即生效"同形 ✓）。*/
     {
         const int aura_edge = pofv_aura_rise_edge(aura_held);
-        if (aura_edge) pofv_c2_fire();          /* ★ C1 落地时在此行加：if (aura_edge) pofv_c1_fire(); */
+        if (aura_edge) pofv_c2_fire();
+        if (aura_edge) pofv_c1_fire();   /* ★ C1（owner 2026-10-10 落地）：共用同一闩锁 ✓ */
         pofv_c2_tick(POFV_CARD_ID);
+        pofv_c1_tick();                     /* ★ C1：前进 + 伤害源 + 收尾 ✓ */
     }
     }   /* ← 2026-10-10 新增的两把键作用域块（`chg_held` / `aura_held`）收尾 ✓ */
     /* ★★ 2026-10-10 结界半径用的"有效蓄力"：见上面两把键的分工注释 ——
