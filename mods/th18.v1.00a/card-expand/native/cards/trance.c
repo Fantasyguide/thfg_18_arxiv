@@ -1226,6 +1226,38 @@ static int32_t s_tierup_vm;         /* 正在飞的那支 VM（0 = 没有）；�
  *   `trance_clear()` 一条路收干净（删卡发生在商店里、tick 全停 —— `METHOD.md` 铁律二）。*/
 #define TRANCE_HUD_N 4
 static int32_t s_hud_vm[TRANCE_HUD_N];
+/* ★★★ 2026-10-03x（goal「所有左下角 HUD 进同一个分配器」第 ② 步；owner 十二合一实跑
+ *   「112 117 108 **113** 的槽位全都堆在左下角」）——
+ *   本卡原来**完全不认领**（本文件旧注：反复"手动摆两行，等拍板"）⇒ 它在分配器眼里**不存在**：
+ *   既不会被判碰撞、也不会让位、更不参与"整条带一起淡"。
+ *   ⇒ 现在按 112 的样板接入：**pin 声明值 + (槽 − pin)** —— 内部布局一个像素不变，
+ *     整块**跟着分配器走**（撞了就回退货架、和主动卡面冲突也一样让开）。*/
+static ce_hud_slot_t s_hud_slot;
+static uint8_t s_hud_slot_ok;
+#define TRANCE_HUD_DX ((s_hud_slot.x) - (TRANCE_HUD_BASE_X))
+#define TRANCE_HUD_DY ((s_hud_slot.y) - (TRANCE_HUD_BLOCK_BOTTOM))
+
+/* 认领（幂等；`_pinned_card` 版带**关卡纪元**）——取不到就退回声明锚点兜底（首次认领前那几帧）。*/
+static void trance_hud_claim(void)
+{
+    ce_hud_block_t blk;
+    ce_hud_slot_t got;
+    if (s_hud_slot_ok && ce_hud_slot_claimed(TRANCE_NUM)) return;   /* 常态：一次比较就回去 */
+    memset(&blk, 0, sizeof blk);
+    blk.w = TRANCE_HUD_BLOCK_W;
+    blk.h = TRANCE_HUD_BLOCK_H;
+    blk.side = CE_HUD_SIDE_PINNED;                 /* 非 pinned 会被 pinned 入口拒掉 */
+    s_hud_slot_ok = (uint8_t)(ce_hud_slot_claim_pinned_card(TRANCE_NUM, &blk,
+                          TRANCE_HUD_BASE_X, TRANCE_HUD_BLOCK_BOTTOM, &got) ? 1 : 0);
+    if (s_hud_slot_ok) {
+        s_hud_slot = got;
+    } else {                                        /* 兜底：声明锚点（SDK 失败时不写 out）*/
+        s_hud_slot.x = TRANCE_HUD_BASE_X;
+        s_hud_slot.y = TRANCE_HUD_BLOCK_BOTTOM;
+        s_hud_slot.w = blk.w; s_hud_slot.h = blk.h;
+        s_hud_slot.side = CE_HUD_SIDE_PINNED;
+    }
+}
 static int32_t s_hud_frame_dark;    /* 框当前是不是"暗"那张（边沿换图，别每帧换）*/
 static int32_t s_hud_hidden;        /* 当前是不是淡出态（边沿发中断 4/5）*/
 static int32_t s_hud_dim;           /* ★ 2026-09-15g：压暗闩锁（共享件 `hud_dim_gate` 的一半；
@@ -3872,12 +3904,15 @@ static void trance_hud_tick(const trance_card_t *s)
     const int32_t gauge = s->core.gauge.gauge;
     const int32_t seg = gauge % TRANCE_GAUGE_TIER;             /* 当前格内进度 */
     const int32_t seg_full = gauge / TRANCE_GAUGE_TIER;        /* 已满格数（0..3）*/
+    /* ★★★ 2026-10-03x：每帧补认领 + 取最新槽（换关 / 纪元清表 / 碰撞回退都跟得上）*/
+    trance_hud_claim();
+    (void)ce_hud_slot_get(TRANCE_NUM, &s_hud_slot);
     /* ★ 2026-09-15g：门 = 「自机的体量碰到本卡指示槽的块」——矩形每帧现算（块是死的，
      * 但走共享件 = 与别的卡同一套动态）；alpha 仍在 anm 脚本里（见下面 ⑤ 的注释）。*/
     int hidden;
     {
         hud_dim_rect_t r;
-        hud_dim_rect_surface(&r, TRANCE_HUD_BASE_X, TRANCE_HUD_BLOCK_BOTTOM,
+        hud_dim_rect_surface(&r, TRANCE_HUD_BASE_X + TRANCE_HUD_DX, TRANCE_HUD_BLOCK_BOTTOM + TRANCE_HUD_DY,
                              TRANCE_HUD_BLOCK_W, TRANCE_HUD_BLOCK_H);
         hidden = hud_dim_gate(s_hud_dim, &r, pp);
         s_hud_dim = hidden;
@@ -3897,7 +3932,7 @@ static void trance_hud_tick(const trance_card_t *s)
         if (s_hud_vm[k] && ce_anm_get_vm((uint32_t)s_hud_vm[k])) continue;
         if (s_hud_vm[k]) ++s_hud_respawn;      /* 之前有 id、现在追不回 ⇒ 记一笔（危险信号）*/
         {
-            const float base[3] = { TRANCE_HUD_BASE_X, TRANCE_HUD_BASE_Y, 0.0f };
+            const float base[3] = { TRANCE_HUD_BASE_X + TRANCE_HUD_DX, TRANCE_HUD_BASE_Y + TRANCE_HUD_DY, 0.0f };
             s_hud_vm[k] = (int32_t)ce_anm_spawn_ui(anm, trance_hud_script(k), base);
         }
         if (!s_hud_vm[k]) {                    /* anm 没装载 / 建失败 ⇒ 下一帧再试（有上限）*/
@@ -3972,8 +4007,8 @@ static void trance_hud_tick(const trance_card_t *s)
         else if (f > 1.0f) f = 1.0f;
         trance_hud_set_progress(s_hud_vm[3], f);
         (void)ce_anm_set_pos((uint32_t)s_hud_vm[3],
-                             TRANCE_HUD_BASE_X + (float)seg_full * TRANCE_HUD_MARK_SLIDE,
-                             TRANCE_HUD_BASE_Y, 0.0f);
+                             TRANCE_HUD_BASE_X + TRANCE_HUD_DX + (float)seg_full * TRANCE_HUD_MARK_SLIDE,
+                             TRANCE_HUD_BASE_Y + TRANCE_HUD_DY, 0.0f);
     }
     /* ⑤ 诊断（第六轮）：一帧/秒 —— 用户报"还在动"时，这一行能一眼分开三种可能：
      *   · `mark 左` 在**格内**连续变（而不是每满一格跳 32）⇒ 是 ④ 那条写错了；
