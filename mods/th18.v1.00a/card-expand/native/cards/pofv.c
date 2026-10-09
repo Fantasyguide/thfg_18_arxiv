@@ -2193,6 +2193,10 @@ static void pofv_c1_tick(void)
  *   ① 触发 = **结界张开的上升沿**（一手是"C3/C4 才给盾"，而 C3/C4 尚未实现）；
  *   ② "命中点"取不到（消弹接口不返回坐标 ✗）⇒ 位移方向先取**正下**；
  *   ③ 盾半径 / 视觉（一手是 `PlayerInf+0x18` 的对象，视觉=白圆+黄外发光，本轮先不做 VM）。*/
+/* ★ C1/C2 的阈值（一手 `pl00.sht` 的 `+0x2c`/`+0x30` = 50/100 ⇒ ×10 = 500/1000，
+ *   与 `S+0x24/0x28` 同量纲 0..2500 ✓，见 HANDOFF-109-C1-C4.md §1.5）。*/
+#define POFV_C1_THRESH          500.0f
+#define POFV_C2_THRESH          1000.0f
 #define POFV_BARRIER_R          40.0f    /* ❓自定：盾半径 */
 #define POFV_BARRIER_BREAK_N    40       /* ★ 一手 ✓ 禁主动移动 40 帧 */
 #define POFV_BARRIER_INVULN_N   100      /* ★ 一手 ✓ 无敌 100 帧 */
@@ -3397,10 +3401,26 @@ static int on_tick_2(ce_card_t *c)
      *   · C2 的 tick **每帧**跑（与结界键电平**无关** —— 一次张开 = 105 帧的 EX 对象 ✓）；
      *     触发帧先 `fire()` 再 `tick()` ⇒ 那一帧就推进 `age = 0`（与一手"释放当帧即生效"同形 ✓）。*/
     {
-        const int aura_edge = pofv_aura_rise_edge(aura_held);
-        if (aura_edge) pofv_c2_fire();
-        if (aura_edge) pofv_barrier_fire();   /* ★ ④ 罩子：❓自定挂在同一上升沿 ✓ */
-        if (aura_edge) pofv_c1_fire();   /* ★ C1（owner 2026-10-10 落地）：共用同一闩锁 ✓ */
+        /* ★★★★ 2026-10-10 owner 实跑报 bug 后**改成按蓄力档触发** ✓（= 一手口径 ✓）：
+         *   报的现象：「按 Shift，松手后自机身上长出一个**很大的暴风圈**」✗ —— 根因 =
+         *   旧版 C1/C2/罩子都挂在 **`pofv_aura_rise_edge()`（结界键 `C∨Shift` 的边沿）** ✗
+         *   ⇒ 一动 Shift 就放了一轮，那个"大圈"正是 **C2 的扩张环 128→192** ✓。
+         *   一手（TH19）：**C1/C2 按蓄力档放** —— C1 = `charge >= clamp(S+0x28)`、
+         *   C2 = `FUN_0040b720() <= charge`；而 `S+0x28/0x2c`（灵梦）= **500 / 1000**，
+         *   与蓄力**同量纲（0..2500）** ✓。
+         *   本卡 `s_aura_charge` 是 **0..100**、上限 `cap = 100 × 灵力/2500` ⇒
+         *   **取同一比例**：C1 = `cap × 500/2500`、C2 = `cap × 1000/2500` ✓（★ 灵梦的 500/1000 ✓）。
+         *   ★ **每档只在上升时放一次** ✓（掉回阈下再涨才重放 ✓）。
+         *   ★ ★ **Shift 从此不再触发任何攻击** ✓ —— 它只开结界 ✓（一手如此 ✓）。*/
+        static int s_c1_lv, s_c2_lv;
+        const float cap2  = POFV_AURA_TARGET_CHARGE * (s_reiryoku / POFV_REI_MAX);
+        const float c1_at = cap2 * (POFV_C1_THRESH / POFV_REI_MAX);
+        const float c2_at = cap2 * (POFV_C2_THRESH / POFV_REI_MAX);
+        if (s_aura_charge >= c1_at) { if (!s_c1_lv) { pofv_c1_fire(); s_c1_lv = 1; } } else s_c1_lv = 0;
+        if (s_aura_charge >= c2_at) { if (!s_c2_lv) { pofv_c2_fire(); s_c2_lv = 1; } } else s_c2_lv = 0;
+        /* ★ ④ 罩子：一手是「**C3/C4 才给盾**」✗（C3/C4 尚未实现）⇒ ★ **本轮先不给盾** ✓
+         *   （旧版挂在结界边沿 ✗ ⇒ 也是那个 Shift bug 的一部分 ✓ 已一并去掉 ✓）。
+         *   C3/C4 做好后在这里按 C3/C4 阈值给盾 ✓，或直接调 `pofv_barrier_fire()` ✓。*/
         pofv_c2_tick(POFV_CARD_ID);
         pofv_barrier_tick();
         pofv_c1_tick();                     /* ★ C1：前进 + 伤害源 + 收尾 ✓ */
