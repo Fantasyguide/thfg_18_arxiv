@@ -2858,7 +2858,10 @@ static int on_activate(ce_card_t *c)
      *   ❓副作用：发动成功 ⇒ 引擎/SDK 会走一次「释放」收尾 + 可能进 `active_recharge` 的冷却 ✓
      *     （109 的 `active_recharge` 很小 ⇒ 实测若无感就保持 ✓；有冷却感则在 TUNING 登记后调 ✓）。*/
     (void)c;
-    return 0;                        /* 发动成功、立即结束 ⇒ 无拒绝音 ✓ */
+    /* ⚠⚠ 2026-10-08 **回滚**：`return 0`（"发动成功"）⇒ owner 实跑 **卡死（进不了画面）** ✗
+     *   （疑似 SDK/引擎在"成功发动"后走了需要 `on_active_tick` 配对的释放态、而我们没有 ⇒ 空转 ✓）。
+     *   ⇒ 先退回 `CE_ACTIVATE_REFUSED`（游戏可跑 ✓）；「去掉引擎拒绝音效」另找安全路子 ✓。*/
+    return CE_ACTIVATE_REFUSED;      /* 占位：不做任何事 */
 }
 
 /* ★★★ 固灵结界的**输入**（一手 §3.5：长按 CHARGE 展开，与蓄力同时）。
