@@ -603,18 +603,20 @@ static void test_hud_slots(void)
     CHECK(again.x == a.x && again.y == a.y);
 
     /* ★★ 2026-10-03p（owner：「第二行第三行用起来，我建议是看看能不能搞一个**贪心**或什么的算法」）：
-     *   同优先级内改成 **宽降序**（first-fit-decreasing）⇒ **800 宽的 mid 先坐底边**（x = 68），
-     *   108（108 宽）紧挨着它（876+108 = 984 ≤ 1040 ✓），111 放不下（984+108+8 = 1100 > 1040）
-     *   ⇒ 抬到第二行（底边 924 − 20 − 8 = 896）。
+     *   同优先级内改成 **宽降序**（first-fit-decreasing）⇒ **700 宽的 mid 先坐底边**（x = 68），
+     *   108（108 宽）放不下（776+108 = 884 > 824 软上限）⇒ 抬到第二行（底边 924 − 20 − 8 = 896）、
+     *   111 紧跟它右边。
      * ⚠ 旧断言假设「按 card_id 摆、锚点 257、软上限 1000」—— 已被 2026-10-03p/v 两条口径取代。*/
-    ce_hud_block_t mid = { 800.0f, 20.0f, CE_HUD_SIDE_LEFT };
+    /* ★ 2026-10-03z12：硬上限收到**游玩区右沿 832** ⇒ 700 宽（68+700 = 768 ≤ 832 ✓；
+     *   800 会被认领闸门直接拒掉）。*/ 
+    ce_hud_block_t mid = { 700.0f, 20.0f, CE_HUD_SIDE_LEFT };
     CHECK(ce_hud_slot_claim(109, &mid, &again));
     CHECK(ce_hud_slot_get(109, &again) && ce_hud_slot_get(108, &b) && ce_hud_slot_get(111, &a));
     CHECK(again.x == CE_HUD_ANCHOR_X && again.y == CE_HUD_ANCHOR_Y);       /* 宽的先摆、坐底边 */
-    CHECK(b.x == CE_HUD_ANCHOR_X + mid.w + CE_HUD_GAP && b.y == CE_HUD_ANCHOR_Y);   /* 紧挨 800 那块 */
-    /* ★ 2026-10-03w skyline：111（108×36）填进 **109 上方那条缝**（底边 924 − 20 − 8 = 896），
-     *   而不是像行式那样被抬到 924 − 36 − 8 = 880 —— 这正是"不用行、用矩形排布"省下来的 16 px。*/
-    CHECK(a.x == CE_HUD_ANCHOR_X && a.y == CE_HUD_ANCHOR_Y - mid.h - CE_HUD_GAP);
+    /* ★ z12：700 宽之后**放不下 108**（776+108 = 884 > 824）⇒ 108 抬到第二行（底边 924−20−8 = 896），
+     *   111 再紧跟它右边（skyline：同一条底边、不留缝）。*/
+    CHECK(b.x == CE_HUD_ANCHOR_X && b.y == CE_HUD_ANCHOR_Y - mid.h - CE_HUD_GAP);
+    CHECK(a.x == CE_HUD_ANCHOR_X + b.w + CE_HUD_GAP && a.y == b.y);
 
     /* 局中删卡不当场重排（§4.4）：release 保留占位、别人坐标不变 */
     ce_hud_slot_release(108);
@@ -724,13 +726,13 @@ static void test_hud_slots(void)
     /* 越软上限 1000 但仍合法 ⇒ 单独占一行（空行上的超大块不抬行）
      * ★ 2026-10-03v：锚点 68 ⇒ 900 宽的块（68+900 = 968）之后 100 宽的塞不下（968+100+8 > 1040）*/
     ce_hud_slots_reset();
-    ce_hud_block_t greed = { 900.0f, 36.0f, CE_HUD_SIDE_LEFT };   /* 68+900 ≤ 硬上限 1040 */
+    ce_hud_block_t greed = { 700.0f, 36.0f, CE_HUD_SIDE_LEFT };   /* ★ z12：68+700 = 768 ≤ 硬上限 832 */
 
     CHECK(ce_hud_slot_claim(110, &greed, &a));
     CHECK(a.x == CE_HUD_ANCHOR_X && a.y == CE_HUD_ANCHOR_Y);
     ce_hud_block_t next = { 100.0f, 36.0f, CE_HUD_SIDE_LEFT };
     CHECK(ce_hud_slot_claim(111, &next, &b));
-    CHECK(b.x == CE_HUD_ANCHOR_X);                                /* 968 + 100 + 8 > 1040 ⇒ 抬行 */
+    CHECK(b.x == CE_HUD_ANCHOR_X);                                /* 776 + 100 + 8 > 824 软上限 ⇒ 抬行 */
     CHECK(b.y == CE_HUD_ANCHOR_Y - greed.h - CE_HUD_GAP);
     ce_hud_block_t bad = { 0.0f, 36.0f, CE_HUD_SIDE_LEFT };
     CHECK(!ce_hud_slot_claim(110, &bad, &a));                     /* 尺寸非法 */

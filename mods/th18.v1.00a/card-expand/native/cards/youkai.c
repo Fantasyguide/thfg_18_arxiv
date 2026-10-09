@@ -5442,7 +5442,10 @@ static void yk_gauge_text_sync(yk_card_t *s, const yk_gauge_hud_t *h, uint32_t c
         if (anm) ce_anm_set_sprite(anm, id, YK_GAUGE_FONT_BASE[ch] + (int)g[i].glyph);
         ce_anm_set_pos(id, h->text_x + g[i].dx * h->px, h->text_y + g[i].dy * h->px, 0.0f);
         ce_anm_set_scale(id, g[i].scale * h->px, g[i].scale * h->px);  /* 小数两位 = 0.8×2 = 1.6（一手 + P2 的 ×2）*/
-        ce_anm_set_color(id, 0xff000000u | col);           /* 一手：数字同吃那 5 档染色 */
+        /* ★★★ 2026-10-03z12（owner：「**就差人妖槽的数字百分比以及最大得点没有压暗**」）——
+         *   原来这里**每帧硬写 alpha = 0xff** ⇒ 我在 `yk_gauge_hud_update()` 里加的压暗
+         *   会被这一行**覆盖**。⇒ alpha 改用**共享带**（`ce_hud_band_dim_alpha()`），
+         *   RGB 仍走那 5 档染色（`col`）。*/ce_anm_set_color(id, ((uint32_t)ce_hud_band_dim_alpha() & 0xffu) << 24 | (col & 0x00ffffffu));           /* 一手：数字同吃那 5 档染色 */
     }
 }
 
@@ -5504,7 +5507,7 @@ static void yk_night_text_sync(yk_card_t *s, const yk_gauge_hud_t *h, uint32_t c
         if (anm) ce_anm_set_sprite(anm, id, YK_GAUGE_FONT_BASE[ch] + (int)g[i].glyph);
         ce_anm_set_pos(id, h->night_x + g[i].dx * h->px, h->night_y + g[i].dy * h->px, 0.0f);
         ce_anm_set_scale(id, g[i].scale * h->px, g[i].scale * h->px);
-        ce_anm_set_color(id, 0xff000000u | col);
+        /* ★ z12：同款 —— 夜点/最大得点的 alpha 也走共享带（原来硬写 0xff 覆盖压暗）*/ce_anm_set_color(id, ((uint32_t)ce_hud_band_dim_alpha() & 0xffu) << 24 | (col & 0x00ffffffu));
     }
 }
 
