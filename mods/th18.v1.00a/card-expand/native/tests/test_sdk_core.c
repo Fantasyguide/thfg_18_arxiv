@@ -638,6 +638,27 @@ static void test_hud_slots(void)
         CHECK(ce_hud_slot_fallbacks() == 0);
     }
 
+    /* ★★★ 2026-10-03o（owner：「当你有主动卡的时候，最左下角就会多出来一个卡面」）：
+     *   **原生卡面也是在场的一块**（表面 68..116 × 864..924）⇒ pinned 撞上它 ⇒ 回退货架。
+     *   ⚠ 货架那一侧早就让位了（`hud_card_shelf_x0()`）；这里补的是「PINNED 不是例外」。*/
+    {
+        ce_hud_slot_t pin_slot;
+        ce_hud_block_t pin_68 = { 132.0f, 32.0f, CE_HUD_SIDE_PINNED };   /* 112 那种 68..200 的块 */
+        ce_hud_slots_reset();
+        ce_hud_card_set(0);                                              /* 没有主动卡 ⇒ 原位 */
+        CHECK(ce_hud_slot_claim_pinned(112, &pin_68, 68.0f, 924.0f, &pin_slot));
+        CHECK(pin_slot.x == 68.0f && pin_slot.side == CE_HUD_SIDE_PINNED);
+        CHECK(ce_hud_slot_fallbacks() == 0);
+        ce_hud_slots_reset();
+        ce_hud_card_set(1);                                              /* 有主动卡 ⇒ 撞卡面 ⇒ 回退 */
+        CHECK(ce_hud_slot_claim_pinned(112, &pin_68, 68.0f, 924.0f, &pin_slot));
+        CHECK(pin_slot.side == CE_HUD_SIDE_LEFT);
+        CHECK(ce_hud_slot_fallbacks() == 1);
+        CHECK(pin_slot.x >= HUD_CARD_POS_X + HUD_CARD_W);                 /* 落在卡面右边 */
+        ce_hud_card_set(0);
+        ce_hud_slots_reset();
+    }
+
     /* 硬约束（§4.2）：块右边缘不许越过 1040 ⇒ 声明宽度超限直接拒绝 */
     ce_hud_block_t too_wide = { CE_HUD_X_HARD_MAX - CE_HUD_ANCHOR_X + 1.0f, 36.0f, CE_HUD_SIDE_LEFT };
     CHECK(!ce_hud_slot_claim(110, &too_wide, &a));

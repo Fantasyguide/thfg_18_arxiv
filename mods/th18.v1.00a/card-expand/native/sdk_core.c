@@ -1577,6 +1577,15 @@ static int hud_register(uint32_t card_id, const ce_hud_block_t *blk,
                 if (hud_rect_hit(anchor_x, anchor_y, blk->w, blk->h,
                                  s_hud[id2].x, s_hud[id2].y, s_hud[id2].w, s_hud[id2].h)) hit = 1;
             }
+            /* ★★★ 2026-10-03o（owner：「你得考虑**原生 UI 的主动卡本身** —— 当你有主动卡的时候，
+             *   **最左下角就会多出来一个卡面**」）：那块**原生卡面**也是**在场的一块**
+             *   （几何 = `cards/hud_dim.h` 的 `HUD_CARD_POS_X/Y` + `HUD_CARD_W/H` ⇒ 表面 68..116 × 864..924）。
+             *   我们的 pinned 块（64/68/88 那一片）本来就压在它身上 ⇒ 卡面在的时候必须让开。
+             *   ⚠ 货架那一侧**早就让了**（`hud_card_shelf_x0()` ⇒ 起点 max(锚点, 116+8)）；
+             *     这里补的是 **PINNED 不该成为例外**：撞卡面 ⇒ 同样回退货架（落到 124 右边，天然不撞）。*/
+            if (!hit && s_hud_card_present &&
+                hud_rect_hit(anchor_x, anchor_y, blk->w, blk->h,
+                             HUD_CARD_POS_X, HUD_CARD_POS_Y, HUD_CARD_W, HUD_CARD_H)) hit = 1;
             if (hit) {                                   /* 回退：降级成 LEFT 参与排布 */
                 s_hud[card_id].side = CE_HUD_SIDE_LEFT;
                 s_hud[card_id].priority = 0;
