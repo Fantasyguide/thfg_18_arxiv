@@ -1277,11 +1277,11 @@ TH19_ITEM_KIND2B  ability/th19item/TH19_ITEM_KIND2B.png  14x14
 #     script5/7/9/11 的 `color2` = 浅蓝 `(128,128,255)` / 紫 `(128,0,255)` / 红 `(255,0,0)` / 黄 `(255,255,0)` ✓。
 #   ⚠ **不做**「1 张白 + 卡侧 `ce_anm_set_color` 染色」：底色菱形**有白芯**，染色会把白芯一起染掉 ✗
 #     （owner 点名）；光晕虽无白芯，但让两支同构（顶点色恒白、颜色全在贴图里）最不依赖脚本/卡侧的写色时序。
-POFV109_CHG_MARK_BLUE        ability/chgmark/CHG_MARK_BLUE.png            16x16
-POFV109_CHG_GLOW_BLUE        ability/chgmark/CHG_GLOW_BLUE.png            16x16
-POFV109_CHG_MARK_PURPLE      ability/chgmark/CHG_MARK_PURPLE.png          16x16
-POFV109_CHG_GLOW_PURPLE      ability/chgmark/CHG_GLOW_PURPLE.png          16x16
-POFV109_CHG_MARK_RED         ability/chgmark/CHG_MARK_RED.png             16x16
-POFV109_CHG_GLOW_RED         ability/chgmark/CHG_GLOW_RED.png             16x16
-POFV109_CHG_MARK_YELLOW      ability/chgmark/CHG_MARK_YELLOW.png          16x16
-POFV109_CHG_GLOW_YELLOW      ability/chgmark/CHG_GLOW_YELLOW.png          16x16
+POFV109_CHG_MARK_BLUE        ability/chgmark/CHG_MARK_BLUE.png            4x24
+POFV109_CHG_GLOW_BLUE        ability/chgmark/CHG_GLOW_BLUE.png            24x48
+POFV109_CHG_MARK_PURPLE      ability/chgmark/CHG_MARK_PURPLE.png          4x24
+POFV109_CHG_GLOW_PURPLE      ability/chgmark/CHG_GLOW_PURPLE.png          24x48
+POFV109_CHG_MARK_RED         ability/chgmark/CHG_MARK_RED.png             4x24
+POFV109_CHG_GLOW_RED         ability/chgmark/CHG_GLOW_RED.png             24x48
+POFV109_CHG_MARK_YELLOW      ability/chgmark/CHG_MARK_YELLOW.png          4x24
+POFV109_CHG_GLOW_YELLOW      ability/chgmark/CHG_GLOW_YELLOW.png          24x48
