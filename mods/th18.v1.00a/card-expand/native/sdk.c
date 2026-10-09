@@ -2465,6 +2465,49 @@ int __cdecl BP_ce_item_frame(x86_reg_t *regs, void *bp_info)
             s_dim_was = dim_now;
         }
     }
+    /* ★★★ 2026-10-03z13（owner：「**看看能不能把原生的也统一一下压暗**，这个得调查一下了」）——
+     *   **调查结论（一手，`engine/card/th18/15-selected-card-hud.md` §0/§4.2/§6）**：
+     *   · 原生那块「当前主动卡」= `abcard.anm` **script0 的 5-VM 树**（根 + script1..4），
+     *     **树根 id 在 `mgr+0x3c`**；子 VM 由脚本 `scriptNew` 紧跟着建 ⇒ id 连续（根+1..根+4）。
+     *   · 引擎自己在 `AbilityManager__on_tick` `0x408640` 用**闸**压它：
+     *     进 = `player.x < −64 ∧ player.y > 368` ⇒ `interruptLabel(5)`、出 = 反向 ⇒ `(4)`，
+     *     **8 帧线性到 alpha 64**，闩锁 = `mgr+0x40`。
+     *   ⚠ **不能只学它发 5/4**：它的闸每帧都会重新判，自机在我们带里但不在它那个小矩形里时
+     *     它会**反向发 4** ⇒ 两边打架 = **每帧抖**（这条是调查里最容易踩的坑）。
+     *   ⇒ **正解 = 直接写颜色 alpha**：那块 UI 的绘制是 **color_1 的 A × 脚本 alpha**（乘性）
+     *     ⇒ 我们每帧把 5 个 VM 的 color A 写成**共享带**的 alpha ⇒ **跟着淡**，
+     *     而引擎的闸**只会把它压得更暗、不会变亮** ⇒ **结构性不打架** ✓（动画/终点仍是一手的）。
+     *   ⚠ 顺序无关（乘性），所以不需要抢在引擎 tick 之后写 ✓。*/
+    {
+        uint8_t *mgr = CE_ABILITY_MGR();
+        if (mgr) {
+            const int32_t root = *(const int32_t *)(mgr + CE_MGR_SEL_CARD_VM);
+            if (root) {
+                const uint32_t a = (uint32_t)ce_hud_band_dim_alpha() & 0xffu;
+                static int32_t s_nat_logged;
+                int i;
+                for (i = 0; i < 5; ++i) {
+                    const uint32_t id = (uint32_t)(root + i);
+                    uint8_t *vm = ce_anm_get_vm(id);
+                    uint32_t *c1;
+                    if (!vm) continue;
+                    if (i > 0) {   /* 子节点校验：只有 script1..4 才是那棵树的孩子（防 id 不连续）*/
+                        const int32_t sc = *(const int32_t *)(vm + CE_ANM_VM_SCRIPT_ID);
+                        if (sc < 1 || sc > 4) continue;
+                    }
+                    c1 = (uint32_t *)(vm + CE_ANM_VM_COLOR1);
+                    ce_anm_set_color(id, (a << 24) | (*c1 & 0x00ffffffu));
+                    if (!s_nat_logged && i == 0) {
+                        s_nat_logged = 1;
+                        ce_log("hud: native active-card face hooked (root vm %d, script %d) - "
+                               "color alpha 每帧跟共享带 (dim=%d alpha=%u)", (int)root,
+                               (int)*(const int32_t *)(vm + CE_ANM_VM_SCRIPT_ID),
+                               ce_hud_band_dim_dimmed(), (unsigned)a);
+                    }
+                }
+            }
+        }
+    }
     /* ★ 帧初：清「这次死亡由谁救」闩锁（用户 2026-09-12 定案：救援层 107 → 117 → 决死 B → 113；
      * 113 只在没人认领时才动手 —— 否则会「别人救了你、113 的窗口结束时又把你杀掉」）。*/
     ce_rescue_note_reset();

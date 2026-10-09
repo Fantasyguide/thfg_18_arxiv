@@ -382,6 +382,11 @@
 #define CE_MGR_OWNED               0xd70      /* int[255]，本 mod 搬过来的（战线 C）*/
 #define CE_MGR_RECHARGE_MULT       0xc58      /* float，reset 置 1.0（OM §5）*/
 #define CE_MGR_SELECTED_ACTIVE     0x38       /* 选中的主动卡（C 键分派 0x45c090）*/
+/* ★ 2026-10-03z13：原生那棵「当前主动卡」UI（`abcard.anm` script0 的 5-VM 树）的两个字段 ——
+ * 一手：`engine/card/th18/15-selected-card-hud.md` §0（「id 存在 `ABILITY_MANAGER->+0x3c`」）
+ * 与 §4.2（压暗闸的闩锁 `mgr+0x40`；进/出 = 对 `mgr+0x3c` 发 `interruptLabel 5 / 4`）。*/
+#define CE_MGR_SEL_CARD_VM         0x3c       /* int32：那块 UI 的**树根 VM id**（0 = 还没建）*/
+#define CE_MGR_SEL_CARD_DIM        0x40       /* int32：**压暗闩锁**（0 = 未压暗；非 0 = 压暗中）*/
 #define CE_MGR_NUM_TOTAL           0x28       /* 四个计数：recount 0x4080e0 `dec [edi+0x28]` / `inc [edi+0x2c|0x30|0x34]`（AUDIT §W）*/
 #define CE_MGR_NUM_ACTIVE          0x2c
 #define CE_MGR_NUM_EQUIPMENT       0x30
