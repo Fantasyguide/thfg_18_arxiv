@@ -82,32 +82,34 @@ int main(void)
      *    116 季节：货架槽 (257, 924) + 104×36 ⇒ x∈[−191.5,−139.5] y∈[428,446] */
     memset(&r, 0xcc, sizeof r);
     hud_dim_rect_surface(&r, 257.0f, 924.0f, 104.0f, 36.0f);
-    CHECK(NEAR(r.x0, -191.5f) && NEAR(r.x1, -139.5f));
+    CHECK(NEAR(r.x0, -95.5f) && NEAR(r.x1, -43.5f));   /* ★ z29：320→224 ⇒ x 全体 +96 */
     CHECK(NEAR(r.y0, 428.0f) && NEAR(r.y1, 446.0f));
     /*    115 绀珠传面板：⚠️ **2026-09-21 订正** —— 可见块 = 表面 (479.5, 657.5) 左下 + **256**×272
      *    （各条 `pos ± (96,16)` 的并集；`pos` 是**图心**不是左上角）⇒ x∈[−80.25,47.75] y∈[176.75,312.75]。
      *    旧值 (575.5,673.5)+320×272 是按左上角 + 256 画布算的 ⇒ 右偏 96–160、下偏 16 表面 px。
      *    一手与改法：`TUNING.md` §7.5 / `engine/chapter/th15/02-chapter-panel-geometry-and-fades.md`。*/
     hud_dim_rect_surface(&r, 479.5f, 657.5f, 256.0f, 272.0f);
-    CHECK(NEAR(r.x0, -80.25f) && NEAR(r.x1, 47.75f));
+    CHECK(NEAR(r.x0, 15.75f) && NEAR(r.x1, 143.75f));
     CHECK(NEAR(r.y0, 176.75f) && NEAR(r.y1, 312.75f));
     /*    107 妖妖梦：(257,924) + 200×40 ⇒ x∈[−191.5,−91.5] y∈[426,446]；113 指示槽：(248,928)+144×96 */
     hud_dim_rect_surface(&r, 257.0f, 924.0f, 200.0f, 40.0f);
-    CHECK(NEAR(r.x0, -191.5f) && NEAR(r.x1, -91.5f) && NEAR(r.y0, 426.0f) && NEAR(r.y1, 446.0f));
+    CHECK(NEAR(r.x0, -95.5f) && NEAR(r.x1, 4.5f) && NEAR(r.y0, 426.0f) && NEAR(r.y1, 446.0f));
     /*    113 指示槽：(248, **936** 下沿) + 144×96（外框下沿 936 = 基点 928 + 脚本 pos.y 8）*/
     hud_dim_rect_surface(&r, 248.0f, 936.0f, 144.0f, 96.0f);
-    CHECK(NEAR(r.x0, -196.0f) && NEAR(r.x1, -124.0f) && NEAR(r.y0, 404.0f) && NEAR(r.y1, 452.0f));
+    CHECK(NEAR(r.x0, -100.0f) && NEAR(r.x1, -28.0f) && NEAR(r.y0, 404.0f) && NEAR(r.y1, 452.0f));
     /*    117 动物灵槽：**可见整排** (64, 928) + 192×48（★ 2026-09-15i；**不是**声明块 (88,924)+193×48）
      *    ⇒ x∈[−288,−192]、y∈[−… ] 上沿 424 / 下沿 448。对照：声明块会算成 x∈[−276,−179.5] y∈[422,446]
      *    —— 差 24 表面 px = 12 自机 px，来源是「88 是首格格心、不是整排左沿」（`cards/animal.c` 的注）。*/
     hud_dim_rect_surface(&r, 64.0f, 928.0f, 192.0f, 48.0f);
-    CHECK(NEAR(r.x0, -288.0f) && NEAR(r.x1, -192.0f));
+    CHECK(NEAR(r.x0, -192.0f) && NEAR(r.x1, -96.0f));
     CHECK(NEAR(r.y0, 424.0f) && NEAR(r.y1, 448.0f));
     /*    110+111 组合 UI：(257,924) + 188×60（= 640 空间的 94×30）⇒ x∈[−191.5,−97.5] y∈[416,446]
      *    ★ 这一条就是 2026-09-15h 的换算订正（**320** 而不是 224）的机器判据：
-     *      按 224 会算出 x∈[−95.5,−1.5] —— 偏 96 自机 px（`test_faith_hud_core.c` 里也钉了一遍）。*/
+     *      按 **224** 算 = x∈[−95.5,−1.5] ✓（★ 2026-10-03z29 订正：原来把它写成"偏 96"的那条口径
+     *      本身就是 192 错误 —— 320 对应的是引擎**离屏 surface 1** 的游玩区 256..1024；
+     *      窗口里是 **64..832** ⇒ 自机可达表面 x = **80..816**。`test_faith_hud_core.c` 也钉了一遍）。*/
     hud_dim_rect_surface(&r, 257.0f, 924.0f, 188.0f, 60.0f);
-    CHECK(NEAR(r.x0, -191.5f) && NEAR(r.x1, -97.5f));
+    CHECK(NEAR(r.x0, -95.5f) && NEAR(r.x1, -1.5f));
     CHECK(NEAR(r.y0, 416.0f) && NEAR(r.y1, 446.0f));
     hud_dim_rect_surface(NULL, 0.0f, 0.0f, 1.0f, 1.0f);          /* 空指针：不崩 */
 
@@ -342,7 +344,7 @@ int main(void)
          * x 68..116 → −286..−262、y 864..924 → 416..446 */
         memset(&cr, 0xcc, sizeof cr);
         hud_card_rect_self(&cr);
-        CHECK(NEAR(cr.x0, -286.0f) && NEAR(cr.x1, -262.0f));
+        CHECK(NEAR(cr.x0, -190.0f) && NEAR(cr.x1, -166.0f));
         CHECK(NEAR(cr.y0, 416.0f) && NEAR(cr.y1, 446.0f));
         /* 与直接把表面矩形喂给 `hud_dim_rect_surface()` 必须**逐值相同**（两条路不许漂）*/
         {
