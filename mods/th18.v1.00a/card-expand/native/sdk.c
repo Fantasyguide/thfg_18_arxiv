@@ -972,6 +972,90 @@ void ce_hud_vm_probe(const char *tag, uint32_t id)
     }
 }
 
+/* ★★★★ 2026-10-03z17（owner：「**你能不能把声明块画出来？**」）——
+ *   **把分配器"以为的"块直接画在屏幕上**（4 条边 = 4 支 `stock_rect` VM）：这样
+ *   「声明块 vs 屏幕上真正画出来的 UI」可以**一眼对照**（这一轮所有"重合/偏左/错位"都是这两者的差）。
+ *
+ *   画法：`assets/ability/scripts/104_stock_rect.anm.txt` = `drawRect(1.0f,1.0f)` 的 1×1 白块
+ *   （layer 25 + `resolutionMode(2)` ⇒ **1 单位 = 1 表面 px**）⇒ 给 `scale` 就能画出任意矩形 ✓。
+ *   颜色：`LEFT`（货架）= 绿、`PINNED`（自带锚点）= 黄、`RIGHT` = 青；半透明（A=0xB0）。
+ *   ⚠ 生命周期：**固定池**（每个块 4 支，懒惰建、之后只改位置/缩放/颜色）——不 churn、
+ *     块消失时把它的边**透明隐藏**（不删）⇒ 不会泄漏也不会每帧新建。
+ *   ⚠ 关掉它：把下面这个宏改成 0（调试完成后一行）。*/
+#ifndef CE_HUD_DEBUG_BLOCKS
+#define CE_HUD_DEBUG_BLOCKS 1
+#endif
+
+#if CE_HUD_DEBUG_BLOCKS
+#define CE_HUD_DBG_MAX  16                       /* 同时可视化的**块数**上限（16×4 = 64 支 VM）*/
+static uint32_t s_dbg_edge[CE_HUD_DBG_MAX][4];   /* 每块 4 条边：0=上 1=下 2=左 3=右 */
+static int      s_dbg_rows;                      /* 已经建好的行数（按**实际块数**增长，不预开 257 行）*/
+
+static uint32_t hud_dbg_spawn_edge(const float *p)
+{
+    if (!CE_ABILITY_ANM()) return 0;
+    return ce_anm_spawn_ui(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_STOCK_RECT, p);
+}
+
+void ce_hud_debug_blocks_tick(void)
+{
+    float bx, by, bw, bh;
+    uint32_t id;
+    ce_hud_slot_t sl;
+    int n = ce_hud_slot_count(), i, e;
+
+    if (n > CE_HUD_DBG_MAX) n = CE_HUD_DBG_MAX;
+    if (n > s_dbg_rows) {                        /* 按**实际块数**懒惰加行（不预开 257 行）*/
+        const float org[3] = { 0.0f, 0.0f, 0.0f };
+        int r;
+        for (r = s_dbg_rows; r < n; ++r)
+            for (e = 0; e < 4; ++e) s_dbg_edge[r][e] = hud_dbg_spawn_edge(org);
+        ce_log("hud: debug block overlay rows %d -> %d（4 条边/块；绿=货架 黄=PINNED 青=RIGHT）",
+               s_dbg_rows, n);
+        s_dbg_rows = n;
+    }
+    if (!s_dbg_rows) return;
+
+    for (i = 0; i < s_dbg_rows; ++i) {
+        uint32_t col;
+        float x, y, w, h, t = 2.0f;             /* 边宽 2 表面 px */
+        if (i >= n || !ce_hud_slot_enum(i, &id, &sl)) {
+            for (e = 0; e < 4; ++e)
+                if (s_dbg_edge[i][e]) ce_anm_set_color(s_dbg_edge[i][e], 0x00ffffffu);
+            continue;
+        }
+        x = sl.x; y = sl.y; w = sl.w; h = sl.h;
+        col = (sl.side == CE_HUD_SIDE_PINNED) ? 0xB0FFFF00u
+            : (sl.side == CE_HUD_SIDE_RIGHT)  ? 0xB000FFFFu : 0xB000FF00u;
+        /* ⚠ `drawRect` 是**以 VM 位置为中心**画的（先例：116 的外框四条就传"框心"）
+         *   ⇒ 四条边各自给**边心**（否则整体会偏半条边）。*/
+        if (s_dbg_edge[i][0]) {                  /* 上边：中心 = (x+w/2, y−h) */
+            ce_anm_set_pos(s_dbg_edge[i][0], x + w * 0.5f, y - h, 0.0f);
+            ce_anm_set_scale(s_dbg_edge[i][0], w, t);
+            ce_anm_set_color(s_dbg_edge[i][0], col);
+        }
+        if (s_dbg_edge[i][1]) {                  /* 下边：中心 = (x+w/2, y) */
+            ce_anm_set_pos(s_dbg_edge[i][1], x + w * 0.5f, y, 0.0f);
+            ce_anm_set_scale(s_dbg_edge[i][1], w, t);
+            ce_anm_set_color(s_dbg_edge[i][1], col);
+        }
+        if (s_dbg_edge[i][2]) {                  /* 左边：中心 = (x, y−h/2) */
+            ce_anm_set_pos(s_dbg_edge[i][2], x, y - h * 0.5f, 0.0f);
+            ce_anm_set_scale(s_dbg_edge[i][2], t, h);
+            ce_anm_set_color(s_dbg_edge[i][2], col);
+        }
+        if (s_dbg_edge[i][3]) {                  /* 右边：中心 = (x+w, y−h/2) */
+            ce_anm_set_pos(s_dbg_edge[i][3], x + w, y - h * 0.5f, 0.0f);
+            ce_anm_set_scale(s_dbg_edge[i][3], t, h);
+            ce_anm_set_color(s_dbg_edge[i][3], col);
+        }
+    }
+    (void)bx; (void)by; (void)bw; (void)bh;
+}
+#else
+void ce_hud_debug_blocks_tick(void) { }
+#endif
+
 void ce_hud_slot_log_all(const char *tag)
 {
     int i, n = ce_hud_slot_count();
@@ -2485,6 +2569,7 @@ int __cdecl BP_ce_item_frame(x86_reg_t *regs, void *bp_info)
         const int dim_before = ce_hud_band_dim_dimmed();
         int dim_now;
         ce_hud_band_dim_tick(ce_player_pos());
+    ce_hud_debug_blocks_tick();   /* ★ z17：把声明块画出来（debug；宏可关）*/
         dim_now = ce_hud_band_dim_dimmed();
         if (s_dim_was != dim_now) {
             ce_log("hud: band dim %s (alpha %d, was %d)", dim_now ? "ON" : "OFF",

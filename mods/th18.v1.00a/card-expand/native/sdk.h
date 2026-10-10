@@ -1169,6 +1169,11 @@ void ce_hud_slot_log_all(const char *tag);
  * 用途：声明块的大小/位置按**实测墨迹**定，而不是靠推（owner 反复指出 log 与屏幕不一致那一类问题）。*/
 void ce_hud_vm_probe(const char *tag, uint32_t id);
 
+/* ★ 2026-10-03z17：**声明块可视化**（定义在 `sdk.c`；每帧调一次）——
+ * 用 `stock_rect`（脚本 104）画出每个已认领块的 4 条边：绿 = 货架、黄 = PINNED、青 = RIGHT。
+ * 目的：把"分配器以为的块"和"屏幕上真正画出来的 UI"放在一起对照。*/
+void ce_hud_debug_blocks_tick(void);
+
 static inline int ce_hud_slot_claim_card_ex(uint32_t card_id, const ce_hud_block_t *blk,
                                             int priority, int own_row, ce_hud_slot_t *out)
 {
