@@ -1021,6 +1021,10 @@ void ce_hud_debug_blocks_tick(void)
             for (e = 0; e < 4; ++e) s_dbg_edge[r][e] = hud_dbg_spawn_edge(org);
         ce_log("hud: debug block overlay rows %d -> %d（4 条边/块；绿=货架 黄=PINNED 青=RIGHT）",
                s_dbg_rows, n);
+        /* ★ z23：**覆盖层自探针** —— owner 报「黄框画在右侧」，而台账里 113 的块在 248..392
+         *   ⇒ 先证明"我画的框到底在哪"（用同一支墨迹探针读它自己的 VM）。*/
+        ce_hud_vm_probe("dbg.edge_top", s_dbg_edge[0][0]);
+        ce_hud_vm_probe("dbg.edge_left", s_dbg_edge[0][2]);
         s_dbg_rows = n;
     }
     if (!s_dbg_rows) return;
