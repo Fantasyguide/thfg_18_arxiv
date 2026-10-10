@@ -578,7 +578,7 @@ static void yk_slot_offsets(uint8_t *e, int i, float off3[3], float org3[3])
  *   `props[i]+0x08/+0x0c/+0x10`（**offset_final**）抄一份到卡侧**每槽小缓存**；壳的目标位置优先用它。
  *   缓存按 `(enemy_id, slot)` 存（`s_emit_latch[]`，8 组环形；同一个 `(enemy,槽)` 只保留最新一份）。*/
 typedef struct { uint32_t enemy_id; int16_t slot; uint8_t used; uint32_t frame; float x, y, z; } yk_emit_latch_t;
-#define YK_EMIT_LATCH_N 8
+#define YK_EMIT_LATCH_N 16   /* ★ 8 → 16：多敌人/多槽时 8 格会被挤出（owner：版顶正中间的幽灵壳）*/
 static yk_emit_latch_t s_emit_latch[YK_EMIT_LATCH_N];
 static unsigned s_emit_latch_head;
 static unsigned s_emit_latch_logged;      /* 判据：打过几行 `latched=` */
@@ -658,6 +658,8 @@ static int yk_emit_coord_seen(uint32_t enemy_id, int slot)
     return 0;
 }
 
+static unsigned s_emit_noorigin;   /* ★ 出点 (0,0)/无定格 ⇒ 不建壳的槽数 */
+static int      s_cur_have_latch;  /* 本槽本帧有没有定格值（循环内临时量）*/
 static unsigned s_sample_logged;   /* ★ SAMPLE 数据行已打几条 */
 #define YK_SAMPLE_LOG_N 12u
 static unsigned s_emit_notfam;     /* （保留：旧「大怪闸」的计数，闸已撤 ⇒ 恒 0）*/
@@ -2707,7 +2709,8 @@ static void yk_familiars_tick(yk_card_t *s)
              *     `emitter_world = 2×enemy_pos`、`d2 = |2×enemy_pos|²` ⇒ 本体口被当成 32px 外 ⇒
              *     一面照旧冒壳 ✓ 与 owner 的 log 完全对上）。*/
             {   float lo[3];
-                if (yk_emit_latch_get(id, i, lo)) { wxy[0] = lo[0]; wxy[1] = lo[1]; }
+                s_cur_have_latch = yk_emit_latch_get(id, i, lo) ? 1 : 0;
+                if (s_cur_have_latch) { wxy[0] = lo[0]; wxy[1] = lo[1]; }
                 else {
                     const uint8_t *pr = e + YK_EMIT_PROPS + (size_t)i * YK_EMIT_PROP_STRIDE;
                     wxy[0] = *(const float *)(pr + 0x08);      /* ★ 世界坐标，原样用 */
@@ -2801,6 +2804,25 @@ static void yk_familiars_tick(yk_card_t *s)
                        (int)*(const int32_t *)(e + YK_ED_LIFE_CUR),
                        (double)epos[0], (double)epos[1], (double)wxy[0], (double)wxy[1],
                        bodyport ? "REJECT(off-body)" : "CREATE");
+            }
+            /* ★★★★★ 2026-10-01 晚（owner：「**一瞬间**出现的、在**版顶正中间**的使魔」）：
+             *   TH18 场地**居中**（`x=0` 版中、`y=0` 版顶）⇒「版顶正中间」= **(0,0)**。
+             *   一手证据（实跑 log）：`COORD: enemy 26 slot 0 | enemy_pos=(-93.8,148.9) |
+             *   props08/0c/10=(0.0,0.0,0.0) | emitter_world=(0.0,0.0) spawn=(0.0,0.0)` —— 就是我们
+             *   **在 `etOn` 还没写出点（= 0）时就建了壳**。
+             *   ⇒ 守卫（**只读**，两条都要满足才建）：
+             *     ① **本帧/近几帧有定格值**（`fired_recently` ⇒ 真 `etOn` 过）
+             *     ② **出点不是 (0,0)**（= props 已写出点）
+             *   ⇒ 不满足者 `REJECT(no-origin)`（台账 `noorigin=N`），**不再用活偏移兜底去建壳**。*/
+            if (active && (!s_cur_have_latch || (wxy[0] == 0.0f && wxy[1] == 0.0f))) {
+                if (!yk_emit_reject_seen(id, i)) {
+                    ++s_emit_noorigin;
+                    ce_log("youkai/emit: REJECT(no-origin) enemy_id %u slot %d have_latch=%d "
+                           "props08/0c=(%.1f,%.1f) => no shell this frame (owner: no (0,0) 'top-centre' "
+                           "flicker; we wait for the real etOn origin)",
+                           id, i, (int)s_cur_have_latch, (double)wxy[0], (double)wxy[1]);
+                }
+                ++i; continue;
             }
             if (active && !yk_emit_far_enough(wxy[0] - epos[0], wxy[1] - epos[1], YK_EMIT_SHELL_MIN_DIST)) {
                 if (!yk_emit_bodyport_seen(id, i)) {
@@ -7752,11 +7774,11 @@ static int on_tick_2(ce_card_t *c)
             float lz[3];
             int have = yk_emit_latch_get(0u, 0, lz);       /* 只为日志占位；下面打「最近一次定格」*/
             (void)have;
-            ce_log("youkai/emit: move %u create %u withdraw %u hp_reset %u latched=%u dist0=%u phantom=%u bodyport=%u notfam=%u "
+            ce_log("youkai/emit: move %u create %u withdraw %u hp_reset %u latched=%u dist0=%u phantom=%u bodyport=%u notfam=%u noorigin=%u "
                    "(position-only pinning: offset changes never rebuild the shell nor reset its HP; "
                    "shell targets the FROZEN offset_final from the etOn site; AUDIT §BE #208/#210)",
                    s_emit_move, s->spawns, s->lost + s->silent, s_emit_hp_reset, s_emit_latch_logged,
-                   s_emit_dist0, s_emit_phantom, s_emit_bodyport, s_emit_notfam);
+                   s_emit_dist0, s_emit_phantom, s_emit_bodyport, s_emit_notfam, s_emit_noorigin);
         }
     }
     focused = yk_focused();                               /* ★ owner ④：本卡眼中的侧（锁期间钉住）*/
