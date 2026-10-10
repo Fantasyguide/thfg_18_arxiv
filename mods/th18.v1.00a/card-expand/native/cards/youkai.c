@@ -663,7 +663,7 @@ static unsigned s_emit_badtype;    /* ★ type 在黑名单 ⇒ 不建壳的槽�
 static unsigned s_emit_noorigin;   /* ★ 出点 (0,0)/无定格 ⇒ 不建壳的槽数 */
 static int      s_cur_have_latch;  /* 本槽本帧有没有定格值（循环内临时量）*/
 static unsigned s_sample_logged;   /* ★ SAMPLE 数据行已打几条 */
-#define YK_SAMPLE_LOG_N 12u
+#define YK_SAMPLE_LOG_N 48u   /* 12 → 48：5 面那类多槽场景 12 行不够看 */
 static unsigned s_emit_notfam;     /* （保留：旧「大怪闸」的计数，闸已撤 ⇒ 恒 0）*/
 #define YK_REJECT_LOG_N 8
 static uint32_t s_reject_enemy[YK_REJECT_LOG_N];
@@ -700,6 +700,45 @@ static int yk_emit_bodyport_seen(uint32_t enemy_id, int slot)
         s_bodyport_enemy[idx] = enemy_id; s_bodyport_slot[idx] = (int16_t)slot;
     }
     return 0;
+}
+
+/* ★★★★ 2026-10-01 晚（owner：「**5 面道中目前没有发射点使魔**」）：
+ *   「开过火」原来是**窄窗口**（`YK_EMIT_FIRED_WINDOW = 3` 帧）⇒ 对 `etOn` 间隔 **12/30 帧**的 ECL
+ *   （5 面道中那类非符）经常抓不到 ⇒ 建壳只在"恰好抓到"的帧发生 ⇒ 观感 = **没有使魔**。
+ *   ⇒ 改成**本波内粘性**：该 `(enemy_id,slot)` **`etOn` 过一次**就记住，直到
+ *     ① 该槽变不活跃（`!active`）② 换场/换波（整表 reset）才清 —— 与 core 里 `yk_slot_t.fired`
+ *     的清理口径一致（`!active` / `yk_fam_wave_clear`）。*/
+#define YK_FIRED_STICKY_N 32
+static uint32_t s_fired_enemy[YK_FIRED_STICKY_N];
+static int16_t  s_fired_slot[YK_FIRED_STICKY_N];
+static unsigned s_fired_head;
+
+static void yk_fired_sticky_set(uint32_t enemy_id, int slot)
+{
+    unsigned k;
+    for (k = 0; k < YK_FIRED_STICKY_N; ++k)
+        if (s_fired_enemy[k] == enemy_id && s_fired_slot[k] == (int16_t)slot) return;   /* 已有 ⇒ 保持 */
+    {   unsigned idx = s_fired_head % YK_FIRED_STICKY_N;
+        s_fired_head = (s_fired_head + 1u) % YK_FIRED_STICKY_N;
+        s_fired_enemy[idx] = enemy_id; s_fired_slot[idx] = (int16_t)slot;
+    }
+}
+
+static int yk_fired_sticky_get(uint32_t enemy_id, int slot)
+{
+    unsigned k;
+    for (k = 0; k < YK_FIRED_STICKY_N; ++k)
+        if (s_fired_enemy[k] == enemy_id && s_fired_slot[k] == (int16_t)slot) return 1;
+    return 0;
+}
+
+static void yk_fired_sticky_clear(uint32_t enemy_id, int slot)
+{
+    unsigned k;
+    for (k = 0; k < YK_FIRED_STICKY_N; ++k)
+        if (s_fired_enemy[k] == enemy_id && s_fired_slot[k] == (int16_t)slot) {
+            s_fired_enemy[k] = 0u; s_fired_slot[k] = -1; return;
+        }
 }
 
 static unsigned s_emit_phantom;   /* ★ phantom 修复判据：**配了但从没开火 ⇒ 不建壳** 的槽数（去重后）*/
@@ -2719,7 +2758,10 @@ static void yk_familiars_tick(yk_card_t *s)
             /* ★ phantom 修复：把「站点上最近真开过火」翻成表里的 `fired` 位（`yk_note_slot` 用它决定建壳）。
              *   `type != 0` 只说明**被配置过**；配了却整波不发弹的槽（`count=0` / 被 `etDelay` 压制 /
              *   只在某分支 `etOn`）⇒ **不建壳**（owner 报的「不是发弹点的使魔」）。*/
-            if (active) yk_map_set_fired(&s_map, id, i, yk_emit_fired_recently(id, i));
+            /* ★ 粘性口径（见上面 `yk_fired_sticky_*` 的注）：开过火就记住，只在槽不活跃时清。*/
+            if (active) yk_map_set_fired(&s_map, id, i,
+                                         yk_fired_sticky_get(id, i) || yk_emit_fired_recently(id, i));
+            else yk_fired_sticky_clear(id, i);
             /* ★★★ 2026-09-26（owner #37，两次实跑同一条：「**发射口与敌人重合不应该建立使魔**」/
              *   「依旧能看见敌人的身上有魔法阵」）：**体上炮口直接跳过整格**。
              *   为什么是 `continue`（跳过）而不是「建的时候拒掉」：
@@ -5885,6 +5927,9 @@ static int on_ctor(ce_card_t *c)
      * 否则换关后那支 VM 会永远钉在旧位置（`METHOD.md` 铁律二：长持续效果必须交代被删掉会怎样）。*/
     yk_beam_kill(0);
     yk_map_reset(&s_map);
+    __builtin_memset(s_fired_enemy, 0, sizeof s_fired_enemy);
+    __builtin_memset(s_fired_slot, 0, sizeof s_fired_slot);
+    s_fired_head = 0;
     yk_transfer_reset(&s->tr);
     {   /* ★ 2026-09-30：外部/绕转使魔的转嫁采样表也随卡重来一起清（文件级静态）。*/
         unsigned xi;
@@ -6635,6 +6680,7 @@ static int yk_on_shot_slot(ce_card_t *c, const ce_enemy_shot_t *ev)
         float ly = rel[1];
         float lz = rel[2];
         yk_emit_latch_put(ev->enemy_id, ev->slot, lx, ly, lz);
+        yk_fired_sticky_set(ev->enemy_id, ev->slot);   /* ★ 粘性「本波开过火」*/
         /* ★★★★★ 2026-10-01（**owner 硬约束，回滚**）：owner 逐字「**但是无论如何，你只能不发弹，
          *   **不能改发弹位置**」⇒ 本卡**永远不写 `props` 的任何一格**（`+0x24` 的 `etDist` 归零
          *   已回滚 —— 一手 `th18:0x4251f9`/`0x425219` 确实能「把生成点推 dist px」，但那**不许碰**）。

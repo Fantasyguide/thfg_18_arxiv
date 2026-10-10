@@ -30885,3 +30885,21 @@ hud:   #0  card 107 LEFT   surface (124,924) 280x42   ← **107 已经从卡组�
 `DIGIT_Y640` 保持 **−10.25**（那份结论的 y 是纯竖直的、可移植 ✓）。
 
 **验证**：`make check` **rc=0**（`test_sdk_core` 1430 / `dllx87` 0 / `check-docs` 449 全绿）。
+
+## §BE 详录 #228（2026-10-01）：5 面道中「没有发射点使魔」⇒ 开过火改**本波内粘性**
+
+**先看数据（本局 log，原文）**：
+```
+youkai/emit SAMPLE: stage=5 enemy_id=158 sprite=16 w=64 h=96 slot=0 type=9 color=13 count_1=1070126405
+   count_2=1043511490 dist2=4900.0 is_body_port=0 fired_age=3 life=13000
+   enemy_pos=(-0.6,127.9) emitter_world=(-70.6,128.0) => CREATE   (slot=1 同型 color=10)
+```
+台账：`create=2 withdraw=0 phantom=2 bodyport=0 noorigin=0 badtype=0` ⇒ 5 面道中确实建过 2 只
+（`enemy 158` slot 0/1，`type=9`，离体 70px）。与 owner「一只都没有」的差异有两种可能：
+① **窄窗口漏抓**（`YK_EMIT_FIRED_WINDOW = 3` 帧 vs 该类 ECL `etOn` 间隔 **12/30 帧**）⇒ 建壳只发生在恰好抓到的帧；
+② **SAMPLE 只打 12 行** ⇒ 5 面多槽后段看不见。
+
+**本批修**：① 卡片侧新增 `s_fired_sticky[]`（32 格，按 `(enemy_id,slot)`）：站点 `etOn` **过一次就记住**；
+清位只在 **槽变不活跃** 与 **整表 reset**；`yk_map_set_fired()` 用「粘性 ∨ 近 3 帧」；② **SAMPLE 12 → 48**。
+
+**判据**：① 5 面道中 boss 非符**有发射口使魔**（压出点）；② **打死它 ⇒ 该口这一波不再发弹**；③ **一面关底前仍 0 壳**。
