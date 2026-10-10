@@ -744,6 +744,7 @@ static unsigned s_fire_logged_2;        /* FIRE 总行数 */
 static unsigned s_fire_seen;            /* ★ 无条件计数：站点上见过的 etOn 总次数（区分「没发生」与「块跑不到」）*/
 static unsigned s_firesum_logged;       /* ★ FIRESUM 行数 */
 static unsigned s_fcout_logged;         /* ★ FIRECOUNT 行数 */
+static unsigned s_dh_body, s_dh_near, s_dh_far, s_dh_logged;   /* ★ DISTHIST 计数 */
 static unsigned s_site_logged;          /* ★ SITE(call#>=2) 行数 */
 static unsigned s_og_logged;            /* ORIGIN-GATE 总行数 */
 
@@ -3238,6 +3239,21 @@ static void yk_familiars_tick(yk_card_t *s)
                            "not a fire point at all)", id, i);
                 }
                 ++i; continue;
+            }
+            /* ★ 2026-10-11（owner）：**距离分布自适应观测** —— 每 60 帧一行，看有没有「真口落在 48–64」
+             *   被误拒（有 ⇒ 按那一个场景加白名单条目，或把阈值下调到 gap 内）。按**被检槽**计数。*/
+            {   float ddx = wxy[0] - epos[0], ddy = wxy[1] - epos[1];
+                float dd2 = ddx * ddx + ddy * ddy;
+                if (dd2 < 48.0f * 48.0f) ++s_dh_body;
+                else if (dd2 < 64.0f * 64.0f) ++s_dh_near;
+                else ++s_dh_far;
+                if ((ce_sdk_frame() % 60u) == 0u && s_dh_logged < 64u) {
+                    ++s_dh_logged;
+                    ce_log("youkai/emit DISTHIST: stage=%d bodies(<48)=%u near(48..64)=%u far(>=64)=%u "
+                           "(min_dist=%.0f)", (int)CE_CURRENT_STAGE(), s_dh_body, s_dh_near, s_dh_far,
+                           (double)YK_EMIT_SHELL_MIN_DIST);
+                    s_dh_body = s_dh_near = s_dh_far = 0u;
+                }
             }
             if (active && !yk_emit_far_enough(wxy[0] - epos[0], wxy[1] - epos[1], YK_EMIT_SHELL_MIN_DIST)) {
                 if (!yk_emit_bodyport_seen(id, i)) {

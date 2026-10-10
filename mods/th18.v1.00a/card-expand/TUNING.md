@@ -16533,3 +16533,25 @@ else if (s_aura_charge > 0.0f)                 { ★ 收束（含 interrupt / �
 | 新观测 | `yk_bm_live_bullets()`（扫 2000 格）⇒ 每 60 帧 `BMPROBE2: live_bullets=%u frame=%u`；本帧每 `(敌人,槽)` 一行 `FIRECOUNT: … eton_calls=%u live_delta=%d est_volleys=%d frame=%u` |
 | 判读 | `eton_calls=1` 但 `live_delta` ≈ 2 倍单发 ⇒ **引擎发两次**（站点漏路径，C2 重做）；两边都 1 倍 ⇒ **引擎合并**（只有改 ECL 才能对称两只）|
 | produced 门 | `YK_EMIT_REQUIRE_BULLETS` 仍默认 **0**（等数据确认再开）|
+
+#### 2.1ccc-82 2026-10-11：建壳**场景白名单**数据（待确认后落表）
+
+| stage | sprite | w×h | type | 决策 | n | dist2 例 |
+| --- | --- | --- | --- | --- | --- | --- |
+| 5 | 5 | 32×32 | 8 | REJECT | 15 | 0.0/5.2/20.5/45.8/80.7/125.1 |
+| 5 | 10 | 32×32 | 8 | REJECT | 14 | 0.0/5.9/23.2/51.8/91.4/141.5 |
+| 5 | 5 | 32×32 | 8 | CREATE | 11 | 1030.7/1162.4/1300.5/1444.9（≈32.1–39.9 px）|
+| 5 | 8 | 32×32 | 8 | REJECT | 6 | 0.0/4.9/19.3/43.0/75.8/117.2 |
+| 5 | 10 | 32×32 | 8 | CREATE | 2 | 1024.7/1165.8（≈32.0–34.1 px）|
+
+结论：**「道中离体使魔」= stage 5 / sprite 5·10 / 32×32 / type 8，距离≈32–34 px（卡在闸线上）** ⇒ 距离闸挡不住；
+白名单键 `(stage,sprite,w,h,type)` 足以把它们与「该有」场景分开（该有场景 sprite/尺寸不同）。开关 `YK_EMIT_SCENE_WHITELIST`（默认 1）待表确认后落。
+
+#### 2.1ccc-83 2026-10-11：距离闸 32 → 48 px（两簇空档正中）+ DISTHIST
+
+| 项 | 说明 |
+| --- | --- |
+| 依据 | 不该有：stage5 sprite5/10 32×32 `dist2` 1030–1595（32.1–39.9 px）；该有：5 面中 boss `dist2` 4900（70 px）；本体口 0–12 px ⇒ **空档 40–70** |
+| 改动 | `YK_EMIT_SHELL_MIN_DIST` **32.0f → 48.0f**（单测同步）；`YK_EMIT_SCENE_WHITELIST` **默认 0（关）**，表结构备用 |
+| 观测 | 每 60 帧 `youkai/emit DISTHIST: stage=… bodies(<48)=N near(48..64)=N far(>=64)=N (min_dist=48)` ⇒ 查「真口落 48–64 被误拒」 |
+| 判据 | 5 面道中擦边离体壳消失（`bodyport` 涨）；5 面中 boss 两只壳仍在（若只剩一只 ⇒ 回槽级链路查）|

@@ -1478,13 +1478,14 @@ int main(void)
         CHECK(yk_spell_name_is_time(u16_t, 3) == 0);      /* 太短 ⇒ 不判 */
         /* ★★★ 2026-10-01（owner：「一面到关底之前一点使魔不该有」）：**发射点离本体 ≥ 32 px 才算使魔**。*/
         /* ★ 2026-10-01 晚：这两道是**猜测闸**，旧版（`2b9aea82`）没有它们也正常 ⇒ **默认关**（0）。*/
-        CHECK(YK_EMIT_SHELL_MIN_DIST == 32.0f);   /* ★ #149 位置修对后重新打开（本体口 ≈0 拒、离体口建壳）*/
+        CHECK(YK_EMIT_SHELL_MIN_DIST == 48.0f);   /* ★ 2026-10-11：32 → 48（两簇空档正中）*/   /* ★ #149 位置修对后重新打开（本体口 ≈0 拒、离体口建壳）*/
         CHECK(yk_emit_far_enough(0.0f, 0.0f, 32.0f) == 0);     /* 函数本身仍可按 32 判（一行开回）*/
         CHECK(yk_emit_far_enough(31.9f, 0.0f, 32.0f) == 0);
         CHECK(yk_emit_far_enough(32.0f, 0.0f, 32.0f) == 1);
         CHECK(YK_EMIT_SHELL_TYPE_DENY == 0u);                  /* type 黑名单也默认关 */
-        CHECK(yk_emit_far_enough(24.0f, 24.0f, YK_EMIT_SHELL_MIN_DIST) == 1);    /* 斜向（33.9 px）*/
-        CHECK(yk_emit_far_enough(-40.0f, 0.0f, YK_EMIT_SHELL_MIN_DIST) == 1);    /* 方向无关 */
+        CHECK(yk_emit_far_enough(24.0f, 24.0f, YK_EMIT_SHELL_MIN_DIST) == 0);    /* 斜向 33.9 px < 48 ⇒ 拒 */
+        CHECK(yk_emit_far_enough(-40.0f, 0.0f, YK_EMIT_SHELL_MIN_DIST) == 0);    /* 40 px < 48 ⇒ 拒（方向无关）*/
+        CHECK(yk_emit_far_enough(70.0f, 0.0f, YK_EMIT_SHELL_MIN_DIST) == 1);     /* 70 px（5 面中 boss）⇒ 建壳 */
         /* ★ B：类型白名单（0 = 全接受；否则 bit(type)）*/
         CHECK(yk_emit_type_allowed(7, 0u) == 1);              /* 默认全接受 */
         CHECK(yk_emit_type_allowed(7, (1u << 7)) == 1);
