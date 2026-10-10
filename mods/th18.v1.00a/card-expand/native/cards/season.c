@@ -1567,10 +1567,22 @@ static int on_tick_2(ce_card_t *c)
      *   `ptr`（槽）/ `in_use`（引擎占用位）/ `vm`（`option+0xb0` 的 VM id）/ `live`（VM 还在不在）/
      *   `pos`（引擎的定点位置）。判读：**槽已空（`ptr=0` 或 `in_use=0`）但 `vm` 还 live ⇒ 残留那支** ✓
      *   （位置不再有人更新 ⇒ "固定在那"；脚本自己的 angle 还在跑 ⇒ "但是转"）。*/
+    /* ★ z53（owner：「**116 残留始终没有复现**」）——快照**只在异常时打**（保留侦察、去掉噪音）：
+     *   异常 = 「空槽却还挂着活的 VM」或「在役槽的 VM 死了」⇒ 那才是残留/漏删 ✓；
+     *   正常时**一行都不打**（原来是每秒 6 行 ✗）。*/
     if ((s->frame % 60u) == 0u) {
-        int q6;
+        int q6, bad6 = 0;
         const int lv6 = level_of(s);
-        ce_log("season: sub-plane 快照 L=%d want=%d —", lv6, opts_for(lv6));
+        for (q6 = 0; q6 < SEASON_OPTS; ++q6) {
+            uint8_t *o6 = s->opt[q6].ptr;
+            uint32_t vm6 = o6 ? *(const uint32_t *)(o6 + CE_OPT_ANM_ID) : 0u;
+            const int live6 = (vm6 && ce_anm_get_vm(vm6)) ? 1 : 0;
+            const int want6 = (q6 < opts_for(lv6));
+            if ((!o6 && live6) || (o6 && !live6) || (o6 && want6 != (*(const int32_t *)(o6 + CE_OPT_IN_USE) != 0)))
+                bad6 = 1;
+        }
+        if (!bad6) goto subplane_ok;
+        ce_log("season: sub-plane **异常快照** L=%d want=%d —", lv6, opts_for(lv6));
         for (q6 = 0; q6 < SEASON_OPTS; ++q6) {
             uint8_t *o6 = s->opt[q6].ptr;
             uint32_t vm6 = o6 ? *(const uint32_t *)(o6 + CE_OPT_ANM_ID) : 0u;
@@ -1580,6 +1592,7 @@ static int on_tick_2(ce_card_t *c)
                    o6 ? (double)ce_option_x(o6) : 0.0, o6 ? (double)ce_option_y(o6) : 0.0);
         }
     }
+subplane_ok:
     return 0;
 }
 

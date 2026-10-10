@@ -333,6 +333,11 @@ static inline float fh_sy(float by640, float up) { return (by640 - up) * FH_U640
  *   · ✅ 由此块右沿 = `68 + 188 = 256`，**正好止步于货架锚点 257**（不越进原生卡图标列）。
  *   （owner 同时说「**117 可能最终也会回到 68**」—— 那条**本次未动**，117 现在仍是 88。）*/
 #define FH_PIN_X   68.0f
+/* ★★★ 2026-10-03z52（owner：「**110-111 的矩形可以往左延伸 5px**」）——
+ *   子智能体审计量过：本块**墨迹左沿 = 63**（图标 40×40 画在 63），而声明块从 68 起
+ *   ⇒ 左沿出块 5px ✗。owner 的处置 = **把矩形往左延 5px**（不改画面）✓
+ *   ⇒ 声明锚点 `FH_PIN_X − 5`、块宽 `FH_BLOCK_W + 5`；**画法靠 `FH_BLOCK_LEFT_PAD` 补回来** ✓。*/
+#define FH_BLOCK_LEFT_PAD   5.0f
 #define FH_PIN_Y  924.0f
 
 /* ============================ 认领块（每关重来一次）============================ */
@@ -352,7 +357,7 @@ static void fh_claim(void)
     if (s_owner == want) s_owner = 0;                        /* 占位没了（纪元清了表）⇒ 重新认领 */
 
     memset(&blk, 0, sizeof blk);
-    blk.w = FH_BLOCK_W;
+    blk.w = FH_BLOCK_W + FH_BLOCK_LEFT_PAD;   /* ★ z52：把"左沿出块 5px"的那 5px 声明进来 */
     blk.h = FH_BLOCK_H;
     /* ★★ 2026-09-18（用户实跑报）：**位置改成「自带锚点」**，钉在**原版 HUD 的左下角** ——
      *   原话：「110 111 复合 UI 的实际位置是**左下角向右了 1/3 个游玩区宽度**」。
@@ -367,7 +372,7 @@ static void fh_claim(void)
      *   先例 = 117（`cards/animal.c` 的 `ANIMAL_HUD_PIN_*`，用户按截图量过的固定位置）。*/
     blk.side = CE_HUD_SIDE_PINNED;
     /* ⚠ 入口必须是 `_card` 版（认领前把关卡号推进纪元 ⇒ 上一关的占位在本关开场收敛）。*/
-    if (!ce_hud_slot_claim_pinned_card(want, &blk, FH_PIN_X, FH_PIN_Y, &got)) {
+    if (!ce_hud_slot_claim_pinned_card(want, &blk, FH_PIN_X - FH_BLOCK_LEFT_PAD, FH_PIN_Y, &got)) {
         s_claim_cool = 60;
         ce_log("faith_hud: 块 %.0fx%.0f 认领失败（卡 id %u；槽位表拒绝 —— 见 sdk_core.h 的 hud_register 门槛）",
                (double)blk.w, (double)blk.h, (unsigned)want);
@@ -755,7 +760,7 @@ void faith_hud_draw(void)
         fh_claim();
         if (!s_owner || !ce_hud_slot_get(s_owner, &sh)) { fh_kill(); return; }
         /* ⚠ `ce_hud_slot_get()` **只填 x/y/w/h/side**（不填 x640/y640）⇒ 自己换（同 `signal.c`）。*/
-        bx = sh.x * CE_HUD_SURFACE_TO_640;
+        bx = (sh.x + FH_BLOCK_LEFT_PAD) * CE_HUD_SURFACE_TO_640;   /* ★ z52：画面不动（补回左延的 5px）*/
         by = sh.y * CE_HUD_SURFACE_TO_640;
 
         /* ---- 读数：在场的那一槽用真值，不在场的用**中性值**（用户 ③）---- */
