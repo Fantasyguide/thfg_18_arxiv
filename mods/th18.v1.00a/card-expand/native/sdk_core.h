@@ -1075,3 +1075,13 @@ uint32_t ce_sweep_bump(void);                       /* 92 发动：++代数，�
 uint32_t ce_sweep_gen(void);                        /* 生产者读 */
 int      ce_sweep_should_run(uint32_t *seen);        /* 生产者每帧调；1 = 清一批 */
 
+/* ---- ★ 出框免删的**位掩码**（纯逻辑，主机可测；引擎侧位语义的完整证据在 `engine.h`）----
+ * 详见 `engine/enemy/th18/09-enemy-offscreen-removal.md`：`flags_lo` bit2|bit3 置位 ⇒ 引擎
+ * 的「精灵盒完全出框 ⇒ 摘链释放」判据（`th18:0x42e5a0` 两条出界分支）对这两轴都放行。
+ * ⚠ 默认**不**给 `ce_spawn_enemy()` 加这两位（怕把该被引擎收走的召唤物留成孤儿）；
+ *   要留的显式调 `ce_spawn_enemy_keep_offscreen()` / `ce_enemy_keep_offscreen()`（`sdk.h`）。*/
+#define CE_ENEMY_KEEP_OFFSCREEN_MASK 0x0Cu
+static inline int32_t ce_enemy_flags_keep_offscreen(int32_t flags)
+{
+    return flags | (int32_t)CE_ENEMY_KEEP_OFFSCREEN_MASK;
+}

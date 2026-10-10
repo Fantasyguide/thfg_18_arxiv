@@ -1153,6 +1153,36 @@ static inline void *ce_spawn_enemy(const char *ecl_name, const void *spawn_param
     return ((ce_fn_alloc_enemy_t)CE_FN_ALLOCATE_NEW_ENEMY)(mgr, ecl_name, (void *)spawn_params, 0);
 }
 
+/* ---- ★ 出框免删（2026-10-11，纯静态核实；全文 `engine/enemy/th18/09-enemy-offscreen-removal.md`）----
+ * **引擎规则**：每帧 `EnemyManager__on_tick` `th18:0x42df50` 会把「**精灵盒完全离开场地矩形**」的敌人
+ * **摘链释放**（链：`0x42fe80` → `0x42ff80` → `0x42e5a0` 返回 -1 → `call [vtable+0x14]`(1) = `0x42d220`）。
+ * 盒 = `final_pos ± final_sprite_size × 0.5`；场地 = `x ∈ [-192,192]`、`y ∈ [0,448]`。
+ * ⇒ **任何我们自己生成的敌人（使魔壳 / UFO 令牌 / 灵 / 召唤物）只要飞出去就被删掉**。
+ *
+ * **反制** = 置 `flags_lo` 的 bit2|bit3（`CE_ENEMY_FLAG_KEEP_OFFSCREEN`，掩码 `0xC`）——
+ * 两条出界分支各查一位，置了就返回 0（不删）。★ ZUN 自己的原生 ECL 就是这么用的
+ * （`flagSet(12)` 4 处，全在会飞出画面的 `Phantom01/02` 上；`flagClear(12)` 4 处收回）。
+ *
+ * **默认不改既有行为**：`ce_spawn_enemy()` 不置这两位（怕把「该被引擎清掉的召唤物」留成孤儿，
+ * 例：109 的灵 / 112 的令牌都指望引擎自己收）。要留的用下面这个包装（或自己调 `ce_enemy_keep_offscreen()`）。
+ * ⚠ 时机：必须在对象已经是活的之后（`ce_spawn_enemy` 返回之后或下一帧都行；整局有效，不用每帧刷）。*/
+static inline void ce_enemy_keep_offscreen(void *e)
+{
+    if (!e) return;
+    /* 掩码的纯逻辑在 `sdk_core.h`（主机单测覆盖）；这里只做落笔。*/
+    *(int32_t *)((uint8_t *)e + CE_ENEMY_FLAGS) = ce_enemy_flags_keep_offscreen(*(int32_t *)((uint8_t *)e + CE_ENEMY_FLAGS));
+}
+/* 编译期把两处定义钉在一起：`engine.h` 的两位 ↔ `sdk_core.h` 的掩码（防将来只改一边）。*/
+_Static_assert(CE_ENEMY_KEEP_OFFSCREEN_MASK ==
+               ((int32_t)CE_ENEMY_FLAG_KEEP_OFFSCREEN_X | (int32_t)CE_ENEMY_FLAG_KEEP_OFFSCREEN_Y),
+               "keep-offscreen mask must equal the two engine flag bits (engine.h vs sdk_core.h)");
+static inline void *ce_spawn_enemy_keep_offscreen(const char *ecl_name, const void *spawn_params)
+{
+    void *e = ce_spawn_enemy(ecl_name, spawn_params);
+    ce_enemy_keep_offscreen(e);
+    return e;
+}
+
 /* ---- HUD 槽位（HUD-LAYOUT.md §3）：表面 px ↔ 640 空间 ----
  * `ce_hud_vm_text_set` / `ce_hud_number_set` 收的是 640×480 空间的点（引擎内部 × `DAT_0056aca0`
  * 换表面 px；TH18 表面 = 1280×960 ⇒ 系数 2.0，🟡 待实跑确认一次）。*/

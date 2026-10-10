@@ -1109,9 +1109,14 @@ static uint8_t *yk_spawn_familiar_parent(float x, float y, uint32_t parent_id, i
      * ★★★ 2026-10-01（owner 定案口径「母机 HP / 圈数」+ parent 查证）：本卡**现在真的会**走第 ② 步
      *   （`yk_orbit_fam_hp()` 不再封顶 999：3200 血 3 圈 ⇒ 1066 > 999）。开关 = `life > spawn_life`。*/
     *(int32_t *)(spawn + CE_SPAWN_LIFE) = yk_clamp_spawn_life(life);
-    /* 惰性空壳：`NoEnemyDebug` 的 `wait(1000)` 死循环 ⇒ 不跑 ECL、不动、不开火、不掉落、不自删。*/
+    /* 惰性空壳：`NoEnemyDebug` 的 `wait(1000)` 死循环 ⇒ 不跑 ECL、不动、不开火、不掉落、不自删。
+     * ★ 2026-10-11（纯静态核实；`engine/enemy/th18/09-enemy-offscreen-removal.md`）：
+     *   用 **`ce_spawn_enemy_keep_offscreen()`** —— 否则壳一「出框」就被引擎按精灵盒判据删掉
+     *   （`th18:0x42e5a0` 返回 -1 ⇒ `0x42fe80` ⇒ 管理器 `call [vtable+0x14](1)` = `th18:0x42d220` 摘链释放）。
+     *   使魔壳**本来就该待在发射口上**，而发射口（`母机位置 + offsets`）经常在画面外 ⇒ 必须免删。
+     *   掩码 `0xC` = `flags_lo` bit2|bit3，也是 ZUN 原生 ECL 在会飞出画面的敌人上用的 `flagSet(12)`。*/
     {
-        uint8_t *e = (uint8_t *)ce_spawn_enemy("NoEnemyDebug", spawn);
+        uint8_t *e = (uint8_t *)ce_spawn_enemy_keep_offscreen("NoEnemyDebug", spawn);
         /* ★ 第二步：真血量 >999 ⇒ 出生后回写三格 life（**只有这条路不置位 30**）。
          *   `yk_clamp_spawn_life(life)` 是幂等的纯函数，这里再算一次只为拿到「spawn 值」。*/
         if (e && life > 0 && life > yk_clamp_spawn_life(life)) {

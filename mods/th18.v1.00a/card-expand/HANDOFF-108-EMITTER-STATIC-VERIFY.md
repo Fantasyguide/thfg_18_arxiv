@@ -228,7 +228,26 @@
 | 3 | 同帧多原点（最多 6 次/帧）的观感 | 表示力上限，已按「1 槽 1 壳 = 视觉代理」在册 |
 | 4 | `props+0x480/+0x484`、`offsets[i].z` | 全 exe **无写者**（只有 `memset`/`etCopy` 会带过去）⇒ 语义未定，但不影响映射 |
 
-## 7. 相关
+## 7. 追加（2026-10-11 晚）：使魔壳「**出框即删**」——引擎判据与反制
+
+> owner 追加口径：「**相当于我们用程序生成的所有敌人，只要出框了就会删除**」。
+> 全文（判据、链路、常量、原生佐证）：[`engine/enemy/th18/09-enemy-offscreen-removal.md`](../../../engine/enemy/th18/09-enemy-offscreen-removal.md)。
+
+- **链路（✅ 逐指令）**：`EnemyManager__on_tick` `th18:0x42df50` → 每敌 `th18:0x42fe80` → `th18:0x42ff80`
+  → `th18:0x42e5a0` 做「**精灵盒 `final_pos ± final_sprite_size×0.5` vs 场地 `x∈[-192,192]`、`y∈[0,448]`**」判定，
+  完全出框 **且** 进过屏（`flags_lo` bit16 `0x10000`）**且** 该轴免删位清 ⇒ 返回 `-1`
+  ⇒ 管理器 `call [vtable+0x14](1)` = `th18:0x42d220`（**摘链 + 释放** + `dec [mgr+0x198]`）。
+- **反制 = `flags_lo |= 0x4 | 0x8`（`0xC`）**：横轴 bit2、纵轴 bit3，两条出界分支各查一位；全 exe 无别的读者。
+  ★ ZUN 自己的原生 ECL 就用 **`flagSet(12)`**（4 处，全在 `st01/st07` 的 `Phantom01/02` 这些会飞出画面的敌人上）。
+- **spawn 参数里没有这一项**（`0x42d839`–`0x42d8fc` 只映射 `spawn+0x18/+0x1c/+0x14` 的三个位）
+  ⇒ 必须在 `ce_spawn_enemy()` **返回之后**自己写 `enemy+0x635c |= 0xC`。
+- **本轮落笔**：`sdk.h` 新增 `ce_enemy_keep_offscreen()` / `ce_spawn_enemy_keep_offscreen()`
+  （掩码 `CE_ENEMY_KEEP_OFFSCREEN_MASK` 在 `sdk_core.h`，带单测；位名在 `engine.h`）；
+  `youkai.c` 的 `yk_spawn_familiar_parent()` 改用它 ⇒ **映射壳与绕转壳都不会再因出框被引擎删掉**。
+- ⚠ **没有全局默认打开**：`ce_spawn_enemy()` 行为不变（109 的灵 / 112 的令牌是否也该免删要逐卡拍，
+  否则它们飞出去会变成永远留着的孤儿）。要不要给 112/109 也开，见 `AUDIT.md` §BE 详录 #276 的问题条目。
+
+## 8. 相关
 
 - 建模与普查：[`HANDOFF-108-EMITTER-MODEL.md`](HANDOFF-108-EMITTER-MODEL.md) ·
   [`HANDOFF-108-EMITTER-COVERAGE.md`](HANDOFF-108-EMITTER-COVERAGE.md) ·

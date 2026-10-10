@@ -9,6 +9,20 @@ static int s_fail, s_pass;
 
 static int vt_a[21], vt_b[21];
 
+
+/* ★ 2026-10-11：出框免删掩码（纯逻辑；引擎位语义见 `engine/enemy/th18/09-enemy-offscreen-removal.md`）。
+ *   引擎判据：精灵盒完全出框 **且** flags_lo bit16（进过屏）置 **且** 对应轴免删位清 ⇒ 摘链释放。
+ *   掩码必须同时置**两位**（0x4 横轴 / 0x8 纵轴），否则只挡一个方向。*/
+static void test_keep_offscreen(void)
+{
+    CHECK(CE_ENEMY_KEEP_OFFSCREEN_MASK == 0x0C);
+    CHECK(ce_enemy_flags_keep_offscreen(0) == 0x0C);          /* 空 flags ⇒ 只多这两位 */
+    CHECK(ce_enemy_flags_keep_offscreen(0x0C) == 0x0C);       /* 幂等 */
+    CHECK(ce_enemy_flags_keep_offscreen(0x10) == 0x1C);       /* 不动别人的位（免伤 0x10 共存）*/
+    CHECK(ce_enemy_flags_keep_offscreen(0x10000) == 0x1000C); /* 与「进过屏」位共存 */
+    CHECK((ce_enemy_flags_keep_offscreen(0x40000000) & 0x40000000) != 0);  /* 大怪标记不被清掉 */
+}
+
 static void test_registry(void)
 {
     ce_sdk_reset_for_test();
@@ -1820,6 +1834,7 @@ int main(void)
     test_native_conflict_fixes();
     test_vitem_channel();
     test_poc_layer();
+    test_keep_offscreen();
     test_poc_mask_layer();
     printf("test_sdk_core: %d passed, %d failed\n", s_pass, s_fail);
     return s_fail ? 1 : 0;

@@ -31645,3 +31645,31 @@ owner 订正：那一堆**都是发射口（映射层）使魔** ⇒ 焦点 = �
 「def 有而 patch 没有的僵尸导出」⇒ **`deploy.py` 的发布闸被永久卡红**（本批第一次 deploy 就是死在这里）。
 修法：抓 `BP_*` 前先把 `;` 注释剥掉，判据改成**集合相等**（允许文件里有人类注释与不同排序），
 并保留负对照（抽掉一个真导出仍报红）。影响面：所有走 `deploy.py` 的发布（不改 patch/DLL 产物）。
+
+### #276 2026-10-11（纯静态核实）：敌人「出框即删」的引擎判据 + 反制原语（**共享件改动**）
+
+**owner 口径**：「相当于我们用程序生成的所有敌人，只要出框了就会删除」——要机制、要反制办法。
+
+**引擎侧一手（全文 `engine/enemy/th18/09-enemy-offscreen-removal.md`）**：
+`EnemyManager__on_tick`(`th18:0x42df50`) 每帧对每敌跑 `th18:0x42fe80` → `th18:0x42ff80` → `th18:0x42e5a0`；
+后者按「**精灵盒 = `final_pos ± final_sprite_size × 0.5`**（半尺寸常量 `th18:0x4b9138` = 0.5）
+vs **场地 `x∈[-192,192]`（`th18:0x4b946c`/`0x4b933c`）、`y∈[0,448]`（`th18:0x4b939c`）**」判定，
+**完全出框** 且 **进过屏**（`flags_lo` bit16 `0x10000`）且 **对应轴免删位清** ⇒ 返回 `-1`
+⇒ 管理器 `call [vtable+0x14](1)` = `th18:0x42d220`（摘链 + 释放 + `dec [mgr+0x198]`）。
+⇒ 反制 = `flags_lo |= 0x4`（横轴，`th18:0x42ebe1`）`| 0x8`（纵轴，`th18:0x42ebd7`）；
+全 `.text` 扫描确认这两位**没有别的读者**；★ ZUN 自己用 **`flagSet(12)`**（22 份原生 ECL 里 4 处，
+全在会飞出画面的 `st01/st07 Phantom01/02`）。spawn 参数里**没有**这一项（`0x42d839`–`0x42d8fc` 只映射三个别的位）
+⇒ 必须 `ce_spawn_enemy()` 返回之后自己写。
+
+**共享件改动（协作须知）**：
+| 文件 | 改了什么 | 为什么 | 验证 |
+| --- | --- | --- | --- |
+| `native/engine.h` | 新增 `CE_ENEMY_FLAG_KEEP_OFFSCREEN_X/Y`（`0x4`/`0x8`）+ `_KEEP_OFFSCREEN`（`0xC`）与一手注 | 位语义的唯一出处 | 逐指令 + 常量直读（见上）|
+| `native/sdk_core.h` | 新增 `CE_ENEMY_KEEP_OFFSCREEN_MASK`（`0xC`）+ 纯函数 `ce_enemy_flags_keep_offscreen()` | 主机可测的纯逻辑层 | `test_sdk_core` 新增 6 断言（1436 passed / 0 failed）|
+| `native/sdk.h` | 新增 `ce_enemy_keep_offscreen()` / `ce_spawn_enemy_keep_offscreen()` + 一条 `_Static_assert` 把两处定义钉在一起 | 可复用原语（**默认不改既有卡行为**）| 编译期断言 + 单测 |
+| `native/cards/youkai.c` | `yk_spawn_familiar_parent()` 改用 `ce_spawn_enemy_keep_offscreen()` | 108 的壳钉在发射口上，发射口常在画面外 | `make check` 全绿 |
+
+**对既有卡的影响面**：`ce_spawn_enemy()` **行为未变**（不置位）⇒ 112 的 UFO 令牌 / 109 的灵 / 116/117 的召唤物
+**不受影响**。要它们也免删，逐卡换成 `ce_spawn_enemy_keep_offscreen()` 即可 —— 但这会改变它们的离场行为
+（飞出去会一直留着，需要卡侧自己收），**留给 owner 拍**。
+**闸门**：`make check` 全绿（`test_sdk_core: 1436 passed, 0 failed`）、`check-docs` 全过、`gen_def --check` 通过。

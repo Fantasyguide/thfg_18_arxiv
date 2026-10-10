@@ -744,6 +744,22 @@ typedef struct { int32_t prev; int32_t cur; float cur_f; } ce_timer_t;   /* zTim
                                                * 一手普查 22 个 .ecl：只有 st0Xbs/st0Xmbs 各一次 ⇒ 该位 ⟺ boss **或道中 boss**。
                                                * 引擎自己也用它（`0x42eed0 test [ecx+0x635c],0x800000` 开 boss 血条段）。*/
 #define CE_ENEMY_FLAG_NO_LOCK      0x0c000021 /* 任一位置起 = 不可锁定（死亡 / 无敌 / 未登场…）*/
+/* ★★★★★ 2026-10-11（**纯静态核实**；全文 `engine/enemy/th18/09-enemy-offscreen-removal.md`）：
+ *   `flags_lo` 的 **bit2（`0x4`）= 横向出界免删**、**bit3（`0x8`）= 纵向出界免删**。
+ *   一手（删除链，逐指令）：`EnemyManager__on_tick` `th18:0x42df50`
+ *     → 每敌 `call th18:0x42fe80` → `call th18:0x42ff80` → `call th18:0x42e5a0` 做**精灵盒 vs 场地矩形**判定：
+ *       盒 = `final_pos ± final_sprite_size × 0.5`（半尺寸常量 `th18:0x4b9138` = 0.5），场地 =
+ *       `x ∈ [-192, 192]`（`th18:0x4b946c` / `th18:0x4b933c`）、`y ∈ [0, 448]`（`th18:0x4b939c`）；
+ *       完全出框 **且** bit16（`0x10000`，进过屏）置 **且** 对应轴的免删位清 ⇒ 返回 **-1**；
+ *       -1 沿 `0x42ff80` → `0x42fe80` 回传 ⇒ 管理器 `jne th18:0x42dfe8` → `call [eax+0x14]`(1)
+ *       = `th18:0x42d220`（**摘链 + 释放**，同时 `dec [mgr+0x198] enemy_count_real`）。
+ *   两条出界分支各查一位（`th18:0x42ebd7 test al,8` 与 `th18:0x42ebe1 and eax,0x10004`）
+ *   ⇒ **置这两位 = 出框也不删**。全 `.text` 里这两位**没有别的读者**（无副作用）。
+ *   ★ ZUN 自己就这么用：原生 22 份 ECL 里 **`flagSet(12)` 4 处**（`st01`/`st07` 的 `Phantom01/02`，
+ *     正是会飞出画面的幽灵敌），`flagClear(12)` 4 处收回。 */
+#define CE_ENEMY_FLAG_KEEP_OFFSCREEN_X 0x4u  /* flags_lo bit2：横轴出界不删（`0x42ebe1`）*/
+#define CE_ENEMY_FLAG_KEEP_OFFSCREEN_Y 0x8u  /* flags_lo bit3：纵轴出界不删（`0x42ebd7`）*/
+#define CE_ENEMY_FLAG_KEEP_OFFSCREEN   0xCu  /* 两位一起 ⇒ 四面出界都不删 */
 
 #define CE_MODE_ITEM    0
 #define CE_MODE_SAVE    1
