@@ -2666,8 +2666,9 @@ int __cdecl BP_ce_item_frame(x86_reg_t *regs, void *bp_info)
         uint8_t *mgr = CE_ABILITY_MGR();
         if (mgr) {
             const int32_t root = *(const int32_t *)(mgr + CE_MGR_SEL_CARD_VM);
-            /* ★ z19：**先打一行诊断**（不管找没找到 VM）—— 上一版只在找到 VM 时才打，
-             *   结果一条都没有 ⇒ 看不出是 `mgr+0x3c` 是 0、还是 VM 查不到。*/
+            /* ★ z19：直读诊断（每关一行）—— 上一版只在找到 VM 时才打，结果一条都没有，
+             *   分不清"字段为 0"还是"VM 查不到"。实测：root 有效、get_vm(root) 非空 ✓
+             *   ⇒ 所以问题在**写错了哪几支**（见下）。*/
             {
                 static int32_t s_nat_root_logged = -1;
                 if (s_nat_root_logged != root) {
@@ -2680,26 +2681,36 @@ int __cdecl BP_ce_item_frame(x86_reg_t *regs, void *bp_info)
             }
             if (root) {
                 const uint32_t a = (uint32_t)ce_hud_band_dim_alpha() & 0xffu;
-                static int32_t s_nat_logged;
-                int i;
-                for (i = 0; i < 5; ++i) {
-                    const uint32_t id = (uint32_t)(root + i);
-                    uint8_t *vm = ce_anm_get_vm(id);
-                    uint32_t *c1;
+                /* ★★★ 2026-10-03z43（owner：「**主动卡压暗和其他 hud 压暗没有耦合**」）——
+                 *   一手机制（`engine/card/th18/15-selected-card-hud.md` §1）：那棵树 = script0（根，
+                 *   **没有 sprite、写它没有画面效果**）+ **script1..4**（真正画东西的四支）。
+                 *   旧实现写 `root + i (i=0..4)` 并要求脚本号 ∈ 1..4 ⇒
+                 *   **子 VM 的 id 不连续时全被跳过**，等于一支都没写 ✗（画面只由**引擎自己的闸**驱动
+                 *   ⇒ 这就是"没耦合"）。实测：root = 1853554533（10 位，与各卡 VM id 的量级都不同）。
+                 *   ⇒ 改成**在树根附近扫描 ±8**、按**脚本号 1..4** 识别并写 color alpha ✓；
+                 *     首次扫到就打一行（列出 id:script），以后一眼可查。*/
+                static int32_t s_nat_scan_logged = -1;
+                int32_t found[4]; int nf = 0, q;
+                for (q = 0; q < 4; ++q) found[q] = 0;
+                for (q = -8; q <= 8; ++q) {
+                    const int32_t cand = root + q;
+                    uint8_t *vm = cand > 0 ? ce_anm_get_vm((uint32_t)cand) : 0;
+                    int32_t sc;
                     if (!vm) continue;
-                    if (i > 0) {   /* 子节点校验：只有 script1..4 才是那棵树的孩子（防 id 不连续）*/
-                        const int32_t sc = *(const int32_t *)(vm + CE_ANM_VM_SCRIPT_ID);
-                        if (sc < 1 || sc > 4) continue;
-                    }
-                    c1 = (uint32_t *)(vm + CE_ANM_VM_COLOR1);
-                    ce_anm_set_color(id, (a << 24) | (*c1 & 0x00ffffffu));
-                    if (!s_nat_logged && i == 0) {
-                        s_nat_logged = 1;
-                        ce_log("hud: native active-card face hooked (root vm %d, script %d) - "
-                               "color alpha 每帧跟共享带 (dim=%d alpha=%u)", (int)root,
-                               (int)*(const int32_t *)(vm + CE_ANM_VM_SCRIPT_ID),
-                               ce_hud_band_dim_dimmed(), (unsigned)a);
-                    }
+                    sc = *(const int32_t *)(vm + CE_ANM_VM_SCRIPT_ID);
+                    if (sc < 1 || sc > 4) continue;
+                    if (found[sc - 1]) continue;                 /* 一个脚本只认一次 */
+                    found[sc - 1] = cand;
+                    ++nf;
+                    ce_anm_set_color((uint32_t)cand,
+                                     (a << 24) | (*(const uint32_t *)(vm + CE_ANM_VM_COLOR1) & 0x00ffffffu));
+                }
+                if (s_nat_scan_logged != root) {
+                    s_nat_scan_logged = root;
+                    ce_log("hud: native face 耦合 —— root %d 周围扫到 %d 支可写 VM："
+                           "script1=%d script2=%d script3=%d script4=%d（band alpha=%u）",
+                           (int)root, nf, (int)found[0], (int)found[1], (int)found[2], (int)found[3],
+                           (unsigned)a);
                 }
             }
         }
