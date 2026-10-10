@@ -31388,3 +31388,18 @@ mgr+0x3c = 14974827 ⇒ 解释①(当 VM 指针) 不可读 ✗ ⇒ 解释② get
 `youkai/debug: INVULN cur=%d prev=%d cur_f=%.1f frame=%u (write-back check; …)`；
 并把 **`prev` / `cur_f` 一起刷**（兜底①），确认 `cur` 是否被引擎每帧覆盖（覆盖 ⇒ 时机太晚 ⇒ 需更早钩子或改置免伤标志）。
 每次按 `I` 切到 ON 时重新从 0 计 16 行。
+
+### #248（2026-10-01 晚，owner log 21:20）：无敌改按**绝对偏移**写 + `fire_seen` 无条件计数
+
+**① 无敌**：owner log 显示 `cur/prev/cur_f` 都稳定 60（刷得住）却照样掉命；本仓文档 `engine/player/th18/03-player-hit-gate.md:239`
+明确：**判定侧读的是 `player+0x47778`（cur）> 0 即无敌**（`zTimer{prev=+0x47774, cur=+0x47778, cur_f=+0x4777c}`；
+判定侧 `0x45cd1c`/`0x45ce78`/`0x45d055`）。⇒ 为消除**结构体布局**疑问，改为**按绝对偏移直写三个格**
+（`+0x47778`/`+0x47774`/`+0x4777c`），并让 `INVULN` 行**直接读回绝对偏移**的值。若这版仍不掉命判定成功，
+则说明闸确实读 `+0x47778`；若仍无效，下一步按文档 §1.6.1 的**前置闸**（`enemy+0x5130 & 0x22` 等）反向找自机侧入口。
+
+**② `FIRE: 0`**：新增**无条件计数** `s_fire_seen`（在 `k` 门槛**之前**递增）并进台账 `fire_seen=%u` ⇒
+下次可区分「本局真没发生同帧两次 fire」与「留下的那份块跑不到」。
+
+**③ 版本漂移（回答）**：`f7d83d5e…` **不是我构建的** —— 本批我只跑了 `make -s cards/youkai.o` / `test-host` /
+`dllx87` / `capcheck`，**没有跑 `make release`**（也没动 `dist/`）。此前也见过一次 `sdk.c` 被改 + `RELEASE-STATE.json.tmp` 冲突 ⇒
+**同仓库有另一条线在 `make release`**。请以你那边 `git status`/`RELEASE-STATE.json` 为准核对；当前日志对应的是**那份源码**，不是我这份未提交的改动。

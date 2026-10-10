@@ -741,6 +741,7 @@ static yk_fk_t  s_fk[YK_FK_N];
 static yk_fk_t  s_fkline[YK_FK_N];      /* 每敌 FIRE 行数 */
 static yk_fk_t  s_fkline2[YK_FK_N];     /* 每敌 ORIGIN-GATE 行数 */
 static unsigned s_fire_logged_2;        /* FIRE 总行数 */
+static unsigned s_fire_seen;            /* ★ 无条件计数：站点上见过的 etOn 总次数（区分「没发生」与「块跑不到」）*/
 static unsigned s_og_logged;            /* ORIGIN-GATE 总行数 */
 
 static int yk_fk_bump(uint32_t enemy, int slot, uint32_t fr)
@@ -7021,6 +7022,7 @@ static int yk_on_shot_slot(ce_card_t *c, const ce_enemy_shot_t *ev)
         {
             uint32_t fr = ce_sdk_frame();
             int k = yk_fk_bump(ev->enemy_id, ev->slot, fr);
+            ++s_fire_seen;   /* ★ 无条件（在 k 门槛之前）*/
             const uint8_t *prf = (const uint8_t *)ev->enemy + YK_EMIT_PROPS
                                + (size_t)ev->slot * YK_EMIT_PROP_STRIDE;
             const float *orf = (const float *)((const uint8_t *)ev->enemy + YK_EMIT_ORIGINS_ABS
@@ -8336,14 +8338,21 @@ static int on_tick_2(ce_card_t *c)
             if (iv) {
                 /* ★ 运行期验证（owner：ON 了照死）：**写后读回** —— 前 16 帧各一行，
                  *   看 `cur` 有没有真的保持 ≥60（被引擎每帧覆盖 ⇒ 时机太晚 ⇒ 要更早的钩子）。*/
-                if (iv->cur < YK_DEBUG_INVINCIBLE_MIN) iv->cur = YK_DEBUG_INVINCIBLE_MIN;
-                if (iv->prev < YK_DEBUG_INVINCIBLE_MIN) iv->prev = YK_DEBUG_INVINCIBLE_MIN;
-                if (iv->cur_f < (float)YK_DEBUG_INVINCIBLE_MIN) iv->cur_f = (float)YK_DEBUG_INVINCIBLE_MIN;
+                /* 一手（engine/player/th18/03-player-hit-gate.md:239）：判定侧读的是
+                 * **player+0x47778（cur）> 0 即无敌**（zTimer{prev=+0x47774, cur=+0x47778, cur_f=+0x4777c}）。
+                 * 为消除结构体布局疑问，这里**按绝对偏移直写三个格**。*/
+                {   uint8_t *pp = CE_PLAYER();
+                    if (*(const int32_t *)(pp + 0x47778) < YK_DEBUG_INVINCIBLE_MIN) *(int32_t *)(pp + 0x47778) = YK_DEBUG_INVINCIBLE_MIN;
+                    if (*(const int32_t *)(pp + 0x47774) < YK_DEBUG_INVINCIBLE_MIN) *(int32_t *)(pp + 0x47774) = YK_DEBUG_INVINCIBLE_MIN;
+                    *(float *)(pp + 0x4777c) = (float)YK_DEBUG_INVINCIBLE_MIN;
+                }
                 if (s_dbg_inv_logged < 16) {
                     ++s_dbg_inv_logged;
                     ce_log("youkai/debug: INVULN cur=%d prev=%d cur_f=%.1f frame=%u (write-back check; "
                            "if this stays >=%d the timer is held, otherwise the engine overwrote it)",
-                           iv->cur, iv->prev, (double)iv->cur_f, (unsigned)ce_sdk_frame(),
+                           (int)*(const int32_t *)(CE_PLAYER() + 0x47778),
+                           (int)*(const int32_t *)(CE_PLAYER() + 0x47774),
+                           (double)*(const float *)(CE_PLAYER() + 0x4777c), (unsigned)ce_sdk_frame(),
                            (int)YK_DEBUG_INVINCIBLE_MIN);
                 }
             }
@@ -8368,11 +8377,11 @@ static int on_tick_2(ce_card_t *c)
             float lz[3];
             int have = yk_emit_latch_get(0u, 0, lz);       /* 只为日志占位；下面打「最近一次定格」*/
             (void)have;
-            ce_log("youkai/emit: move %u create %u withdraw %u hp_reset %u latch_logs=%u dist0=%u phantom=%u bodyport=%u notfam=%u noorigin=%u badtype=%u nobullet=%u "
+            ce_log("youkai/emit: move %u create %u withdraw %u hp_reset %u latch_logs=%u dist0=%u phantom=%u bodyport=%u notfam=%u noorigin=%u badtype=%u nobullet=%u fire_seen=%u "
                    "(position-only pinning: offset changes never rebuild the shell nor reset its HP; "
                    "shell targets the FROZEN offset_final from the etOn site; AUDIT §BE #208/#210)",
                    s_emit_move, s->spawns, s->lost + s->silent, s_emit_hp_reset, s_emit_latch_logged,
-                   s_emit_dist0, s_emit_phantom, s_emit_bodyport, s_emit_notfam, s_emit_noorigin, s_emit_badtype, s_emit_nobullet);
+                   s_emit_dist0, s_emit_phantom, s_emit_bodyport, s_emit_notfam, s_emit_noorigin, s_emit_badtype, s_emit_nobullet, s_fire_seen);
         }
     }
     focused = yk_focused();                               /* ★ owner ④：本卡眼中的侧（锁期间钉住）*/

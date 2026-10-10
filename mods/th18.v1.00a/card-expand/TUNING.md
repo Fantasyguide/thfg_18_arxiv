@@ -16480,3 +16480,11 @@ else if (s_aura_charge > 0.0f)                 { ★ 收束（含 interrupt / �
 | FIRE 去重 | 源码里曾**两份** `FIRE:`（HEAD `7072` = 旧的每槽计数块 ⇒ 跑起来像跨敌人递增；`7038` = `s_fk[]` 按 `(敌人,槽)` 正确）⇒ **删旧留新**（现在 `grep -c` = 1）；`ORIGIN-GATE` 同样只剩一份 |
 | 无敌验证 | ON 时前 16 帧打 `youkai/debug: INVULN cur=%d prev=%d cur_f=%.1f frame=%u (write-back check)`；**`prev`/`cur_f` 也一起刷**；若 `cur` 被覆盖 ⇒ 时机太晚（需更早钩子或改置免伤标志）|
 | 判据 | ① 同一 `(enemy,slot)` 同 `frame` 出现 `k=0`/`k=1`，不同敌人**各自**从 0 起；② ON 时 `INVULN` 行里的 `cur` **持续 ≥60**、且贴脸撞弹/撞使魔不掉命；③ OFF 立刻恢复 |
+
+#### 2.1ccc-78b 2026-10-01 晚：无敌按绝对偏移写 + fire_seen
+
+| 项 | 说明 |
+| --- | --- |
+| 一手 | `engine/player/th18/03-player-hit-gate.md:239`：判定侧读 **`player+0x47778`(cur) > 0 即无敌**（`zTimer{prev=+0x47774, cur=+0x47778, cur_f=+0x4777c}`；判定侧 `0x45cd1c/0x45ce78/0x45d055`）|
+| 改动 | 无敌改为**绝对偏移直写**三格 + `INVULN` 行**读回绝对偏移**（消除结构体布局疑问）；新增**无条件** `s_fire_seen`（`k` 门槛之前）并入台账 `fire_seen=%u` |
+| 判据 | ON 时贴脸撞弹/撞使魔**不掉命**；日志 `INVULN cur=… prev=… cur_f=…` 与 `fire_seen=` 可分别验证 |
