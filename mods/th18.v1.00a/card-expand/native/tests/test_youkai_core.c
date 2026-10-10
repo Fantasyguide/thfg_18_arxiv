@@ -1478,7 +1478,7 @@ int main(void)
         CHECK(yk_spell_name_is_time(u16_t, 3) == 0);      /* 太短 ⇒ 不判 */
         /* ★★★ 2026-10-01（owner：「一面到关底之前一点使魔不该有」）：**发射点离本体 ≥ 32 px 才算使魔**。*/
         /* ★ 2026-10-01 晚：这两道是**猜测闸**，旧版（`2b9aea82`）没有它们也正常 ⇒ **默认关**（0）。*/
-        CHECK(YK_EMIT_SHELL_MIN_DIST == 0.0f);
+        CHECK(YK_EMIT_SHELL_MIN_DIST == 32.0f);   /* ★ #149 位置修对后重新打开（本体口 ≈0 拒、离体口建壳）*/
         CHECK(yk_emit_far_enough(0.0f, 0.0f, 32.0f) == 0);     /* 函数本身仍可按 32 判（一行开回）*/
         CHECK(yk_emit_far_enough(31.9f, 0.0f, 32.0f) == 0);
         CHECK(yk_emit_far_enough(32.0f, 0.0f, 32.0f) == 1);

@@ -1369,7 +1369,10 @@ int  yk_spell_xfer_block(int spell_flags, int name_is_time, int boss_no_damage);
  *   `YK_EMIT_SHELL_MIN_DIST = 32.0f`（❓ 自定，理由：TH08 使魔作为独立实体在 boss 周围可见地悬停，
  *   典型半径 ≥ 数十 px；而本体炮口的视觉偏移只 ≤ ~16 px ⇒ 32 px 是两者之间的下限；实跑会打出
  *   每条 `etOn` 的实测距离，下一轮按数据校准）。**只读**（硬约束不变：不写发弹参数/位置）。*/
-#define YK_EMIT_SHELL_MIN_DIST 0.0f   /* ⛔ 默认 0 = **关闭**（猜测闸；旧版没有它也正常）*/
+#define YK_EMIT_SHELL_MIN_DIST 32.0f   /* ★ 2026-10-01 晚（#149 位置修对后）**重新打开**：
+                                          *   现在出点 = `props[i]+0x08/0x0c`（绝对世界坐标）⇒ `|props − enemy_pos|`
+                                          *   才第一次有意义：本体口 ≈0（拒）、离体口大（建壳）。
+                                          *   ❓ 阈值待 `SAMPLE` 的距离分布校准（本体口 ≪32；真离体口应 >32）。*/
 int  yk_emit_far_enough(float dx, float dy, float min_dist);
 /* ★ B（owner 推断）：**只有「弹发射口」类型才建壳**。`props+0x00` 的取值语义**尚未一手确认**
  *   （`etSprite` arg1 写它：`0x43404e`；真发路径 `0x427810` 的分支表待挖）⇒ 本批给一个**显式白名单**，
