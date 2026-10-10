@@ -1158,7 +1158,23 @@ static int32_t         s_bg_vm;         /* 灵界背景 VM 的 anm id（0 = 没�
  *   ⇒ 基准取 **56**（= 原 248 − 192；比 60 再让 4px 与"带"的左沿对齐）。
  *   ⚠ **通用规则**：凡"从游玩区左沿 256 推出来"的常量，一律 **−192**。
  *     旧值留档：248（= 256 − 8，错基准）。*/
-#define TRANCE_HUD_BASE_X    56.0f
+#define TRANCE_HUD_BASE_X   248.0f     /* ★ z27：**世界层的 192 补偿**（见下）——实体基准，
+                                        *   不是"左下角"！声明块用 `TRANCE_HUD_BLOCK_X`。*/
+/* ★★★★ 2026-10-03z27（owner 两条现象拼出的真因）——
+ *   「框的位置对了」（声明 56 ✓）+「但 113 的 HUD **本体可能被移出屏幕**了」+
+ *   「到刚刚那个能看见 113 HUD 的版本，你**依旧框没有画在 113 HUD 上面**」。
+ *
+ *   ⇒ 结论：**113 的画面受"世界层视口变换"影响，而声明块不受**：
+ *     · 四支脚本自己写着 **`layer(17)`**（世界层）——我们从 UI 口生成，但脚本的 `layer()` 会把它
+ *       拉回**世界列表** ⇒ 绘制时套用**场地视口** `(32,16,384,448)×2` 的变换 ⇒
+ *       **实体 x 与窗口 x 差 192**（= 我们前几轮在 `sdk_core.h` 订正过的那个 256→64）；
+ *     · 所以：**实体 248 ⇒ 窗口 56（真左下角 ✓）**，而**声明框写 248 就画在 248** ✗
+ *       ⇒ "框永远不套在 HUD 上" ✓ 正是 owner 说的"奇了怪了"。
+ *     · 我 z26 把**基准**也改成 56 ⇒ 画面又被推 −192 ⇒ **出屏** ✓ 也正是 owner 现在看到的。
+ *   ⇒ 正解（与 117 同款的 **pin / block 分离**）：
+ *     **实体基准 = 248**（含世界层 192 补偿）、**声明块左沿 = 56**（真左下角）；
+ *     `DX = 槽.x − BLOCK_X` ⇒ 槽落在 56 时 DX = 0 ⇒ 实体仍在 248 ⇒ **窗口 56** ✓ 两边自洽。*/
+#define TRANCE_HUD_BLOCK_X    56.0f    /* 声明块左沿 = **真左下角**（窗口 px）*/
 #define TRANCE_HUD_BASE_Y   928.0f     /* = 32 + 一手根 y(448)×2 —— 场地原点 32，见上 */
 /* ★★ 2026-09-13 第六轮订正（用户实跑：「扭曲程度减小了，但还是在左右动」）——**游标为什么会左右动**
  *
@@ -1294,7 +1310,7 @@ static float s_hud_design_x[TRANCE_HUD_N], s_hud_design_y[TRANCE_HUD_N];
 static uint8_t s_hud_design_ok[TRANCE_HUD_N];
 static float s_hud_geom_log_x = -1.0f, s_hud_geom_log_y = -1.0f;   /* ★ z18：稳态探针节流 */
 static int   s_hud_geom_log_n = -1;                                 /* ★ z24：在场 VM 数（变化也触发）*/
-#define TRANCE_HUD_DX ((s_hud_slot.x) - (TRANCE_HUD_BASE_X))
+#define TRANCE_HUD_DX ((s_hud_slot.x) - (TRANCE_HUD_BLOCK_X))
 #define TRANCE_HUD_DY ((s_hud_slot.y) - (TRANCE_HUD_BLOCK_BOTTOM))
 
 /* 认领（幂等；`_pinned_card` 版带**关卡纪元**）——取不到就退回声明锚点兜底（首次认领前那几帧）。*/
@@ -1308,11 +1324,11 @@ static void trance_hud_claim(void)
     blk.h = TRANCE_HUD_BLOCK_H;
     blk.side = CE_HUD_SIDE_PINNED;                 /* 非 pinned 会被 pinned 入口拒掉 */
     s_hud_slot_ok = (uint8_t)(ce_hud_slot_claim_pinned_card(TRANCE_NUM, &blk,
-                          TRANCE_HUD_BASE_X, TRANCE_HUD_BLOCK_BOTTOM, &got) ? 1 : 0);
+                          TRANCE_HUD_BLOCK_X, TRANCE_HUD_BLOCK_BOTTOM, &got) ? 1 : 0);
     if (s_hud_slot_ok) {
         s_hud_slot = got;
     } else {                                        /* 兜底：声明锚点（SDK 失败时不写 out）*/
-        s_hud_slot.x = TRANCE_HUD_BASE_X;
+        s_hud_slot.x = TRANCE_HUD_BLOCK_X;
         s_hud_slot.y = TRANCE_HUD_BLOCK_BOTTOM;
         s_hud_slot.w = blk.w; s_hud_slot.h = blk.h;
         s_hud_slot.side = CE_HUD_SIDE_PINNED;
@@ -3997,7 +4013,8 @@ static void trance_hud_tick(const trance_card_t *s)
          *   本卡的 `hud_dim_gate()` 是**二值 hide 门**（不是 alpha 斜坡）：喂"带"之后，
          *   自机一进整条带（= 站位常在底部）**整块面板就消失**。
          *   ⇒ 退回**自己那块**矩形。⚠ "一起淡"要等它改成 alpha 斜坡型消费者（或带的语义支持 hide 型）再说。*/
-        hud_dim_rect_surface(&r, TRANCE_HUD_BASE_X + TRANCE_HUD_DX,
+        /* ★ z27：压暗是**屏幕空间**的事 ⇒ 用**声明块**（窗口 px），不能用含世界层 192 补偿的实体基准 */
+        hud_dim_rect_surface(&r, TRANCE_HUD_BLOCK_X + TRANCE_HUD_DX,
                              TRANCE_HUD_BLOCK_BOTTOM + TRANCE_HUD_DY,
                              TRANCE_HUD_BLOCK_W, TRANCE_HUD_BLOCK_H);
         hidden = hud_dim_gate(s_hud_dim, &r, pp);
