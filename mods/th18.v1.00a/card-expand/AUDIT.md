@@ -31490,3 +31490,33 @@ wait(12);  %B = %B + %D;
 · 因此「5 面中 boss 只建一侧」的根因**不在 k/身份**，应回到**槽级建壳链路**（map 表容量/`fired`/距离闸/`produced`/环挤出）。
 
 **下一批**：带着 `SITE` 数据确认「引擎合并」这条；并按槽级链路查「只建一侧」（优先 `fam_full`/`SLOTSTATE`）。
+
+### #252（2026-10-11）：REALFIRE 站点**被阻塞**（站点预算 47>42 + 共享件）＋ `CE_BM_BULLET_COUNT` 读法订正
+
+**① 你要的 `0x427810` REALFIRE 观测 = 加一个新站点 ⇒ 卡侧做不了**：
+   · 站点定义在**共享件** `sites.py` + `patch/**`（改共享件要 `AUDIT §BE` 登记 + 回归）；
+   · 而且**站点预算已经超线**（进程级 53 > 安全线 42，我们自己的 `SITE_BUDGET=24` 也超）——本仓已登记「**现状加不了站点**」
+     ⇒ 需要**先腾出一个站点**（或你批准改共享件），我才动。**我没有擅自加**。
+**② 卡内替代观测（不需要站点，列下一批实现）**：`REALFIRE` 的等价问题 = 「这一次 `etOn` 到底产了几颗弹」⇒
+   可以在卡侧**扫敌弹数组**求「活跃弹数/帧」（`CE_BM_BULLETS = 0xec` 起、共 `0x7d0` 格；步长与 active 位从 `cancel_all 0x4297a0` 的循环体 dump 得到）。
+   与现有 `SITE`/`FIRE` 数据一对比，就能判「引擎合并成一次」还是「两次都发」。
+**③ 订正（一手 `engine.h:757/758`）**：`CE_BM_BULLET_COUNT(0x7d0)` **不是**活跃弹数，而是**弹数组的格数**
+   （`cancel_all` 从 `0xec` 起扫 `0x7d0` 张）⇒ 我之前读 `bm+0x7d0` 是读进数组区域 ⇒ **恒 0**，
+   这就是 `bullets=0` / `produced` 永假的真因。代码里已加注释并**停用该读取**（避免假数据继续误导）。
+
+### #253（2026-10-11）：**活跃弹数读对了**（一手 `cancel_all`）+ `BMPROBE2` + `FIRECOUNT`
+
+**一手（`th18:0x4297a0` 循环体）**：`mov edi,[0x4cf2bc]` → `add edi,0x5a8` ⇒ **弹[0] = `bm+0x5a8`**；
+循环尾 `add edi,0xfa0` ⇒ **stride = `0xfa0`**；`mov ebx,0x7d0` ⇒ **格数 = 2000**；active 判据 =
+`movzx eax, WORD PTR [edi+0xaac]`（**u16 state @ `+0xaac`**；`0`/`3` 视为不活跃）。
+⛔ **旧的 `bullets/produced` 数据全部作废**（`0x7d0` 是**格数**不是活跃数；旧读法读进数组区域 ⇒ 恒 0）。
+
+**实现（卡侧，无新站点）**：`yk_bm_live_bullets()` 扫 2000 格求活跃弹数；每 60 帧一行
+`youkai/emit BMPROBE2: live_bullets=%u frame=%u`；并对**本帧每个 `(敌人,槽)`**（来自 `s_fk[]`）打一行
+`youkai/emit FIRECOUNT: enemy_id N slot i eton_calls=%u live_delta=%d est_volleys=%d frame=%u`
+（`eton_calls` 来自站点/SITE 路径；`live_delta` 来自敌弹数组的帧间增量；`est_volleys` 暂等于 `live_delta`，
+等知道「单次 `etOn` 典型弹数」后再换算）。
+
+**判读**：`eton_calls=1` 而 `live_delta` 是单次典型值的 **2 倍** ⇒ **引擎确实发了两次**（站点漏了一条路径）⇒ C2 按
+「每次真发一个出点」重做；**两边都是 1 倍** ⇒ 引擎合并 ⇒ 只有**改 ECL** 才能做对称两只。
+`YK_EMIT_REQUIRE_BULLETS` 仍**默认 0**（数据对了再开）。

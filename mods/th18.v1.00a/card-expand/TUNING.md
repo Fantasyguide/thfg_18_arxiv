@@ -16515,3 +16515,21 @@ else if (s_aura_charge > 0.0f)                 { ★ 收束（含 interrupt / �
 | 脚本层 | `MBoss1_at:94–103`：**每个槽一帧两次 `etOn`**（中间只有 `etOffsetRad` 改写、无 `wait`）|
 | 运行期 | `maxk_by_slot` 恒 0 / `SITE` 无 `call#>=2` / `fire_seen=914` ⇒ **引擎每帧每槽只送一次 `etOn`**（很可能是「本帧已发」合并），**不是我们吃掉** |
 | 结论 | **C2 的 `(enemy,slot,k)` 身份不成立**；「左右两只」= **slot 0 与 slot 1**，身份 = `(enemy_id, slot)`、否决按槽（现有机制）；「只建一侧」的根因回到**槽级建壳链路**（map 容量/`fired`/距离闸/`produced`/环挤出）|
+
+#### 2.1ccc-80 2026-10-11：REALFIRE 站点受阻 + 弹数读法订正
+
+| 项 | 说明 |
+| --- | --- |
+| REALFIRE | 加 `0x427810` 站点 = **改共享件**（`sites.py`/`patch/**`）且**站点预算 53>42 已超线**（本仓登记「现状加不了站点」）⇒ **卡侧不做**，等腾站点/批准 |
+| 卡内替代 | 扫敌弹数组求「活跃弹数/帧」：`CE_BM_BULLETS = 0xec` 起共 `0x7d0` 格（步长/active 位从 `cancel_all 0x4297a0` 循环体 dump）⇒ 与 `SITE`/`FIRE` 对比可判「合并成一次」vs「两次都发」|
+| 订正 | `CE_BM_BULLET_COUNT(0x7d0)` = **格数（2000）不是活跃弹数**（`engine.h:757/758`）⇒ 之前读 `bm+0x7d0` 恒 0 ⇒ `bullets=0`/`produced` 永假的真因；代码已加注释并停用该读取 |
+
+#### 2.1ccc-81 2026-10-11：活跃弹数（一手数组布局）+ FIRECOUNT
+
+| 项 | 说明 |
+| --- | --- |
+| 一手 | `cancel_all 0x4297a0`：弹[0] = **`bm+0x5a8`**、**stride `0xfa0`**、**格数 `0x7d0`(2000)**、active = **u16 state @ `+0xaac` != 0/3** |
+| 旧数据 | ⛔ `bullets=0`/`produced` **全部作废**（`0x7d0` 是格数，不是活跃弹数）|
+| 新观测 | `yk_bm_live_bullets()`（扫 2000 格）⇒ 每 60 帧 `BMPROBE2: live_bullets=%u frame=%u`；本帧每 `(敌人,槽)` 一行 `FIRECOUNT: … eton_calls=%u live_delta=%d est_volleys=%d frame=%u` |
+| 判读 | `eton_calls=1` 但 `live_delta` ≈ 2 倍单发 ⇒ **引擎发两次**（站点漏路径，C2 重做）；两边都 1 倍 ⇒ **引擎合并**（只有改 ECL 才能对称两只）|
+| produced 门 | `YK_EMIT_REQUIRE_BULLETS` 仍默认 **0**（等数据确认再开）|

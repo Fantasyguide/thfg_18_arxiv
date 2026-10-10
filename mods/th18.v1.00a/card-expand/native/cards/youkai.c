@@ -743,6 +743,7 @@ static yk_fk_t  s_fkline2[YK_FK_N];     /* 每敌 ORIGIN-GATE 行数 */
 static unsigned s_fire_logged_2;        /* FIRE 总行数 */
 static unsigned s_fire_seen;            /* ★ 无条件计数：站点上见过的 etOn 总次数（区分「没发生」与「块跑不到」）*/
 static unsigned s_firesum_logged;       /* ★ FIRESUM 行数 */
+static unsigned s_fcout_logged;         /* ★ FIRECOUNT 行数 */
 static unsigned s_site_logged;          /* ★ SITE(call#>=2) 行数 */
 static unsigned s_og_logged;            /* ORIGIN-GATE 总行数 */
 
@@ -770,6 +771,29 @@ static void yk_fk_inc(yk_fk_t *t, uint32_t enemy)
 { unsigned i; for (i = 0; i < YK_FK_N; ++i) if (t[i].enemy == enemy) { ++t[i].k; return; } }
 static unsigned yk_fk_lines2(yk_fk_t *t, uint32_t enemy)
 { unsigned i; for (i = 0; i < YK_FK_N; ++i) if (t[i].enemy == enemy) return (unsigned)t[i].k; return 0u; }
+
+/* ★★★★ 2026-10-11（一手 `cancel_all 0x4297a0` 的循环体）：**敌弹数组**的真位置与判据 ——
+ *   `mov edi,[0x4cf2bc]` + `add edi,0x5a8` ⇒ **弹[0] = bm + 0x5a8**；循环尾 `add edi,0xfa0` ⇒ **stride = 0xfa0**；
+ *   `mov ebx,0x7d0` ⇒ **格数 = 2000**；active 判据 = `movzx eax, WORD PTR [edi+0xaac]`（**u16 state @ +0xaac**；
+ *   `0` 与 `3` 视为不活跃）。⛔ `CE_BM_BULLET_COUNT(0x7d0)` **不是**活跃弹数（那是格数）—— 旧读法作废。*/
+#define YK_BM_BASE_OFF   0x5a8
+#define YK_BM_STRIDE     0xfa0
+#define YK_BM_SLOTS      0x7d0
+#define YK_BM_STATE_OFF  0xaac
+static unsigned s_bm2_logged;
+static int32_t  s_bm_prev_live = -1;
+
+static unsigned yk_bm_live_bullets(void)
+{
+    uint8_t *bm = CE_BULLET_MGR();
+    unsigned i, n = 0;
+    if (!bm) return 0u;
+    for (i = 0; i < (unsigned)YK_BM_SLOTS; ++i) {
+        uint16_t st = *(const uint16_t *)(bm + YK_BM_BASE_OFF + (size_t)i * YK_BM_STRIDE + YK_BM_STATE_OFF);
+        if (st != 0u && st != 3u) ++n;
+    }
+    return n;
+}
 
 static unsigned s_bmprobe_logged;     /* ★ BM 原始探针已打几帧 */
 static unsigned s_og_logged;          /* ★ ORIGIN-GATE 行数 */
@@ -3043,7 +3067,7 @@ static void yk_familiars_tick(yk_card_t *s)
             }
             /* ★ 敌弹总数（帧间增长 = 「这一帧真的产了弹」）*/
             {   uint8_t *bm = CE_BULLET_MGR();
-                int32_t bc = bm ? *(const int32_t *)(bm + CE_BM_BULLET_COUNT) : 0;
+                int32_t bc = 0;   /* ⛔ 订正（engine.h:757/758）：0x7d0 是弹数组**格数**不是活跃弹数 ⇒ 读它恒 0（produced 永假的真因）；真值要扫 bm+0xec 起的数组 */
                 s_cur_bc_grew = (bc > s_prev_bc) ? 1 : 0;
                 s_cur_bc = bc;
             }
@@ -7025,6 +7049,32 @@ static int yk_on_shot_slot(ce_card_t *c, const ce_enemy_shot_t *ev)
             uint32_t fr = ce_sdk_frame();
             int k = yk_fk_bump(ev->enemy_id, ev->slot, fr);
             ++s_fire_seen;   /* ★ 无条件（在 k 门槛之前）*/
+            /* ★ 每帧：活跃弹数（扫数组）+ FIRECOUNT（本帧每 (敌人,槽) 的 etOn 次数 vs 弹数增量）*/
+            {   unsigned live = yk_bm_live_bullets();
+                int32_t dl = (s_bm_prev_live < 0) ? 0 : (int32_t)live - s_bm_prev_live;
+                s_bm_prev_live = (int32_t)live;
+                if ((fr % 60u) == 0u && s_bm2_logged < 64u) {
+                    ++s_bm2_logged;
+                    ce_log("youkai/emit BMPROBE2: live_bullets=%u frame=%u (scan bm+0x5a8 stride 0xfa0 x2000, state+0xaac != 0/3)",
+                           live, (unsigned)fr);
+                }
+                if (k <= 0 && s_fcout_logged < 64u) {
+                    int calls = (int)s_fk[0].k;   /* 占位：下面按当前帧的 s_fk 项逐条打 */
+                    (void)calls;
+                }
+                if (s_fcout_logged < 64u) {
+                    unsigned q;
+                    for (q = 0; q < YK_FK_N && s_fcout_logged < 64u; ++q) {
+                        if (!s_fk[q].enemy || s_fk[q].frame != fr) continue;
+                        ++s_fcout_logged;
+                        ce_log("youkai/emit FIRECOUNT: enemy_id %u slot %d eton_calls=%u live_delta=%d "
+                               "est_volleys=%d frame=%u (eton_calls from SITE/FIRE path; live_delta from the "
+                               "enemy bullet array)",
+                               s_fk[q].enemy, (int)s_fk[q].slot, (unsigned)s_fk[q].k + 1u, (int)dl, (int)dl,
+                               (unsigned)fr);
+                    }
+                }
+            }
             /* ★ FIRESUM（owner）：每帧汇总「本帧 fire 次数 / 该帧内某槽的最大 k」⇒ 即使没到 boss
              *   也能看出 k 到底能不能 >0。每 60 帧一行（避免刷屏）。*/
             {   unsigned i2, mx = 0;
