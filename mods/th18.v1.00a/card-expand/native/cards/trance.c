@@ -1249,6 +1249,15 @@ static uint8_t s_hud_slot_ok;
  *   ⇒ 改成**增量式**：`s_hud_applied_*` 记「已经加进所有活 VM 的差值」；
  *     每次只把 **(目标差值 − 已加)** 补到每一支活 VM 上（新 spawn 的当场补上当前差值）⇒ 永远同步。*/
 static float s_hud_applied_dx, s_hud_applied_dy;
+/* ★★★ 2026-10-03z16（**墨迹探针抓到的硬证据**：113 的贴图实际画在 (388..484, 892..940)，
+ *   而声明块在 (470..614, 724..820) —— 两者根本不是同一个地方 ⇒ owner 看到「113 和 117 重合」）。
+ *   根因：原来是**增量差值**（只往 `ep` 上加差额），而脚本自己也会改 `pos` ⇒ 一旦不同步就漂。
+ *   ⇒ 改成 **112 那种绝对定位**（样板见 `ufo.c` 的 `ufo_hud_place_at()`）：
+ *     · VM 出生时记下它的**设计位置** `(sp+p2+ep)`（= 脚本按基点算出来的那个点）；
+ *     · 之后每帧 `ep = (设计位置 + 槽位移) − (sp + p2)` ⇒ 有效落点**恰好等于**设计位置 + 槽位移 ✓
+ *       （脚本再怎么改 `pos`，我们这一帧都会把它算回去）。*/
+static float s_hud_design_x[TRANCE_HUD_N], s_hud_design_y[TRANCE_HUD_N];
+static uint8_t s_hud_design_ok[TRANCE_HUD_N];
 #define TRANCE_HUD_DX ((s_hud_slot.x) - (TRANCE_HUD_BASE_X))
 #define TRANCE_HUD_DY ((s_hud_slot.y) - (TRANCE_HUD_BLOCK_BOTTOM))
 
@@ -3922,23 +3931,25 @@ static void trance_hud_tick(const trance_card_t *s)
     /* ★★★ 2026-10-03x：每帧补认领 + 取最新槽（换关 / 纪元清表 / 碰撞回退都跟得上）*/
     trance_hud_claim();
     (void)ce_hud_slot_get(TRANCE_NUM, &s_hud_slot);
-    /* ★★★ 2026-10-03z：**整组同步** —— 只把"目标差值 − 已加"补到每一支活 VM（见上面静态区的注）*/
+    /* ★★★ 2026-10-03z16：**绝对定位**（每帧把四支 VM 放到"设计位置 + 槽位移"上）——
+     *   与 112 同款；不再用增量差值（脚本改 `pos` 时增量会漂，墨迹探针已实测到漂移 100+ px）。*/
     {
-        const float step_x = TRANCE_HUD_DX - s_hud_applied_dx;
-        const float step_y = TRANCE_HUD_DY - s_hud_applied_dy;
-        if (step_x != 0.0f || step_y != 0.0f) {
-            int q;
-            for (q = 0; q < TRANCE_HUD_N; ++q) {
-                uint8_t *qvm = s_hud_vm[q] ? ce_anm_get_vm((uint32_t)s_hud_vm[q]) : 0;
-                float *qep;
-                if (!qvm) continue;
-                qep = (float *)(qvm + CE_ANM_VM_POS);
-                qep[0] += step_x;
-                qep[1] += step_y;
-            }
-            s_hud_applied_dx = TRANCE_HUD_DX;
-            s_hud_applied_dy = TRANCE_HUD_DY;
+        int q2;
+        for (q2 = 0; q2 < TRANCE_HUD_N; ++q2) {
+            uint8_t *vm2;
+            const float *sp2, *p22;
+            float *ep2;
+            if (!s_hud_design_ok[q2] || !s_hud_vm[q2]) continue;
+            vm2 = ce_anm_get_vm((uint32_t)s_hud_vm[q2]);
+            if (!vm2) { s_hud_design_ok[q2] = 0; continue; }
+            sp2 = (const float *)(vm2 + CE_ANM_VM_SCRIPT_POS);
+            p22 = (const float *)(vm2 + CE_ANM_VM_POS_2);
+            ep2 = (float *)(vm2 + CE_ANM_VM_POS);
+            ep2[0] = (s_hud_design_x[q2] + TRANCE_HUD_DX) - (sp2[0] + p22[0]);
+            ep2[1] = (s_hud_design_y[q2] + TRANCE_HUD_DY) - (sp2[1] + p22[1]);
         }
+        s_hud_applied_dx = TRANCE_HUD_DX;
+        s_hud_applied_dy = TRANCE_HUD_DY;
     }
     /* ★ 2026-09-15g：门 = 「自机的体量碰到本卡指示槽的块」——矩形每帧现算（块是死的，
      * 但走共享件 = 与别的卡同一套动态）；alpha 仍在 anm 脚本里（见下面 ⑤ 的注释）。*/
@@ -3992,12 +4003,15 @@ static void trance_hud_tick(const trance_card_t *s)
         {
             const float base[3] = { TRANCE_HUD_BASE_X, TRANCE_HUD_BASE_Y, 0.0f };
             s_hud_vm[k] = (int32_t)ce_anm_spawn_ui(anm, trance_hud_script(k), base);
-            if (s_hud_vm[k]) {                 /* ★ 2026-10-03z：新建的当场补上"已生效差值" */
+            if (s_hud_vm[k]) {                 /* ★ z16：记下"设计位置"（脚本按基点算出来的那个点）*/
                 uint8_t *nvm = ce_anm_get_vm((uint32_t)s_hud_vm[k]);
                 if (nvm) {
-                    float *nep = (float *)(nvm + CE_ANM_VM_POS);
-                    nep[0] += s_hud_applied_dx;
-                    nep[1] += s_hud_applied_dy;
+                    const float *nsp = (const float *)(nvm + CE_ANM_VM_SCRIPT_POS);
+                    const float *np2 = (const float *)(nvm + CE_ANM_VM_POS_2);
+                    const float *nep = (const float *)(nvm + CE_ANM_VM_POS);
+                    s_hud_design_x[k] = nsp[0] + np2[0] + nep[0];
+                    s_hud_design_y[k] = nsp[1] + np2[1] + nep[1];
+                    s_hud_design_ok[k] = 1;
                 }
             }
         }
