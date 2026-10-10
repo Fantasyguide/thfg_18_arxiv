@@ -214,11 +214,15 @@
  *   旧常量（−32.75 / −10.25）是 257 锚点时代按**另一套基准**标定的 ⇒ 数字比外框心**左 116.5 px**。
  *   现改成**跟着外框心**（外框心 = 槽 + (51, −8)，见上面那一族常量）⇒ 640 空间就是其一半。*/
 #define SEASON_HUD_DIGIT_X640    25.5f   /* = 外框心 x 偏移 51 / 2（`resolutionMode(2)` ⇒ 640 空间 = 表面/2）*/
-#define SEASON_HUD_DIGIT_Y640    (-4.0f)  /* ★ 2026-10-03z10：**y 还原成你标定过的旧值** ——
-                                          *   owner 实跑：「数字和主体**连 y 轴都不一样高了**」⇒
-                                          *   我 z8 把 y 也一起改成"外框心"（−4）是**多做的一步**：
-                                          *   x 那一步是对的（日志 `digit−frame −116.5px` 已修），y 这步**还原**。
-                                          *   一格可回退：想让它跟外框心对齐就改回 −4.0f。*/
+#define SEASON_HUD_DIGIT_Y640  (-10.25f)  /* ★★★ 2026-10-03z33（owner：「修 th16 的数字，你 git diff 一下，
+                                           *   以前肯定调好过」）—— **恢复当年调好的值**：
+                                           *   `git log -G` 的取值史：`f3a8e6eb`（原、长期未动）= **−10.25** ⇒
+                                           *   我 `9332bed0` 改 −4.0、`ec596cc5` 改 −6.5、`f6a882b4` 又回 −4.0 ✗（都是没依据的试）。
+                                           *   原注释：数字是 `CE_ASCII_ALIGN_CENTER`、位置 = `槽锚点.y640 + Y640`；
+                                           *   当初锚点 (257,924) ⇒ 640 空间 (128.5,462) ⇒ 数字绝对位 (95.75, **451.75**)
+                                           *   ⇒ 表面 y = **903.5**（= 槽底 924 − 20.5 ✓ 即 −10.25 × 2）。
+                                           *   ⚠ X640 当年是 **−32.75**（= 锚点左边 65.5px），那是锚点在 **257** 时的形态；
+                                           *     现在 116 的块在 682 ⇒ 照搬会把数字放到 616（压邻居）✗ ⇒ **x 保留 25.5（外框心）**。*/
 /* ★★ 2026-09-10 第三十二轮：外框改成**四条矩形**拼出来（TH16 `front.anm` script114 的
  * `drawRectBorder(102,10)` 等价画法；脚本 123 = 1×1 模板，实际尺寸全靠 VM `scale`）。
  * 像素口径（用户 1280 档 100% 截图逐轮标定）：
@@ -1845,7 +1849,18 @@ static int on_draw(ce_card_t *c)
                 if (s->hud_glyph) ce_anm_interrupt((uint32_t)s->hud_glyph, dim);
                 if (s->hud_grad)  ce_anm_interrupt((uint32_t)s->hud_grad,  dim);
                 if (s->hud_solid) ce_anm_interrupt((uint32_t)s->hud_solid, dim);
-                if (s->hud_strip) ce_anm_interrupt((uint32_t)s->hud_strip, dim);
+                /* ★★★ 2026-10-03z34（owner：「对于 **0 级的 th16 HUD，不应当出现那个 releaseable**，
+                 *   可能是 HUD 统一之后的 opacity 刷写问题？」—— **判断正确** ✓）：
+                 *   script127（releaseable 条）的 label 表：**3 = `alpha(0)`（隐藏）**、
+                 *   **2 = `alphaTime(4,0,255)`（显示）**、**4 = `alphaTime(8,0,255)`（淡到满亮）**、
+                 *   5 = `alphaTime(8,0,64)`（压暗）。而我们的**压暗广播**（TH16 一手是
+                 *   `interrupt_tree(5/4)` 整棵树）**把它也算进去** ⇒ 0 级时刚发的"隐藏(3)"
+                 *   立刻被这条广播用"亮(4)"**点亮** ✗ ⇒ owner 看到 0 级也有 releaseable 条。
+                 *   ⇒ 只在**它本身该显示**时（`can_release`）才给这条发 4/5 ✓：
+                 *     · 0 级 / 不可解放 ⇒ 一个 interrupt 都不发 ⇒ 停在 label 3 的 alpha 0 ✓
+                 *     · 可解放 ⇒ 照旧跟着"带"一起淡（与原生一致 ✓）。*/
+                if (can_release && s->hud_strip)
+                    ce_anm_interrupt((uint32_t)s->hud_strip, dim);
             }
         }
     }
