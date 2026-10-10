@@ -672,8 +672,26 @@ static int yk_emit_coord_seen(uint32_t enemy_id, int slot)
 static int      s_dbg_space_prev;       /* 空格电平边沿 */
 static unsigned s_dbg_ids_logged;       /* ★ 前 3 次按键打 ids 清单 */
 static unsigned s_shared_logged;        /* ★ 「同出点共用壳」日志条数 */
+#define YK_EMIT_SHARE_SAME_POS 0   /* ⛔ 默认 0 = **关闭**（owner：「它是对称的两个使魔应当是」⇒ 同出点是我们读错位置，不是 ECL 本意；函数保留待用）*/
 static uint32_t s_dbg_prev_input;       /* 仅用于排障日志 */
 static unsigned s_dbg_mask_logged;
+
+static unsigned s_possrc_logged;      /* ★ POSSRC 打了几行 */
+#define YK_POSSRC_N 128
+static uint32_t s_possrc_enemy[YK_POSSRC_N];
+static int16_t  s_possrc_slot[YK_POSSRC_N];
+static unsigned s_possrc_head;
+static int yk_possrc_seen(uint32_t enemy_id, int slot)
+{
+    unsigned k;
+    for (k = 0; k < YK_POSSRC_N; ++k)
+        if (s_possrc_enemy[k] == enemy_id && s_possrc_slot[k] == (int16_t)slot) return 1;
+    {   unsigned idx = s_possrc_head % YK_POSSRC_N;
+        s_possrc_head = (s_possrc_head + 1u) % YK_POSSRC_N;
+        s_possrc_enemy[idx] = enemy_id; s_possrc_slot[idx] = (int16_t)slot;
+    }
+    return 0;
+}
 
 static unsigned s_raw_logged;         /* ★ RAW 打了几行 */
 #define YK_RAW_N 128
@@ -2596,7 +2614,7 @@ static void yk_run_action(yk_card_t *s, const yk_action_t *act)   /* s 可为 NU
          *   新槽的出点若与**同一母机已有壳**的位置重合（ε 内）⇒ **不再 spawn 第二只**，
          *   而是把该槽**绑到那只壳上**（`yk_map_bind_fam`）⇒ 观感 = 一只（与「一槽一壳 = 视觉代理」一致），
          *   且打死那只壳会让**两个槽一起停火**（`yk_fam_broken` 逐槽扫同 id —— 见 core）。*/
-        {
+        if (YK_EMIT_SHARE_SAME_POS) {
             unsigned q;
             uint32_t shared = 0;
             for (q = 0; q < YK_FAM_MAX; ++q) {
@@ -2831,6 +2849,25 @@ static void yk_familiars_tick(yk_card_t *s)
         if (!id) continue;
         epos = ce_enemy_pos(e);
         for (i = 0; i < YK_EMIT_SLOTS; ++i) {
+            /* ★★★★ 2026-10-01 晚（owner：「**它是对称的两个使魔应当是**」）——**位置来源并列**（前 8 次）：
+             *   `live` = `data+0x4e58 + i*0xc`（活相对偏移，字节步长 `0xc`；一手 `[edi+esi*4+0x4e58]`
+             *   里 `esi` 是**浮点下标** ⇒ x 的字节偏移正是 `i*0xc`）；`props` = `props[i]+0x08/0x0c/0x10`
+             *   （**绝对世界坐标**）；`world_from_live` = `epos + live`；`world_from_props` = props 原样。
+             *   ⇒ 若 props 两槽不同而 live 相同 ⇒ **live 读法/下标错** ⇒ 位置改用 props（**不再叠加**）；
+             *     若两边都相同 ⇒ 再核下标/步长。*/
+            if (s_possrc_logged < 8u && !yk_possrc_seen(id, i)) {
+                const float *rl = (const float *)(e + YK_EMIT_OFFSETS + (size_t)i * YK_EMIT_VEC_STRIDE);
+                const uint8_t *pp = e + YK_EMIT_PROPS + (size_t)i * YK_EMIT_PROP_STRIDE;
+                float px = *(const float *)(pp + 0x08), py = *(const float *)(pp + 0x0c);
+                ++s_possrc_logged;
+                ce_log("youkai/emit POSSRC: enemy_id %u slot %d | live=(%.2f,%.2f,%.2f) | "
+                       "props08/0c/10=(%.2f,%.2f,%.2f) | enemy_pos=(%.2f,%.2f) | world_from_live=(%.2f,%.2f) | "
+                       "world_from_props=(%.2f,%.2f)",
+                       id, i, (double)rl[0], (double)rl[1], (double)rl[2],
+                       (double)px, (double)py, (double)*(const float *)(pp + 0x10),
+                       (double)epos[0], (double)epos[1],
+                       (double)(epos[0] + rl[0]), (double)(epos[1] + rl[1]), (double)px, (double)py);
+            }
             int active = yk_slot_type(e, i);
             /* 不活跃、又不是我们认识的槽 ⇒ 连表都不用碰（扫得快、条目也少）。*/
             if (!active && !yk_map_find(&s_map, id, i)) continue;
