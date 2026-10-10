@@ -1477,11 +1477,12 @@ int main(void)
         CHECK(yk_spell_name_is_time(0, 8) == 0);
         CHECK(yk_spell_name_is_time(u16_t, 3) == 0);      /* 太短 ⇒ 不判 */
         /* ★★★ 2026-10-01（owner：「一面到关底之前一点使魔不该有」）：**发射点离本体 ≥ 32 px 才算使魔**。*/
-        CHECK(YK_EMIT_SHELL_MIN_DIST == 32.0f);
-        CHECK(yk_emit_far_enough(0.0f, 0.0f, YK_EMIT_SHELL_MIN_DIST) == 0);      /* 本体口 ⇒ 不建壳 */
-        CHECK(yk_emit_far_enough(10.0f, 0.0f, YK_EMIT_SHELL_MIN_DIST) == 0);
-        CHECK(yk_emit_far_enough(31.9f, 0.0f, YK_EMIT_SHELL_MIN_DIST) == 0);
-        CHECK(yk_emit_far_enough(32.0f, 0.0f, YK_EMIT_SHELL_MIN_DIST) == 1);     /* 阈值本身算够远 */
+        /* ★ 2026-10-01 晚：这两道是**猜测闸**，旧版（`2b9aea82`）没有它们也正常 ⇒ **默认关**（0）。*/
+        CHECK(YK_EMIT_SHELL_MIN_DIST == 0.0f);
+        CHECK(yk_emit_far_enough(0.0f, 0.0f, 32.0f) == 0);     /* 函数本身仍可按 32 判（一行开回）*/
+        CHECK(yk_emit_far_enough(31.9f, 0.0f, 32.0f) == 0);
+        CHECK(yk_emit_far_enough(32.0f, 0.0f, 32.0f) == 1);
+        CHECK(YK_EMIT_SHELL_TYPE_DENY == 0u);                  /* type 黑名单也默认关 */
         CHECK(yk_emit_far_enough(24.0f, 24.0f, YK_EMIT_SHELL_MIN_DIST) == 1);    /* 斜向（33.9 px）*/
         CHECK(yk_emit_far_enough(-40.0f, 0.0f, YK_EMIT_SHELL_MIN_DIST) == 1);    /* 方向无关 */
         /* ★ B：类型白名单（0 = 全接受；否则 bit(type)）*/
@@ -1492,10 +1493,9 @@ int main(void)
         CHECK(yk_emit_type_allowed(99, 0xffffffffu) == 0);    /* 越界 */
         CHECK(YK_EMIT_SHELL_TYPES == 0u);                     /* 本批不猜语义：默认全接受 */
         /* ★ owner 拍板：临时**黑名单** type{4,7,8}（0 = 关闭）*/
-        CHECK(yk_emit_type_denied(4, YK_EMIT_SHELL_TYPE_DENY) == 1);
-        CHECK(yk_emit_type_denied(7, YK_EMIT_SHELL_TYPE_DENY) == 1);
-        CHECK(yk_emit_type_denied(8, YK_EMIT_SHELL_TYPE_DENY) == 1);
-        CHECK(yk_emit_type_denied(5, YK_EMIT_SHELL_TYPE_DENY) == 0);
+        CHECK(yk_emit_type_denied(4, (1u << 4) | (1u << 7) | (1u << 8)) == 1);   /* 函数可用（一行开回）*/
+        CHECK(yk_emit_type_denied(7, (1u << 4) | (1u << 7) | (1u << 8)) == 1);
+        CHECK(yk_emit_type_denied(5, (1u << 4) | (1u << 7) | (1u << 8)) == 0);
         CHECK(yk_emit_type_denied(4, 0u) == 0);                /* 0 = 回退到现状 */
         /* ★★★ 2026-10-01（owner 真判据）：「**超时不算 bonus failed**」= `zSpellcard+0x78` **bit3**
          *   （耐久符卡；一手 `0x42efb0`–`0x42f039`：bit3 ⇒ 不置 bit7、不清 `+0x7c`）⇒ 优先于名字。*/

@@ -63,7 +63,8 @@
 #define YK_EMIT_PROPS       (YK_DATA_OFF + 0x598)  /* `bullet_props[i]`（zEnemyData 相对 0x598；stride 0x488）
                                                     * `.type` = `+0x00`（**int32**，见 `yk_slot_type` 的注）*/
 #define YK_EMIT_PROP_STRIDE 0x488
-#define YK_EMIT_OFFSETS     (YK_DATA_OFF + 0x4e58) /* `bullet_mgr_offsets[i]`：相对偏移（float2 xy + float）*/
+#define YK_EMIT_OFFSETS     (YK_DATA_OFF + 0x4e58)
+#define YK_EMIT_OFFSETS_ABS (0x122c + 0x4e58)  /* ★ = enemy+0x6084：**绝对**活相对偏移地址（旧版 good 公式的量）*/ /* `bullet_mgr_offsets[i]`：相对偏移（float2 xy + float）*/
 #define YK_EMIT_ORIGINS     (YK_DATA_OFF + 0x4f18) /* `bullet_mgr_origins[i]`：绝对原点；`.z > 0.9` = 绝对模式 */
 #define YK_EMIT_VEC_STRIDE  0x0c
 /* 敌人字段（engine.h 没有的几条）*/
@@ -2711,12 +2712,9 @@ static void yk_familiars_tick(yk_card_t *s)
              *     一面照旧冒壳 ✓ 与 owner 的 log 完全对上）。*/
             {   float lo[3];
                 s_cur_have_latch = yk_emit_latch_get(id, i, lo) ? 1 : 0;
-                if (s_cur_have_latch) { wxy[0] = lo[0]; wxy[1] = lo[1]; }
-                else {
-                    const uint8_t *pr = e + YK_EMIT_PROPS + (size_t)i * YK_EMIT_PROP_STRIDE;
-                    wxy[0] = *(const float *)(pr + 0x08);      /* ★ 世界坐标，原样用 */
-                    wxy[1] = *(const float *)(pr + 0x0c);
-                }
+                yk_slot_offsets(e, i, off3, org3);              /* 活偏移（旧版 good 公式的量）*/
+                if (s_cur_have_latch) { off3[0] = lo[0]; off3[1] = lo[1]; off3[2] = lo[2]; }
+                yk_emit_world_pos(epos, off3, org3, wxy);       /* ★ **回退：旧公式**（敌人位置 + 相对偏移）*/
             }
             /* ★ phantom 修复：把「站点上最近真开过火」翻成表里的 `fired` 位（`yk_note_slot` 用它决定建壳）。
              *   `type != 0` 只说明**被配置过**；配了却整波不发弹的槽（`count=0` / 被 `etDelay` 压制 /
@@ -2828,7 +2826,7 @@ static void yk_familiars_tick(yk_card_t *s)
              *     ① **本帧/近几帧有定格值**（`fired_recently` ⇒ 真 `etOn` 过）
              *     ② **出点不是 (0,0)**（= props 已写出点）
              *   ⇒ 不满足者 `REJECT(no-origin)`（台账 `noorigin=N`），**不再用活偏移兜底去建壳**。*/
-            if (active && (!s_cur_have_latch || (wxy[0] == 0.0f && wxy[1] == 0.0f))) {
+            if (active && wxy[0] == 0.0f && wxy[1] == 0.0f) {
                 if (!yk_emit_reject_seen(id, i)) {
                     ++s_emit_noorigin;
                     ce_log("youkai/emit: REJECT(no-origin) enemy_id %u slot %d have_latch=%d "
@@ -6626,11 +6624,16 @@ static int yk_on_shot_slot(ce_card_t *c, const ce_enemy_shot_t *ev)
      *   （就在本断点之前那几步）⇒ 立刻抄回卡侧缓存，供壳的**目标位置**使用。
      *   `ev->enemy` 只在本次回调内有效 ⇒ 只读、只抄，不缓存指针。*/
     if (ev && ev->enemy && ev->slot >= 0 && ev->slot < YK_EMIT_SLOTS) {
-        const uint8_t *pr = (const uint8_t *)ev->enemy + YK_EMIT_PROPS
-                          + (size_t)ev->slot * YK_EMIT_PROP_STRIDE;
-        float lx = *(const float *)(pr + 0x08);
-        float ly = *(const float *)(pr + 0x0c);
-        float lz = *(const float *)(pr + 0x10);
+        /* ★★★★ 2026-10-01 晚（**回退到已知 good 的取位公式**）：latch **活相对偏移本身**
+         *   （`data+0x4e58` = `enemy+0x6084+i*0xc`），**不再**消费 `props+0x08/0x0c/0x10`（世界坐标）——
+         *   旧版（`2b9aea82`，owner 说「昨天之前都是好的」）就是用 `yk_emit_world_pos(epos, 活偏移, org3)`
+         *   ⇒ 位置天然正确；我们改成直接吃 `props+0x08/…` 才引入二次叠加/正下方/(0,0)。
+         *   latch 只为了**冻结**「`etOffset(0,0)` 同帧收回」那一瞬，**语义与旧版完全一致**。*/
+        const float *rel = (const float *)((const uint8_t *)ev->enemy + YK_EMIT_OFFSETS_ABS
+                                          + (size_t)ev->slot * YK_EMIT_VEC_STRIDE);
+        float lx = rel[0];
+        float ly = rel[1];
+        float lz = rel[2];
         yk_emit_latch_put(ev->enemy_id, ev->slot, lx, ly, lz);
         /* ★★★★★ 2026-10-01（**owner 硬约束，回滚**）：owner 逐字「**但是无论如何，你只能不发弹，
          *   **不能改发弹位置**」⇒ 本卡**永远不写 `props` 的任何一格**（`+0x24` 的 `etDist` 归零

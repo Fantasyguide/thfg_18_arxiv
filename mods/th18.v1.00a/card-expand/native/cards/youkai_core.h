@@ -1365,7 +1365,7 @@ int  yk_spell_xfer_block(int spell_flags, int name_is_time, int boss_no_damage);
  *   `YK_EMIT_SHELL_MIN_DIST = 32.0f`（❓ 自定，理由：TH08 使魔作为独立实体在 boss 周围可见地悬停，
  *   典型半径 ≥ 数十 px；而本体炮口的视觉偏移只 ≤ ~16 px ⇒ 32 px 是两者之间的下限；实跑会打出
  *   每条 `etOn` 的实测距离，下一轮按数据校准）。**只读**（硬约束不变：不写发弹参数/位置）。*/
-#define YK_EMIT_SHELL_MIN_DIST 32.0f
+#define YK_EMIT_SHELL_MIN_DIST 0.0f   /* ⛔ 默认 0 = **关闭**（猜测闸；旧版没有它也正常）*/
 int  yk_emit_far_enough(float dx, float dy, float min_dist);
 /* ★ B（owner 推断）：**只有「弹发射口」类型才建壳**。`props+0x00` 的取值语义**尚未一手确认**
  *   （`etSprite` arg1 写它：`0x43404e`；真发路径 `0x427810` 的分支表待挖）⇒ 本批给一个**显式白名单**，
@@ -1376,7 +1376,7 @@ int  yk_emit_far_enough(float dx, float dy, float min_dist);
  *   只拒掉**观察到确定不对**的那几类：`type ∈ {4,7,8}`（4/7 = `count_1=0` + `count_2` 是 float 位型
  *   + `fired_age` 很旧；8 = 一面道中 boss，owner 说不该有）。
  *   **0 = 关闭（现状）**，便于回退；`yk_emit_type_denied(type, deny)` = 纯函数（单测覆盖）。*/
-#define YK_EMIT_SHELL_TYPE_DENY ((1u << 4) | (1u << 7) | (1u << 8))
+#define YK_EMIT_SHELL_TYPE_DENY 0u   /* ⛔ 默认 0 = **关闭**（猜测闸；旧版没有它也正常）*/
 int  yk_emit_type_denied(int type, unsigned deny);
 int  yk_emit_type_allowed(int type, unsigned mask);
 /* ★★★ 2026-10-01（#209 · **主功能**：打死使魔 ⇒ 关闭该发射口）：**「这一条 `etOn` 算不算新一波」**（纯函数）。
