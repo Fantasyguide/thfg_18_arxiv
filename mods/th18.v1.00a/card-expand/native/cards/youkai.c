@@ -743,6 +743,7 @@ static yk_fk_t  s_fkline2[YK_FK_N];     /* 每敌 ORIGIN-GATE 行数 */
 static unsigned s_fire_logged_2;        /* FIRE 总行数 */
 static unsigned s_fire_seen;            /* ★ 无条件计数：站点上见过的 etOn 总次数（区分「没发生」与「块跑不到」）*/
 static unsigned s_firesum_logged;       /* ★ FIRESUM 行数 */
+static unsigned s_site_logged;          /* ★ SITE(call#>=2) 行数 */
 static unsigned s_og_logged;            /* ORIGIN-GATE 总行数 */
 
 static int yk_fk_bump(uint32_t enemy, int slot, uint32_t fr)
@@ -7087,6 +7088,26 @@ static int yk_on_shot_slot(ce_card_t *c, const ce_enemy_shot_t *ev)
     uint32_t have = 0;
     uint32_t rearms_before;
 
+    /* ★★★ 2026-10-11（owner：整局 `maxk_by_slot` 恒 0）——**站点最顶端无条件计数**（任何 return/否决之前）：
+     *   `call#` = 本帧内该 `(敌人,槽)` 第几次进站点（1 起）；**只打 call#>=2**（避免刷屏）。
+     *   ⇒ 判定「引擎只让我们进一次」（要换 hook）还是「我们某条 return 吃掉了第二次」（我们的 bug）。*/
+    if (ev && ev->enemy_id) {
+        uint32_t fr0 = ce_sdk_frame();
+        static uint32_t s_site_frame;
+        static uint32_t s_site_e[16]; static int16_t s_site_s[16]; static uint8_t s_site_c[16];
+        unsigned i0; int found = 0;
+        if (fr0 != s_site_frame) { s_site_frame = fr0; __builtin_memset(s_site_e, 0, sizeof s_site_e); __builtin_memset(s_site_c, 0, sizeof s_site_c); }
+        for (i0 = 0; i0 < 16u; ++i0)
+            if (s_site_e[i0] == ev->enemy_id && s_site_s[i0] == (int16_t)ev->slot) { found = 1; if (s_site_c[i0] < 250u) ++s_site_c[i0]; break; }
+        if (!found)
+            for (i0 = 0; i0 < 16u; ++i0)
+                if (!s_site_e[i0]) { s_site_e[i0] = ev->enemy_id; s_site_s[i0] = (int16_t)ev->slot; s_site_c[i0] = 1; break; }
+        if (found && s_site_c[i0] >= 2u && s_site_logged < 64u) {
+            ++s_site_logged;
+            ce_log("youkai/emit SITE: enemy_id %u slot %d call#=%u frame=%u (unconditional, before any early return)",
+                   ev->enemy_id, ev->slot, (unsigned)s_site_c[i0], (unsigned)fr0);
+        }
+    }
     if (!s || !ev || !ev->enemy_id) return 0;
     if (ev->slot < 0 || ev->slot >= YK_EMIT_SLOTS) return 0;
     /* ★★★ 2026-10-01（**owner 报的真 bug**：「**只有人侧才能打死使魔啊**」＋「TH08 的关键是在于，

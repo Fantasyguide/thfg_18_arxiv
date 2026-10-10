@@ -31447,3 +31447,18 @@ mgr+0x3c = 14974827 ⇒ 解释①(当 VM 指针) 不可读 ✗ ⇒ 解释② get
 - 正常时**一行都不打**（原来是每秒 6 行 ✗）⇒ 侦察保留、日志噪音归零 ✓。
 
 **验证**：`make check` **rc=0**（`test_sdk_core` 1430 / `dllx87` 0 / `check-docs` 450 全绿）。
+
+### #250（2026-10-11 02:55 log）：整局 `maxk_by_slot` 恒 0 ⇒ 站点入口无条件计数 + ECL 加载形态核对
+
+**现场**：`FIRESUM` 13 行**全 `maxk_by_slot=0`**；`FIRE` 16 行全是 `k=0`；`fire_seen=914` ⇒ **一局里我们的站点从未
+看到「同一 `(敌人,槽)` 一帧进两次」**。
+
+**本批**：① 站点**最顶端**（任何 `return`/否决之前）加**无条件**计数：
+`youkai/emit SITE: enemy_id %u slot %d call#=%u frame=%u (unconditional, before any early return)`，
+**只打 `call#>=2`**（额度 64）⇒ 分清「引擎只让我们进一次」（要换 hook）与「我们某条 return 吃掉了第二次」（我们的 bug）；
+② 顺带确认：`FIRE` 的打印位置在**否决之前**（紧跟 `yk_emit_latch_put`，早于 `yk_shot_slot_gate`）⇒ 不是被否决吃掉的盲区。
+
+**③ ECL 加载形态（本批核对结果）**：modkit 的 `game/` 目录里**没有任何 `.ecl`**，只有 `th18.dat` / `thbgm.dat` /
+`custom.exe` / `th18.exe` ⇒ **关卡 ECL 是打包在 `th18.dat` 里的**（不是散装 `st05mbs.ecl`）⇒ 要核「实装 ECL」必须**先解包
+`th18.dat`** 再 dump `st05mbs`，与我们 `local/_scratch/c108/th18ecl2/st05mbs.txt`（零售 dump）对比；
+在本批预算内我只做到「确认散装路径不存在」这一步，**解包+对比列为下一批第一件事**（若 leveledit 替换过 ⇒ 结论要改）。

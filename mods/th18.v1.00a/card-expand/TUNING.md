@@ -16497,3 +16497,11 @@ else if (s_aura_charge > 0.0f)                 { ★ 收束（含 interrupt / �
 | INVULN | 读数改按**绝对偏移**命名：`INVULN abs[0x47774]=%d abs[0x47778]=%d abs[0x4777c]=%.1f … (gate reads 0x47778 > 0)` |
 | PLAYER HIT | `player+0x476ac` 状态变化即打 `youkai/debug: PLAYER HIT/STATE a -> b (4 = deathbomb window; invincible=…)` |
 | ORIGIN-GATE | 只在 `k>=1` 或该槽**已有壳**时打（额度不再被小怪槽吃满）|
+
+#### 2.1ccc-78d 2026-10-11：SITE 无条件入口计数 + ECL 加载形态
+
+| 项 | 说明 |
+| --- | --- |
+| SITE | 站点**最顶端**无条件计数（任何 return/否决之前），**只打 `call#>=2`**：`youkai/emit SITE: enemy_id N slot i call#=%u frame=%u (unconditional, before any early return)` ⇒ 分清「引擎只调一次」vs「我们的 return 吃掉第二次」|
+| FIRE 位置 | 确认在**否决之前**（紧跟 latch put、早于 `yk_shot_slot_gate`）|
+| ECL 形态 | modkit `game/` **无散装 `.ecl`**（只有 `th18.dat`/`thbgm.dat`）⇒ 关卡 ECL 打包在 **`th18.dat`** 里；核「实装 ECL」需先解包再 dump `st05mbs`（列下一批）|
