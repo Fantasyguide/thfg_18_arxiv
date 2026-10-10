@@ -5666,6 +5666,22 @@ static void yk_gauge_hud_update(yk_card_t *s)
         ce_anm_set_pos(s->hud_cursor, h.cursor_x, h.cursor_y, 0.0f);
         ce_anm_set_scale(s->hud_cursor, h.px, h.px);
     }
+    /* ★ z15（owner：「108 声明的矩形可能比 UI 本身**靠左**」）：墨迹探针（节流：槽位变化时一行）*/
+    {
+        static float s_px = -1.0f, s_py = -1.0f;
+        if (s_px != s->hud.x || s_py != s->hud.y) {
+            int q3;
+            s_px = s->hud.x; s_py = s->hud.y;
+            ce_log("youkai: hud slot (%.0f,%.0f) w=%.0f h=%.0f — 逐 VM 墨迹：",
+                   (double)s->hud.x, (double)s->hud.y, (double)s->hud.w, (double)s->hud.h);
+            ce_hud_vm_probe("youkai.bar", s->hud_bar);
+            ce_hud_vm_probe("youkai.human", s->hud_human);
+            ce_hud_vm_probe("youkai.youkai", s->hud_youkai);
+            ce_hud_vm_probe("youkai.cursor", s->hud_cursor);
+            for (q3 = 0; q3 < YK_GAUGE_TEXT_MAX; ++q3)
+                if (s->hud_digit[q3]) ce_hud_vm_probe("youkai.digit", s->hud_digit[q3]);
+        }
+    }
     /* ★★★ 2026-10-03z9（owner 实跑：「**108 和 109 以及原生目前没有进入同时黑暗**」；
      *   审计也指出本卡「无压暗消费者」）——本卡的四支 VM 是靠 `interrupt(1)` **显形**、
      *   颜色里没有 alpha 通道可写 ⇒ 现在每帧把**共享带**的 alpha 写进颜色

@@ -4026,6 +4026,7 @@ static void trance_hud_tick(const trance_card_t *s)
         for (k = 0; k < TRANCE_HUD_N; ++k) {
             const uint8_t *vm = ce_anm_get_vm((uint32_t)s_hud_vm[k]);
             const float *ep = vm ? (const float *)(vm + CE_ANM_VM_POS) : 0;
+            ce_hud_vm_probe("trance.hud", (uint32_t)s_hud_vm[k]);
             ce_log("trance:   hud[%d] script %d entity_pos (%d,%d) sprite %d%s",
                    k, trance_hud_script(k), ep ? (int)ep[0] : -9999, ep ? (int)ep[1] : -9999,
                    vm ? *(const int32_t *)(vm + CE_ANM_VM_SPRITE_ID) : -1,

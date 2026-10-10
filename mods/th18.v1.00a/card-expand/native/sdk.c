@@ -945,6 +945,33 @@ static const hud_font_t HUD_FONTS[] = {
 /* ★★★ 2026-10-03r（owner：「你加一下 log，因为**十二合一是测试的终极形态**」）——
  *   **HUD 台账整表**：谁认领了、块多大、在哪一行、PINNED 还是货架（降级）、带的矩形与淡化状态。
  *   118（挑战・十二合一）一次把十二张系统卡发齐 ⇒ 这份日志就是那次排布的**唯一现场**。*/
+/* ★★★ 2026-10-03z15（owner 反复：「**log 和实际 HUD 的展现之间肯定有问题**」；
+ *   「113 和 117 重合」「108 声明的矩形可能比 UI 本身靠左」）——
+ *   **墨迹探针**：把一支 HUD VM 的**真实绘制依据**一次打全 ——
+ *   · 有效落点 = 脚本 pos(+0x30) + pos2(+0x4e4) + 实体 pos(+0x5f0)（引擎就是这么算的）；
+ *   · **贴图尺寸** `+0x74/+0x78`（zAnmVmPrefix.sprite_size）+ 缩放 `+0x54` + 层 `+0x18`。
+ *   ⇒ 有了"落点 + 贴图尺寸×缩放"，**声明块该多大就是算出来的**，不再靠推。*/
+void ce_hud_vm_probe(const char *tag, uint32_t id)
+{
+    const uint8_t *vm = id ? (const uint8_t *)ce_anm_get_vm(id) : 0;
+    if (!vm) { ce_log("hud.vm %s id %u: (no VM)", tag ? tag : "?", (unsigned)id); return; }
+    {
+        const float *sp = (const float *)(vm + CE_ANM_VM_SCRIPT_POS);
+        const float *p2 = (const float *)(vm + CE_ANM_VM_POS_2);
+        const float *ep = (const float *)(vm + CE_ANM_VM_POS);
+        const float *sz = (const float *)(vm + CE_ANM_VM_SPRITE_SIZE);
+        const float *sc = (const float *)(vm + CE_ANM_VM_SCALE);
+        ce_log("hud.vm %s id %u script %d layer %d sprite %d size %.0fx%.0f scale %.2fx%.2f "
+               "draw 表面 (%.0f,%.0f)",
+               tag ? tag : "?", (unsigned)id,
+               (int)*(const int32_t *)(vm + CE_ANM_VM_SCRIPT_ID),
+               (int)*(const int32_t *)(vm + CE_ANM_VM_LAYER),
+               (int)*(const int32_t *)(vm + CE_ANM_VM_SPRITE_ID),
+               (double)sz[0], (double)sz[1], (double)sc[0], (double)sc[1],
+               (double)(sp[0] + p2[0] + ep[0]), (double)(sp[1] + p2[1] + ep[1]));
+    }
+}
+
 void ce_hud_slot_log_all(const char *tag)
 {
     int i, n = ce_hud_slot_count();

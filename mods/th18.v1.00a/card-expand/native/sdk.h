@@ -1164,6 +1164,11 @@ static inline void *ce_spawn_enemy(const char *ecl_name, const void *spawn_param
  *   118（十二合一）把十二张卡陆续发齐的过程会留下一串排布现场。*/
 void ce_hud_slot_log_all(const char *tag);
 
+/* ★ 2026-10-03z15：**墨迹探针**（定义在 `sdk.c`）——把一支 HUD VM 的真实绘制依据打全：
+ * 有效落点（脚本 pos + pos2 + 实体 pos）、**贴图尺寸**（`+0x74/+0x78`）、缩放、层、sprite 号。
+ * 用途：声明块的大小/位置按**实测墨迹**定，而不是靠推（owner 反复指出 log 与屏幕不一致那一类问题）。*/
+void ce_hud_vm_probe(const char *tag, uint32_t id);
+
 static inline int ce_hud_slot_claim_card_ex(uint32_t card_id, const ce_hud_block_t *blk,
                                             int priority, int own_row, ce_hud_slot_t *out)
 {
