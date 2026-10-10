@@ -30948,3 +30948,17 @@ youkai/emit SAMPLE: stage=5 enemy_id=158 sprite=16 w=64 h=96 slot=0 type=9 color
 
 **判据**：5 面中 boss **两槽各有 1 只壳且位置不同**（若 ECL 确实同位置 ⇒ 也要能看出是 2 只）；打死任一槽 ⇒ **停火**（`veto=1`）；
 下一波重建；一面关底前仍 0 壳。
+
+## §BE 详录 #232（2026-10-01）：调试键「空格 = 击杀所有使魔」（owner 要的测试功能）
+
+**开关**：`YK_DEBUG_SPACE_KILL = 1`（调试用，发布前可关）；**掩码** `YK_DEBUG_KEY_MASK = 0x001`（❓待一手核）。
+**读键**：`CE_INPUT_HELD()` = `*(uint32_t *)0x4ca428`（`engine.h:122`）。**边沿**：`edges = held & ~prev`。
+
+**击杀路径（关键，按 owner 要求）**：把壳的 `life.current`（`YK_ED_LIFE_CUR`）置 0 ⇒ 引擎下一帧走 `Enemy__die`
+⇒ **死亡广播 ⇒ 我们的 `BROKEN set` ⇒ 站点否决**；覆盖**映射壳（`s_map.e[].fam_id`）+ 绕转使魔（`s_orbit[].fam_id`）**；
+**不直接删实体**（否则测不出「打死 ⇒ 关火」）。
+
+**日志**：`youkai/debug: SPACE => killed N familiars (mapping M / orbit K) - normal death path …`（每次按键一行）；
+另在前 8 次**输入掩码变化**时打 `youkai/debug: input mask changed held=0x… edges=0x…`。
+**判据**：按空格 ⇒ 使魔立即全死 + `BROKEN set` + 该口停火（`veto=1`）/`vetoed` 涨 + 下一波重建；一面关底前仍 0 壳；
+不按空格行为不变（只读、不吞键）。

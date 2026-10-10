@@ -665,6 +665,12 @@ static int yk_emit_coord_seen(uint32_t enemy_id, int slot)
     return 0;
 }
 
+/* ★ 调试键（owner）：开关 + 掩码 + 边沿状态。❓ 掩码待一手核（见调用处注）。*/
+#define YK_DEBUG_SPACE_KILL 1
+#define YK_DEBUG_KEY_MASK   0x001u
+static uint32_t s_dbg_prev_input;
+static unsigned s_dbg_mask_logged;
+
 static unsigned s_raw_logged;         /* ★ RAW 打了几行 */
 #define YK_RAW_N 128
 static uint32_t s_raw_enemy[YK_RAW_N];
@@ -7918,6 +7924,43 @@ static int on_tick_2(ce_card_t *c)
     if (!CE_PLAYER()) {
         yk_drop_all(s, "no player");
         return 0;
+    }
+    /* ★★★★ 2026-10-01 晚（owner：**调试功能**「空格 = 击杀所有使魔」）：
+     *   · **边沿**检测（不是长按连发）：`CE_INPUT_HELD()`（`engine.h:122` = `*(u32*)0x4ca428`）与上一帧异或；
+     *   · 命中 ⇒ **走正常击杀路径**（把壳的 `life.current` 置 0 ⇒ 引擎下一帧走 `Enemy__die` ⇒
+     *     **死亡广播 ⇒ 我们的 `BROKEN set` ⇒ 站点否决**）—— 不是把实体直接删掉；
+     *   · 覆盖**映射壳 + 绕转使魔**；日志每次一行；
+     *   · ⚠ **调试功能**（`YK_DEBUG_SPACE_KILL`，默认 1；发布前可关）。
+     *   ❓ 空格位 = `YK_DEBUG_KEY_MASK`（= `0x001`，TH 系 Z/射击位）**待一手核**：本块会打前 8 次
+     *     输入掩码变化（`held=0x…`）⇒ 若按空格不出 `SPACE` 行，用那行掩码即可定出正确位。*/
+    if (YK_DEBUG_SPACE_KILL) {
+        uint32_t held = CE_INPUT_HELD();
+        uint32_t edges = held & ~s_dbg_prev_input;
+        if (s_dbg_mask_logged < 8u && held != s_dbg_prev_input) {
+            ++s_dbg_mask_logged;
+            ce_log("youkai/debug: input mask changed held=0x%08x (prev=0x%08x) edges=0x%08x "
+                   "(debug space-kill mask=0x%03x)", (unsigned)held, (unsigned)s_dbg_prev_input,
+                   (unsigned)edges, (unsigned)YK_DEBUG_KEY_MASK);
+        }
+        s_dbg_prev_input = held;
+        if (edges & YK_DEBUG_KEY_MASK) {
+            unsigned m = 0, k = 0, j;
+            for (j = 0; j < YK_FAM_MAX; ++j) {
+                uint8_t *f;
+                if (!s_map.e[j].fam_id) continue;
+                f = yk_familiar_by_id(s_map.e[j].fam_id);
+                if (f) { *(int32_t *)(f + YK_ED_LIFE_CUR) = 0; ++m; }
+            }
+            for (j = 0; j < YK_ORBIT_MAX; ++j) {
+                uint8_t *f;
+                if (!s_orbit[j].fam_id) continue;
+                f = yk_familiar_by_id(s_orbit[j].fam_id);
+                if (f) { *(int32_t *)(f + YK_ED_LIFE_CUR) = 0; ++k; }
+            }
+            ce_log("youkai/debug: SPACE => killed %u familiars (mapping %u / orbit %u) - normal death "
+                   "path (they die next frame => BROKEN set => the emitter slot is vetoed until a "
+                   "wave/rearm edge or the TTL)", m + k, m, k);
+        }
     }
     yk_side_lock_tick();                                  /* ★ owner ④：锁形态（B / 灵界 / 咆哮）*/
     yk_bullet_hit_flush(s);                               /* ★ 修法 B：命中回调排队的刻符在这里落地 */

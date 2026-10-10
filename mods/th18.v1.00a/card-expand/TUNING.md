@@ -16301,3 +16301,15 @@ else if (s_aura_charge > 0.0f)                 { ★ 收束（含 interrupt / �
 | ③ SLOTSTATE 选槽修正 | 原来 64 行被同一个 `slot 0` 吃光（去重环 96 不够）⇒ 现：**只对 `active` 的槽**打、去重环 **96 → 256**；配合 ② 的 `RAW`（每个 (敌人,槽) 一次）就能看到 158 的两槽 |
 | 判据 | 5 面中 boss **两个槽各有 1 只壳、位置不同**（若 ECL 确实同位置 ⇒ 也要能看出是**2 只**）；打死任一槽 ⇒ 该槽 **停火**（`veto=1`）；下一波重建；一面关底前仍 0 壳 |
 | 登记 | `AUDIT.md` §BE #231；`HANDOFF-108.md` §3 第 117 行 |
+
+### 2.1ccc-64 2026-10-01 (card 108 · owner): **调试键「空格 = 击杀所有使魔」**
+
+| 项 | 说明 |
+| --- | --- |
+| 开关 | **`YK_DEBUG_SPACE_KILL`（默认 1，调试用；发布前可关）**；掩码 `YK_DEBUG_KEY_MASK = 0x001`（TH 系 Z/射击位）❓**待一手核** |
+| 读键（一手）| `CE_INPUT_HELD()` = `*(uint32_t *)0x4ca428`（`engine.h:122`；同文件 121 行有 `CE_INPUT_FOCUS = 0x008` 的先例）|
+| 边沿检测 | `edges = held & ~prev`（**按下那一刻**，不是长按连发）；本块在前 8 次**输入掩码变化**时打 `youkai/debug: input mask changed held=0x… edges=0x…` ⇒ 若按空格不出 `SPACE` 行，用该行掩码定出正确位 |
+| 击杀路径（关键）| **走正常击杀**：把壳的 `life.current`（`YK_ED_LIFE_CUR`）置 0 ⇒ 引擎下一帧走 `Enemy__die` ⇒ **死亡广播 ⇒ 我们的 `BROKEN set` ⇒ 站点否决**；覆盖**映射壳 + 绕转使魔**；**不直接删实体** |
+| 日志 | `youkai/debug: SPACE => killed N familiars (mapping M / orbit K) - normal death path (they die next frame => BROKEN set => the emitter slot is vetoed until a wave/rearm edge or the TTL)`（每次按键一行）|
+| 判据 | 按空格 ⇒ 使魔**立即全死**（`SPACE => killed N`）+ **`BROKEN set`** + 对应口**停火**（`gate check => veto=1`、`vetoed` 涨）+ **下一波重建**；一面关底前仍 0 壳；**不按空格行为不变**（只读、不吞键）|
+| 登记 | `AUDIT.md` §BE #232；`HANDOFF-108.md` §3 第 118 行 |
