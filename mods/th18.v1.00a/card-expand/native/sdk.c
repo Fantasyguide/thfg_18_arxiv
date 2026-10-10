@@ -961,6 +961,15 @@ void ce_hud_vm_probe(const char *tag, uint32_t id)
         const float *ep = (const float *)(vm + CE_ANM_VM_POS);
         const float *sz = (const float *)(vm + CE_ANM_VM_SPRITE_SIZE);
         const float *sc = (const float *)(vm + CE_ANM_VM_SCALE);
+        /* ★ z22：顺带把**算出来的墨迹盒**打出来（按"贴图以 VM 位置为中心"= `anchor(1,2)` 的实测口径）
+         *   ⇒ 日志里就能直接和"声明块"对比（差额一目了然）。*/
+        {
+            const float cx = sp[0] + p2[0] + ep[0], cy = sp[1] + p2[1] + ep[1];
+            const float hw = sz[0] * sc[0] * 0.5f, hh = sz[1] * sc[1] * 0.5f;
+            ce_log("hud.vm ink %s id %u ⇒ x %.0f..%.0f y %.0f..%.0f（居中锚）",
+                   tag ? tag : "?", (unsigned)id,
+                   (double)(cx - hw), (double)(cx + hw), (double)(cy - hh), (double)(cy + hh));
+        }
         ce_log("hud.vm %s id %u script %d layer %d sprite %d size %.0fx%.0f scale %.2fx%.2f "
                "draw 表面 (%.0f,%.0f)",
                tag ? tag : "?", (unsigned)id,

@@ -1227,6 +1227,15 @@ static int32_t         s_bg_vm;         /* 灵界背景 VM 的 anm id（0 = 没�
                                         *   若将来真把顶层元素画出来，再加高（届时同步 `make_trance_art.py` 的注）。*/
 #define TRANCE_HUD_BLOCK_TOP  (TRANCE_HUD_BLOCK_BOTTOM - TRANCE_HUD_BLOCK_H)
 #define TRANCE_HUD_BLOCK_BOTTOM (TRANCE_HUD_BASE_Y + 8.0f)   /* 936：外框脚本 `pos.y = 8`（2× 空间）*/
+/* ★★★ 2026-10-03z21（订正 z20）——owner：「**不是偏左，是实际画出来的位置偏移了至少一个
+ *   自己的宽度**」⇒ 要挪的是**画面**，不是框。
+ *   一手事实：四支脚本都是 **`anchor(1,2)`**（帧 `sprite 402 size 32x48`、`MARK 16x32`…）
+ *   ⇒ 贴图**以 VM 的 x 为中心**画 ⇒ 我们把 VM 摆在块左沿（设计值 248）时，
+ *   **画面整体左移半宽**（帧半宽 32、正是 owner 说的"至少一个自己的宽度"）✓。
+ *   ⇒ 修法：**把画面右移半宽**（`ART_DX = +32`），块/设计值**一个都不动** ——
+ *     这样帧的左沿才真正落在设计的 248 上（= 一手 `pos(0,4)` + `anchor(1,2)` 的原意）。*/
+#define TRANCE_HUD_HALF_W      32.0f   /* 帧贴图半宽（32×2/2）—— 居中锚点的补偿量 */
+/* ★ z22：逐支居中补偿表见下面 `TRANCE_HUD_N` 定义之后。*/
                                                              /* ⇒ 块的**左下角**（`hud_dim_rect_surface` 的入口）*/
 #define TRANCE_TIERUP_LIFT 32.0f   /* 自机上方多少 px 起（一手：engine 在自机位置起、脚本再上浮 16）*/
 static int32_t s_tierup_vm;         /* 正在飞的那支 VM（0 = 没有）；删卡时收 */
@@ -1234,6 +1243,12 @@ static int32_t s_tierup_vm;         /* 正在飞的那支 VM（0 = 没有）；�
  * ★ 文件级 static（与神灵池、背景、满格提示同口径）：`ce_state` 只有 496 B，且它们必须被
  *   `trance_clear()` 一条路收干净（删卡发生在商店里、tick 全停 —— `METHOD.md` 铁律二）。*/
 #define TRANCE_HUD_N 4
+/* ★★★ 2026-10-03z22：**逐支补偿**（各元素贴图宽度不同 ⇒ 居中锚点的半宽补偿也不同）——
+ *   设计盒（子智能体审计按一手贴图算出来的）：外框 **248..312**（64 宽 ⇒ 心 280）、
+ *   总条/底衬 **296..392**（96 宽 ⇒ 心 344）、游标 16×32×2 = 32 宽（心 = 当前位置 +16）。
+ *   ⇒ 以"刷在槽左沿（= 设计基点 248）"为基准，各支要右移的量：
+ *     帧 **+32**、填充 **+48**、帧B **+48**、游标 **+16**。*/
+static const float k_trance_art_dx[TRANCE_HUD_N] = { 32.0f, 48.0f, 48.0f, 16.0f };
 static int32_t s_hud_vm[TRANCE_HUD_N];
 /* ★★★ 2026-10-03x（goal「所有左下角 HUD 进同一个分配器」第 ② 步；owner 十二合一实跑
  *   「112 117 108 **113** 的槽位全都堆在左下角」）——
@@ -3946,7 +3961,8 @@ static void trance_hud_tick(const trance_card_t *s)
             sp2 = (const float *)(vm2 + CE_ANM_VM_SCRIPT_POS);
             p22 = (const float *)(vm2 + CE_ANM_VM_POS_2);
             ep2 = (float *)(vm2 + CE_ANM_VM_POS);
-            ep2[0] = (s_hud_design_x[q2] + TRANCE_HUD_DX) - (sp2[0] + p22[0]);
+            /* ★ z22：**逐支**居中补偿（帧 +32 / 填充 +48 / 帧B +48 / 游标 +16）*/
+            ep2[0] = (s_hud_design_x[q2] + TRANCE_HUD_DX + k_trance_art_dx[q2]) - (sp2[0] + p22[0]);
             ep2[1] = (s_hud_design_y[q2] + TRANCE_HUD_DY) - (sp2[1] + p22[1]);
         }
         s_hud_applied_dx = TRANCE_HUD_DX;
