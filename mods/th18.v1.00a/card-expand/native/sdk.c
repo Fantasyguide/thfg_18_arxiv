@@ -2661,14 +2661,68 @@ int __cdecl BP_ce_item_frame(x86_reg_t *regs, void *bp_info)
             /* ★ z19：直读诊断（每关一行）—— 上一版只在找到 VM 时才打，结果一条都没有，
              *   分不清"字段为 0"还是"VM 查不到"。实测：root 有效、get_vm(root) 非空 ✓
              *   ⇒ 所以问题在**写错了哪几支**（见下）。*/
+            /* ★★★★ 2026-10-03z48（**两起崩溃之后，按正确姿势重做**：先只读、全程校验）——
+             *   owner 确认「关掉它**不再崩**」⇒ 负对照成立 ⇒ 原扫描代码就是崩溃源 ✓。
+             *   这次**一个字节都不写**，只把真相量出来：
+             *     · `mgr+0x3c` 到底是 **id** 还是 **VM 指针**（两种解释都试：直接当指针 / `get_vm(id)`）；
+             *     · 若那个 VM 可读，打它的 `layer(+0x18) / script_id(+0x28) / sprite_id(+0x24) /
+             *       id(suffix +0x544) / flags`；
+             *     · 再按命名金矿的 `zAnmVmSuffix.list_of_children`（**+0x50**）走一遍子链表，
+             *       每个节点 `entry(=子 VM*)` 与子 VM 的脚本号都打出来。
+             *   ⚠ **每一次解引用前都过 `IsBadReadPtr`**（本文件别处已在用 ✓）；循环上限 8 防环。*/
             {
-                static int32_t s_nat_root_logged = -1;
+                static int32_t s_nat_root_logged = -2;
                 if (s_nat_root_logged != root) {
+                    uint8_t *as_ptr = (uint8_t *)(uintptr_t)(uint32_t)root;   /* 解释一：它是指针 */
+                    uint8_t *vm = 0;
                     s_nat_root_logged = root;
-                    ce_log("hud: native face probe — mgr+0x3c(树根 id)=%d, mgr+0x38(选中卡)=%d, "
-                           "get_vm(root)=%p", (int)root,
-                           (int)*(const int32_t *)(mgr + CE_MGR_SELECTED_ACTIVE),
-                           (void *)ce_anm_get_vm((uint32_t)root));
+                    ce_log("hud: native face 只读探针 —— mgr+0x3c=%d, mgr+0x38=%d",
+                           (int)root, (int)*(const int32_t *)(mgr + CE_MGR_SELECTED_ACTIVE));
+                    if (root && !IsBadReadPtr(as_ptr, 0x60)) {
+                        ce_log("hud:   解释①(指针) 可读：layer=%d script_id=%d sprite_id=%d",
+                               (int)*(const int32_t *)(as_ptr + CE_ANM_VM_LAYER),
+                               (int)*(const int32_t *)(as_ptr + CE_ANM_VM_SCRIPT_ID),
+                               (int)*(const int32_t *)(as_ptr + CE_ANM_VM_SPRITE_ID));
+                        vm = as_ptr;
+                    } else {
+                        vm = (uint8_t *)ce_anm_get_vm((uint32_t)root);        /* 解释二：它是 id */
+                        ce_log("hud:   解释①不可读 ⇒ 试解释②(get_vm)=%p%s", (void *)vm,
+                               (vm && !IsBadReadPtr(vm, 0x60)) ? "（可读 ✓）" : "");
+                        if (vm && IsBadReadPtr(vm, 0x60)) vm = 0;
+                    }
+                    if (vm) {
+                        const int32_t sid = *(const int32_t *)(vm + CE_ANM_VM_SUFFIX_ID);
+                        uint8_t *head = vm + CE_ANM_VM_CHILD_LIST;
+                        int guard = 0;
+                        ce_log("hud:   树根 VM=%p id(suffix+0x0)=%d parent(+0x7c)=%p", (void *)vm,
+                               (int)sid,
+                               IsBadReadPtr(vm + CE_ANM_VM_PARENT, 4)
+                                   ? (void *)0 : (void *)*(uint8_t *const *)(vm + CE_ANM_VM_PARENT));
+                        if (!IsBadReadPtr(head, 12)) {
+                            uint8_t *node = *(uint8_t *const *)(head + 0x4);
+                            while (node && node != head && guard++ < 8) {
+                                if (IsBadReadPtr(node, 12)) { ce_log("hud:   子链节点 %p 不可读 ✗ 停", (void *)node); break; }
+                                {
+                                    uint8_t *child = *(uint8_t *const *)node;
+                                    ce_log("hud:   子链[%d] node=%p entry=%p%s", guard - 1, (void *)node,
+                                           (void *)child,
+                                           (child && !IsBadReadPtr(child, 0x60))
+                                               ? " 可读" : " 不可读/空");
+                                    if (child && !IsBadReadPtr(child, 0x60))
+                                        ce_log("hud:     子 VM script_id=%d sprite_id=%d layer=%d id=%d",
+                                               (int)*(const int32_t *)(child + CE_ANM_VM_SCRIPT_ID),
+                                               (int)*(const int32_t *)(child + CE_ANM_VM_SPRITE_ID),
+                                               (int)*(const int32_t *)(child + CE_ANM_VM_LAYER),
+                                               (int)*(const int32_t *)(child + CE_ANM_VM_SUFFIX_ID));
+                                    node = *(uint8_t *const *)(node + 0x4);
+                                }
+                            }
+                            ce_log("hud:   子链结束：共走 %d 个节点%s", guard,
+                                   (guard >= 8) ? "（达上限 8，可能还有）" : "");
+                        } else {
+                            ce_log("hud:   子链表头 %p 不可读 ✗（说明 +0x50 不是子链表）", (void *)head);
+                        }
+                    }
                 }
             }
             /* ★★★★ 2026-10-03z47（**两起崩溃**：`th18.exe.86452.dmp`(16:27) / `.88004.dmp`(19:38)）——
