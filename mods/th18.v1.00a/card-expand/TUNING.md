@@ -16472,3 +16472,11 @@ else if (s_aura_charge > 0.0f)                 { ★ 收束（含 interrupt / �
 | 日志 | `youkai/debug: INVINCIBLE ON/OFF (player+0x47774 cur>=60 per frame) - debug only, card 108`（每次切换一行）|
 | 判据 | ① 按键切换（ON/OFF 各一行）；② ON 时撞弹/撞使魔不掉命、不被击退、可穿弹幕；③ OFF 时立刻恢复原状；④ 不影响其它输入与别的卡 |
 | 登记 | `AUDIT.md` §BE #246；`HANDOFF-108.md` §3 第 132 行 |
+
+#### 2.1ccc-78a 2026-10-01 晚：FIRE 块去重 + 无敌写后读回
+
+| 项 | 说明 |
+| --- | --- |
+| FIRE 去重 | 源码里曾**两份** `FIRE:`（HEAD `7072` = 旧的每槽计数块 ⇒ 跑起来像跨敌人递增；`7038` = `s_fk[]` 按 `(敌人,槽)` 正确）⇒ **删旧留新**（现在 `grep -c` = 1）；`ORIGIN-GATE` 同样只剩一份 |
+| 无敌验证 | ON 时前 16 帧打 `youkai/debug: INVULN cur=%d prev=%d cur_f=%.1f frame=%u (write-back check)`；**`prev`/`cur_f` 也一起刷**；若 `cur` 被覆盖 ⇒ 时机太晚（需更早钩子或改置免伤标志）|
+| 判据 | ① 同一 `(enemy,slot)` 同 `frame` 出现 `k=0`/`k=1`，不同敌人**各自**从 0 起；② ON 时 `INVULN` 行里的 `cur` **持续 ≥60**、且贴脸撞弹/撞使魔不掉命；③ OFF 立刻恢复 |

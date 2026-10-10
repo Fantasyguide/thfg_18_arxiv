@@ -31363,3 +31363,15 @@ mgr+0x3c = 14974827 ⇒ 解释①(当 VM 指针) 不可读 ✗ ⇒ 解释② get
 **边沿**：`ce_key_down(0x49)` + 自记边沿（长按不连发）；**不吞键、不改键**。
 **日志**：`youkai/debug: INVINCIBLE ON/OFF (player+0x47774 cur>=60 per frame) - debug only, card 108`。
 **判据**：① 按键切换；② ON 时不掉命/不被击退/可穿弹幕；③ OFF 立刻恢复；④ 不影响其它输入与别的卡。
+
+### #247（2026-10-01 晚，owner log 21:15）：删掉重复的 FIRE 块 + 无敌写后读回
+
+**① `k` 仍是全局计数 ⇒ 源码里有**两份** `FIRE:` 块**（HEAD 里 `7072` 那份用 `s_fire_frame`/`s_fire_k`
+（**每槽**计数、跑起来像跨敌人递增），`7038` 那份用 `s_fk[]`（**按 `(敌人,槽)`** 正确）⇒ **删掉旧块**，
+只留 `s_fk[]` 版本（`grep -c "youkai/emit FIRE:" = 1`），并删除随之作废的 `s_fire_frame/s_fire_k/s_fire_logged` 静态量。
+`ORIGIN-GATE` 同样只剩一份。
+
+**② 无敌「ON 了照死」**：加**写后读回**（ON 时前 16 帧各一行）
+`youkai/debug: INVULN cur=%d prev=%d cur_f=%.1f frame=%u (write-back check; …)`；
+并把 **`prev` / `cur_f` 一起刷**（兜底①），确认 `cur` 是否被引擎每帧覆盖（覆盖 ⇒ 时机太晚 ⇒ 需更早钩子或改置免伤标志）。
+每次按 `I` 切到 ON 时重新从 0 计 16 行。

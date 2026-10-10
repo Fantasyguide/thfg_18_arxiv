@@ -769,10 +769,7 @@ static unsigned yk_fk_lines2(yk_fk_t *t, uint32_t enemy)
 { unsigned i; for (i = 0; i < YK_FK_N; ++i) if (t[i].enemy == enemy) return (unsigned)t[i].k; return 0u; }
 
 static unsigned s_bmprobe_logged;     /* ★ BM 原始探针已打几帧 */
-static unsigned s_fire_logged;        /* ★ FIRE 行数 */
 static unsigned s_og_logged;          /* ★ ORIGIN-GATE 行数 */
-static uint32_t s_fire_frame;         /* FIRE 的帧号（帧边界清 k）*/
-static uint8_t  s_fire_k[32];         /* 每槽本帧 fire 次数（k）*/
 static int32_t  s_cur_bc;             /* 本帧敌弹总数 */
 static int      s_cur_bc_grew;        /* 本帧是否增长 */
 static unsigned s_possrc_logged;      /* ★ POSSRC 打了几行 */
@@ -7054,39 +7051,9 @@ static int yk_on_shot_slot(ce_card_t *c, const ce_enemy_shot_t *ev)
                        (g0 && g0->fam_seen && !g0->fam_id) ? 1 : 0);
             }
         }
-        /* ★★★ C1（只观测）：「同一帧内该槽的第 k 次 fire」——身份 = `(enemy, slot, k)`（C2 的正解）。
-         *   帧边界用 `ce_sdk_frame()`；`k` 每槽每帧从 0 起，上限 8（超出并入最后一个）。*/
-        {
-            uint32_t fr = ce_sdk_frame();
-            if (fr != s_fire_frame) { s_fire_frame = fr; __builtin_memset(s_fire_k, 0, sizeof s_fire_k); }
-            int k = (int)s_fire_k[ev->slot & (YK_EMIT_SLOTS - 1)];
-            if (s_fire_k[ev->slot & (YK_EMIT_SLOTS - 1)] < 8u) ++s_fire_k[ev->slot & (YK_EMIT_SLOTS - 1)];
-            if (s_fire_logged < 96u) {
-                const float *olf = (const float *)((const uint8_t *)ev->enemy + YK_EMIT_OFFSETS_ABS
-                                                  + (size_t)ev->slot * YK_EMIT_VEC_STRIDE);
-                const float *orf = (const float *)((const uint8_t *)ev->enemy + YK_EMIT_ORIGINS_ABS
-                                                  + (size_t)ev->slot * YK_EMIT_VEC_STRIDE);
-                const uint8_t *prf = (const uint8_t *)ev->enemy + YK_EMIT_PROPS
-                                   + (size_t)ev->slot * YK_EMIT_PROP_STRIDE;
-                ++s_fire_logged;
-                ce_log("youkai/emit FIRE: enemy_id %u slot %d k=%d type=%d color=%d props08/0c/10=(%.1f,%.1f,%.1f) "
-                       "offsets[slot]=(%.1f,%.1f,%.1f) origins[slot]=(%.1f,%.1f,%.1f) frame=%u",
-                       ev->enemy_id, ev->slot, k, *(const int32_t *)(prf + 0x00),
-                       *(const int32_t *)(prf + 0x04), (double)lx, (double)ly, (double)lz,
-                       (double)olf[0], (double)olf[1], (double)olf[2],
-                       (double)orf[0], (double)orf[1], (double)orf[2], (unsigned)fr);
-            }
-            /* ORIGIN-GATE（每帧自检；只对「有壳/进闸」的槽打；总 96 行 + 每敌 8 行双上限）。*/
-            if (yk_map_find(&s_map, ev->enemy_id, ev->slot) && s_og_logged < 96u) {
-                yk_slot_t *g = yk_map_find(&s_map, ev->enemy_id, ev->slot);
-                ce_log("youkai/emit ORIGIN-GATE: enemy %u slot %d k=%d closed=%d veto=%d "
-                       "(per-k veto not implemented yet - C1 observation only)",
-                       ev->enemy_id, ev->slot, k,
-                       (g && g->fam_seen && g->broken) ? 1 : 0,
-                       (g && g->fam_seen && !g->fam_id) ? 1 : 0);
-                ++s_og_logged;
-            }
-        }
+        /* ⛔ 2026-10-01 晚（owner log 反证：`k` 跨敌人递增 ⇒ 运行的是**这一份旧的"每槽全局计数"块**）：
+         *   本块**已删**；**唯一保留**的是上面那份按 `(enemy_id, slot)` 独立计数的 `s_fk[]` 版本
+         *   （否则同一槽一帧内两次 fire 拿不到 k=0/k=1，C2 无从做起）。*/
         yk_fired_sticky_set(ev->enemy_id, ev->slot);   /* ★ 粘性「本波开过火」*/
         /* ★★★★★ 2026-10-01（**owner 硬约束，回滚**）：owner 逐字「**但是无论如何，你只能不发弹，
          *   **不能改发弹位置**」⇒ 本卡**永远不写 `props` 的任何一格**（`+0x24` 的 `etDist` 归零
@@ -8359,14 +8326,27 @@ static int on_tick_2(ce_card_t *c)
         int d = ce_key_down(YK_DEBUG_INVINCIBLE_VK) ? 1 : 0;
         if (d && !s_dbg_inv_prev) {
             s_dbg_inv_on = !s_dbg_inv_on;
-            s_dbg_inv_logged = 1;
+            s_dbg_inv_logged = 0;   /* 每次 ON 重新打前 16 帧 */
             ce_log("youkai/debug: INVINCIBLE %s (player+0x47774 cur>=%d per frame) - debug only, card 108",
                    s_dbg_inv_on ? "ON" : "OFF", (int)YK_DEBUG_INVINCIBLE_MIN);
         }
         s_dbg_inv_prev = d;
         if (s_dbg_inv_on) {
             ce_timer_t *iv = CE_PLAYER_INVULN();
-            if (iv && iv->cur < YK_DEBUG_INVINCIBLE_MIN) iv->cur = YK_DEBUG_INVINCIBLE_MIN;
+            if (iv) {
+                /* ★ 运行期验证（owner：ON 了照死）：**写后读回** —— 前 16 帧各一行，
+                 *   看 `cur` 有没有真的保持 ≥60（被引擎每帧覆盖 ⇒ 时机太晚 ⇒ 要更早的钩子）。*/
+                if (iv->cur < YK_DEBUG_INVINCIBLE_MIN) iv->cur = YK_DEBUG_INVINCIBLE_MIN;
+                if (iv->prev < YK_DEBUG_INVINCIBLE_MIN) iv->prev = YK_DEBUG_INVINCIBLE_MIN;
+                if (iv->cur_f < (float)YK_DEBUG_INVINCIBLE_MIN) iv->cur_f = (float)YK_DEBUG_INVINCIBLE_MIN;
+                if (s_dbg_inv_logged < 16) {
+                    ++s_dbg_inv_logged;
+                    ce_log("youkai/debug: INVULN cur=%d prev=%d cur_f=%.1f frame=%u (write-back check; "
+                           "if this stays >=%d the timer is held, otherwise the engine overwrote it)",
+                           iv->cur, iv->prev, (double)iv->cur_f, (unsigned)ce_sdk_frame(),
+                           (int)YK_DEBUG_INVINCIBLE_MIN);
+                }
+            }
         }
     }
     /* ★ 排障用（无害）：前 24 次**游戏输入掩码**变化各打一行（`0x4ca428`；空格不在其中）。*/
