@@ -31407,3 +31407,14 @@ mgr+0x3c = 14974827 ⇒ 解释①(当 VM 指针) 不可读 ✗ ⇒ 解释② get
 **③ 版本漂移（回答）**：`f7d83d5e…` **不是我构建的** —— 本批我只跑了 `make -s cards/youkai.o` / `test-host` /
 `dllx87` / `capcheck`，**没有跑 `make release`**（也没动 `dist/`）。此前也见过一次 `sdk.c` 被改 + `RELEASE-STATE.json.tmp` 冲突 ⇒
 **同仓库有另一条线在 `make release`**。请以你那边 `git status`/`RELEASE-STATE.json` 为准核对；当前日志对应的是**那份源码**，不是我这份未提交的改动。
+
+### #249（2026-10-11 02:51 log）：FIRESUM / 绝对偏移 INVULN / PLAYER HIT / ORIGIN-GATE 收窄
+
+**现场**：`fire_seen=820` 证明块在跑；但 `FIRE: 0` 行 ⇒ **一局里没有 `k>=1` 样本**（本局可能没打到 5 面中 boss）。
+
+**本批**：① `FIRE` 现在**前 16 行连 `k=0` 也打**，并新增每 60 帧一行的
+`youkai/emit FIRESUM: frame=%u fires=%u maxk_by_slot=%u (k>0 means the same (enemy,slot) fired twice in one frame)`
+⇒ 即便没到 boss，也能看出 `k` 能不能 >0；
+② `INVULN` 行改成**按绝对偏移命名**：`INVULN abs[0x47774]=%d abs[0x47778]=%d abs[0x4777c]=%.1f frame=%u (gate reads 0x47778 > 0) min=%d`；
+③ 新增 **`PLAYER HIT/STATE`** 观测：`player+0x476ac` 状态字变化即打一行（`4` = 决死窗口）⇒ ON 时**判中没判中**一目了然；
+④ `ORIGIN-GATE` 收窄为**只在 `k>=1` 或该槽已有壳时**打（不再被小怪槽占满额度）。

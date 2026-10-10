@@ -16488,3 +16488,12 @@ else if (s_aura_charge > 0.0f)                 { ★ 收束（含 interrupt / �
 | 一手 | `engine/player/th18/03-player-hit-gate.md:239`：判定侧读 **`player+0x47778`(cur) > 0 即无敌**（`zTimer{prev=+0x47774, cur=+0x47778, cur_f=+0x4777c}`；判定侧 `0x45cd1c/0x45ce78/0x45d055`）|
 | 改动 | 无敌改为**绝对偏移直写**三格 + `INVULN` 行**读回绝对偏移**（消除结构体布局疑问）；新增**无条件** `s_fire_seen`（`k` 门槛之前）并入台账 `fire_seen=%u` |
 | 判据 | ON 时贴脸撞弹/撞使魔**不掉命**；日志 `INVULN cur=… prev=… cur_f=…` 与 `fire_seen=` 可分别验证 |
+
+#### 2.1ccc-78c 2026-10-11：FIRESUM / 绝对偏移 INVULN / PLAYER HIT
+
+| 项 | 说明 |
+| --- | --- |
+| FIRESUM | 每 60 帧一行 `youkai/emit FIRESUM: frame=%u fires=%u maxk_by_slot=%u`；`FIRE` 前 16 行连 `k=0` 也打 |
+| INVULN | 读数改按**绝对偏移**命名：`INVULN abs[0x47774]=%d abs[0x47778]=%d abs[0x4777c]=%.1f … (gate reads 0x47778 > 0)` |
+| PLAYER HIT | `player+0x476ac` 状态变化即打 `youkai/debug: PLAYER HIT/STATE a -> b (4 = deathbomb window; invincible=…)` |
+| ORIGIN-GATE | 只在 `k>=1` 或该槽**已有壳**时打（额度不再被小怪槽吃满）|

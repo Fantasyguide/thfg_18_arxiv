@@ -742,6 +742,7 @@ static yk_fk_t  s_fkline[YK_FK_N];      /* 每敌 FIRE 行数 */
 static yk_fk_t  s_fkline2[YK_FK_N];     /* 每敌 ORIGIN-GATE 行数 */
 static unsigned s_fire_logged_2;        /* FIRE 总行数 */
 static unsigned s_fire_seen;            /* ★ 无条件计数：站点上见过的 etOn 总次数（区分「没发生」与「块跑不到」）*/
+static unsigned s_firesum_logged;       /* ★ FIRESUM 行数 */
 static unsigned s_og_logged;            /* ORIGIN-GATE 总行数 */
 
 static int yk_fk_bump(uint32_t enemy, int slot, uint32_t fr)
@@ -7023,6 +7024,17 @@ static int yk_on_shot_slot(ce_card_t *c, const ce_enemy_shot_t *ev)
             uint32_t fr = ce_sdk_frame();
             int k = yk_fk_bump(ev->enemy_id, ev->slot, fr);
             ++s_fire_seen;   /* ★ 无条件（在 k 门槛之前）*/
+            /* ★ FIRESUM（owner）：每帧汇总「本帧 fire 次数 / 该帧内某槽的最大 k」⇒ 即使没到 boss
+             *   也能看出 k 到底能不能 >0。每 60 帧一行（避免刷屏）。*/
+            {   unsigned i2, mx = 0;
+                for (i2 = 0; i2 < YK_FK_N; ++i2)
+                    if (s_fk[i2].enemy && s_fk[i2].frame == fr && s_fk[i2].k > mx) mx = s_fk[i2].k;
+                if ((fr % 60u) == 0u && s_firesum_logged < 64u) {
+                    ++s_firesum_logged;
+                    ce_log("youkai/emit FIRESUM: frame=%u fires=%u maxk_by_slot=%u (k>0 means the same "
+                           "(enemy,slot) fired twice in one frame)", (unsigned)fr, s_fire_seen, mx);
+                }
+            }
             const uint8_t *prf = (const uint8_t *)ev->enemy + YK_EMIT_PROPS
                                + (size_t)ev->slot * YK_EMIT_PROP_STRIDE;
             const float *orf = (const float *)((const uint8_t *)ev->enemy + YK_EMIT_ORIGINS_ABS
@@ -7031,7 +7043,7 @@ static int yk_on_shot_slot(ce_card_t *c, const ce_enemy_shot_t *ev)
                                               + (size_t)ev->slot * YK_EMIT_VEC_STRIDE);
             yk_slot_t *g0 = yk_map_find(&s_map, ev->enemy_id, ev->slot);
             /* 额度（owner）：**k>=1 一律打**（关键样本）+ 每敌 ≤8 + 总 ≤256 ⇒ 中 boss 必现。*/
-            if (k >= 1 && s_fire_logged_2 < 256u && yk_fk_lines(s_fkline, ev->enemy_id) < 8u) {
+            if ((k >= 1 || s_fire_logged_2 < 16u) && s_fire_logged_2 < 256u && yk_fk_lines(s_fkline, ev->enemy_id) < 8u) {
                 ++s_fire_logged_2;
                 yk_fk_inc(s_fkline, ev->enemy_id);
                 ce_log("youkai/emit FIRE: enemy_id %u slot %d k=%d type=%d color=%d props08/0c/10=(%.1f,%.1f,%.1f) "
@@ -7043,7 +7055,7 @@ static int yk_on_shot_slot(ce_card_t *c, const ce_enemy_shot_t *ev)
                        (double)orf[0], (double)orf[1], (double)orf[2], (unsigned)fr,
                        (g0 && g0->fam_id) ? 1 : 0, 0, 0);
             }
-            if ((k >= 1 || g0) && s_og_logged < 128u && yk_fk_lines2(s_fkline2, ev->enemy_id) < 8u) {
+            if ((k >= 1 || (g0 && g0->fam_id)) && s_og_logged < 128u && yk_fk_lines2(s_fkline2, ev->enemy_id) < 8u) {
                 ++s_og_logged;
                 yk_fk_inc(s_fkline2, ev->enemy_id);
                 ce_log("youkai/emit ORIGIN-GATE: enemy %u slot %d k=%d closed=%d veto=%d "
@@ -8255,6 +8267,17 @@ static int on_tick_2(ce_card_t *c)
             }
             s_dbg_kill_n = 0;
         }
+        {   /* ★ 「自机真的挨了一下」观测（owner）：状态字 `player+0x476ac` 变化就打一行
+             *   （1 = 正常；4 = 决死窗口 —— 一手 `engine/player/th18/03-player-hit-gate.md:177+`）。*/
+            static int32_t s_pl_state_prev = -999;
+            int32_t st = *(const int32_t *)(CE_PLAYER() + 0x476ac);
+            if (st != s_pl_state_prev) {
+                if (s_pl_state_prev != -999)
+                    ce_log("youkai/debug: PLAYER HIT/STATE %d -> %d (4 = deathbomb window; invincible=%d)",
+                           (int)s_pl_state_prev, (int)st, s_dbg_inv_on);
+                s_pl_state_prev = st;
+            }
+        }
         int down = ce_key_down(CE_VK_SPACE) ? 1 : 0;
         if (down && !s_dbg_space_prev) {
             unsigned m = 0, k = 0, j;
@@ -8348,10 +8371,10 @@ static int on_tick_2(ce_card_t *c)
                 }
                 if (s_dbg_inv_logged < 16) {
                     ++s_dbg_inv_logged;
-                    ce_log("youkai/debug: INVULN cur=%d prev=%d cur_f=%.1f frame=%u (write-back check; "
-                           "if this stays >=%d the timer is held, otherwise the engine overwrote it)",
-                           (int)*(const int32_t *)(CE_PLAYER() + 0x47778),
+                    ce_log("youkai/debug: INVULN abs[0x47774]=%d abs[0x47778]=%d abs[0x4777c]=%.1f frame=%u "
+                           "(gate reads 0x47778 > 0) min=%d",
                            (int)*(const int32_t *)(CE_PLAYER() + 0x47774),
+                           (int)*(const int32_t *)(CE_PLAYER() + 0x47778),
                            (double)*(const float *)(CE_PLAYER() + 0x4777c), (unsigned)ce_sdk_frame(),
                            (int)YK_DEBUG_INVINCIBLE_MIN);
                 }
