@@ -31565,3 +31565,20 @@ owner 订正：那一堆**都是发射口（映射层）使魔** ⇒ 焦点 = �
 判读（三种）：① props 在变而 `pinned=0` 或 `target` 不变 ⇒ 更新链断（修那段）；
 ② props 恒定而母机在动 ⇒ 引擎把出点定格在 `etOn` 时刻（那就用 `BMPROBE2` + 弹位置对照决定该不该自己发明跟随）；
 ③ props 与 target 都在变而 `fam_cur` 不动 ⇒ 写位置那一步失败（修 pin）。
+
+### #258 2026-10-11: BULLET-ORIGIN 路线的一手结构（zBullet 布局）+ 基址矛盾（下一批探针定死）
+
+一手（ExpHP type-structs-own.json）：
+· zBulletManager.bullets = +`0x108c`（struct zBullet[0x7d0]，2000 格）；anm_ids 紧随其后（+`0x7a228c`）⇒ stride 约 `0xfa4`（与 cancel_all 的 add edi,`0xfa0` 一致）；
+· zBullet.pos = +`0x638`（zFloat3）、velocity = +`0x644`、state = +`0xf68`（u16）、type = +`0xf98`；
+· zEnemyBulletShooter.offset_final = +0x08（zFloat3）—— 与我们一直用的 props+0x08/0x0c/0x10 对上；
+  count_1 = +`0x46c`、count_2 = +`0x46e`（都是 int16）⇒ 这也解释了日志里 count_2 看起来像「浮点位型」。
+
+⚠ 两处基址/字段不一致（必须先解开，否则 BULLET-ORIGIN 会读错）：
+· cancel_all `0x4297a0` 用 bm+`0x5a8` + state@+`0xaac`（我们照它实现，BMPROBE2 实测有合理值）；
+· vendor 布局说 bullets 在 bm+`0x108c`、state@+`0xf68` ⇒ 两者差 `0xae4` / `0xabc` ⇒
+  要么 [`0x4cf2bc`] 指的不是 manager 基址（而是子结构），要么 cancel_all 里的 edi 是别的基。
+
+下一批（只加观测）：对「不活跃→活跃」的新子弹，同时打印两个候选基址下的 pos 读数
+（ourbase+`0x638` 与 ourbase+`0x7dc` = +`0x108c`-`0x5a8`+`0x638`）⇒ 用「数值量级像不像场地坐标（约 ±400）」一次定死真基址，
+然后 BULLET-ORIGIN 就能直接给真出点（与 props08/0c、target、fam_cur 并列）。本批只写文档（基址未定时不动代码）。

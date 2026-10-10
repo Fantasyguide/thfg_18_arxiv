@@ -16566,3 +16566,12 @@ else if (s_aura_charge > 0.0f)                 { ★ 收束（含 interrupt / �
 | 新诊断 | 连续 20 帧 `TRACK: frame=… enemy_pos=… props08/0c=… latch=… age=… src=… target=… fam=… fam_cur=… pinned_this_frame=…` |
 | DISTHIST | 口径改为**本帧所有活跃槽**分三档（<48 / 48..64 / >=64）|
 | 判据 | 映射壳跟着出点动（target 每帧变、fam_cur 跟着走）；大妖精附近没有多余的一只；5 面中 boss 两只壳仍在 |
+
+#### 2.1ccc-85 2026-10-11：BULLET-ORIGIN 的一手结构 + 基址矛盾（下一批探针定死）
+
+| 项 | 说明 |
+| --- | --- |
+| 一手（vendor）| zBulletManager.bullets = +0x108c（2000 格，stride 约 0xfa4）、zBullet.pos = +0x638、velocity = +0x644、state = +0xf68（u16）、type = +0xf98；zEnemyBulletShooter. ...(详见 AUDIT 245)|
+| 矛盾 | cancel_all 用 bm+`0x5a8` + state@+`0xaac`（BMPROBE2 有合理值）vs vendor bm+`0x108c` + state@+`0xf68` ⇒ 差 `0xae4`/`0xabc` ⇒ [`0x4cf2bc`] 可能不是 manager 基址 |
+| 下一批 | 对新生成的子弹**双候选基址**同打 pos 读数（ourbase+0x638 与 +0x7dc）⇒ 用数值量级定死真基址；随后 BULLET-ORIGIN 直接给真出点（与 props/target/fam_cur 并列）|
+| DISTHIST | 口径已改为**本帧所有活跃槽**分三档（<48 / 48..64 / >=64）|
