@@ -16313,3 +16313,14 @@ else if (s_aura_charge > 0.0f)                 { ★ 收束（含 interrupt / �
 | 日志 | `youkai/debug: SPACE => killed N familiars (mapping M / orbit K) - normal death path (they die next frame => BROKEN set => the emitter slot is vetoed until a wave/rearm edge or the TTL)`（每次按键一行）|
 | 判据 | 按空格 ⇒ 使魔**立即全死**（`SPACE => killed N`）+ **`BROKEN set`** + 对应口**停火**（`gate check => veto=1`、`vetoed` 涨）+ **下一波重建**；一面关底前仍 0 壳；**不按空格行为不变**（只读、不吞键）|
 | 登记 | `AUDIT.md` §BE #232；`HANDOFF-108.md` §3 第 118 行 |
+
+### 2.1ccc-65 2026-10-01 (card 108 · owner「空格没用」): 兜底键 X (0x002) + cap 24 + 原始键盘待查
+
+| 项 | 说明 |
+| --- | --- |
+| 反证（16:38:53 log）| `input mask changed held=0x20 / 0x80 / 0x90 / 0x40` ⇒ `0x4ca428` 族只见到 **方向 0x10/0x20/0x40/0x80** + **`0x008`=低速**；**`0x001` 从不出现**；`sdk.h:822` 写明这批键**不进 replay 输入流** ⇒ **空格很可能不在这个掩码里** |
+| ★ 兜底键（立刻可用）| **`YK_DEBUG_KEY_MASK2 = 0x002u`（X 位）**，与低速 `0x008` 不冲突；命中打 `youkai/debug: DEBUG-KEY(0x…) => killed N …`（掩码值一并打出 ⇒ owner 一眼确认键位）|
+| 空格（保留）| `YK_DEBUG_KEY_MASK = 0x001u` 仍挂着；**原始键盘状态地址待查**：本轮在 `local/_scratch/th18.dis` grep `GetKeyboardState` / `DirectInput8Create` / `dinput8` / `GetAsyncK …（§BE #233）|
+| cap | `input mask changed` 日志 **8 → 24**（方向键不再吃光额度）|
+| 判据 | 按**兜底键 X**（或空格，若接通）⇒ 使魔**全死**（`DEBUG-KEY … killed N`）⇒ `BROKEN set` ⇒ 该口**停火**（`veto=1`）⇒ 下一波重建；一面关底前仍 0 壳；不按 ⇒ 无输出、行为不变 |
+| 登记 | `AUDIT.md` §BE #233；`HANDOFF-108.md` §3 第 119 行 |

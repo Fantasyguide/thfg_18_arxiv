@@ -30962,3 +30962,19 @@ youkai/emit SAMPLE: stage=5 enemy_id=158 sprite=16 w=64 h=96 slot=0 type=9 color
 另在前 8 次**输入掩码变化**时打 `youkai/debug: input mask changed held=0x… edges=0x…`。
 **判据**：按空格 ⇒ 使魔立即全死 + `BROKEN set` + 该口停火（`veto=1`）/`vetoed` 涨 + 下一波重建；一面关底前仍 0 壳；
 不按空格行为不变（只读、不吞键）。
+
+## §BE 详录 #233（2026-10-01）：调试键「空格没用」⇒ 兜底键 X（`0x002`）
+
+**反证（16:38:53 log）**：`input mask changed held=0x20 / 0x80 / 0x90 / 0x40` ⇒ `0x4ca428` 族只见方向
+`0x10/0x20/0x40/0x80` 与 `0x008`（低速）；**`0x001` 从不出现**；`sdk.h:822` 说这批键**不进 replay 输入流**
+⇒ 空格很可能不在该掩码里。
+
+**本批**：① 兜底触发键 **`YK_DEBUG_KEY_MASK2 = 0x002u`（X）**；命中打
+`youkai/debug: DEBUG-KEY(0x…) => killed N familiars (mapping M / orbit K) …`（掩码一并打出）；
+② 空格 `0x001` 保留待接通；③ `input mask changed` **cap 8 → 24**。
+
+**空格的一手下一步**：`th18.dis` 里 grep `GetKeyboardState` / `DirectInput8Create` / `dinput8` / `GetAsyncKeyState`
+**均无命中** ⇒ 从 **`0x4ca428` 的写点反查上游**（TH18 自己轮询输入那处），再定位 DIK 缓冲 / `VK_SPACE 0x20` / `DIK_SPACE 0x39`。
+
+**判据**：按兜底键 ⇒ 使魔全死 ⇒ `BROKEN set` ⇒ 该口停火（`veto=1`）⇒ 下一波重建；一面关底前仍 0 壳；
+不按 ⇒ 无输出、行为不变。
