@@ -31462,3 +31462,31 @@ mgr+0x3c = 14974827 ⇒ 解释①(当 VM 指针) 不可读 ✗ ⇒ 解释② get
 `custom.exe` / `th18.exe` ⇒ **关卡 ECL 是打包在 `th18.dat` 里的**（不是散装 `st05mbs.ecl`）⇒ 要核「实装 ECL」必须**先解包
 `th18.dat`** 再 dump `st05mbs`，与我们 `local/_scratch/c108/th18ecl2/st05mbs.txt`（零售 dump）对比；
 在本批预算内我只做到「确认散装路径不存在」这一步，**解包+对比列为下一批第一件事**（若 leveledit 替换过 ⇒ 结论要改）。
+
+### #251（2026-10-11）：**实装 ECL 复核完成** —— 结构与零售逐字节相同；但揭示「每槽每帧只发一次」
+
+**解包**：`python3 tooling/thtk/unpack.py th18.v1.00a --dat /mnt/d/项目/幻想指南/18/th18_modkit/game/th18.dat --out local/_scratch/c108/unpack_modkit`（rc=0）。
+**对比**：`unpack_modkit/dat/st05mbs.ecl` 与 `local/th18.v1.00a/dat/st05mbs.ecl` **md5 完全相同**
+（`7efceac5dcf8fa1f5fb575e1c1017192`）⇒ **leveledit 没改过这张 ECL**，我们读的 dump 有效。
+
+**零售 dump（`local/_scratch/c108/th18ecl2/st05mbs.txt:94–103`）**：
+```
+etOffsetRad(0, %B - 1.5707964f, 70.0f);  etOn(0);
+etOffsetRad(0, %B + 1.5707964f, 70.0f);  etOn(0);     <-- 槽 0 同帧两次
+etOffsetRad(1, %B - 1.5707964f, 70.0f);  etAngle(1,…); etOn(1);
+etOffsetRad(1, %B + 1.5707964f, 70.0f);  etOn(1);     <-- 槽 1 同帧两次
+wait(12);  %B = %B + %D;
+```
+⇒ **脚本层确实是「每个槽一帧两次 `etOn`」**（中间无 `wait`）。
+
+**但运行期观测（#249/#250）**：一局 `maxk_by_slot` 恒 0、`SITE` 从未见 `call#>=2`、`k` 从未 ≥1、
+`fire_seen=914`（站点被进入 914 次）⇒ **引擎每帧每槽只把一次 `etOn` 送到站点**（第二次被**引擎合并/覆盖**：两次之间只有 `etOffsetRad` 改写，
+引擎很可能按「本帧是否已发」去重），**不是我们 return 吃掉的**（这一点由 `SITE` 无条件计数在下局最终确认）。
+
+**结论（重要，改变 C2 设计）**：
+· **同一帧内两次 `etOn` 不会产生两只壳**（引擎只发一次）⇒ **C2 的 `(enemy, slot, k)` 身份前提不成立**；
+· 「左右对称两只」= **slot 0 与 slot 1 各一只**（`%B` 每波递增 ⇒ 两只随波**整体旋转**，位置来自各自 `props`，
+  身份仍是 `(enemy_id, slot)`）⇒ **否决也是按槽**（我们现有的 `fam_seen/broken` 就是按槽）⇒ **C2 不必做**；
+· 因此「5 面中 boss 只建一侧」的根因**不在 k/身份**，应回到**槽级建壳链路**（map 表容量/`fired`/距离闸/`produced`/环挤出）。
+
+**下一批**：带着 `SITE` 数据确认「引擎合并」这条；并按槽级链路查「只建一侧」（优先 `fam_full`/`SLOTSTATE`）。

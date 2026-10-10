@@ -16505,3 +16505,13 @@ else if (s_aura_charge > 0.0f)                 { ★ 收束（含 interrupt / �
 | SITE | 站点**最顶端**无条件计数（任何 return/否决之前），**只打 `call#>=2`**：`youkai/emit SITE: enemy_id N slot i call#=%u frame=%u (unconditional, before any early return)` ⇒ 分清「引擎只调一次」vs「我们的 return 吃掉第二次」|
 | FIRE 位置 | 确认在**否决之前**（紧跟 latch put、早于 `yk_shot_slot_gate`）|
 | ECL 形态 | modkit `game/` **无散装 `.ecl`**（只有 `th18.dat`/`thbgm.dat`）⇒ 关卡 ECL 打包在 **`th18.dat`** 里；核「实装 ECL」需先解包再 dump `st05mbs`（列下一批）|
+
+#### 2.1ccc-79 2026-10-11：实装 ECL 复核 ⇒ 「每槽每帧只发一次」⇒ C2 前提不成立
+
+| 项 | 说明 |
+| --- | --- |
+| 解包命令 | `python3 tooling/thtk/unpack.py th18.v1.00a --dat <modkit>/game/th18.dat --out local/_scratch/c108/unpack_modkit` |
+| 对比结果 | `st05mbs.ecl` md5 **与零售完全相同**（`7efceac5…`）⇒ leveledit 未改该 ECL，dump 有效 |
+| 脚本层 | `MBoss1_at:94–103`：**每个槽一帧两次 `etOn`**（中间只有 `etOffsetRad` 改写、无 `wait`）|
+| 运行期 | `maxk_by_slot` 恒 0 / `SITE` 无 `call#>=2` / `fire_seen=914` ⇒ **引擎每帧每槽只送一次 `etOn`**（很可能是「本帧已发」合并），**不是我们吃掉** |
+| 结论 | **C2 的 `(enemy,slot,k)` 身份不成立**；「左右两只」= **slot 0 与 slot 1**，身份 = `(enemy_id, slot)`、否决按槽（现有机制）；「只建一侧」的根因回到**槽级建壳链路**（map 容量/`fired`/距离闸/`produced`/环挤出）|
