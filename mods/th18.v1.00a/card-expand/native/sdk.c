@@ -1110,6 +1110,51 @@ void ce_hud_debug_blocks_tick(void)
 void ce_hud_debug_blocks_tick(void) { }
 #endif
 
+/* ★★★★ 2026-10-03z50（owner：「**并没有一起变暗，还是解耦**」）——
+ *   **根因**：z49 的写被我放在了「树根变化才跑」的探针块里 ⇒ 一关**只写一次** ✗
+ *   （实跑日志里 `耦合写入` **只出现 1 次**：写的时候 band alpha=232，之后再没更新 ✗）。
+ *   ⇒ 本函数**每帧**跑一次，结构完全按**只读探针实测**的那棵树来（见 AUDIT #273）：
+ *     · `mgr+0x3c` = **树根 id**（不是指针 ✓）⇒ `ce_anm_get_vm()` 取根；
+ *     · 子链 = `zAnmVmSuffix.list_of_children`（**VM+0x594** = 0x544+0x50）的 `head.next`；
+ *     · 子 VM 的有效 `color_1` 在 **prefix +0x524** ✓（实测四支 = 脚本 2/1/4/3 ✓）。
+ *   ⚠ 安全铁律（#272 的教训）：**每一个指针解引用前都过 `IsBadReadPtr`**、
+ *     循环上限 8 防环、只写已验证的 `color_1`、**只改 A 保留 RGB**（乘性 ⇒ 与引擎的闸只叠加）。
+ *   ⚠ 日志按「band alpha 或支数变化」才打一行 ⇒ 不刷屏 ✓。*/
+void ce_hud_native_face_dim_tick(void)
+{
+    uint8_t *mgr = CE_ABILITY_MGR();
+    int32_t root;
+    uint8_t *vm, *head, *node;
+    uint32_t a;
+    int guard = 0, nw = 0;
+    static uint32_t s_wa = 0xffffffffu;
+    static int s_wn = -1;
+
+    if (!mgr) return;
+    root = *(const int32_t *)(mgr + CE_MGR_SEL_CARD_VM);
+    if (!root) return;
+    vm = (uint8_t *)ce_anm_get_vm((uint32_t)root);
+    if (!vm || IsBadReadPtr(vm + CE_ANM_VM_CHILD_LIST, 12)) return;
+    head = vm + CE_ANM_VM_CHILD_LIST;
+    node = *(uint8_t *const *)(head + 0x4);
+    a = (uint32_t)ce_hud_band_dim_alpha() & 0xffu;
+    while (node && node != head && guard++ < 8) {
+        uint8_t *ch;
+        if (IsBadReadPtr(node, 12)) break;
+        ch = *(uint8_t *const *)node;
+        if (ch && !IsBadReadPtr(ch, CE_ANM_VM_COLOR1 + 4)) {
+            const uint32_t old = *(const uint32_t *)(ch + CE_ANM_VM_COLOR1);
+            *(uint32_t *)(ch + CE_ANM_VM_COLOR1) = (a << 24) | (old & 0x00ffffffu);
+            ++nw;
+        }
+        node = *(uint8_t *const *)(node + 0x4);
+    }
+    if (s_wa != a || s_wn != nw) {
+        s_wa = a; s_wn = nw;
+        ce_log("hud: native face 耦合(每帧) 写 %d 支 band alpha=%u", nw, (unsigned)a);
+    }
+}
+
 void ce_hud_slot_log_all(const char *tag)
 {
     int i, n = ce_hud_slot_count();
@@ -2633,6 +2678,7 @@ int __cdecl BP_ce_item_frame(x86_reg_t *regs, void *bp_info)
      *   ⚠ 只认"无→有"这一条边沿：同一关里换面/暂停/商店都不会触发 ✓（自机一直在）。*/
     ce_hud_stage_reset_end_frame();   /* ★ z44：帧末重新武装"每关一次"的重置闸 */
     ce_hud_band_dim_tick(ce_player_pos());
+    ce_hud_native_face_dim_tick();   /* ★ z50：原生主动卡与共享带**每帧**同步（安全写，见函数头）*/
     ce_hud_debug_blocks_tick();   /* ★ z17：把声明块画出来（debug；宏可关）*/
         dim_now = ce_hud_band_dim_dimmed();
         if (s_dim_was != dim_now) {

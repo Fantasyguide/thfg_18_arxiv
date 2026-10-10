@@ -1175,6 +1175,11 @@ void ce_hud_vm_probe(const char *tag, uint32_t id);
  * 目的：把"分配器以为的块"和"屏幕上真正画出来的 UI"放在一起对照。*/
 void ce_hud_debug_blocks_tick(void);
 
+/* ★ z50：**原生主动卡与共享带同步压暗**（定义在 `sdk.c`；每帧调一次）——
+ * 走「当前主动卡」那棵树的子链表（`VM+0x594`），全程 `IsBadReadPtr` 校验，
+ * 只写已验证的 `color_1` 的 A（保留 RGB ⇒ 乘性 ⇒ 与引擎自己的闸只叠加）。*/
+void ce_hud_native_face_dim_tick(void);
+
 static inline int ce_hud_slot_claim_card_ex(uint32_t card_id, const ce_hud_block_t *blk,
                                             int priority, int own_row, ce_hud_slot_t *out)
 {
