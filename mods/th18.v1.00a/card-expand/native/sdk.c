@@ -2722,6 +2722,44 @@ int __cdecl BP_ce_item_frame(x86_reg_t *regs, void *bp_info)
                         } else {
                             ce_log("hud:   子链表头 %p 不可读 ✗（说明 +0x50 不是子链表）", (void *)head);
                         }
+                        /* ★★★★ 2026-10-03z49（**只读探针实测通过后，才动写**）——
+                         *   实跑数据（`hud: native face 只读探针`）：
+                         *     树根 id 与 `mgr+0x3c` **一致** ✓、`parent=0` ✓（它是根 ✓）、
+                         *     子链 **4 个节点全可读**，`script_id` = **2 / 1 / 4 / 3**、`layer` 24/25 ✓
+                         *     ⇒ **正是脚本 1..4 那四支** ✓；且它们 id **既不连续也不等差**
+                         *     （13139815 / 13107048 / 13074281 / 13041514）⇒ 这就是前两次"猜步长"必败的原因 ✓。
+                         *   ⇒ 写：走**同一条**子链，**每一步都先 `IsBadReadPtr` 校验**，
+                         *     直接写**已验证的** `child + CE_ANM_VM_COLOR1`（`color_1` 是 **prefix** 字段 ✓），
+                         *     只改 A、保留 RGB ⇒ 乘性 ⇒ 与引擎自己的闸只叠加、不互相取消 ✓。
+                         *     上限 8 个节点、不追子节点的子节点（那棵树就一层 ✓）。*/
+                        {
+                            uint8_t *head2 = vm + CE_ANM_VM_CHILD_LIST;
+                            if (!IsBadReadPtr(head2, 12)) {
+                                uint8_t *node2 = *(uint8_t *const *)(head2 + 0x4);
+                                int guard2 = 0, nw = 0;
+                                const uint32_t a2 = (uint32_t)ce_hud_band_dim_alpha() & 0xffu;
+                                while (node2 && node2 != head2 && guard2++ < 8) {
+                                    uint8_t *ch;
+                                    if (IsBadReadPtr(node2, 12)) break;
+                                    ch = *(uint8_t *const *)node2;
+                                    if (ch && !IsBadReadPtr(ch, CE_ANM_VM_COLOR1 + 4)) {
+                                        const uint32_t old = *(const uint32_t *)(ch + CE_ANM_VM_COLOR1);
+                                        *(uint32_t *)(ch + CE_ANM_VM_COLOR1) =
+                                            (a2 << 24) | (old & 0x00ffffffu);
+                                        ++nw;
+                                    }
+                                    node2 = *(uint8_t *const *)(node2 + 0x4);
+                                }
+                                {
+                                    static int32_t s_nat_wr_logged = -2;
+                                    if (s_nat_wr_logged != root) {
+                                        s_nat_wr_logged = root;
+                                        ce_log("hud: native face 耦合写入 %d 支（band alpha=%u；"
+                                               "只改 A、保留 RGB，乘性叠加）", nw, (unsigned)a2);
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
