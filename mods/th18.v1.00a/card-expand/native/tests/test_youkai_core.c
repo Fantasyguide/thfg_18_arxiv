@@ -1491,6 +1491,12 @@ int main(void)
         CHECK(yk_emit_type_allowed(4, (1u << 4) | (1u << 7)) == 1);
         CHECK(yk_emit_type_allowed(99, 0xffffffffu) == 0);    /* 越界 */
         CHECK(YK_EMIT_SHELL_TYPES == 0u);                     /* 本批不猜语义：默认全接受 */
+        /* ★ owner 拍板：临时**黑名单** type{4,7,8}（0 = 关闭）*/
+        CHECK(yk_emit_type_denied(4, YK_EMIT_SHELL_TYPE_DENY) == 1);
+        CHECK(yk_emit_type_denied(7, YK_EMIT_SHELL_TYPE_DENY) == 1);
+        CHECK(yk_emit_type_denied(8, YK_EMIT_SHELL_TYPE_DENY) == 1);
+        CHECK(yk_emit_type_denied(5, YK_EMIT_SHELL_TYPE_DENY) == 0);
+        CHECK(yk_emit_type_denied(4, 0u) == 0);                /* 0 = 回退到现状 */
         /* ★★★ 2026-10-01（owner 真判据）：「**超时不算 bonus failed**」= `zSpellcard+0x78` **bit3**
          *   （耐久符卡；一手 `0x42efb0`–`0x42f039`：bit3 ⇒ 不置 bit7、不清 `+0x7c`）⇒ 优先于名字。*/
         CHECK(yk_spell_xfer_block(0, 0, 0) == YK_XFER_BLOCK_NONE);

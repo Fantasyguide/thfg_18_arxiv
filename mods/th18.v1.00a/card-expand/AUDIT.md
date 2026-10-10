@@ -30572,3 +30572,40 @@ props08/0c/10=(0.0,0.0,0.0) | emitter_world=(0.0,0.0) spawn=(0.0,0.0) | d2=30973
 而它渲染一直是正的 ✓ ⇒ 与我覆盖层的算法**同款** ⇒ **修掉陈旧残影后，这把尺子应当可信** ✓。
 
 **验证**：`make check` **rc=0**（`test_sdk_core` 1430 / `dllx87` 0 / `check-docs` 449 全绿）。
+
+## §BE 详录 #225（2026-10-01）：「奇怪的壳」= 数据指认 `type=4/7`；`type` 语义待一手（本轮进度）
+
+**数据（15:45 log）**：被正确拒 = 一面小怪（`sprite=113 32×32 type=5 dist2=0.0`）；仍建壳 13 只 =
+`type=7`×4（`count_1=0 count_2≈0.0537f fired_age=119`）、`type=4`×1（`count_2≈0.5237f fired_age=23`）、
+`type=5`×5（stage 1 与 stage 6）。台账 `create=13 withdraw=13 bodyport=90 noorigin=13`。
+⇒ **`type=4/7` 是「奇怪的壳」的最可能来源**（`count_1=0`、`count_2` 是 float 位型、`fired_age` 很旧），
+而 `type=5` 既有本体口也有离体口（stage 6 建壳）⇒ **5 像真弹口**。
+
+**一手进度（本轮）**：`0x427810` 前 30 条 = **相对自机的向量 + 零判定**（`[eax+0x624]/[eax+0x620]` 减
+`[edi+0x8]/[edi+0xc]`，`ucomiss`+`lahf`），**没有 type 分支** ⇒ 分支表更深。
+**下一轮配方**：以 `edi = &props[i]`（`[ebp+0x8]`）为线索，找 `cmp dword [edi],N` / `jmp [table+eax*4]`，
+或用 `writes.py` 反查 `props+0x00` 的写点（`etSprite 0x43404e`）与读点的对应关系。
+
+**建议（推断，未拍）**：`YK_EMIT_SHELL_TYPES` 候选 = **bit5（只放 `type==5`）**；按纪律**先不动**，
+等 owner 对 SAMPLE 行的指认（尤其 stage 6 `type=5` 确属「该有」）后再启用。
+
+**`fired_age=119` 疑点**：窗口 `YK_EMIT_FIRED_WINDOW = 3` 且**只在标记时**检查 ⇒ 打印 119 说明
+定格条目**被挤出后重加**（环原 8 格，本批 8→16）或「先标记、后建壳」。本批新增的 **no-origin 守卫
+（建壳时必须有定格）** 在结构上已掐掉后者；`REJECT(no-origin) … have_latch=` 可定论。
+
+## §BE 详录 #226（2026-10-01）：**临时黑名单** `type ∈ {4,7,8}`（owner 拍板；不用白名单）
+
+**决定**：新增 `YK_EMIT_SHELL_TYPE_DENY = (1u<<4)|(1u<<7)|(1u<<8)`（`youkai_core.h`），**0 = 关闭（现状）**；
+纯函数 `yk_emit_type_denied(type, deny)` + 单测 5 条（4/7/8 拒、5 放、0 全放）。
+扫描里在 no-origin 守卫之后加这道门：命中 ⇒ `REJECT(bad-type) enemy_id … slot … type=… (deny mask 0x…)` +
+台账 **`badtype=N`**。
+
+**依据**：#225 的本局数据 —— 仍建壳的 13 只里「奇怪的壳」是 `type=4/7`（`count_1=0`、`count_2` 是 float 位型、
+`fired_age` 很旧）；**一面道中 boss（enemy 169/其他）= `type=8`**（owner 口径：不该有）。
+**不用白名单的理由**：`type` 语义未挖到（`0x427810` 前 30 条无分支）⇒ 白名单可能误杀「该有」场景。
+
+**回归判据**：① 一面关底前 0 壳；② 6 面道中妖精仍有壳；③ 4 面大妖精 / 4 面道中 boss / 5–6 面中 boss 非符 / 米斯蒂亚仍有壳；
+**若某个变没了 ⇒ 立刻把它的 type 从黑名单去掉，并把该场景的 type 记进 `TUNING` 的场景表**。
+
+**待办**：按 #225 配方挖 `props+0x00` 语义表（`cmp dword [edi],N` / `jmp [table+eax*4]` + `etSprite 0x43404e` 写点），
+然后把黑名单换成**有据的白名单**；顺带核 `type=8` 是否 = 激光槽（若是 ⇒ 本就该拒，与「激光不在模型内」登记一致）。

@@ -1372,6 +1372,12 @@ int  yk_emit_far_enough(float dx, float dy, float min_dist);
  *   默认 **0 = 全接受**（= 现状），确认后改成位掩码（bit n = 允许 type == n，n ≤ 31）。
  *   `yk_emit_type_allowed(type, mask)` = 纯函数（单测覆盖）。*/
 #define YK_EMIT_SHELL_TYPES 0     /* 0 = 全接受；否则 bit(type) 允许建壳 */
+/* ★★★★ 2026-10-01 晚（owner 拍板）：**临时黑名单**（不是白名单）——`type` 语义未挖到之前，
+ *   只拒掉**观察到确定不对**的那几类：`type ∈ {4,7,8}`（4/7 = `count_1=0` + `count_2` 是 float 位型
+ *   + `fired_age` 很旧；8 = 一面道中 boss，owner 说不该有）。
+ *   **0 = 关闭（现状）**，便于回退；`yk_emit_type_denied(type, deny)` = 纯函数（单测覆盖）。*/
+#define YK_EMIT_SHELL_TYPE_DENY ((1u << 4) | (1u << 7) | (1u << 8))
+int  yk_emit_type_denied(int type, unsigned deny);
 int  yk_emit_type_allowed(int type, unsigned mask);
 /* ★★★ 2026-10-01（#209 · **主功能**：打死使魔 ⇒ 关闭该发射口）：**「这一条 `etOn` 算不算新一波」**（纯函数）。
  *   判据 = 间隔 ≥ `YK_EMIT_WAVE_GAP`(24) **且** 间隔 ≥ `4 × gap_ref`（该槽自己的波内间隔最小值；

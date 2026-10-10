@@ -658,6 +658,7 @@ static int yk_emit_coord_seen(uint32_t enemy_id, int slot)
     return 0;
 }
 
+static unsigned s_emit_badtype;    /* ★ type 在黑名单 ⇒ 不建壳的槽数 */
 static unsigned s_emit_noorigin;   /* ★ 出点 (0,0)/无定格 ⇒ 不建壳的槽数 */
 static int      s_cur_have_latch;  /* 本槽本帧有没有定格值（循环内临时量）*/
 static unsigned s_sample_logged;   /* ★ SAMPLE 数据行已打几条 */
@@ -2773,9 +2774,22 @@ static void yk_familiars_tick(yk_card_t *s)
              *   `YK_EMIT_SHELL_TYPES` = 允许建壳的 `props+0x00` 值（**0 = 全接受 = 现状**；
              *   要「只对弹口建壳」时把它设成经一手确认的那几个值）。**语义表尚未一手确认** ⇒
              *   本批**不猜**：先靠 `COORD`/`COORD-SPAWN`/台账把 `type` 分布打出来，再填这张表。*/
-            if (active && YK_EMIT_SHELL_TYPES != 0) {
+            /* ★★★★★ 2026-10-01 晚（**owner 拍板：临时黑名单**，不是白名单）：
+             *   只拒掉**观察到确定不对**的 `type ∈ {4,7,8}`（见 `YK_EMIT_SHELL_TYPE_DENY` 的注）；
+             *   不用白名单的理由：`type` 语义还没挖到，白名单可能**误杀**「该有」的场景
+             *   （4 面大妖精 / 米斯蒂亚 / 5–6 面中 boss 非符）。**0 = 关闭**（回退现状）。*/
+            if (active) {
                 int ty = *(const int32_t *)((const uint8_t *)e + YK_EMIT_PROPS + (size_t)i * YK_EMIT_PROP_STRIDE);
-                if (!yk_emit_type_allowed(ty, YK_EMIT_SHELL_TYPES)) { ++i; continue; }
+                if (yk_emit_type_denied(ty, YK_EMIT_SHELL_TYPE_DENY)) {
+                    if (!yk_emit_reject_seen(id, i)) {
+                        ++s_emit_badtype;
+                        ce_log("youkai/emit: REJECT(bad-type) enemy_id %u slot %d type=%d "
+                               "(deny mask 0x%x) => NO familiar (owner 2026-10-01: type 4/7/8 are the "
+                               "'odd shells' observed; temporary blacklist, 0 = off)",
+                               id, i, ty, (unsigned)YK_EMIT_SHELL_TYPE_DENY);
+                    }
+                    ++i; continue;
+                }
             }
             /* ⛔ 2026-10-01 晚（**owner 已否掉**）：「大怪/尺寸白名单」那道闸**已撤** ——
              *   owner：「**不是只有大怪才有可能有发射口使魔；6 面道中的妖精也有发射口使魔**」。
@@ -7774,11 +7788,11 @@ static int on_tick_2(ce_card_t *c)
             float lz[3];
             int have = yk_emit_latch_get(0u, 0, lz);       /* 只为日志占位；下面打「最近一次定格」*/
             (void)have;
-            ce_log("youkai/emit: move %u create %u withdraw %u hp_reset %u latched=%u dist0=%u phantom=%u bodyport=%u notfam=%u noorigin=%u "
+            ce_log("youkai/emit: move %u create %u withdraw %u hp_reset %u latched=%u dist0=%u phantom=%u bodyport=%u notfam=%u noorigin=%u badtype=%u "
                    "(position-only pinning: offset changes never rebuild the shell nor reset its HP; "
                    "shell targets the FROZEN offset_final from the etOn site; AUDIT §BE #208/#210)",
                    s_emit_move, s->spawns, s->lost + s->silent, s_emit_hp_reset, s_emit_latch_logged,
-                   s_emit_dist0, s_emit_phantom, s_emit_bodyport, s_emit_notfam, s_emit_noorigin);
+                   s_emit_dist0, s_emit_phantom, s_emit_bodyport, s_emit_notfam, s_emit_noorigin, s_emit_badtype);
         }
     }
     focused = yk_focused();                               /* ★ owner ④：本卡眼中的侧（锁期间钉住）*/
