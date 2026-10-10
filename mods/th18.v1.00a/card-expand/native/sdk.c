@@ -1000,6 +1000,8 @@ void ce_hud_vm_probe(const char *tag, uint32_t id)
 static uint32_t s_dbg_edge[CE_HUD_DBG_MAX][4];   /* 每块 4 条边：0=上 1=下 2=左 3=右 */
 static int      s_dbg_rows;                      /* 已经建好的行数（按**实际块数**增长，不预开 257 行）*/
 static int32_t  s_dbg_stage = -1;               /* ★ z25：池子对应的关卡号（换关要整池重建）*/
+static int32_t  s_dbg_retry[CE_HUD_DBG_MAX];    /* ★ z32：每行每 30 帧最多重建一次（不洪水）*/
+static int32_t  s_dbg_last_id[CE_HUD_DBG_MAX]; /* ★ z32：每行上次打日志时的卡 id（换卡就再打一次）*/
 
 static uint32_t hud_dbg_spawn_edge(const float *p)
 {
@@ -1046,8 +1048,22 @@ void ce_hud_debug_blocks_tick(void)
 
     for (i = 0; i < s_dbg_rows; ++i) {
         uint32_t col;
-        /* ⚠ 不做"每帧自愈"（z24 那版查不到就每帧新建 ⇒ VM 洪水 ✗）：
-         *   句柄只在**建行时**与**换关时**更新（见上）。若某支中途真被别处删了，下一关会重建 ✓。*/
+        /* ★★★ 2026-10-03z32（owner：「**不可能被画面盖住，因为它大体是透明的**」）——
+         *   那条 z30 的"被 109 自己的画面盖住"的推断**不成立**（画面透明）⇒ 真凶是**边根本就没建起来**：
+         *   `ce_anm_spawn_ui` 在帧里可能失败（尤其一帧内要建很多支时）⇒ 那几行就是空的 ✗
+         *   （日志里 `hud.vm dbg.edge_* …: (no VM)` 正是这个）。
+         *   ⇒ 加**有节流的重试**：某支查不到就每 **30 帧**最多重试一次（补得上、又不会 VM 洪水）。*/
+        for (e = 0; e < 4; ++e) {
+            if (s_dbg_edge[i][e] && ce_anm_get_vm(s_dbg_edge[i][e])) continue;
+            if (s_dbg_retry[i] > 0) { --s_dbg_retry[i]; continue; }
+            {
+                const float org[3] = { 0.0f, 0.0f, 0.0f };
+                s_dbg_edge[i][e] = hud_dbg_spawn_edge(org);
+                s_dbg_retry[i] = 30;
+                if (s_dbg_edge[i][e])
+                    ce_log("hud: debug overlay 重建 row %d 的边（边 %d）", i, e);
+            }
+        }
         float x, y, w, h, t = 2.0f;             /* 边宽 2 表面 px */
         if (i >= n || !ce_hud_slot_enum(i, &id, &sl)) {
             for (e = 0; e < 4; ++e)
@@ -1057,6 +1073,14 @@ void ce_hud_debug_blocks_tick(void)
         x = sl.x; y = sl.y; w = sl.w; h = sl.h;
         col = (sl.side == CE_HUD_SIDE_PINNED) ? 0xB0FFFF00u
             : (sl.side == CE_HUD_SIDE_RIGHT)  ? 0xB000FFFFu : 0xB000FF00u;
+        if (s_dbg_last_id[i] != (int32_t)id) {   /* ★ z32：每行的实际几何（换卡/首见时打一次）*/
+            s_dbg_last_id[i] = (int32_t)id;
+            ce_log("hud: debug overlay row %d = card %u 块 x %.0f..%.0f y %.0f..%.0f "
+                   "(边 VM 上%d 下%d 左%d 右%d)", i, (unsigned)id,
+                   (double)x, (double)(x + w), (double)(y - h), (double)y,
+                   s_dbg_edge[i][0] ? 1 : 0, s_dbg_edge[i][1] ? 1 : 0,
+                   s_dbg_edge[i][2] ? 1 : 0, s_dbg_edge[i][3] ? 1 : 0);
+        }
         /* ⚠ `drawRect` 是**以 VM 位置为中心**画的（先例：116 的外框四条就传"框心"）
          *   ⇒ 四条边各自给**边心**（否则整体会偏半条边）。*/
         if (s_dbg_edge[i][0]) {                  /* 上边：中心 = (x+w/2, y−h) */
