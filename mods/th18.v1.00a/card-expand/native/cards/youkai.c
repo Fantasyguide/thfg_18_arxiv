@@ -675,6 +675,9 @@ static uint32_t s_dbg_kill_ids[8];      /* ★ 待验证的被杀 id */
 static unsigned s_dbg_kill_n;
 static uint32_t s_dbg_kill_frame;
 static unsigned s_shared_logged;        /* ★ 「同出点共用壳」日志条数 */
+static unsigned s_hp_logged;            /* ★ hp 日志条数 */
+/* ★ 临时调试旋钮（owner）：「发射口使魔血量暂时 1」；**0 = 关闭覆盖**（恢复正式口径）。*/
+#define YK_EMIT_FAM_HP_OVERRIDE 1
 #define YK_EMIT_SHARE_SAME_POS 0   /* ⛔ 默认 0 = **关闭**（owner：「它是对称的两个使魔应当是」⇒ 同出点是我们读错位置，不是 ECL 本意；函数保留待用）*/
 static uint32_t s_dbg_prev_input;       /* 仅用于排障日志 */
 static unsigned s_dbg_mask_logged;
@@ -2607,6 +2610,16 @@ static void yk_run_action(yk_card_t *s, const yk_action_t *act)   /* s 可为 NU
         int32_t hp_now = yk_enemy_hp_max_by_id(act->enemy_id);
         int32_t life = (hp_now > 0) ? (int32_t)yk_map_fam_hp((int)hp_now, yk_current_character())
                                     : (int32_t)YK_FAM_LIFE;
+        /* ★★★★ 2026-10-01 晚（owner 临时要求）：「把**发射口使魔血量暂时弄成 1**」——
+         *   `YK_EMIT_FAM_HP_OVERRIDE > 0` ⇒ **覆盖**上面的正式口径（`yk_map_fam_hp()` 原逻辑**保留**）；
+         *   `0` = 关闭覆盖（恢复正式口径）。**这是临时调试值，测完改回 0**（登记 `TUNING §2.1ccc-72`）。*/
+        if (YK_EMIT_FAM_HP_OVERRIDE > 0) life = (int32_t)YK_EMIT_FAM_HP_OVERRIDE;
+        if (s_hp_logged < 8u) {
+            ++s_hp_logged;
+            ce_log("youkai/emit: CREATE hp=%d%s (enemy_id %u slot %d) - one shot must kill it; then the "
+                   "slot is vetoed until a wave/rearm edge or the TTL",
+                   (int)life, (YK_EMIT_FAM_HP_OVERRIDE > 0) ? " (override)" : "", act->enemy_id, act->slot);
+        }
         /* ★ owner：「瞬移不会重建血量吧」—— 若走到这里时那一格**还有活壳**，说明有路径在重建
          *   （那才会重设 life）⇒ 记账（`emit hp_reset`，正常恒 0，是实跑判据）。*/
         {

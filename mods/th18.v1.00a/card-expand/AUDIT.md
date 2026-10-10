@@ -31143,3 +31143,12 @@ youkai/emit POSSRC: enemy_id N slot i | live=data+0x4e58(+i*0xc)=(x,y,z)
 
 **判据**：① 按空格 ⇒ 壳**真的死**（`BROKEN set`、`SPACE VERIFY … alive=0`）、母机不掉血；② 5 面中 boss
 **位置来源查清** ⇒ 修成**对称两只**；③ 打死 ⇒ 该槽**停火**（`veto=1`）⇒ 下一波重建；④ 一面关底前 0 壳。
+
+## §BE 详录 #240（2026-10-01）：发射口使魔 HP = 1（owner 临时要求）
+
+**旋钮**：`YK_EMIT_FAM_HP_OVERRIDE`（`native/cards/youkai.c`，**默认 = 1**）：`> 0` ⇒ **覆盖**发射口（映射层）
+使魔 HP（正式口径 = `yk_map_fam_hp()` = 母机 HP ÷ 3 × 机体系数）；**`0` = 关闭覆盖、恢复正式口径**；原逻辑未删。
+这是**临时调试值**（owner 要求），**测试完改回 0**。**只改发射口（映射）层**，绕转使魔不动。
+
+**日志**：建壳时 `youkai/emit: CREATE hp=%d (override) (enemy_id N slot i) - one shot must kill it; then the slot is vetoed …`（前 8 次）。
+**判据**：**一枪（或一下）就死**；随后该槽**停火**（`veto=1`、`vetoed` 涨）⇒ **下一波重建**；**母机不掉血**。
