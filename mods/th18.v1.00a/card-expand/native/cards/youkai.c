@@ -720,6 +720,42 @@ static unsigned s_dbg_mask_logged;
 static unsigned s_post_logged;        /* ★ POST 打了几行 */
 /* ★ 观测未证实前：**不把 produced 当硬性前提**（默认 0 = 关 ⇒ 距离闸是唯一闸）。*/
 #define YK_EMIT_REQUIRE_BULLETS 0
+/* ★★★ C1（只观测）：「同一帧内**该 `(enemy_id, slot)`** 的第 k 次 fire」——身份 = `(enemy, slot, k)`
+ *   （C2 的正解：5 面中 boss 同帧两发、偏移 ±90°、每波旋转 ⇒ 不能用绝对位置当身份）。
+ *   ⚠ 订正：k **必须按 (敌人,槽) 独立计数**（owner log：不同敌人也拿到 k=0/1 ⇒ 之前是全帧统一计数）。*/
+typedef struct { uint32_t enemy; int16_t slot; uint32_t frame; uint8_t k; } yk_fk_t;
+#define YK_FK_N 32
+static yk_fk_t  s_fk[YK_FK_N];
+static yk_fk_t  s_fkline[YK_FK_N];      /* 每敌 FIRE 行数 */
+static yk_fk_t  s_fkline2[YK_FK_N];     /* 每敌 ORIGIN-GATE 行数 */
+static unsigned s_fire_logged_2;        /* FIRE 总行数 */
+static unsigned s_og_logged;            /* ORIGIN-GATE 总行数 */
+
+static int yk_fk_bump(uint32_t enemy, int slot, uint32_t fr)
+{
+    unsigned i;
+    for (i = 0; i < YK_FK_N; ++i)
+        if (s_fk[i].enemy == enemy && s_fk[i].slot == (int16_t)slot) {
+            if (s_fk[i].frame != fr) { s_fk[i].frame = fr; s_fk[i].k = 0; }
+            else if (s_fk[i].k < 8u) ++s_fk[i].k;
+            return (int)s_fk[i].k;
+        }
+    for (i = 0; i < YK_FK_N; ++i)
+        if (!s_fk[i].enemy) { s_fk[i].enemy = enemy; s_fk[i].slot = (int16_t)slot; s_fk[i].frame = fr; s_fk[i].k = 0; return 0; }
+    return 0;
+}
+static unsigned yk_fk_lines(yk_fk_t *t, uint32_t enemy)
+{
+    unsigned i;
+    for (i = 0; i < YK_FK_N; ++i) if (t[i].enemy == enemy) return (unsigned)t[i].k;
+    for (i = 0; i < YK_FK_N; ++i) if (!t[i].enemy) { t[i].enemy = enemy; t[i].k = 0; return 0u; }
+    return 99u;
+}
+static void yk_fk_inc(yk_fk_t *t, uint32_t enemy)
+{ unsigned i; for (i = 0; i < YK_FK_N; ++i) if (t[i].enemy == enemy) { ++t[i].k; return; } }
+static unsigned yk_fk_lines2(yk_fk_t *t, uint32_t enemy)
+{ unsigned i; for (i = 0; i < YK_FK_N; ++i) if (t[i].enemy == enemy) return (unsigned)t[i].k; return 0u; }
+
 static unsigned s_bmprobe_logged;     /* ★ BM 原始探针已打几帧 */
 static unsigned s_fire_logged;        /* ★ FIRE 行数 */
 static unsigned s_og_logged;          /* ★ ORIGIN-GATE 行数 */
@@ -6973,6 +7009,39 @@ static int yk_on_shot_slot(ce_card_t *c, const ce_enemy_shot_t *ev)
         float ly = *(const float *)(prr + 0x0c);
         float lz = *(const float *)(prr + 0x10);
         yk_emit_latch_put(ev->enemy_id, ev->slot, lx, ly, lz);
+        {
+            uint32_t fr = ce_sdk_frame();
+            int k = yk_fk_bump(ev->enemy_id, ev->slot, fr);
+            const uint8_t *prf = (const uint8_t *)ev->enemy + YK_EMIT_PROPS
+                               + (size_t)ev->slot * YK_EMIT_PROP_STRIDE;
+            const float *orf = (const float *)((const uint8_t *)ev->enemy + YK_EMIT_ORIGINS_ABS
+                                              + (size_t)ev->slot * YK_EMIT_VEC_STRIDE);
+            const float *olf = (const float *)((const uint8_t *)ev->enemy + YK_EMIT_OFFSETS_ABS
+                                              + (size_t)ev->slot * YK_EMIT_VEC_STRIDE);
+            yk_slot_t *g0 = yk_map_find(&s_map, ev->enemy_id, ev->slot);
+            /* 额度（owner）：**k>=1 一律打**（关键样本）+ 每敌 ≤8 + 总 ≤256 ⇒ 中 boss 必现。*/
+            if (k >= 1 && s_fire_logged_2 < 256u && yk_fk_lines(s_fkline, ev->enemy_id) < 8u) {
+                ++s_fire_logged_2;
+                yk_fk_inc(s_fkline, ev->enemy_id);
+                ce_log("youkai/emit FIRE: enemy_id %u slot %d k=%d type=%d color=%d props08/0c/10=(%.1f,%.1f,%.1f) "
+                       "offsets[slot]=(%.1f,%.1f,%.1f) origins[slot]=(%.1f,%.1f,%.1f) frame=%u have_shell=%d "
+                       "x1_closed=%d x2_closed=%d (per-k veto not implemented yet - C1 observation only)",
+                       ev->enemy_id, ev->slot, k, *(const int32_t *)(prf + 0x00),
+                       *(const int32_t *)(prf + 0x04), (double)lx, (double)ly, (double)lz,
+                       (double)olf[0], (double)olf[1], (double)olf[2],
+                       (double)orf[0], (double)orf[1], (double)orf[2], (unsigned)fr,
+                       (g0 && g0->fam_id) ? 1 : 0, 0, 0);
+            }
+            if ((k >= 1 || g0) && s_og_logged < 128u && yk_fk_lines2(s_fkline2, ev->enemy_id) < 8u) {
+                ++s_og_logged;
+                yk_fk_inc(s_fkline2, ev->enemy_id);
+                ce_log("youkai/emit ORIGIN-GATE: enemy %u slot %d k=%d closed=%d veto=%d "
+                       "(per-k veto not implemented yet - C1 observation only)",
+                       ev->enemy_id, ev->slot, k,
+                       (g0 && g0->fam_seen && g0->broken) ? 1 : 0,
+                       (g0 && g0->fam_seen && !g0->fam_id) ? 1 : 0);
+            }
+        }
         /* ★★★ C1（只观测）：「同一帧内该槽的第 k 次 fire」——身份 = `(enemy, slot, k)`（C2 的正解）。
          *   帧边界用 `ce_sdk_frame()`；`k` 每槽每帧从 0 起，上限 8（超出并入最后一个）。*/
         {
