@@ -940,6 +940,7 @@ typedef void (CE_TC *ce_base_del_t)(void *, uint32_t);
     CE_STUB2(ID, on_enemy_drop, 0x30) \
     static void CE_TC ce_s_##ID##_on_stage_start(void *self) { \
         ce_sdk_trace(ID, 0x34, "on_stage_start"); \
+        ce_hud_stage_reset_begin();   /* ★ z44：每关重置槽位表（重开同关也走这里）*/ \
         ce_sdk_active_reset(self, &ce_hooks_##ID, 0); \
         if (ce_hooks_##ID.on_stage_start) ce_hooks_##ID.on_stage_start((ce_card_t *)self); } \
     CE_STUB1(ID, on_hud_anm, 0x44, uint32_t) \

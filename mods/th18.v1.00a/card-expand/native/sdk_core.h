@@ -791,6 +791,10 @@ void ce_hud_slots_reset(void);                                  /* 清空全部�
  *   **「重开本局」那一刻**，不是「局中删卡」；局中删卡走 `+0x50`（`operator_delete`）。
  *   本注释旧稿写的「局中删卡后也会跑」与一手不符（实跑 162k 行日志里 `+0x4c` 只出现 1 次）。*/
 void ce_hud_stage_begin(int stage);
+/* ★ z44：**每关一次**的槽位表重置（由各卡 `on_stage_start` 触发、帧末重新武装）。
+ * 为什么不用"自机对象出现"：实测自机在菜单里也非空 ⇒ 那条边沿永不触发 ✗。*/
+void ce_hud_stage_reset_begin(void);
+void ce_hud_stage_reset_end_frame(void);
 int  ce_hud_stage_current(void);                                /* 记住的关卡号（-1 = 还没认领过）*/
 /* 认领（幂等）。成功返回 1 并填 *out；卡 id 非法 / blk 非法返回 0。
  * `blk->side == CE_HUD_SIDE_PINNED` 时本函数返回 0（要用下面那个带锚点的入口）。*/

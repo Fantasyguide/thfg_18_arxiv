@@ -1688,6 +1688,24 @@ static void hud_relayout(void)
 
 static int s_hud_stage = -1;                                    /* 上一次认领时的关卡号 */
 
+/* ★★★★ 2026-10-03z44（owner：「**又出现了 HUD 布局残留**」）——
+ *   记录：z35 那个"自机对象从无到有"的信号**实测从未触发**（`grep -c 新一局` = **0**）：
+ *   自机对象在整段会话里**一直非空**（连菜单里也是）⇒ 那条边沿等不到 ✗。
+ *   ⇒ 改用**真正的每关事件**：**每张卡的 `on_stage_start`（虚表 `+0x34`）**（`sdk.h` 的模板里挂）——
+ *     重开同一关也会走它 ✓。⚠ 一关会连打多张卡 ⇒ 用 `s_hud_reset_armed` 保证**一批只重置一次**
+ *     （帧钩子里重新武装 ✓），否则后面的卡会把前面刚认领的表再清一次 ✗。*/
+static int s_hud_reset_armed;
+
+void ce_hud_stage_reset_begin(void)
+{
+    if (s_hud_reset_armed) return;
+    s_hud_reset_armed = 1;
+    ce_hud_slots_reset();
+    s_hud_stage = -1;                 /* 纪元作废 ⇒ 下次认领按新一关重排 */
+}
+
+void ce_hud_stage_reset_end_frame(void) { s_hud_reset_armed = 0; }
+
 void ce_hud_stage_begin(int stage)
 {
     if (stage == s_hud_stage) return;

@@ -2631,15 +2631,7 @@ int __cdecl BP_ce_item_frame(x86_reg_t *regs, void *bp_info)
      *     （`CE_PLAYER()` 在关卡里非空、菜单/结算里为空 ✓，而且是**引擎自己**的状态，
      *      不依赖关卡号）⇒ 那一刻把纪元打回 **−1**，下一帧各卡认领时按新一局重排 ✓。
      *   ⚠ 只认"无→有"这一条边沿：同一关里换面/暂停/商店都不会触发 ✓（自机一直在）。*/
-    {
-        static int s_play_was = -1;
-        const int play_now = (CE_PLAYER() != 0);
-        if (s_play_was == 0 && play_now) {
-            ce_hud_stage_begin(-1);          /* 纪元作废 ⇒ 下次认领整表重排 */
-            ce_log("hud: 新一局（自机对象出现）⇒ 槽位表重置（原来只看关卡号 ⇒ 重开同关会沿用上一局）");
-        }
-        s_play_was = play_now;
-    }
+    ce_hud_stage_reset_end_frame();   /* ★ z44：帧末重新武装"每关一次"的重置闸 */
     ce_hud_band_dim_tick(ce_player_pos());
     ce_hud_debug_blocks_tick();   /* ★ z17：把声明块画出来（debug；宏可关）*/
         dim_now = ce_hud_band_dim_dimmed();
@@ -2692,18 +2684,26 @@ int __cdecl BP_ce_item_frame(x86_reg_t *regs, void *bp_info)
                 static int32_t s_nat_scan_logged = -1;
                 int32_t found[4]; int nf = 0, q;
                 for (q = 0; q < 4; ++q) found[q] = 0;
+                /* ⚠ 实测：这些 "id" 其实是 **VM 指针**（场上各 id 都是 0x03.. 量级；
+                 *   `mgr+0x3c` 甚至出现负数）⇒ 在指针上 `±8` 扫是**扫不到的**（首版实测 0 支 ✗）。
+                 *   但同一批 VM 的 id 是**等差**的：实跑 `60619525 → 60652292 → 60685059`
+                 *   ⇒ 步长 **32767（0x7FFF）** ⇒ 那棵树的子节点就在根附近**若干 stride** 处 ✓
+                 *   ⇒ 按 stride 扫（±8 步 = ±256KB），仍用 `vm+0x28`（脚本号 1..4）做**校验** ✓。*/
                 for (q = -8; q <= 8; ++q) {
-                    const int32_t cand = root + q;
-                    uint8_t *vm = cand > 0 ? ce_anm_get_vm((uint32_t)cand) : 0;
-                    int32_t sc;
-                    if (!vm) continue;
-                    sc = *(const int32_t *)(vm + CE_ANM_VM_SCRIPT_ID);
-                    if (sc < 1 || sc > 4) continue;
-                    if (found[sc - 1]) continue;                 /* 一个脚本只认一次 */
-                    found[sc - 1] = cand;
-                    ++nf;
-                    ce_anm_set_color((uint32_t)cand,
-                                     (a << 24) | (*(const uint32_t *)(vm + CE_ANM_VM_COLOR1) & 0x00ffffffu));
+                    int32_t k;
+                    for (k = 0; k < 2; ++k) {                    /* 两种候选步长都试（0x7FFF / 0x8000）*/
+                        const int32_t cand = root + q * (k ? 32768 : 32767);
+                        uint8_t *vm = ce_anm_get_vm((uint32_t)cand);
+                        int32_t sc;
+                        if (!vm) continue;
+                        sc = *(const int32_t *)(vm + CE_ANM_VM_SCRIPT_ID);
+                        if (sc < 1 || sc > 4) continue;
+                        if (found[sc - 1]) continue;             /* 一个脚本只认一次 */
+                        found[sc - 1] = cand;
+                        ++nf;
+                        ce_anm_set_color((uint32_t)cand,
+                                         (a << 24) | (*(const uint32_t *)(vm + CE_ANM_VM_COLOR1) & 0x00ffffffu));
+                    }
                 }
                 if (s_nat_scan_logged != root) {
                     s_nat_scan_logged = root;
