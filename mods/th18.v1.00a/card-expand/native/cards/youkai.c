@@ -745,8 +745,10 @@ static unsigned s_fire_seen;            /* ★ 无条件计数：站点上见过
 static unsigned s_firesum_logged;       /* ★ FIRESUM 行数 */
 static unsigned s_fcout_logged;         /* ★ FIRECOUNT 行数 */
 static unsigned s_dh_body, s_dh_near, s_dh_far, s_dh_logged;   /* ★ DISTHIST 计数 */
+static unsigned s_dh_nolatch, s_dh_nolatch_logged;   /* ★ 无定格值（props 直读）计数 */
 static uint32_t s_pin_last_fam; static uint32_t s_pin_last_frame;   /* ★ TRACK：最近被钉的壳/帧 */
 static uint32_t s_trk_enemy; static int s_trk_slot = -1; static int s_trk_left;   /* ★ TRACK 目标与剩余帧 */
+static int s_trk_moving;   /* ★ 只在本帧母机位移 > 0.5px 时打 TRACK（owner：一局就能看出壳有没有跟着动）*/
 static unsigned s_site_logged;          /* ★ SITE(call#>=2) 行数 */
 static unsigned s_og_logged;            /* ORIGIN-GATE 总行数 */
 
@@ -3058,7 +3060,13 @@ static void yk_familiars_tick(yk_card_t *s)
             }
             /* ★★★★ 2026-10-11（owner：那一堆**发射口使魔**冻住不跟母机动）——**20 帧连续 TRACK**：
              *   选一个「有壳」的 (敌人,槽)，连续 20 帧把 6 个量并列打出来，一次判死三种可能。*/
-            if (s_trk_left > 0 && s_trk_enemy == id && s_trk_slot == i) {
+            {
+                static float s_trk_px, s_trk_py; static uint32_t s_trk_pf;
+                float mvx = epos[0] - s_trk_px, mvy = epos[1] - s_trk_py;
+                if (ce_sdk_frame() != s_trk_pf) { s_trk_pf = ce_sdk_frame(); s_trk_px = epos[0]; s_trk_py = epos[1]; }
+                s_trk_moving = ((mvx < 0 ? -mvx : mvx) + (mvy < 0 ? -mvy : mvy)) > 0.5f ? 1 : 0;
+            }
+            if (s_trk_left > 0 && s_trk_enemy == id && s_trk_slot == i && s_trk_moving) {
                 uint8_t *tf = yk_familiar_by_id(0);   /* 占位避免未用告警 */
                 uint32_t fid = 0;
                 const float *fc = 0;
@@ -3284,6 +3292,16 @@ static void yk_familiars_tick(yk_card_t *s)
                            "(min_dist=%.0f)", (int)CE_CURRENT_STAGE(), s_dh_body, s_dh_near, s_dh_far,
                            (double)YK_EMIT_SHELL_MIN_DIST);
                     s_dh_body = s_dh_near = s_dh_far = 0u;
+                }
+            }
+            if (active && !s_cur_have_latch) {
+                /* ★ 诊断（owner 复核 #162 的两个边界）：**无定格值**的槽会走 props 直读 ⇒ 那种情况可能又冻。
+                 *   这里只计数 + 每 60 帧一行，先看它到底常见不常见（不改行为）。*/
+                ++s_dh_nolatch;
+                if ((ce_sdk_frame() % 60u) == 0u && s_dh_nolatch_logged < 32u) {
+                    ++s_dh_nolatch_logged;
+                    ce_log("youkai/emit NOLATCH: enemy_id %u slot %d -> props direct (freeze risk) count=%u",
+                           id, i, s_dh_nolatch);
                 }
             }
             if (active && !yk_emit_far_enough(wxy[0] - epos[0], wxy[1] - epos[1], YK_EMIT_SHELL_MIN_DIST)) {

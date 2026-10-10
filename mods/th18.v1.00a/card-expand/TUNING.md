@@ -16575,3 +16575,12 @@ else if (s_aura_charge > 0.0f)                 { ★ 收束（含 interrupt / �
 | 矛盾 | cancel_all 用 bm+`0x5a8` + state@+`0xaac`（BMPROBE2 有合理值）vs vendor bm+`0x108c` + state@+`0xf68` ⇒ 差 `0xae4`/`0xabc` ⇒ [`0x4cf2bc`] 可能不是 manager 基址 |
 | 下一批 | 对新生成的子弹**双候选基址**同打 pos 读数（ourbase+0x638 与 +0x7dc）⇒ 用数值量级定死真基址；随后 BULLET-ORIGIN 直接给真出点（与 props/target/fam_cur 并列）|
 | DISTHIST | 口径已改为**本帧所有活跃槽**分三档（<48 / 48..64 / >=64）|
+
+#### 2.1ccc-86 2026-10-11：TRACK 聚焦 + NOLATCH 计数（等 #162 实跑）
+
+| 项 | 说明 |
+| --- | --- |
+| #162 状态 | 已发版（DLL 9223dc9c...，提交 55231f4a）：latch 记相对量 rel、消费端每帧 敌人位置+rel ⇒ 等 owner 验证 |
+| TRACK 聚焦 | 只在**母机本帧位移 > 0.5 px** 时打（每槽最多 20 行）⇒ 一局即可判「壳跟不跟」|
+| NOLATCH | 无定格值（走 props 直读，可能又冻）的槽**计数 + 每 60 帧一行日志**；若常见 ⇒ 改成「props 减当时敌人位置」存 rel |
+| 判据 | ① 映射壳跟着出点动（TRACK 的 target/fam_cur 同步变化）；② 大妖精附近无多余一只；③ 5 面中 boss 两只壳仍在 |
