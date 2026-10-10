@@ -717,6 +717,9 @@ static uint32_t s_dbg_prev_input;       /* 仅用于排障日志 */
 static unsigned s_dbg_mask_logged;
 
 static unsigned s_post_logged;        /* ★ POST 打了几行 */
+/* ★ 观测未证实前：**不把 produced 当硬性前提**（默认 0 = 关 ⇒ 距离闸是唯一闸）。*/
+#define YK_EMIT_REQUIRE_BULLETS 0
+static unsigned s_bmprobe_logged;     /* ★ BM 原始探针已打几帧 */
 static int32_t  s_cur_bc;             /* 本帧敌弹总数 */
 static int      s_cur_bc_grew;        /* 本帧是否增长 */
 static unsigned s_possrc_logged;      /* ★ POSSRC 打了几行 */
@@ -2959,6 +2962,19 @@ static void yk_familiars_tick(yk_card_t *s)
              *   `type != 0` 只说明**被配置过**；配了却整波不发弹的槽（`count=0` / 被 `etDelay` 压制 /
              *   只在某分支 `etOn`）⇒ **不建壳**（owner 报的「不是发弹点的使魔」）。*/
             /* ★ 粘性口径（见上面 `yk_fired_sticky_*` 的注）：开过火就记住，只在槽不活跃时清。*/
+            /* ★ 2026-10-01 晚（`bullets` 恒 0 ⇒ 我们读错字段）：**BM 原始 dword 探针**（前 8 帧），
+             *   逐格打出来，让"真正在涨的那个计数"一眼可见（下一版用它换掉 `0x7d0`）。*/
+            if (s_bmprobe_logged < 8u) {
+                uint8_t *bm0 = CE_BULLET_MGR();
+                if (bm0) {
+                    unsigned q;
+                    ++s_bmprobe_logged;
+                    for (q = 0; q + 4 <= 0x30u; q += 4)
+                        ce_log("youkai/emit BMPROBE: +0x%03x = %d (0x%08x)", 0x7d0 + q,
+                               *(const int32_t *)(bm0 + 0x7d0 + q),
+                               (unsigned)*(const uint32_t *)(bm0 + 0x7d0 + q));
+                }
+            }
             /* ★ 敌弹总数（帧间增长 = 「这一帧真的产了弹」）*/
             {   uint8_t *bm = CE_BULLET_MGR();
                 int32_t bc = bm ? *(const int32_t *)(bm + CE_BM_BULLET_COUNT) : 0;
@@ -3122,8 +3138,9 @@ static void yk_familiars_tick(yk_card_t *s)
                 }
                 ++i; continue;
             }
-            /* ★ 建壳前提：**该槽真的出过弹**（本波内）——只 `etOn` 过而 0 子弹 ⇒ 不建。*/
-            if (active && !yk_prod_get(id, i)) {
+            /* ★ 建壳前提：**该槽真的出过弹** —— ⚠ **观测未证实前默认关闭**（owner：`bullets` 恒 0 是
+             *   我们读错字段 ⇒ 把壳全拒了）。`YK_EMIT_REQUIRE_BULLETS = 1` 才启用。*/
+            if (YK_EMIT_REQUIRE_BULLETS && active && !yk_prod_get(id, i)) {
                 if (!yk_emit_reject_seen(id, i)) {
                     ++s_emit_nobullet;
                     ce_log("youkai/emit: REJECT(no-bullets) enemy_id %u slot %d (etOn seen but the enemy "
