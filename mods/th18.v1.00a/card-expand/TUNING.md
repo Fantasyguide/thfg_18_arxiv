@@ -16593,3 +16593,14 @@ else if (s_aura_charge > 0.0f)                 { ★ 收束（含 interrupt / �
 | TRACK2 | `rel=(x,y)` / `recomputed=(敌人位置+rel)` / `pin_in=(实际喂进 pin 的值)` ⇒ 判 #162 是否生效 |
 | bodyport | 台账改为**按 (敌人,槽) 去重**（不再是按帧累加）|
 | NEARBAND | 距离落 **48–64** 的槽逐个打一行（含 enemy/slot/dist/props/enemy_pos）⇒ 查「48 误拒」|
+
+#### 2.1ccc-88 2026-10-11：**多原点**（同帧同一 `(敌人,槽)` 多次 `etOn`）——键加「同帧第几次」+ 逐出点关火
+
+| 项 | 说明 |
+| --- | --- |
+| 一手 | 引擎 `etOn` handler（`th18:0x433f34`）两条写路径都落到 `0x433ffa` 后**无条件** `0x43401a call 0x427810` ⇒ **真发 N 次、不合并**；实跑 `SITE … call#=2`（enemy 158 slot 0/1、每 12 帧）= `st05mbs MBoss1_at` 的 `wait(12)` |
+| 改动 | 键 = `槽 + 16×ord`（`YK_EMIT_ORIGIN_KEY`，`YK_EMIT_ORIGIN_MAX = 6`、`YK_EMIT_KEYS = 96`）；缓存/表/闸全部按键；tick 新增第二趟循环（第 2..N 次真发）|
+| 旋钮 | `YK_EMIT_SHARE_SAME_POS` **0 → 1**（「一个出点 = 一只使魔」：`st05/06/07mbs` 4 发 2 点 ⇒ 2 只；`st06bs Boss1_984` 4 发 1 点 ⇒ 1 只）；`YK_EMIT_LATCH_N` **32 → 64** |
+| 关火 | `yk_fam_broken` / `yk_fam_gone` / `yk_fam_wave_clear` 改**扫全表**（同点共壳时一只壳被多条键引用 ⇒ 打死它让**所有**落在该出点的 `etOn` 一起停）|
+| 口径回退 | `yk_map_enemy_slots` 改数**真实槽** ⇒ 死亡撒点颗数不变（单测钉住）；`ord == 0` 时键逐值等于旧键 ⇒ 单次发弹场景零变化 |
+| 判据 | 5/6/7 面中 boss 同屏 **2 只**（左右镜像、随 `%B` 转）；打死一侧 ⇒ 那一侧 `gate check … veto=1`、另一侧 `veto=0`；3 面 `GirlD01/D02` **5 只**；`st07 GirlC01_at_360` **0 只**（本体口）；`st06bs Boss1_984` **1 只** |

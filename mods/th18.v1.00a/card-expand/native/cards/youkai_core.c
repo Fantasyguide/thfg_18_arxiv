@@ -447,10 +447,21 @@ unsigned yk_map_enemy_slots(const yk_map_t *m, uint32_t enemy_id)
      *   `__possibly__get_familiar_count`）那个「使魔数」在本作的对位：一手死亡撒点的颗数
      *   `[ebp-0x2c] = f(使魔数)`（`th08:0x42aece`–`:0x42af45` 三条 shottype 分支，见
      *   `yk_kill_burst_count` 的注）。只用「我们真建出来的活子敌人」数会**偏少**
-     *   （与敌人重合的发射口按规则不建使魔 ⇒ 那些槽一颗都不算）⇒ 不同小怪之间的颗数差别被压平。*/
+     *   （与敌人重合的发射口按规则不建使魔 ⇒ 那些槽一颗都不算）⇒ 不同小怪之间的颗数差别被压平。
+     * ★★★★★ 2026-10-11（**多原点**）：键现在带「同帧第几次」⇒ 同一槽的多原点会占多条
+     *   条目。**这里必须数「真实槽」的个数**（`YK_EMIT_REAL_SLOT`）—— 否则 5/6 面中 boss 的
+     *   死亡撒点颗数会从 2 变 4、`st03` 那两只从 1 变 5，直接改掉一条**已验收的**数值口径。*/
     unsigned i, n = 0;
     if (!m || !enemy_id) return 0;
-    for (i = 0; i < YK_FAM_MAX; ++i) if (m->e[i].enemy_id == enemy_id) ++n;
+    for (i = 0; i < YK_FAM_MAX; ++i) {
+        unsigned j;
+        int key, dup = 0;
+        if (m->e[i].enemy_id != enemy_id) continue;
+        key = YK_EMIT_REAL_SLOT((int)m->e[i].slot);
+        for (j = 0; j < i; ++j)
+            if (m->e[j].enemy_id == enemy_id && YK_EMIT_REAL_SLOT((int)m->e[j].slot) == key) { dup = 1; break; }
+        if (!dup) ++n;
+    }
     return n;
 }
 
@@ -485,7 +496,8 @@ unsigned yk_map_releases(const yk_map_t *m)
 yk_slot_t *yk_map_find(yk_map_t *m, uint32_t enemy_id, int slot)
 {
     unsigned i;
-    if (!m || !enemy_id || slot < 0 || slot >= YK_EMIT_SLOTS) return 0;
+    /* ★ 2026-10-11：`slot` 现在是**发射口键**（`0..YK_EMIT_KEYS-1`），不是裸槽号。 */
+    if (!m || !enemy_id || slot < 0 || slot >= YK_EMIT_KEYS) return 0;
     for (i = 0; i < YK_FAM_MAX; ++i)
         if (m->e[i].enemy_id == enemy_id && m->e[i].slot == (uint8_t)slot) return &m->e[i];
     return 0;
@@ -564,7 +576,7 @@ int yk_note_slot(yk_map_t *m, uint32_t enemy_id, int slot, int active, const flo
         act->x = xy ? xy[0] : 0.0f;
         act->y = xy ? xy[1] : 0.0f;
     }
-    if (!m || !enemy_id || slot < 0 || slot >= YK_EMIT_SLOTS) return 0;
+    if (!m || !enemy_id || slot < 0 || slot >= YK_EMIT_KEYS) return 0;   /* ★ 键域 0..95（多原点）*/
 
     e = yk_map_find(m, enemy_id, slot);
     if (!e) {
@@ -692,34 +704,51 @@ void yk_fam_created(yk_map_t *m, uint32_t enemy_id, int slot, uint32_t fam_id)
     e->prev_life = YK_LIFE_UNSAMPLED;                     /* 新使魔：下一帧才允许出 delta */
 }
 
+/* ★★★★★ 2026-10-11（**多原点**）：一只壳现在可能被**多条条目**引用（同出点去重 / 共壳：
+ *   例 `st06bs Boss1_984` 的 slot 1 同帧 4 次 `etOn` 都在同一个出点 ⇒ 1 只壳 4 条键；
+ *   `st05/06/07mbs` 的 slot 0 与 slot 1 出点两两重合 ⇒ 每侧 1 只壳 2 条键）。
+ *   ⇒ 死亡 / 静默消失 / 波次清场这三个**事件**必须把**所有**引用那只壳的条目一起处理：
+ *     只处理第一条（旧的 `yk_map_find_fam` 单条语义）= 另一条仍记着死 id ⇒ 闸按
+ *     `fam_seen && !have` 照夹（那一侧确实停火，**对的**），但**重建**会走 `broken == 0` 那条路
+ *     把壳补回来 ⇒ 那一侧「打死了还会复活」。所以三个事件都改成扫全表。*/
 int yk_fam_broken(yk_map_t *m, uint32_t fam_id)
 {
-    yk_slot_t *e = yk_map_find_fam(m, fam_id);
-    if (!e) return 0;
-    e->fam_id = 0;
-    e->no_fam_frames = 0;                                 /* ★ #7：从「它没了的这一刻」开始计闸的年龄 */
-    e->eton_gap = 0;                                      /* ★ owner ②：同理，间隔从这一刻重新算 */
-    e->prev_life = YK_LIFE_UNSAMPLED;
-    /* ★ P1（2026-10-01）：这里**保留** `rearm_pending` —— 它现在只表示「这个夹持期已数过一次」，
-     *   清不清都不再影响放行（放行只走主复位口 / 长期 TTL）。*/
-    /* ★ 「打死使魔 ⇒ 关掉那个发射口」：**实现点不在这里** —— 这里只置状态，真正的「掐掉这一刻的
-     *   `etOn`」由卡侧 `yk_on_shot_slot()`（SDK 站点 `0x433ffa`，`sdk.c` 的 `ce_enemy_shot_slot`）
-     *   调 `yk_shot_slot_gate()` 完成（返回 1 ⇒ SDK 置 `retaddr = 0x43402d` ⇒ 本帧这一槽不发射）。
-     *   本标志（`broken`）是那条路的**判据**：`yk_shot_slot_suppressed()` 只看 `fam_seen && broken`。
-     *   ★ 2026-10-01：卡侧那道「只在聚焦时表态」的侧门已删（owner：「只有人侧才能打死使魔啊」）
-     *   ⇒ 这条闸现在在**人侧**真的生效（妖侧使魔无敌 ⇒ 本来也无口可堵）。*/
-    e->broken = 1;
-    return 1;
+    unsigned i;
+    int hit = 0;
+    if (!m || !fam_id) return 0;
+    for (i = 0; i < YK_FAM_MAX; ++i) {
+        yk_slot_t *e = &m->e[i];
+        if (e->fam_id != fam_id) continue;
+        e->fam_id = 0;
+        e->no_fam_frames = 0;                             /* ★ #7：从「它没了的这一刻」开始计闸的年龄 */
+        e->eton_gap = 0;                                  /* ★ owner ②：同理，间隔从这一刻重新算 */
+        e->prev_life = YK_LIFE_UNSAMPLED;
+        /* ★ P1（2026-10-01）：这里**保留** `rearm_pending` —— 它现在只表示「这个夹持期已数过一次」，
+         *   清不清都不再影响放行（放行只走主复位口 / 长期 TTL）。*/
+        /* ★ 「打死使魔 ⇒ 关掉那个发射口」：**实现点不在这里** —— 这里只置状态，真正的「掐掉这一刻的
+         *   `etOn`」由卡侧 `yk_on_shot_slot()`（SDK 站点 `0x433ffa`，`sdk.c` 的 `ce_enemy_shot_slot`）
+         *   调 `yk_shot_slot_gate()` 完成（返回 1 ⇒ SDK 置 `retaddr = 0x43402d` ⇒ 本帧这一槽不发射）。
+         *   本标志（`broken`）是那条路的**判据**：`yk_shot_slot_suppressed()` 只看 `fam_seen && broken`。
+         *   ★ 2026-10-01：卡侧那道「只在聚焦时表态」的侧门已删（owner：「只有人侧才能打死使魔啊」）
+         *   ⇒ 这条闸现在在**人侧**真的生效（妖侧使魔无敌 ⇒ 本来也无口可堵）。*/
+        e->broken = 1;
+        hit = 1;
+    }
+    return hit;
 }
 
 void yk_fam_gone(yk_map_t *m, uint32_t fam_id)
 {
-    yk_slot_t *e = yk_map_find_fam(m, fam_id);
-    if (!e) return;
-    e->fam_id = 0;
-    e->no_fam_frames = 0;                                 /* ★ #7：同上（松手那一刻重新计年龄）*/
-    e->eton_gap = 0;
-    e->prev_life = YK_LIFE_UNSAMPLED;
+    unsigned i;
+    if (!m || !fam_id) return;
+    for (i = 0; i < YK_FAM_MAX; ++i) {
+        yk_slot_t *e = &m->e[i];
+        if (e->fam_id != fam_id) continue;
+        e->fam_id = 0;
+        e->no_fam_frames = 0;                             /* ★ #7：同上（松手那一刻重新计年龄）*/
+        e->eton_gap = 0;
+        e->prev_life = YK_LIFE_UNSAMPLED;
+    }
     /* ★ 2026-09-12：这里**不能**置 `broken`（试过，直接把既有的「静默移除 ⇒ 下一帧补建」断言打红）。
      * 理由：`broken` 唯一的复位口是 `yk_note_slot` 的 inactive→active 边沿，而本函数处理的是
      * **我们自己主动松手**的两条路：
@@ -744,7 +773,7 @@ int yk_shot_slot_suppressed(const yk_map_t *m, uint32_t enemy_id, int slot, uint
 {
     const yk_slot_t *e;
 
-    if (!m || !enemy_id || slot < 0 || slot >= YK_EMIT_SLOTS) return 0;  /* 不是我们的槽域 ⇒ 绝不掐 */
+    if (!m || !enemy_id || slot < 0 || slot >= YK_EMIT_KEYS) return 0;  /* 不是我们的槽域 ⇒ 绝不掐 */
     e = yk_map_find((yk_map_t *)m, enemy_id, slot);
     if (!e) return 0;                        /* ③ 表里没这个槽 ⇒ 我们**从没管过** ⇒ 放行 */
     if (have_fam_id) return 0;               /* 使魔还在（卡侧已按 id 核过）⇒ 放行 */
@@ -846,20 +875,26 @@ int yk_shot_slot_gate(yk_map_t *m, uint32_t enemy_id, int slot, uint32_t have_fa
  * 返回 1 = 这个 id 确实是我们表里的使魔（已处理）。*/
 int yk_fam_wave_clear(yk_map_t *m, uint32_t fam_id)
 {
-    yk_slot_t *e = yk_map_find_fam(m, fam_id);
-    if (!e) return 0;
-    e->fam_id = 0;
-    e->fam_seen = 0;                 /* 闸放行 */
-    e->fired = 0;                    /* 波次边沿（enmKillAll）= 新一波 ⇒ 重新等 `etOn` */
-    e->broken = 0;                   /* 允许重建 */
-    e->no_fam_frames = 0;
-    e->eton_gap = 0;
-    e->gap_ref = 0;
-    yk_note_release(m, e, 2);        /* ★ #209：波次边沿（`enmKillAll` = 主复位口 ②）*/
-    e->rearm_pending = 0;            /* 新波：夹持记账从头开始 */
-    e->prev_life = YK_LIFE_UNSAMPLED;
-    ++m->releases;                   /* ★ 记账：波次边沿放行了几次（卡侧打日志）*/
-    return 1;
+    unsigned i;
+    int hit = 0;
+    if (!m || !fam_id) return 0;
+    for (i = 0; i < YK_FAM_MAX; ++i) {          /* ★ 2026-10-11：所有引用这只壳的条目一起放行 */
+        yk_slot_t *e = &m->e[i];
+        if (e->fam_id != fam_id) continue;
+        e->fam_id = 0;
+        e->fam_seen = 0;                 /* 闸放行 */
+        e->fired = 0;                    /* 波次边沿（enmKillAll）= 新一波 ⇒ 重新等 `etOn` */
+        e->broken = 0;                   /* 允许重建 */
+        e->no_fam_frames = 0;
+        e->eton_gap = 0;
+        e->gap_ref = 0;
+        yk_note_release(m, e, 2);        /* ★ #209：波次边沿（`enmKillAll` = 主复位口 ②）*/
+        e->rearm_pending = 0;            /* 新波：夹持记账从头开始 */
+        e->prev_life = YK_LIFE_UNSAMPLED;
+        ++m->releases;                   /* ★ 记账：波次边沿放行了几次（卡侧打日志）*/
+        hit = 1;
+    }
+    return hit;
 }
 
 /* ★★★ 2026-09-30（owner 口径）：**只撤某一个敌人的**映射使魔 —— TH08 的 boss 使魔是**每段攻击

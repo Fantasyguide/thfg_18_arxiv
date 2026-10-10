@@ -1339,6 +1339,94 @@ int main(void)
     CHECK(yk_shot_slot_suppressed(&m, 801, 0, 0) == 0);
     }
 
+    /* ============ ★★★★★ 2026-10-11（**多原点**：同帧同一 `(敌人,槽)` 的第 2..N 次真发）============
+     * 一手依据（三条独立证据，全文 `youkai_core.h` §3.5 的 `YK_EMIT_ORIGIN_MAX` 段）：
+     *   ① ECL 普查 22 份 dump ⇒ 9 处「`wait(` 段内同槽 `etOn` ≥2」，最多 5 次（`st03 GirlD01_at`）；
+     *   ② 引擎 `etOn` handler（`th18:0x433f34`）**每次**都落到 `0x43401a call 0x427810`（不合并）；
+     *   ③ 实跑 log `youkai/emit SITE: enemy_id 158 slot 0 call#=2 frame=9537`（每 12 帧，两侧都有）。
+     * ⇒ 键 = `YK_EMIT_ORIGIN_KEY(slot, ord)`；`ord == 0` 时**逐值等于旧键** ⇒ 单次发弹场景零变化。 */
+    CHECK(YK_EMIT_KEYS == 96u);
+    CHECK(YK_EMIT_ORIGIN_KEY(0, 0) == 0 && YK_EMIT_ORIGIN_KEY(0, 1) == 16 && YK_EMIT_ORIGIN_KEY(3, 5) == 83);
+    CHECK(YK_EMIT_REAL_SLOT(0) == 0 && YK_EMIT_REAL_SLOT(16) == 0 && YK_EMIT_REAL_SLOT(83) == 3);
+    CHECK(YK_EMIT_KEY_ORIGIN(0) == 0 && YK_EMIT_KEY_ORIGIN(83) == 5);
+    {
+        /* ① 两条键 = 两条**独立**条目、各自一只壳；打死一只只夹那一条。*/
+        int k0 = YK_EMIT_ORIGIN_KEY(0, 0), k1 = YK_EMIT_ORIGIN_KEY(0, 1);
+        float q2[2];
+        q2[0] = -30.0f; q2[1] = 40.0f;
+        yk_map_reset(&m);
+        yk_frame_begin(&m);
+        yk_map_set_fired(&m, 900, k0, 1);
+        CHECK(yk_note_slot(&m, 900, k0, 1, p1, &a) == 1 && a.kind == YK_ACT_CREATE && a.slot == k0);
+        yk_fam_created(&m, 900, k0, 9001);
+        yk_map_set_fired(&m, 900, k1, 1);
+        CHECK(yk_note_slot(&m, 900, k1, 1, q2, &a) == 1 && a.kind == YK_ACT_CREATE && a.slot == k1);
+        yk_fam_created(&m, 900, k1, 9002);
+        CHECK(yk_map_find(&m, 900, k0) != 0 && yk_map_find(&m, 900, k1) != 0);
+        CHECK(yk_map_find(&m, 900, k0)->fam_id == 9001u && yk_map_find(&m, 900, k1)->fam_id == 9002u);
+        CHECK(yk_map_fam_count(&m) == 2u);
+        CHECK(yk_map_find(&m, 900, k0)->x == p1[0] && yk_map_find(&m, 900, k1)->x == q2[0]);  /* 各记各的出点 */
+        /* ★ 回退口径：**真实槽的个数**不受多原点影响（死亡撒点颗数吃它）*/
+        CHECK(yk_map_enemy_slots(&m, 900) == 1u);
+        /* 打死第 2 只 ⇒ **只**夹键 16；第 1 次真发照发（逐出点关火）*/
+        CHECK(yk_fam_broken(&m, 9002) == 1);
+        CHECK(yk_map_find(&m, 900, k0)->broken == 0 && yk_map_find(&m, 900, k1)->broken == 1);
+        CHECK(yk_shot_slot_gate(&m, 900, k0, 9001) == 0);        /* 第 1 侧：壳还在 ⇒ 放行 */
+        CHECK(yk_shot_slot_gate(&m, 900, k1, 0) == 1);           /* 第 2 侧：掐 */
+        /* 键域上界（96）之外一律拒绝 */
+        CHECK(yk_map_find(&m, 900, YK_EMIT_KEYS) == 0);
+        CHECK(yk_note_slot(&m, 900, YK_EMIT_KEYS, 1, p1, &a) == 0);
+    }
+    {
+        /* ② **同点共壳**（卡侧 `yk_run_action` 的 `YK_EMIT_SHARE_SAME_POS` 分支 = `yk_map_bind_fam`）：
+         *    `st05/06/07mbs` 的 slot 0/1 出点两两重合、`st06bs Boss1_984` 的 4 次同点
+         *    ⇒ N 条键绑**同一只壳**；打死它必须把**所有**绑定条目一起标 broken
+         *    （否则被绑的那条会在 `broken == 0` 下自行重建 ⇒ 那一侧「打死了又复活」）。*/
+        int k0 = YK_EMIT_ORIGIN_KEY(0, 0), k1 = YK_EMIT_ORIGIN_KEY(1, 0), k2 = YK_EMIT_ORIGIN_KEY(1, 1);
+        yk_map_reset(&m);
+        yk_frame_begin(&m);
+        yk_map_set_fired(&m, 901, k0, 1);
+        CHECK(yk_note_slot(&m, 901, k0, 1, p1, &a) == 1 && a.kind == YK_ACT_CREATE);
+        yk_fam_created(&m, 901, k0, 9101);
+        yk_map_bind_fam(&m, 901, k1, 9101);          /* 同点 ⇒ 不再 spawn 第二只 */
+        yk_map_bind_fam(&m, 901, k2, 9101);
+        CHECK(yk_map_fam_count(&m) == 3u);           /* 3 条条目（各带壳 id）*/
+        CHECK(yk_map_enemy_slots(&m, 901) == 2u);    /* 但只有 2 个真实槽 */
+        CHECK(yk_fam_broken(&m, 9101) == 1);
+        CHECK(yk_map_find(&m, 901, k0)->broken == 1 && yk_map_find(&m, 901, k1)->broken == 1 &&
+              yk_map_find(&m, 901, k2)->broken == 1);
+        CHECK(yk_map_find(&m, 901, k0)->fam_id == 0 && yk_map_find(&m, 901, k2)->fam_id == 0);
+        CHECK(yk_shot_slot_gate(&m, 901, k0, 0) == 1 && yk_shot_slot_gate(&m, 901, k1, 0) == 1 &&
+              yk_shot_slot_gate(&m, 901, k2, 0) == 1);
+    }
+    {
+        /* ③ 静默消失（过场 `destroy_all`）/ 波次清场（`enmKillAll`）：同样必须**全表扫**
+         *    （只清第一条 ⇒ 另一条永远等不到重建）。*/
+        int k0 = YK_EMIT_ORIGIN_KEY(0, 0), k1 = YK_EMIT_ORIGIN_KEY(0, 1);
+        float q2[2];
+        q2[0] = -30.0f; q2[1] = 40.0f;
+        unsigned rbase = yk_map_releases(&m);
+        yk_map_reset(&m);
+        yk_frame_begin(&m);
+        yk_map_set_fired(&m, 902, k0, 1);
+        CHECK(yk_note_slot(&m, 902, k0, 1, p1, &a) == 1);
+        yk_fam_created(&m, 902, k0, 9201);
+        yk_map_bind_fam(&m, 902, k1, 9201);
+        yk_fam_gone(&m, 9201);                       /* 静默消失：**不置 broken** ⇒ 下一帧该补建 */
+        CHECK(yk_map_find(&m, 902, k0)->fam_id == 0 && yk_map_find(&m, 902, k1)->fam_id == 0);
+        CHECK(yk_map_find(&m, 902, k0)->broken == 0 && yk_map_find(&m, 902, k1)->broken == 0);
+        yk_map_set_fired(&m, 902, k0, 1);
+        yk_map_set_fired(&m, 902, k1, 1);
+        CHECK(yk_note_slot(&m, 902, k0, 1, p1, &a) == 1 && a.kind == YK_ACT_CREATE);
+        CHECK(yk_note_slot(&m, 902, k1, 1, q2, &a) == 1 && a.kind == YK_ACT_CREATE);
+        yk_fam_created(&m, 902, k0, 9202);
+        yk_map_bind_fam(&m, 902, k1, 9202);
+        CHECK(yk_fam_wave_clear(&m, 9202) == 1);     /* 波次边沿：两条一起放行 */
+        CHECK(yk_map_find(&m, 902, k0)->fam_seen == 0 && yk_map_find(&m, 902, k1)->fam_seen == 0);
+        CHECK(yk_map_find(&m, 902, k0)->broken == 0 && yk_map_find(&m, 902, k1)->broken == 0);
+        CHECK(yk_map_releases(&m) == rbase + 2u);    /* 两条各记一次放行（只增不清的账）*/
+    }
+
     /* ============ ★★★ 2026-10-01（owner 实跑 ②）：**波次边沿 = `etOn` 的间隔** ============
      * 一手 ECL（`local/_scratch/st05mbs.asm` 的 `MBoss1`）：一波 = 一次 `MBoss1_at`（`etNew(0/1)`
      * + 配置 + 30 × (`etOn`×4 + `wait(12)`）），波间 = `wait(30)`×2 + moveRand ≥ 60 帧

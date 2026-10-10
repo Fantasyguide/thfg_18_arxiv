@@ -585,7 +585,8 @@ static void yk_slot_offsets(uint8_t *e, int i, float off3[3], float org3[3])
  *     · 绝对路（`origins[i].z > 0.9f`）：`props.xy = origins[i].xy + offsets[i].xy`、`z = 0`（**不加敌人位置**）。
  *   ⇒ 绝对模式**不能**存成「props − 敌人位置」（那样消费端 `敌人位置 + 它` 会把壳拖着走、离锚点越来越远）。*/
 typedef struct { uint32_t enemy_id; int16_t slot; uint8_t used; uint8_t abs_mode; uint32_t frame; float x, y, z; } yk_emit_latch_t;
-#define YK_EMIT_LATCH_N 32   /* ★ 8 → 16：多敌人/多槽时 8 格会被挤出（owner：版顶正中间的幽灵壳）*/
+#define YK_EMIT_LATCH_N 64   /* ★ 8 → 16 → 32 → **64**：键现在带「同帧第几次」（多原点）⇒
+                              *   条目数最多 ×`YK_EMIT_ORIGIN_MAX`（`st03 GirlD01_at` 一只敌人就 5 条）。*/
 static yk_emit_latch_t s_emit_latch[YK_EMIT_LATCH_N];
 static unsigned s_emit_latch_head;
 static unsigned s_emit_latch_logged;      /* 判据：打过几行 `latched=` */
@@ -732,7 +733,18 @@ static void yk_prod_clear(uint32_t enemy_id, int slot)
 }
 /* ★ 临时调试旋钮（owner）：「发射口使魔血量暂时 1」；**0 = 关闭覆盖**（恢复正式口径）。*/
 #define YK_EMIT_FAM_HP_OVERRIDE 0   /* ★ C0：1 → 0（Q2「壳只活几帧」立刻消失）*/
-#define YK_EMIT_SHARE_SAME_POS 0   /* ⛔ 默认 0 = **关闭**（owner：「它是对称的两个使魔应当是」⇒ 同出点是我们读错位置，不是 ECL 本意；函数保留待用）*/
+/* ★★★★★ 2026-10-11（**重新打开**，理由与 2026-10-01 那次关闭不同）：
+ *   旧口径（逐字保留在此）：owner 看到「两个槽 ⇒ 一只壳」就否掉了它 —— 那时的现场是
+ *   **slot 0 与 slot 1 的 `props+0x08` 被后写覆盖成同一点**（我们只抄到每槽最后一次 `etOn`），
+ *   于是「同点共壳」把本该有的两只并成了一只。
+ *   现在：键带「同帧第几次真发」（`YK_EMIT_ORIGIN_KEY`）⇒ 每槽的两个出点各成一条键。
+ *   `st05/06/07mbs` 的 slot 0 与 slot 1 的**两个出点两两重合**（`etOffsetRad(1, …)` 与 slot 0
+ *   逐字相同）⇒ 4 次 `etOn` 落在 **2 个点**上。同点共壳正好给出 owner 要的**每侧一只**（2 只），
+ *   而不是 4 只两两重叠；`st06bs Boss1_984` 的 slot 1 更是 4 次 `etOn` 全在同一点（只有 `etDist`
+ *   沿角度推进弹的**出生距离**，`props+0x08` 不变）⇒ 共壳给出 **1 只**（正确：那是一个发射口）。
+ *   ⇒ 语义 = 「**一个出点 = 一只使魔**」；共壳的几条键由 `yk_fam_broken` 的**全表扫**一起关掉
+ *     （打死那个出点的使魔 ⇒ 落在这个点上的**每一条** `etOn` 都停）。*/
+#define YK_EMIT_SHARE_SAME_POS 1   /* ★ 2026-10-11：0 → 1（多原点；见上）*/
 static uint32_t s_dbg_prev_input;       /* 仅用于排障日志 */
 static unsigned s_dbg_mask_logged;
 
@@ -760,6 +772,7 @@ static uint32_t s_trk_enemy; static int s_trk_slot = -1; static int s_trk_left; 
 static int s_trk_moving;   /* ★ 只在本帧母机位移 > 0.5px 时打 TRACK（owner：一局就能看出壳有没有跟着动）*/
 static unsigned s_trk_noshell_logged;   /* ★ (no shell yet) 只打一次 */
 static unsigned s_site_logged;          /* ★ SITE(call#>=2) 行数 */
+static unsigned s_mo_logged;            /* ★ 2026-10-11 MULTI(多原点第 2..N 次) 行数 */
 static unsigned s_og_logged;            /* ORIGIN-GATE 总行数 */
 
 static int yk_fk_bump(uint32_t enemy, int slot, uint32_t fr)
@@ -773,6 +786,14 @@ static int yk_fk_bump(uint32_t enemy, int slot, uint32_t fr)
         }
     for (i = 0; i < YK_FK_N; ++i)
         if (!s_fk[i].enemy) { s_fk[i].enemy = enemy; s_fk[i].slot = (int16_t)slot; s_fk[i].frame = fr; s_fk[i].k = 0; return 0; }
+    /* ★ 2026-10-11（实跑反证：整局 `maxk_by_slot` 恒 0 —— 旧版在这里直接 `return 0`，而 32 格
+     *   会被**本局早先**见过的 (敌人,槽) 永久占满 ⇒ 5 面中 boss 的第 2 次 `etOn` 永远拿不到 k=1）。
+     *   ⇒ 表满时**抢占一个不属于本帧的旧格**（它已经没用了：k 只在同帧内有意义）。*/
+    for (i = 0; i < YK_FK_N; ++i)
+        if (s_fk[i].frame != fr) {
+            s_fk[i].enemy = enemy; s_fk[i].slot = (int16_t)slot; s_fk[i].frame = fr; s_fk[i].k = 0;
+            return 0;
+        }
     return 0;
 }
 static unsigned yk_fk_lines(yk_fk_t *t, uint32_t enemy)
@@ -2833,8 +2854,8 @@ static void yk_run_action(yk_card_t *s, const yk_action_t *act)   /* s 可为 NU
         /* ★ 2026-10-01 晚（owner：空格「啥用没有」= 我们的壳**父链是 0** ⇒ 活体校验全拒）：
          *   spawn 后把父 id 写成**该槽的母机 id** ⇒ ① 空格可用；② 这条父子关系本来就该有。*/
         *(uint32_t *)(f + YK_ENEMY_PARENT_ID) = act->enemy_id;
-        ce_log("youkai/emit SPAWN: slot %d fam_id=%u ret=%d pos=(%.1f,%.1f) enemy_id %u",
-               act->slot, fid, f ? 1 : 0, (double)act->x, (double)act->y, act->enemy_id);
+        ce_log("youkai/emit SPAWN: slot %d key %d fam_id=%u ret=%d pos=(%.1f,%.1f) enemy_id %u",
+               YK_EMIT_REAL_SLOT(act->slot), act->slot, fid, f ? 1 : 0, (double)act->x, (double)act->y, act->enemy_id);
         /* ★★★ 2026-10-01（owner：「依旧有一系列不该出现的发弹口使魔」）——**建壳诊断**（前 24 只）：
          *   逐只给出 `(enemy_id, slot)`、`type/color`、`count_1/count_2`、`fired_age`（距该槽最近一次
          *   `etOn` 过了多少帧）、`stage`、以及建壳用的坐标 ⇒ 用来判「配了没发出 / 激光槽 / `etCopy` / 别类」。
@@ -2843,12 +2864,14 @@ static void yk_run_action(yk_card_t *s, const yk_action_t *act)   /* s 可为 NU
             /* ⚠ 2026-10-01 订正：`type/color/count` 必须读**源敌机**（以前误读了我们自己那只惰性壳 ⇒ 全 0）。*/
             const uint8_t *srcprops = 0;
             {   uint8_t *se = ce_enemy_by_id(CE_ENEMY_MGR(), act->enemy_id);
-                if (se) srcprops = se + YK_EMIT_PROPS + (size_t)act->slot * YK_EMIT_PROP_STRIDE;
+                /* ★ 2026-10-11：`act->slot` 现在是**发射口键**（可能 = 真实槽 + 16*ord）
+                 *   ⇒ 读引擎字段必须先折回真实槽，否则会读到 `props[16..]`（越界）。*/
+                if (se) srcprops = se + YK_EMIT_PROPS + (size_t)YK_EMIT_REAL_SLOT(act->slot) * YK_EMIT_PROP_STRIDE;
             }
             ++s_shell_logged;
-            ce_log("youkai/emit: CREATE shell #%u for (enemy_id %u, slot %d) type=%d color=%d "
+            ce_log("youkai/emit: CREATE shell #%u for (enemy_id %u, slot %d key %d) type=%d color=%d "
                    "count_1=%d count_2=%d fired_age=%u stage=%d pos=(%.1f,%.1f) life=%d",
-                   s_shell_logged, act->enemy_id, act->slot,
+                   s_shell_logged, act->enemy_id, YK_EMIT_REAL_SLOT(act->slot), act->slot,
                    *(const int32_t *)(srcprops + 0x00), *(const int32_t *)(srcprops + 0x04),
                    /* ★ 2026-10-11 静态核实订正：引擎的**两层发射计数**是两个 i16 ——
                     *   `props+0x46c` / `props+0x46e`（一手 `th18:0x42789e`/`0x4278b4` 读它当循环上限；
@@ -3380,6 +3403,102 @@ static void yk_familiars_tick(yk_card_t *s)
             if (yk_note_slot(&s_map, id, i, active, wxy, &act)) yk_run_action(s, &act);
             yk_emitkey_note(id, i, active, act.fam_id, s_ledger_frame);   /* ★ 诊断：序号稳不稳 */
         }
+        /* ★★★★★ 2026-10-11（**多原点 · 第 2..N 次真发**）——同一 `(敌人,槽)` 同帧的第 2..N 次
+         *   `etOn`。上面那个 `for (i…)` 只认「第 1 次」（键 = 裸槽号）⇒ 这一段补上其余档：
+         *   每档一条**独立条目**（键 = `slot + 16*ord`），因此
+         *     · 亮出各自出点的使魔（`st05/06mbs` 的 ±90° 两侧、`st03` 的 5 个 72° 出点）；
+         *     · 打死哪一只只关**那一个出点**（站点按 `key` 裁决，见 `yk_on_shot_slot`）。
+         *
+         *   生命周期与第 1 次那一支**逐条同口径**（绝不是新发明）：
+         *     · 判「这一档开过火」= **粘性** `yk_fired_sticky_get(key)`（站点上真看到第 2..N 次 `etOn`
+         *       时置位）或近 3 帧的定格值（`yk_emit_fired_recently`，窗口 `YK_EMIT_FIRED_WINDOW`）；
+         *     · 槽不活跃（`props[i].type == 0`）⇒ 清粘性 + 撤壳（与第 1 次同一处置）；
+         *     · 位置优先用**这一档自己的**定格值（相对模式重建 = `敌人位置(每帧) + 该出点偏移` ⇒
+         *       跟着母机动）；定格值被挤出环时才按引擎闭式用**真实槽**的活字段重算（与第 1 次同）；
+         *     · 三道门同口径：① 槽活跃、② 出点不是 (0,0)、③ 出点离母机 ≥ `YK_EMIT_SHELL_MIN_DIST`
+         *       （48 px；`st07 GirlC01_at_360` 两次 `etOn` 都落在本体上、`offsets` 全 0 ⇒ 正确地
+         *       一只都不建）。
+         *
+         *   ★ 为什么不能只认「近 3 帧」：`st03 GirlD01_at` 一波 5 发、**波间 `wait(120)`**
+         *     ⇒ 只认近帧会把壳在波内第 4 帧就撤掉、下一波再建（抖 + 计数膨胀）。
+         *   ★ 单次发弹的槽（绝大多数）在这里**什么都不做**：键 `slot+16` 从没被站点写过
+         *     ⇒ `yk_emit_latch_get` 命中不了、粘性也没置 ⇒ 旧场景逐帧行为不变。
+         *   ★ 同点共壳：`st03` 的 5 条键各在不同出点（5 只）；`st06bs Boss1_984` 的 4 条键
+         *     全在同一点 ⇒ `YK_EMIT_SHARE_SAME_POS` 收成 **1 只**；`st05/06/07mbs` 的 slot 0/1
+         *     两点两两重合 ⇒ **每侧 1 只（共 2 只）**，而不是 4 只两两重叠。
+         *   ⚠ 本段的诊断额度独立（`s_mo_logged`），**不动**第 1 次那一支的任何计数口径。*/
+        for (i = 0; i < YK_EMIT_SLOTS; ++i) {
+            int o;
+            for (o = 1; o < YK_EMIT_ORIGIN_MAX; ++o) {
+                int oi = YK_EMIT_ORIGIN_KEY(i, o);
+                int oreal = yk_slot_type(e, i);
+                yk_slot_t *ex = yk_map_find(&s_map, id, oi);
+                float lo2[3], w2[2];
+                int abs2 = 0, have2 = 0, fired2 = 0;
+                if (!oreal) {
+                    /* 槽不活跃（`etNew` 清零 type）= 主复位口之一：清粘性 + 撤壳（与第 1 次同一处置）。*/
+                    if (ex && (ex->fam_id || ex->fam_seen)) {
+                        yk_map_set_fired(&s_map, id, oi, 0);
+                        yk_fired_sticky_clear(id, oi);
+                        yk_prod_clear(id, oi);
+                        if (yk_note_slot(&s_map, id, oi, 0, 0, &act)) yk_run_action(s, &act);
+                    }
+                    continue;
+                }
+                have2 = yk_emit_latch_get(id, oi, lo2, &abs2);
+                /* 「这一档开过火」判据与第 1 次同源，再加一条**条目自身的存在**当兜底：
+                 *   粘性环只有 64 格、会被本局早先的 (敌人,键) 占满 ⇒ 只认 `sticky` 会让
+                 *   5–7 面那些**晚出现**的多原点槽每波撤一次壳（抖）。条目还在 + 定格值还在 =
+                 *   这一档确实开过火（定格值环 64 格，`st03` 那种 `wait(120)` 也留得住）。*/
+                fired2 = yk_fired_sticky_get(id, oi) || yk_emit_fired_recently(id, oi) ||
+                         (have2 && ex != 0);
+                if (!fired2) {
+                    /* 从没真发过：有旧条目 ⇒ 撤壳。从不曾建过壳、也没有夹持记忆的条目不置 `seen`
+                     *   ⇒ 让帧末 `yk_frame_end` 直接退休它（否则多原点会给曾多发一帧的槽永久占格）。*/
+                    if (ex && (ex->fam_id || ex->fam_seen)) {
+                        yk_map_set_fired(&s_map, id, oi, 0);
+                        yk_fired_sticky_clear(id, oi);
+                        yk_prod_clear(id, oi);
+                        if (yk_note_slot(&s_map, id, oi, 0, 0, &act)) yk_run_action(s, &act);
+                    }
+                    continue;
+                }
+                if (have2) {
+                    yk_emit_latch_reconstruct(epos, lo2, abs2, w2);
+                } else {
+                    /* 定格值被挤出环（64 格）⇒ 与第 1 次同一闭式：用**真实槽**的活字段现算。*/
+                    float lof[3], orgf[3];
+                    __builtin_memcpy(lof, e + YK_EMIT_OFFSETS + (size_t)i * YK_EMIT_VEC_STRIDE, sizeof(float) * 3);
+                    __builtin_memcpy(orgf, e + YK_EMIT_ORIGINS + (size_t)i * YK_EMIT_VEC_STRIDE, sizeof(float) * 3);
+                    yk_emit_world_pos(epos, lof, orgf, w2);
+                }
+                if (w2[0] == 0.0f && w2[1] == 0.0f) continue;      /* 门 ②：出点还没写出来 */
+                if (!yk_emit_far_enough(w2[0] - epos[0], w2[1] - epos[1], YK_EMIT_SHELL_MIN_DIST)) {
+                    if (s_mo_logged < 16u) {
+                        ++s_mo_logged;
+                        ce_log("youkai/emit MULTI(origin %d): enemy_id %u slot %d key %d at (%.1f,%.1f) is a "
+                               "BODY PORT (dist %.1f px < %.0f) => no familiar for this origin",
+                               o, id, i, oi, (double)w2[0], (double)w2[1],
+                               (double)yk_emit_len(w2[0] - epos[0], w2[1] - epos[1]),
+                               (double)YK_EMIT_SHELL_MIN_DIST);
+                    }
+                    continue;
+                }
+                {   int ty = *(const int32_t *)((const uint8_t *)e + YK_EMIT_PROPS + (size_t)i * YK_EMIT_PROP_STRIDE);
+                    if (yk_emit_type_denied(ty, YK_EMIT_SHELL_TYPE_DENY)) continue;
+                }
+                if (s_mo_logged < 16u && ex == 0) {
+                    ++s_mo_logged;
+                    ce_log("youkai/emit MULTI: enemy_id %u slot %d origin %d => key %d at (%.1f,%.1f) "
+                           "(same-frame fire #%d; its own shell, its own veto)",
+                           id, i, o, oi, (double)w2[0], (double)w2[1], o + 1);
+                }
+                yk_map_set_fired(&s_map, id, oi, 1);
+                yk_fired_sticky_set(id, oi);
+                if (yk_note_slot(&s_map, id, oi, 1, w2, &act)) yk_run_action(s, &act);
+                yk_emitkey_note(id, i, 1, act.fam_id, s_ledger_frame);
+            }
+        }
     }
     s_prev_bc = s_cur_bc;   /* ★ 帧间比较基准（敌弹总数）*/
     /* 帧末：本帧没扫到的条目 = 敌人没了（过场全清 / 静默移除）⇒ 有使魔就撤，然后退休。*/
@@ -3545,8 +3664,8 @@ static void __attribute__((noinline)) yk_transfer_tick(yk_card_t *s)
              *   `silent` 与 `killed`（死亡事件）/`lost`（我们的状态差分撤）三笔分开记，
              *   三者相加才是「这一局使魔消失的完整账」。*/
             ce_log("youkai: familiar %u vanished silently (no death event) - released its emitter "
-                   "slot %d of enemy_id %u (silent total %u); VM withdrawn too",
-                   sl->fam_id, (int)sl->slot, sl->enemy_id, s->silent + 1u);
+                   "slot %d (key %d) of enemy_id %u (silent total %u); VM withdrawn too",
+                   sl->fam_id, YK_EMIT_REAL_SLOT((int)sl->slot), (int)sl->slot, sl->enemy_id, s->silent + 1u);
             yk_fam_vm_kill_id(sl->fam_id);
             yk_fam_gone(&s_map, sl->fam_id);
             ++s->silent;
@@ -7141,10 +7260,60 @@ static int on_native_shot_suppress(ce_card_t *c)
  *   （= owner 报的「击破 boss 第一阶段后再不发弹」）。全文见
  *   `engine/enemy/th18/07-emitter-slots-waves-and-phase-transitions.md` 与 `youkai_core.h` §3.5.2。
  * ⚠ 代价：每次使魔死亡**最多丢 1 条 `etOn`**（那一帧照旧掐，下一帧使魔已回来）。 */
+
+/* ★★★★★ 2026-10-11（**多原点**：同帧同一 `(敌人,槽)` 的第 N 次真发）——
+ *   身份键的第二维（`YK_EMIT_ORIGIN_KEY`，见 `youkai_core.h` §3.5）。返回 **0 起**的序号。
+ *
+ *   为什么是「序号」而不是「出点坐标」：出点每波都在转（`st05/06/07mbs` 的 `%B`/`%C` 每
+ *   `wait(10..12)` 就 ±`%D`、外层再来 ±10°）⇒ 拿坐标当身份每波都会认成「新出点」、壳跟着重建；
+ *   而 ECL 每波**发弹顺序**是固定的（先 slot 0 的 `%B−90°`、再 `%B+90°`…）⇒ 序号跨波稳定。
+ *   ⚠ 键在「哪一侧」上的含义 = 每槽第 1 次 / 第 2 次真发；`st03 GirlD01_at` 的 5 次是 5 个
+ *     均匀 72° 的 `etOffsetRad` ⇒ 5 个序号 = 五边形上的 5 个出点。
+ *
+ *   表按**帧**清空、按 `(enemy_id, slot)` 独立计数（旧的 `s_site_*` 诊断表升级成它 —— 一处口径）。
+ *   表满（同帧 >32 个 `(敌人,槽)` 开火）⇒ 退化成 0（= 旧行为，不多建壳、不崩）。
+ *   ★ 必须在站点**最顶端无条件调一次**（在任何否决 / 早退之前）：漏掉一次会让这一帧剩下的
+ *     序号整体错位（第二次被当成第一次 ⇒ 又合并回一侧）。*/
+#define YK_FIRE_ORD_N 32
+static int yk_emit_fire_ordinal(uint32_t enemy_id, int slot)
+{
+    static uint32_t s_ord_frame;
+    static uint32_t s_ord_e[YK_FIRE_ORD_N];
+    static int16_t  s_ord_s[YK_FIRE_ORD_N];
+    static uint8_t  s_ord_c[YK_FIRE_ORD_N];
+    uint32_t fr = ce_sdk_frame();
+    unsigned i;
+    if (fr != s_ord_frame) {
+        s_ord_frame = fr;
+        __builtin_memset(s_ord_e, 0, sizeof s_ord_e);
+        __builtin_memset(s_ord_c, 0, sizeof s_ord_c);
+    }
+    for (i = 0; i < (unsigned)YK_FIRE_ORD_N; ++i)
+        if (s_ord_e[i] == enemy_id && s_ord_s[i] == (int16_t)slot) {
+            if (s_ord_c[i] < 250u) ++s_ord_c[i];
+            return (int)s_ord_c[i] - 1;
+        }
+    for (i = 0; i < (unsigned)YK_FIRE_ORD_N; ++i)
+        if (!s_ord_e[i]) { s_ord_e[i] = enemy_id; s_ord_s[i] = (int16_t)slot; s_ord_c[i] = 1; return 0; }
+    return 0;
+}
+
 static int yk_on_shot_slot(ce_card_t *c, const ce_enemy_shot_t *ev)
 {
     if (!YK_ENABLE_CARD) return 0;                    /* ★ 总开关：整卡 no-op */
     if (!YK_ENABLE_MAP_LAYER) return 0;                  /* ★ ⑨：闸也停（不掐任何 etOn）*/
+    /* ★★★★★ 2026-10-11（**多原点 · 第 0 步**）：本帧这一条 `etOn` 是**该 `(敌人,槽)` 的第几次**
+     *   —— 无条件、在任何否决/早退之前调一次（口径唯一，见 `yk_emit_fire_ordinal`）。
+     *   `key` = 发射口键（`0..95`）= 本卡对「**这一个出点**」的身份；出点每波旋转也不影响它。
+     *   ⚠ 真实槽号（读引擎字段用）从此一律走 `real`，**键**只用于缓存/表/闸。*/
+    int real = (ev ? ev->slot : 0);
+    int ord  = 0;
+    int key  = real;
+    if (ev && ev->enemy && real >= 0 && real < YK_EMIT_SLOTS) {
+        ord = yk_emit_fire_ordinal(ev->enemy_id, real);
+        if (ord >= YK_EMIT_ORIGIN_MAX) ord = YK_EMIT_ORIGIN_MAX - 1;   /* 溢出并进最后一档（不丢壳）*/
+        key = YK_EMIT_ORIGIN_KEY(real, ord);
+    }
     /* ★★★ 普查 ①（0 新站点）：`etOn` 已经把发弹点写进 `props[i]+0x08/+0x0c/+0x10`
      *   （就在本断点之前那几步）⇒ 立刻抄回卡侧缓存，供壳的**目标位置**使用。
      *   `ev->enemy` 只在本次回调内有效 ⇒ 只读、只抄，不缓存指针。
@@ -7155,12 +7324,14 @@ static int yk_on_shot_slot(ce_card_t *c, const ce_enemy_shot_t *ev)
      *     · 绝对路（`origins[i].z > 0.9f`，`etOffsetAbs`）：`props.xy = origins[i].xy + offsets[i].xy`
      *       （**不含敌人位置**）⇒ 缓存**世界坐标本身**；若这里还减敌人位置、消费端再加回来，
      *       壳就会被母机**拖着走**、离锚点越来越远（`etOffsetAbs` 全库 22 处，含锚在自机身上那种）。
-     *   `0.9f` 与引擎同一个常量（`0x4b916c`，直读 `.rdata`）。*/
-    if (ev && ev->enemy && ev->slot >= 0 && ev->slot < YK_EMIT_SLOTS) {
+     *   `0.9f` 与引擎同一个常量（`0x4b916c`，直读 `.rdata`）。
+     * ★ 缓存**按 `key` 分开写**：`st05/06/07mbs` 的两次 `etOn` 因此在缓存里各占一格、互不覆盖
+     *   （这就是「只看见一侧」的根因修法：以前两次写同一个 `(enemy_id, slot)` 格，后写覆盖先写）。*/
+    if (ev && ev->enemy && real >= 0 && real < YK_EMIT_SLOTS) {
         const uint8_t *prr = (const uint8_t *)ev->enemy + YK_EMIT_PROPS
-                            + (size_t)ev->slot * YK_EMIT_PROP_STRIDE;
+                            + (size_t)real * YK_EMIT_PROP_STRIDE;
         const float *org_abs = (const float *)((const uint8_t *)ev->enemy + YK_EMIT_ORIGINS
-                                              + (size_t)ev->slot * YK_EMIT_VEC_STRIDE);
+                                              + (size_t)real * YK_EMIT_VEC_STRIDE);
         const float *ep_now = ce_enemy_pos((uint8_t *)ev->enemy);
         int lat_abs = (org_abs[2] > YK_ORIGIN_ABS_THRESHOLD) ? 1 : 0;
         float lx, ly, lz;
@@ -7172,10 +7343,10 @@ static int yk_on_shot_slot(ce_card_t *c, const ce_enemy_shot_t *ev)
             ly = *(const float *)(prr + 0x0c) - (ep_now ? ep_now[1] : 0.0f);
         }
         lz = *(const float *)(prr + 0x10);
-        yk_emit_latch_put(ev->enemy_id, ev->slot, lx, ly, lz, lat_abs);
+        yk_emit_latch_put(ev->enemy_id, key, lx, ly, lz, lat_abs);
         {
             uint32_t fr = ce_sdk_frame();
-            int k = yk_fk_bump(ev->enemy_id, ev->slot, fr);
+            int k = yk_fk_bump(ev->enemy_id, real, fr);   /* ★ k = 序号 `ord`（诊断口径，按真实槽）*/
             ++s_fire_seen;   /* ★ 无条件（在 k 门槛之前）*/
             /* ★ 每帧：活跃弹数（扫数组）+ FIRECOUNT（本帧每 (敌人,槽) 的 etOn 次数 vs 弹数增量）*/
             {   unsigned live = yk_bm_live_bullets();
@@ -7215,31 +7386,34 @@ static int yk_on_shot_slot(ce_card_t *c, const ce_enemy_shot_t *ev)
                 }
             }
             const uint8_t *prf = (const uint8_t *)ev->enemy + YK_EMIT_PROPS
-                               + (size_t)ev->slot * YK_EMIT_PROP_STRIDE;
+                               + (size_t)real * YK_EMIT_PROP_STRIDE;
             const float *orf = (const float *)((const uint8_t *)ev->enemy + YK_EMIT_ORIGINS_ABS
-                                              + (size_t)ev->slot * YK_EMIT_VEC_STRIDE);
+                                              + (size_t)real * YK_EMIT_VEC_STRIDE);
             const float *olf = (const float *)((const uint8_t *)ev->enemy + YK_EMIT_OFFSETS_ABS
-                                              + (size_t)ev->slot * YK_EMIT_VEC_STRIDE);
-            yk_slot_t *g0 = yk_map_find(&s_map, ev->enemy_id, ev->slot);
-            /* 额度（owner）：**k>=1 一律打**（关键样本）+ 每敌 ≤8 + 总 ≤256 ⇒ 中 boss 必现。*/
-            if ((k >= 1 || s_fire_logged_2 < 16u) && s_fire_logged_2 < 256u && yk_fk_lines(s_fkline, ev->enemy_id) < 8u) {
+                                              + (size_t)real * YK_EMIT_VEC_STRIDE);
+            yk_slot_t *g0 = yk_map_find(&s_map, ev->enemy_id, key);   /* ★ 查**这一条键**（多原点）*/
+            /* 额度（owner）：**k>=1 一律打**（关键样本）+ 每敌 ≤8 + 总 ≤256 ⇒ 中 boss 必现。
+             * ★ 2026-10-11：k>=1（= 同帧第 2..N 次）那一支**再放宽**（总 256 → 512、每敌 8 → 24）
+             *   —— 9 处多原点里最密的 `st03 GirlD01_at` 一局能到 5 次/波、头 256 行早就被前几面用光了。*/
+            if ((k >= 1 || s_fire_logged_2 < 16u) && s_fire_logged_2 < 512u &&
+                yk_fk_lines(s_fkline, ev->enemy_id) < (k >= 1 ? 24u : 8u)) {
                 ++s_fire_logged_2;
                 yk_fk_inc(s_fkline, ev->enemy_id);
-                ce_log("youkai/emit FIRE: enemy_id %u slot %d k=%d type=%d color=%d props08/0c/10=(%.1f,%.1f,%.1f) "
+                ce_log("youkai/emit FIRE: enemy_id %u slot %d k=%d key=%d type=%d color=%d props08/0c/10=(%.1f,%.1f,%.1f) "
                        "offsets[slot]=(%.1f,%.1f,%.1f) origins[slot]=(%.1f,%.1f,%.1f) frame=%u have_shell=%d "
-                       "x1_closed=%d x2_closed=%d (per-k veto not implemented yet - C1 observation only)",
-                       ev->enemy_id, ev->slot, k, *(const int32_t *)(prf + 0x00),
+                       "(key = slot + 16*k: the identity this fire is mapped to)",
+                       ev->enemy_id, real, k, key, *(const int32_t *)(prf + 0x00),
                        *(const int32_t *)(prf + 0x04), (double)lx, (double)ly, (double)lz,
                        (double)olf[0], (double)olf[1], (double)olf[2],
                        (double)orf[0], (double)orf[1], (double)orf[2], (unsigned)fr,
-                       (g0 && g0->fam_id) ? 1 : 0, 0, 0);
+                       (g0 && g0->fam_id) ? 1 : 0);
             }
-            if ((k >= 1 || (g0 && g0->fam_id)) && s_og_logged < 128u && yk_fk_lines2(s_fkline2, ev->enemy_id) < 8u) {
+            if ((k >= 1 || (g0 && g0->fam_id)) && s_og_logged < 512u && yk_fk_lines2(s_fkline2, ev->enemy_id) < 24u) {
                 ++s_og_logged;
                 yk_fk_inc(s_fkline2, ev->enemy_id);
-                ce_log("youkai/emit ORIGIN-GATE: enemy %u slot %d k=%d closed=%d veto=%d "
-                       "(per-k veto not implemented yet - C1 observation only)",
-                       ev->enemy_id, ev->slot, k,
+                ce_log("youkai/emit ORIGIN-GATE: enemy %u slot %d k=%d key=%d closed=%d veto=%d "
+                       "(closed = this origin's shell was killed => THIS etOn is vetoed)",
+                       ev->enemy_id, real, k, key,
                        (g0 && g0->fam_seen && g0->broken) ? 1 : 0,
                        (g0 && g0->fam_seen && !g0->fam_id) ? 1 : 0);
             }
@@ -7247,7 +7421,7 @@ static int yk_on_shot_slot(ce_card_t *c, const ce_enemy_shot_t *ev)
         /* ⛔ 2026-10-01 晚（owner log 反证：`k` 跨敌人递增 ⇒ 运行的是**这一份旧的"每槽全局计数"块**）：
          *   本块**已删**；**唯一保留**的是上面那份按 `(enemy_id, slot)` 独立计数的 `s_fk[]` 版本
          *   （否则同一槽一帧内两次 fire 拿不到 k=0/k=1，C2 无从做起）。*/
-        yk_fired_sticky_set(ev->enemy_id, ev->slot);   /* ★ 粘性「本波开过火」*/
+        yk_fired_sticky_set(ev->enemy_id, key);   /* ★ 粘性「本波开过火」（按**键**，多原点各记各的）*/
         /* ★★★★★ 2026-10-01（**owner 硬约束，回滚**）：owner 逐字「**但是无论如何，你只能不发弹，
          *   **不能改发弹位置**」⇒ 本卡**永远不写 `props` 的任何一格**（`+0x24` 的 `etDist` 归零
          *   已回滚 —— 一手 `th18:0x4251f9`/`0x425219` 确实能「把生成点推 dist px」，但那**不许碰**）。
@@ -7259,35 +7433,26 @@ static int yk_on_shot_slot(ce_card_t *c, const ce_enemy_shot_t *ev)
             ce_log("youkai/emit: latched offset_final for slot %d of enemy_id %u = (%.1f, %.1f, %.1f) "
                    "at the etOn site (0x433ffa) - the shell targets this FROZEN point, not the live "
                    "offset (survey item 1: 138 ECL groups clear it back to 0 in the same frame)",
-                   ev->slot, ev->enemy_id, (double)lx, (double)ly, (double)lz);
+                   real, ev->enemy_id, (double)lx, (double)ly, (double)lz);
         }
     }
     yk_card_t *s = ce_state(c, yk_card_t);
     uint32_t have = 0;
     uint32_t rearms_before;
 
-    /* ★★★ 2026-10-11（owner：整局 `maxk_by_slot` 恒 0）——**站点最顶端无条件计数**（任何 return/否决之前）：
-     *   `call#` = 本帧内该 `(敌人,槽)` 第几次进站点（1 起）；**只打 call#>=2**（避免刷屏）。
-     *   ⇒ 判定「引擎只让我们进一次」（要换 hook）还是「我们某条 return 吃掉了第二次」（我们的 bug）。*/
-    if (ev && ev->enemy_id) {
-        uint32_t fr0 = ce_sdk_frame();
-        static uint32_t s_site_frame;
-        static uint32_t s_site_e[16]; static int16_t s_site_s[16]; static uint8_t s_site_c[16];
-        unsigned i0; int found = 0;
-        if (fr0 != s_site_frame) { s_site_frame = fr0; __builtin_memset(s_site_e, 0, sizeof s_site_e); __builtin_memset(s_site_c, 0, sizeof s_site_c); }
-        for (i0 = 0; i0 < 16u; ++i0)
-            if (s_site_e[i0] == ev->enemy_id && s_site_s[i0] == (int16_t)ev->slot) { found = 1; if (s_site_c[i0] < 250u) ++s_site_c[i0]; break; }
-        if (!found)
-            for (i0 = 0; i0 < 16u; ++i0)
-                if (!s_site_e[i0]) { s_site_e[i0] = ev->enemy_id; s_site_s[i0] = (int16_t)ev->slot; s_site_c[i0] = 1; break; }
-        if (found && s_site_c[i0] >= 2u && s_site_logged < 64u) {
-            ++s_site_logged;
-            ce_log("youkai/emit SITE: enemy_id %u slot %d call#=%u frame=%u (unconditional, before any early return)",
-                   ev->enemy_id, ev->slot, (unsigned)s_site_c[i0], (unsigned)fr0);
-        }
+    /* ★★★★ 2026-10-11（owner：整局 `maxk_by_slot` 恒 0；`SITE` 一眼定生死）——**站点最顶端无条件计数**
+     *   （任何 return/否决之前；序号由 `yk_emit_fire_ordinal` 统一给出，与键同源）：
+     *   `ord` = 本帧内该 `(敌人,槽)` 第几次进站点（0 起）；**只打 ord>=1**（= 同帧多发，避免刷屏）。
+     *   实跑判据（build `Oct 11 2026 03:28:24` 已见 64 行）：`call#=2` 出现 ⇒ **引擎真发两次**
+     *   （不是合并）⇒「只建一侧」是我们这边的键少了一维。*/
+    if (ev && ev->enemy_id && ord >= 1 && s_site_logged < 256u) {
+        ++s_site_logged;
+        ce_log("youkai/emit SITE: enemy_id %u slot %d call#=%d key=%d frame=%u (unconditional, before "
+               "any early return; call#>=2 = the engine really fired this slot twice in one frame)",
+               ev->enemy_id, real, ord + 1, key, (unsigned)ce_sdk_frame());
     }
     if (!s || !ev || !ev->enemy_id) return 0;
-    if (ev->slot < 0 || ev->slot >= YK_EMIT_SLOTS) return 0;
+    if (real < 0 || real >= YK_EMIT_SLOTS) return 0;
     /* ★★★ 2026-10-01（**owner 报的真 bug**：「**只有人侧才能打死使魔啊**」＋「TH08 的关键是在于，
      *   **使魔是符卡的有机组成部分，由它来向你发弹**」）—— **原 P8-1 的侧门已删**。
      * 旧代码：`if (!CE_PLAYER_FOCUSED()) return 0;`（未聚焦 ⇒ 本卡不表态）。它建立在一条**早已不成立**
@@ -7304,20 +7469,23 @@ static int yk_on_shot_slot(ce_card_t *c, const ce_enemy_shot_t *ev)
      *   route A（卡 tick 消费 `rearm_pending`）+ route A′（该槽第二次 `etOn` 当场放开）解决，
      *   不再需要拿「不表态」当兜底。*/
     /* 按 id 回查**当前活着的**使魔（0 = 没了）。★ 不碰 `ev->enemy`：那是敌人本体、不是使魔，
-     * 而且只在本次回调内有效（同帧 sweep 可能删它）。 */
-    have = yk_slot_fam_id(&s_map, ev->enemy_id, ev->slot);
+     * 而且只在本次回调内有效（同帧 sweep 可能删它）。
+     * ★★★★★ 2026-10-11（**多原点 = 逐出点关火**）：回查/裁决一律用**这一条 `etOn` 的键**
+     *   （`key`）—— `st05/06/07mbs` 的第 1 次真发（`%B−90°` 那侧）与第 2 次（`+90°` 那侧）
+     *   从此是两条独立条目 ⇒ 打死一侧的使魔只掐那一次 `etOn`，另一侧照常发弹。 */
+    have = yk_slot_fam_id(&s_map, ev->enemy_id, key);
     rearms_before = yk_map_rearms(&s_map);
     {   /* ★ 打点 ③/④：本站点读到的三条件与最终裁定（owner 要的 `gate check` 行；前 8 次）。*/
-        yk_slot_t *g = yk_map_find(&s_map, ev->enemy_id, ev->slot);
-        int veto = yk_shot_slot_gate(&s_map, ev->enemy_id, ev->slot, have);
+        yk_slot_t *g = yk_map_find(&s_map, ev->enemy_id, key);
+        int veto = yk_shot_slot_gate(&s_map, ev->enemy_id, key, have);
         /* ⚠ 只对**我们真管过的槽**打（表里有条目且 `fam_seen`/`broken` 有值）——
          *   原来只打前 8 条全局 ⇒ 全是 stage 1 的 enemy 3/4/5，永远看不到 158。
          *   `fam_seen=-1 / broken=-1` = **查不到条目**的哨兵（这槽我们从没建过壳）。*/
-        if (g && (g->fam_seen || g->broken) && s_gatecheck_logged < 24u) {
+        if (g && (g->fam_seen || g->broken) && s_gatecheck_logged < 48u) {
             ++s_gatecheck_logged;
-            ce_log("youkai/emit: gate check (enemy_id %u, slot %d) fam_seen=%d have_fam_id=%d broken=%d "
+            ce_log("youkai/emit: gate check (enemy_id %u, slot %d key %d ord %d) fam_seen=%d have_fam_id=%d broken=%d "
                    "=> veto=%d (veto=1 means this etOn is CLAMPED)",
-                   ev->enemy_id, ev->slot, g ? (int)g->fam_seen : -1, (int)(have ? 1 : 0),
+                   ev->enemy_id, real, key, ord, g ? (int)g->fam_seen : -1, (int)(have ? 1 : 0),
                    g ? (int)g->broken : -1, veto);
         }
         if (!veto) return 0;
@@ -7326,21 +7494,21 @@ static int yk_on_shot_slot(ce_card_t *c, const ce_enemy_shot_t *ev)
      * 记账判据 = `rearms` 涨（= 闸刚置上 `rearm_pending`，一个夹持期只记一次）。
      * ⚠ 不逐帧逐槽打（16 槽 × 60 fps = 每秒上千行，会把日志淹掉）——「每次」按**夹持期**计。*/
     if (s && yk_map_rearms(&s_map) != rearms_before) {
-        yk_slot_t *sl = yk_map_find(&s_map, ev->enemy_id, ev->slot);
-        ce_log("youkai: emitter gate CLAMPED slot %d of enemy_id %u (focused=%d fam_seen=%d "
+        yk_slot_t *sl = yk_map_find(&s_map, ev->enemy_id, key);
+        ce_log("youkai: emitter gate CLAMPED slot %d (key %d ord %d) of enemy_id %u (focused=%d fam_seen=%d "
                "broken=%d no_fam_frames=%d) - P1: this slot stays silent for the REST of this wave "
                "until a main release port (ECL re-arm / wave edge / phase edge / reset) or the "
                "%d-frame rebuild TTL fires (core: `yk_shot_slot_gate` / `YK_EMIT_REBUILD_TTL`)",
-               ev->slot, ev->enemy_id, yk_focused() ? 1 : 0,
+               real, key, ord, ev->enemy_id, yk_focused() ? 1 : 0,
                sl ? (int)sl->fam_seen : -1, sl ? (int)sl->broken : -1,
                sl ? (int)sl->no_fam_frames : -1, (int)YK_EMIT_REBUILD_TTL);
     }
     if (s && !s->logged_gate) {
         s->logged_gate = 1;
-        ce_log("youkai: emitter gate ACTIVE - slot %d of enemy_id %u stays silent for the rest of "
+        ce_log("youkai: emitter gate ACTIVE - slot %d (key %d) of enemy_id %u stays silent for the rest of "
                "this wave (P1: releases only on ECL re-arm / wave edge / phase edge / reset) or until "
                "the %d-frame rebuild TTL fires",
-               ev->slot, ev->enemy_id, (int)YK_EMIT_REBUILD_TTL);
+               real, key, ev->enemy_id, (int)YK_EMIT_REBUILD_TTL);
     }
     return 1;
 }
@@ -7467,9 +7635,13 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
          *   打点 ①/②：`broken` 到底有没有真打上（`on_enemy_death` ⇒ `KILLED/BOMB_KILL` 广播）。*/
         yk_slot_t *slt = yk_map_find_fam(&s_map, ev->id);
         if (slt) {
-            ce_log("youkai/emit: BROKEN set for (enemy_id %u, slot %d) from fam %u (kind=%u) "
-                   "=> this slot must go silent until a wave/rearm edge or the %d-frame TTL",
-                   slt->enemy_id, (int)slt->slot, ev->id, (unsigned)ev->kind, (int)YK_EMIT_REBUILD_TTL);
+            /* ★ 2026-10-11（多原点）：这只壳可能被**多条键**引用（同点共壳）⇒ 打印它自己的那条
+             *   + 提示下面的 `yk_fam_broken` 会把**所有**引用它的键一起标 broken（逐出点关火）。*/
+            ce_log("youkai/emit: BROKEN set for (enemy_id %u, slot %d key %d) from fam %u (kind=%u) "
+                   "=> EVERY key bound to this shell goes silent until a wave/rearm edge or the "
+                   "%d-frame TTL",
+                   slt->enemy_id, YK_EMIT_REAL_SLOT((int)slt->slot), (int)slt->slot, ev->id,
+                   (unsigned)ev->kind, (int)YK_EMIT_REBUILD_TTL);
         }
     }
     if (!yk_fam_broken(&s_map, ev->id)) {
@@ -8498,6 +8670,12 @@ static int on_tick_2(ce_card_t *c)
                 uint8_t *f;
                 int is_parent = 0, q;
                 if (!id) continue;
+                /* ★ 2026-10-11（多原点）：同点共壳会让**多条键引用同一只壳** ⇒ 去重，否则
+                 *   `killed N` 会把一只壳数成 N 只（`life=0` 是幂等的，但台账/清单会骗人）。*/
+                {   int dup = 0; unsigned q2;
+                    for (q2 = 0; q2 < ni; ++q2) if (ids[q2] == id) { dup = 1; break; }
+                    if (dup) continue;
+                }
                 if (id == s_map.e[j].enemy_id) { skipped[ns++] = id; continue; }
                 for (q = 0; q < (int)np; ++q) if (own_parents[q] == id) { is_parent = 1; break; }
                 if (is_parent) { skipped[ns++] = id; continue; }

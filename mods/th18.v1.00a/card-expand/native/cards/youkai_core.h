@@ -918,8 +918,32 @@ int     yk_shotset_usable(int fire_rate);
 /* ============================================================ §3.5 发射口 → 使魔
  * 1:1 映射：该敌当前 `props[i].type(+0x00, u16) != 0` 的发射口槽数（实测以 1 为主、boss 最多 4）。
  * 每帧**状态差分**：活跃且无使魔 → 建；不活跃且有使魔 → 撤；本帧没扫到（敌人没了）→ 撤 + 退休。
- * 地图键 = `(enemy_id, 发射口槽)`（**不是指针**：敌人是堆对象，`allocate_new_enemy` = `new`）。 */
+ * 地图键 = `(enemy_id, 发射口键)`（**不是指针**：敌人是堆对象，`allocate_new_enemy` = `new`）。
+ *
+ * ★★★★★ 2026-10-11（**多原点**：同一个 `(敌人,槽)` 在同一帧里 `etOn` 多次）：
+ *   一手 ECL 普查（22 份 dump）里 `wait(` 段内同槽 `etOn` ≥2 的有 **9 处**，最多 **5 次**
+ *   （`st03 GirlD01_at_520` / `GirlD02_at_484`：5 个 `etOffsetRad`、角度均匀 72°、r=64）。
+ *   一手引擎侧（`th18:0x433f34` `etOn` handler）：**每一次 `etOn` 都无条件走到 `0x43401a call 0x427810`**
+ *   （真发弹）—— 两条写路径（`0x433f9c` 绝对 / `0x433ff4` 相对）都在 `0x433ffa` 汇聚后直落那个 call，
+ *   中间**没有任何合并/去重**。⇒ 「引擎把同帧两次 `etOn` 并成一次」不成立：**引擎真发 N 次**。
+ *   实跑 log 直证（build `Oct 11 2026 03:28:24`）：`youkai/emit SITE: enemy_id 158 slot 0 call#=2
+ *   frame=9537`（slot 0/1 各 32 行、每 12 帧一次，= `st05mbs MBoss1_at` 的 `wait(12)`）⇒ 我们的站点
+ *   **确实**被进两次；旧版把两次写进**同一个**缓存/表项（后写覆盖先写）⇒ 只剩一侧。
+ *
+ *   ⇒ **键要加一维：同帧第几次真发**（`ord`，0 起）。`ord` 由站点按**引擎调用顺序**无条件计数
+ *     （ECL 每波都是同一顺序发 ⇒ 即使出点随 `%B` 每波旋转，键也是稳定的）。
+ *   ⚠ `ord` 是「同帧第几次」，不是「出点」：出点是每波变的，用它当身份每波都会换壳；
+ *     而 `ord` 对 `st05/06/07mbs` 这些 boss 恒等于「哪一侧」。*/
 #define YK_EMIT_SLOTS     16     /* `zEnemyData.bullet_props[0x10]`（IDEAS.md §1.3）*/
+#define YK_EMIT_ORIGIN_MAX 6     /* 同一 `(敌人,槽)` 每帧最多几种「出点身份」。一手普查最大 5
+                                  * （`st03` 两处 ×5）；静态字段图另有「同帧最多 6 次 etOn」记档
+                                  * （`HANDOFF-108-EMITTER-STATIC-VERIFY.md` §2）⇒ 取 6：观察到的
+                                  * 全部收得下，超出者**并进最后一档**（退化成旧行为，不丢壳）。*/
+#define YK_EMIT_KEYS      (YK_EMIT_SLOTS * YK_EMIT_ORIGIN_MAX)   /* 96 = 键域 0..95 */
+/* 发射口键 ↔ (真实槽, 同帧第几次) 的编译期换算（`ord` 必须先夹到 `[0, YK_EMIT_ORIGIN_MAX)`）。*/
+#define YK_EMIT_ORIGIN_KEY(slot, ord) ((slot) + YK_EMIT_SLOTS * (ord))
+#define YK_EMIT_REAL_SLOT(key)        ((key) % YK_EMIT_SLOTS)
+#define YK_EMIT_KEY_ORIGIN(key)       ((key) / YK_EMIT_SLOTS)
 #define YK_FAM_MAX        32     /* 工程护栏（**不是**游戏性数值）。spec §4 没给上限 ⇒ TODO(决策)。
                                   * 32 条 × **28 B** = 896 B 的**文件级静态**表（不进卡的 512 B 私有状态预算，
                                   * 照 117 动物灵 `s_tok[40]` 的做法；单测断言 ≤ 1024 B）；每只使魔 = 一次
@@ -1106,7 +1130,9 @@ typedef struct {
     uint32_t fam_id;     /* 0 = 这个槽没有活着的使魔 */
     int32_t  prev_life;  /* 使魔 `life.current` 的上一帧值（YK_LIFE_UNSAMPLED = 还没采过）*/
     float    x, y;       /* 发射点世界坐标（每帧重算，卡侧按它钉使魔位置）*/
-    uint8_t  slot;
+    uint8_t  slot;       /* ★ 2026-10-11：**发射口键**（`YK_EMIT_ORIGIN_KEY`），不是裸槽号。
+                          *   `0..15` = 该槽本帧第 1 次真发的出点；`16..31` = 第 2 次；以此类推
+                          *   （`YK_EMIT_ORIGIN_MAX` 档）。**读引擎字段时必须 `YK_EMIT_REAL_SLOT()`**。*/
     uint8_t  seen;       /* 本帧扫到过这个 (敌人, 槽)*/
     uint8_t  active;     /* 发射口本帧活跃（`props[i].type != 0`）*/
     uint8_t  broken;     /* 使魔被打死 ⇒ 该槽「被打破」：不再重建，等**主复位口**
@@ -1212,7 +1238,9 @@ unsigned   yk_map_enemy_slots(const yk_map_t *m, uint32_t enemy_id);
 yk_slot_t *yk_map_find(yk_map_t *m, uint32_t enemy_id, int slot);
 yk_slot_t *yk_map_find_fam(yk_map_t *m, uint32_t fam_id);
 void       yk_frame_begin(yk_map_t *m);
-/* 扫到一个发射口槽。返回 1 = `*act` 里有一条要执行的动作（建 / 撤）。 */
+/* 扫到一个发射口键。返回 1 = `*act` 里有一条要执行的动作（建 / 撤）。
+ * ★ 2026-10-11：`slot` 实参 = `YK_EMIT_ORIGIN_KEY(真实槽, 同帧第几次)`，**不是**裸槽号
+ *   （多原点，见 `YK_EMIT_ORIGIN_MAX` 那一段）；`0..15` 与旧语义逐值相同。 */
 int        yk_note_slot(yk_map_t *m, uint32_t enemy_id, int slot, int active, const float xy[2],
                         yk_action_t *act);
 /* 帧末：本帧没扫到的条目 = 敌人没了 ⇒ 有使魔就撤，然后退休该条目。返回动作数。 */
