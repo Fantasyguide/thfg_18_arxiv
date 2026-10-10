@@ -2902,11 +2902,21 @@ static void yk_familiars_tick(yk_card_t *s)
              *     **彻底不调** `yk_emit_world_pos()`（那条会再加敌人位置/原点 ⇒ 二次叠加 ⇒
              *     `emitter_world = 2×enemy_pos`、`d2 = |2×enemy_pos|²` ⇒ 本体口被当成 32px 外 ⇒
              *     一面照旧冒壳 ✓ 与 owner 的 log 完全对上）。*/
+            /* ★★★★★ 2026-10-01 晚（**位置来源定案**，POSSRC 证据：`live` 恒 0、`props` 才是对的）：
+             *   出点 = **`props[i]+0x08/0x0c`（绝对世界坐标）**；有定格值用定格值，否则直接读 props；
+             *   **任何情况都不加敌人位置**（`yk_emit_world_pos` 那条路**已废弃** —— 它吃 `data+0x4e58`，
+             *   而那份在 TH18 **恒 0** ⇒ 旧公式 = 敌人位置 + 0 = 壳贴母机身上（"以前看起来没问题"的真因）。*/
             {   float lo[3];
+                const uint8_t *pp = e + YK_EMIT_PROPS + (size_t)i * YK_EMIT_PROP_STRIDE;
                 s_cur_have_latch = yk_emit_latch_get(id, i, lo) ? 1 : 0;
-                yk_slot_offsets(e, i, off3, org3);              /* 活偏移（旧版 good 公式的量）*/
-                if (s_cur_have_latch) { off3[0] = lo[0]; off3[1] = lo[1]; off3[2] = lo[2]; }
-                yk_emit_world_pos(epos, off3, org3, wxy);       /* ★ **回退：旧公式**（敌人位置 + 相对偏移）*/
+                if (s_cur_have_latch && !(lo[0] == 0.0f && lo[1] == 0.0f)) {
+                    wxy[0] = lo[0]; wxy[1] = lo[1];
+                } else {
+                    wxy[0] = *(const float *)(pp + 0x08);
+                    wxy[1] = *(const float *)(pp + 0x0c);
+                }
+                off3[0] = wxy[0]; off3[1] = wxy[1]; off3[2] = 0.0f;   /* 仅供调试打印 */
+                (void)org3;
             }
             /* ★ phantom 修复：把「站点上最近真开过火」翻成表里的 `fired` 位（`yk_note_slot` 用它决定建壳）。
              *   `type != 0` 只说明**被配置过**；配了却整波不发弹的槽（`count=0` / 被 `etDelay` 压制 /
@@ -6852,11 +6862,13 @@ static int yk_on_shot_slot(ce_card_t *c, const ce_enemy_shot_t *ev)
          *   旧版（`2b9aea82`，owner 说「昨天之前都是好的」）就是用 `yk_emit_world_pos(epos, 活偏移, org3)`
          *   ⇒ 位置天然正确；我们改成直接吃 `props+0x08/…` 才引入二次叠加/正下方/(0,0)。
          *   latch 只为了**冻结**「`etOffset(0,0)` 同帧收回」那一瞬，**语义与旧版完全一致**。*/
-        const float *rel = (const float *)((const uint8_t *)ev->enemy + YK_EMIT_OFFSETS_ABS
-                                          + (size_t)ev->slot * YK_EMIT_VEC_STRIDE);
-        float lx = rel[0];
-        float ly = rel[1];
-        float lz = rel[2];
+        /* ★★★★ 2026-10-01 晚（POSSRC 证据：`data+0x4e58` 在 TH18 **恒 0**）——改回 latch **props 的
+         *   绝对世界坐标**（`props[i]+0x08/0x0c/0x10`；一手 `0x433f9e`）⇒ 直接当位置、**不叠加敌人位置**。*/
+        const uint8_t *prr = (const uint8_t *)ev->enemy + YK_EMIT_PROPS
+                            + (size_t)ev->slot * YK_EMIT_PROP_STRIDE;
+        float lx = *(const float *)(prr + 0x08);
+        float ly = *(const float *)(prr + 0x0c);
+        float lz = *(const float *)(prr + 0x10);
         yk_emit_latch_put(ev->enemy_id, ev->slot, lx, ly, lz);
         yk_fired_sticky_set(ev->enemy_id, ev->slot);   /* ★ 粘性「本波开过火」*/
         /* ★★★★★ 2026-10-01（**owner 硬约束，回滚**）：owner 逐字「**但是无论如何，你只能不发弹，

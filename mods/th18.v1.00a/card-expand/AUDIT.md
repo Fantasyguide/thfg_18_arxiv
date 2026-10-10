@@ -31152,3 +31152,22 @@ youkai/emit POSSRC: enemy_id N slot i | live=data+0x4e58(+i*0xc)=(x,y,z)
 
 **日志**：建壳时 `youkai/emit: CREATE hp=%d (override) (enemy_id N slot i) - one shot must kill it; then the slot is vetoed …`（前 8 次）。
 **判据**：**一枪（或一下）就死**；随后该槽**停火**（`veto=1`、`vetoed` 涨）⇒ **下一波重建**；**母机不掉血**。
+
+## §BE 详录 #241（2026-10-01）：出点来源定案 = props 的绝对世界坐标
+
+**一手证据（本局 POSSRC，8 行全同型）**：
+```
+POSSRC: enemy_id 10 slot 0 | live=(0.00,0.00,0.00) | props=(-156.22,192.00,0.00)
+POSSRC: enemy_id 12 slot 0 | live=(0.00,0.00,0.00) | props=(-39.30,155.33,0.00)
+POSSRC: enemy_id 17 slot 0 | live=(0.00,0.00,0.00) | props=(174.45,202.40,0.00)
+```
+⇒ **`data+0x4e58`（TH08 语义的活相对偏移）在 TH18 恒 0**；**`props[i]+0x08/0x0c/0x10` = 权威出点**
+（一手 `0x433f9e`：敌人位置 + 相对偏移 = **绝对世界坐标**）。
+
+**修法**：出点 = `props[i]+0x08/0x0c`（有定格值用定格值；站点 latch **也改回 latch props 的绝对坐标**），
+**任何情况都不加敌人位置** ⇒ `yk_emit_world_pos()` 那条路**废弃**（保留注释：它读到 0）。
+**为什么以前看不出**：旧公式 = 敌人位置 + 0 ⇒ 壳贴母机身上、不显眼，而弹其实从 props 出 ⇒
+直到 5 面中 boss 两槽**对称 ±70** 才暴露。**z**：本局样本 `props+0x10 = 0` ⇒ 观感只用 xy。
+
+**判据**：① 5 面中 boss **左右各一只**（对称、与 props 一致）；② **打死左侧只停左侧**；③ 一枪一个（HP=1）⇒ 停火 +
+下一波重建；④ 母机不掉血；⑤ 一面关底前 0 壳。
