@@ -691,6 +691,11 @@ typedef struct { int32_t prev; int32_t cur; float cur_f; } ce_timer_t;   /* zTim
 #define CE_ENEMY_ANM_VM0            0x1350   /* = CE_ENEMY_DATA + 0x124（zEnemyData.anm_vm_ids[0]）
                                               *   ⚠ 别与上面的 CE_ENEMY_ANM_SRC/SCRIPT 混：那两条是
                                               *   `anmSelect` 的选择子与槽 0 的主脚本号（+0x268/+0x26c）*/
+/* ★ 2026-10-03z46：`zAnmVmSuffix` 的两个字段（命名金矿 `th-re-data` 的
+ * `type-structs-own.json`）—— 用于**遍历子 VM**（`ce_anm_interrupt` 的树就是这么长的 ✓）。*/
+#define CE_ANM_VM_SUFFIX_ID         0x0      /* int32：VM 的 id（suffix 起点就是它）*/
+#define CE_ANM_VM_CHILD_LIST        0x50     /* zAnmVmList：list_of_children（entry/next/prev）*/
+#define CE_ANM_VM_PARENT            0x7c     /* zAnmVm*：parent_vm */
 #define CE_ANM_VM_SPRITE_SIZE       0x74     /* zAnmVmPrefix.sprite_size（float2：+0x74 宽 / +0x78 高）*/
 #define CE_ENEMY_FINAL_SPRITE_W     0x6204   /* = CE_ENEMY_DATA + 0x4fd8（zEnemyData.final_sprite_size.x）*/
 #define CE_ENEMY_FINAL_SPRITE_H     0x6208   /* 同上 .y（float）*/

@@ -2684,25 +2684,32 @@ int __cdecl BP_ce_item_frame(x86_reg_t *regs, void *bp_info)
                 static int32_t s_nat_scan_logged = -1;
                 int32_t found[4]; int nf = 0, q;
                 for (q = 0; q < 4; ++q) found[q] = 0;
-                /* ⚠ 实测：这些 "id" 其实是 **VM 指针**（场上各 id 都是 0x03.. 量级；
-                 *   `mgr+0x3c` 甚至出现负数）⇒ 在指针上 `±8` 扫是**扫不到的**（首版实测 0 支 ✗）。
-                 *   但同一批 VM 的 id 是**等差**的：实跑 `60619525 → 60652292 → 60685059`
-                 *   ⇒ 步长 **32767（0x7FFF）** ⇒ 那棵树的子节点就在根附近**若干 stride** 处 ✓
-                 *   ⇒ 按 stride 扫（±8 步 = ±256KB），仍用 `vm+0x28`（脚本号 1..4）做**校验** ✓。*/
-                for (q = -8; q <= 8; ++q) {
-                    int32_t k;
-                    for (k = 0; k < 2; ++k) {                    /* 两种候选步长都试（0x7FFF / 0x8000）*/
-                        const int32_t cand = root + q * (k ? 32768 : 32767);
-                        uint8_t *vm = ce_anm_get_vm((uint32_t)cand);
-                        int32_t sc;
-                        if (!vm) continue;
-                        sc = *(const int32_t *)(vm + CE_ANM_VM_SCRIPT_ID);
-                        if (sc < 1 || sc > 4) continue;
-                        if (found[sc - 1]) continue;             /* 一个脚本只认一次 */
-                        found[sc - 1] = cand;
-                        ++nf;
-                        ce_anm_set_color((uint32_t)cand,
-                                         (a << 24) | (*(const uint32_t *)(vm + CE_ANM_VM_COLOR1) & 0x00ffffffu));
+                /* ★★★ 2026-10-03z46（owner：「**耦合扫描呢？**」——两轮 0 支，说明方向错了）——
+                 *   不再猜 id 步长：**命名金矿给了结构**（`local/vendor/th-re-data/data/th18.v1.00a/
+                 *   type-structs-own.json`）：
+                 *     · `zAnmVmSuffix.list_of_children` 在 **VM+0x50**（`zAnmVmList` 侵入式双向链表，
+                 *       `zAnmVmList = { entry(zAnmVm*), next(+4), prev(+8), … }`）；
+                 *     · `zAnmVmSuffix.parent_vm` 在 +0x7c；
+                 *     · `zAnmVmSuffix.id` 在 +0x0。
+                 *   ⇒ 正解 = **从根 VM 走它自己的子链表**（不再依赖 id 是否连续）✓。*/
+                {
+                    uint8_t *rvm = (uint8_t *)ce_anm_get_vm((uint32_t)root);
+                    if (rvm) {
+                        uint8_t *head = rvm + 0x50;                       /* list_of_children */
+                        uint8_t *node = *(uint8_t *const *)(head + 0x4);  /* head.next */
+                        int guard = 0;
+                        while (node && node != head && guard++ < 16) {
+                            uint8_t *child = *(uint8_t *const *)node;     /* node.entry = 子 VM* */
+                            if (child) {
+                                const int32_t sc = *(const int32_t *)(child + CE_ANM_VM_SCRIPT_ID);
+                                ce_anm_set_color(*(const uint32_t *)(child + CE_ANM_VM_SUFFIX_ID),
+                                                 (a << 24) |
+                                                 (*(const uint32_t *)(child + CE_ANM_VM_COLOR1) & 0x00ffffffu));
+                                ++nf;
+                                if (sc >= 1 && sc <= 4 && !found[sc - 1]) found[sc - 1] = 1;
+                            }
+                            node = *(uint8_t *const *)(node + 0x4);        /* node.next */
+                        }
                     }
                 }
                 if (s_nat_scan_logged != root) {
