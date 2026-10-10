@@ -30359,3 +30359,17 @@ band 68..824 ✓ 两两相隔 8px、无越界
 **下一步**：实跑后日志里会出现 `trance: hud 稳态 slot (…) DX … DY …` + 4 行 `hud.vm trance.hud …
 draw 表面 (…)` ⇒ **113 的稳态位置第一次可见**，我就能把它钉到声明块上（若 DX/DY 正确而画面仍偏，
 那就是脚本自己在改 `pos`，届时按 VM 逐支写绝对位置即可）。
+
+## §BE 详录 #220（2026-10-01）：**所有自建敌人统一无体术**（绕转层补上；转速问题先给数据）
+
+**owner**：「那个**环绕的额外使魔也得无碰撞**」。
+**缺口（已确认）**：无体术原来只在**映射层** `yk_pin_familiar()`；**绕转层** `yk_orbit_pin()`（`youkai.c:1627` 起）
+只按侧写 `CE_ENEMY_FLAG_NO_DAMAGE`，**没有**写 `e+0x6334` ⇒ 撞绕转使魔照样掉命。
+**修法**：抽**共用入口** `yk_no_body_attack(f)`（`youkai.c:916`，写 `e+0x6334 = 2`），
+映射层（`yk_pin_familiar`）与绕转层（`yk_orbit_pin`）都调 ⇒ **出生 + 每帧**都覆盖；
+以后新增 spawn 路径只要调它就不会漏。判据：撞绕转使魔不掉命/不被击退，且仍可被打掉/锁定。
+
+**附：转速问题（owner 第二条）本批只给数据** —— 径向 `YK_ORBIT_RADIAL_SPEED`（`youkai_core.h:2417`，
+`youkai_core.c:2149` 用）；角速度常量与行号**未定位**；TH08 样本 `moveCircle(60, …, 0.8333333f)`、
+`moveCircle(20, …, 1.5f)`、`moveCircle(20, …, 2.5f)`、`moveCircle(120, …)` + 大量 `moveCircleChange(…, 0.0f)`；
+实参语义待一手核（`0x440xxx` handler）⇒ 对齐（含按场景表/旋钮）放下一批。

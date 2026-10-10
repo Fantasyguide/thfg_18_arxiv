@@ -16157,3 +16157,22 @@ else if (s_aura_charge > 0.0f)                 { ★ 收束（含 interrupt / �
 | 作废链 | bit1（静态推）→ 作废；`setHitbox(0,0)`（`enemy+0x1344`，按 109 ECL 注释）→ **也作废**：体术走三个通用几何判定（圆 `0x45cd90` / OBB `0x45cea0` / AABB `0x45cc20`，判据是**双方几何体**）⇒ 敌机盒设 0 只能让「敌机那半」为 0 ⇒ 得不到「没有体术判定」 |
 | 判据 | 撞上去（含 shift）**不掉命 / 不被击退**；壳仍可被打掉/被锁定。日志 `youkai: no_hitbox fam_id=… (e+0x6334) before=… after=2 ; engine gate 0x42f51c (>0 => skip contact damage)` + `NEXT-FRAME before=…` |
 | 109 侧残留 | `pofv.c:5830-5839` 那行 `*(int32_t *)(e+0x635c) &= ~0x22;`（旧自创口径：让 EX 能致伤）已按 owner 口径**删除** + 注释更新 + 协作登记（`AUDIT §BE #219-B`）|
+
+### 2.1ccc-51 2026-10-01（卡 108 · owner）: **所有自建敌人统一无体术**（绕转层也补上）
+
+| 项 | 说明 |
+| --- | --- |
+| owner 原话 | 「那个**环绕的额外使魔也得无碰撞**」|
+| 缺口 | 无体术原来只写在**映射层** `yk_pin_familiar()`；**绕转层** `yk_orbit_pin()`（`:1627` 起）**没写** ⇒ 撞绕转使魔照样掉命 |
+| 修法 | 抽成**共用入口** **`yk_no_body_attack(f)`**（`youkai.c:916`，写 `e+0x6334` = 2），**映射层 + 绕转层**都调；**出生时 + 每帧**都调（新增 spawn 路径只要调它就不会漏）|
+| 判据 | 撞**绕转使魔**也不掉命/不被击退；它**仍可被打掉/被锁定**（人侧口径不变）；日志 `youkai: no_hitbox …` |
+| 登记 | `AUDIT.md` §BE #220；`HANDOFF-108.md` §3 第 106 行 |
+
+### 2.1ccc-52 ⏳ 2026-10-01: 绕转使魔**转速偏快**（owner 反馈）——**先给数据，对齐待下一批**
+
+| 项 | 数据（本批已查）|
+| --- | --- |
+| owner 原话 | 「现在额外使魔的转速有点快，为什么？我感觉和以前见到的速度不一样」|
+| 我们侧已知 | 外扩是**径向**速度 `YK_ORBIT_RADIAL_SPEED = YK_ORBIT_FINAL_RADIUS / YK_ORBIT_EXPAND_FRAMES`（❓ = 0.6 px/帧，`youkai_core.h:2417`，`youkai_core.c:2149` 用它 `r = 径 …（详见 `AUDIT.md` §BE #220）|
+| TH08 一手样本（`local/_scratch/th08f/*.txt`）| `moveCircle(60, %F0, %F1, 0.8333333f)`（4a）、`moveCircle(20, …, 1.5f)`、`moveCircle(20, …, 2.5f)`、`moveCircle(120, %F0, %F1, %F2)`（4bsp）；`moveCircleChan …（详见 `AUDIT.md` §BE #220）|
+| 下一步 | ① 定位我们的角速度常量与行号；② 从 `0x440xxx` 的 `moveCircle` handler 逐参核对实参语义；③ 做对照表（我们 vs 4a/4b/5/8 各处）+ 差几倍；④ 对齐（不同场景不同速率 ⇒ 按场景/ring 表或旋钮）|

@@ -912,6 +912,17 @@ static void yk_pin_follow_step(yk_pin_follow_t *pf, uint32_t fam_id, float tx, f
  *   只能让「敌机那半」为 0，**永远得不到「没有体术判定」**（除非能让 `hitbox_2 < 0`）⇒ **已撤**。*/
 #define YK_ENEMY_NO_HITBOX_TIMER  (0x122c + 0x5108)   /* = e + 0x6334 */
 
+/* ★★★★ 2026-10-01 晚（owner：「**那个环绕的额外使魔也得无碰撞**」）——**统一入口**
+ *   `yk_no_body_attack(f)`：对我们建的**任何**敌人壳写引擎自带闸
+ *   `e+0x6334`（`zEnemyData+0x5108` = `no_hitbox_timer.current`）= 2
+ *   ⇒ 引擎前置闸 `0x42f51c`（`>0`）跳过接触致伤；**不碰 `flags_lo`** ⇒ 仍可被打中/锁定。
+ *   **出生时 + 每帧**都调（映射壳见 `yk_spawn_familiar`/`yk_pin_familiar`；
+ *   绕转层见 `yk_orbit_spawn_one`/`yk_orbit_pin`）⇒ 以后新增 spawn 路径只要调它就不会漏。*/
+static void yk_no_body_attack(uint8_t *f)
+{
+    if (f) *(int32_t *)(f + YK_ENEMY_NO_HITBOX_TIMER) = 2;
+}
+
 static void yk_pin_familiar(uint8_t *f, float x, float y)
 {
     *(float *)(f + CE_ENEMY_POS_X) = x;                   /* final_pos（spec §3.5 指定的那两格）*/
@@ -942,31 +953,14 @@ static void yk_pin_familiar(uint8_t *f, float x, float y)
          *   所以「出生 → 死亡 / 重建」全程无体术。**不再写 `enemy+0x635c` 的 bit1**
          *   （那条是静态推的、owner 实跑证明**没有生效** ⇒ 换成 109 这条已被实跑验证过的做法）。*/
         {
-            int32_t *nh = (int32_t *)(f + YK_ENEMY_NO_HITBOX_TIMER);
-            int32_t before = *nh;
-            *nh = 2;                                  /* ★ 每帧写 ≥1 ⇒ 引擎闸 `0x42f51c` 命中 ⇒ 无体术 */
+            int32_t before = *(int32_t *)(f + YK_ENEMY_NO_HITBOX_TIMER);
+            yk_no_body_attack(f);                     /* ★ 统一入口（映射层）*/
             if (s_bodywrite_logged < 8u) {
                 ++s_bodywrite_logged;
                 ce_log("youkai: no_hitbox fam_id=%u (e+0x6334) before=%d after=%d ; engine gate 0x42f51c "
                        "(>0 => skip contact damage); flags_lo untouched (still shootable/targetable)",
-                       *(const uint32_t *)(f + CE_ENEMY_ID), (int)before, (int)*nh);
-            }
-            {   /* 下一帧再核一次：引擎有没有把它盖回去 / 递减到 0。*/
-                unsigned k;
-                uint32_t fid = *(const uint32_t *)(f + CE_ENEMY_ID);
-                for (k = 0; k < YK_BODYCHK_N; ++k) {
-                    if (s_bodychk_fam[k] == fid && s_bodychk_done[k] == 0u) {
-                        s_bodychk_done[k] = 1u;
-                        ce_log("youkai: no_hitbox fam_id=%u NEXT-FRAME before=%d => %s", fid, (int)before,
-                               (before > 0) ? "ok (>0)"
-                                            : "ENGINE ZEROED it (write too late / must also set earlier)");
-                        break;
-                    }
-                }
-                {   unsigned idx = s_bodychk_head % YK_BODYCHK_N;
-                    s_bodychk_head = (s_bodychk_head + 1u) % YK_BODYCHK_N;
-                    s_bodychk_fam[idx] = fid; s_bodychk_after[idx] = 0u; s_bodychk_done[idx] = 0u;
-                }
+                       *(const uint32_t *)(f + CE_ENEMY_ID), (int)before,
+                       (int)*(int32_t *)(f + YK_ENEMY_NO_HITBOX_TIMER));
             }
         }
         if (want) *fl |= CE_ENEMY_FLAG_NO_DAMAGE;
@@ -1638,6 +1632,8 @@ static void yk_orbit_pin(uint8_t *f, float x, float y)
      *     不是一手复刻（一手是引擎自己的侧门）。体术那一路由 `yk_fam_collide_tick` 的聚焦早退负责。*/
     if (yk_focused()) *(uint32_t *)(f + CE_ENEMY_FLAGS) |= (uint32_t)CE_ENEMY_FLAG_NO_DAMAGE;
     else *(uint32_t *)(f + CE_ENEMY_FLAGS) &= ~(uint32_t)CE_ENEMY_FLAG_NO_DAMAGE;
+    /* ★ 2026-10-01 晚（owner：「环绕的额外使魔也得无碰撞」）：绕转层也走**同一个**无体术入口。*/
+    yk_no_body_attack(f);
 }
 
 /* float → 像素（四舍五入；117 `animal.c` 的 `animal_round_px` 同款，那边是 static ⇒ 这里自己一份）。
