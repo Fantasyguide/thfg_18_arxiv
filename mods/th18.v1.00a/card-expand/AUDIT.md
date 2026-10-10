@@ -31608,3 +31608,40 @@ owner 订正：那一堆**都是发射口（映射层）使魔** ⇒ 焦点 = �
 ④ `DISTHIST` 的 **near 带（48..64）** 现在**逐个槽打一行**：
   `youkai/emit NEARBAND: enemy_id N slot i dist2=… (dist=…) props08/0c=(…) enemy_pos=(…) => rejected by 48px gate (possible false reject)`（上限 32）
   ⇒ 直接看有没有「本该有壳却被 48 拒掉」的场景。
+
+### #275 2026-10-11（**纯静态核实**，不实跑）：发弹点 → 使魔壳的映射链定案 + 三处可静态证实的缺陷
+
+**背景（owner 派单）**：「108 卡的发弹点到使魔的映射一直没被很好解决，能不能**纯粹静态地核实**？」
+⇒ 本轮**不实跑、不看日志**，只用一手反汇编（`th18.exe` 逐指令 + 全 `.text` 位移扫描 + `.rdata` 常量直读）
++ 卡侧只读复核。全文与逐条证据：[`HANDOFF-108-EMITTER-STATIC-VERIFY.md`](HANDOFF-108-EMITTER-STATIC-VERIFY.md)；
+引擎侧结论回流到 [`engine/enemy/th18/07`](../../../engine/enemy/th18/07-emitter-slots-waves-and-phase-transitions.md) §8。
+
+**一手事实（引擎侧，✅）**：
+1. `props[i]+0x08/+0x0c/+0x10` = 子弹出生点（真发弹 `th18:0x424fe0` 在 `th18:0x4251ea`/`0x4251f3` 原样读走），
+   但**只在 `etOn`（op 601 / `th18:0x433f34`）之后、下一次改写之前**成立 —— 它同时是
+   `laserNew`（op 700 / `th18:0x434b5b/6d/7f`）的**长度三元组**、`etCopy`（op 614）整格拷贝的目标、`etNew` 清零的对象。
+2. `etOn` 只有两条写路，**都能每帧重算**：相对路 `= 敌人位置(data+0x44) + offsets[i]`（取位函数 `th18:0x413280` 是 `mov eax,ecx; ret` 恒等）；
+   绝对路（`origins[i].z > 0.9f`，常量 `th18:0x4b916c`）`= origins[i].xy + offsets[i].xy`（**不含敌人位置**）。
+3. 时序（注册优先级一手）：卡 tick（`AbilityManager` 节点 **0x16**，`th18:0x40847f`）**早于**敌人 ECL
+   （`EnemyManager` 节点 **0x1b**，`th18:0x42dcd8`）⇒ 站点写下的定格值**下一帧**才被消费，壳天然滞后 ≤1 帧。
+
+**已修（三处可静态证实的缺陷 + 两处标签）**：
+| # | 缺陷 | 修法 |
+| --- | --- | --- |
+| D1 | tick 的回落分支把 `props+0x08/0x0c` 当**世界坐标**读 ⇒ 陈旧快照 / 激光长度 / `etCopy` 来的值 | 改调 `yk_emit_world_pos()`（`youkai_core.c:363`，带单测）= 引擎闭式 |
+| D2 | 站点对**绝对模式**槽也存「props − 敌人位置」⇒ 壳被母机拖着走 | 缓存加 `abs_mode`；新增纯函数 `yk_emit_latch_reconstruct()`（相对跟随 / 绝对钉住）+ 单测 |
+| D3 | tick 里 `yk_emit_on_body(off3, org3)`：`off3` 传的是世界点、`org3` **未初始化**（UB） | 删该调用；本体口由 `YK_EMIT_SHELL_MIN_DIST` 距离闸唯一裁决 |
+| D4 | 注释称「`data+0x4e58`（活偏移）在 TH18 恒 0」 | 证伪并订正（`etOffsetRad` `th18:0x434107/0x434118` 就写它） |
+| D5/D6 | 日志把 `props+0x14/+0x18` 当 `count_1/count_2`（真值是两个 i16 `+0x46c/+0x46e`）；`COORD-SPAWN` 的 `source_props` 读的是我们自己的壳 | 改读真字段/母机 |
+
+**顺带**：修一处**双层同函数调用**（`if (!seen()) { if (!seen()) ++count; }`）⇒ `s_emit_bodyport` 原来**永不增长**（日志有、计数器没有）。
+
+**闸门**：`make check` **全绿**（`63 checks passed`；含新增的 6 条定格值重建断言）；既有的 26 条告警数量/种类与本批前一致（无新增）。
+**实跑判读（下一局才需要）**：位置来源会打 `src=latch-abs|latch-rel|live-abs|live-rel`（旧版只有 `latch`/`props`，
+且 `props` 那支是错的）；`NOLATCH` 行改成 `live recompute`；`count_1/count_2` 变成真计数。
+
+**★ 发布闸的共享件修复（同一批，登记 `§BE` 协作须知）**：`native/tools/gen_def.py --check` 原来把
+`.def` 里**注释掉**的导出行（`; BP_ce_input_synth  @12`，2026-09-13 拆线留下的历史注）也算成
+「def 有而 patch 没有的僵尸导出」⇒ **`deploy.py` 的发布闸被永久卡红**（本批第一次 deploy 就是死在这里）。
+修法：抓 `BP_*` 前先把 `;` 注释剥掉，判据改成**集合相等**（允许文件里有人类注释与不同排序），
+并保留负对照（抽掉一个真导出仍报红）。影响面：所有走 `deploy.py` 的发布（不改 patch/DLL 产物）。

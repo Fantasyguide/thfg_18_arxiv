@@ -48,10 +48,15 @@ def main():
     path = os.path.join(NATIVE, "th18_card_expand.def")
     have = open(path, encoding="utf-8").read() if os.path.exists(path) else ""
     if a.check:
-        if have.strip() == want.strip():
+        # ★ 2026-10-11 修：`.def` 的 `;` 是**注释到行尾**（MS 格式）⇒ 先把注释剥掉再抓 `BP_*`，
+        #   否则**注释掉的**导出（例：`; BP_ce_input_synth  @12`，2026-09-13 拆线留下的历史注）
+        #   会被算成「def 有而 patch 没有的僵尸导出」，把 deploy.py 的发布闸**永久**卡红。
+        #   判据 = **集合相等**（文件里允许有人类注释与不同排序；`gen_def.py` 无参运行会重写成规范形）。
+        code = "\n".join(l.split(";", 1)[0] for l in have.splitlines())
+        got = set(re.findall(r"BP_([a-z0-9_]+)", code))
+        if have.strip() == want.strip() or got == set(names):
             print("gen_def: ✅ def 与 patch 声明一致（%d 个导出 = 1 + %d 断点）" % (len(names) + 1, len(names)))
             return 0
-        got = set(re.findall(r"BP_([a-z0-9_]+)", have))
         print("gen_def: ❌ 不一致 —— 声明 %d 条 / def %d 条" % (len(names), len(got)))
         print("    patch 有 def 没有：", sorted(set(names) - got) or "无")
         print("    def 有 patch 没有：", sorted(got - set(names)) or "无")

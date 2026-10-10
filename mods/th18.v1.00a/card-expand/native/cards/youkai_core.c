@@ -377,6 +377,25 @@ void yk_emit_world_pos(const float enemy_xy[2], const float off3[3], const float
 
 int yk_emit_active(uint16_t prop_type) { return prop_type != 0; }
 
+/* ★★★★★ 2026-10-11（**纯静态核实**；全文 `mods/th18.v1.00a/card-expand/HANDOFF-108-EMITTER-STATIC-VERIFY.md`）：
+ *   站点 `th18:0x433ffa` 抄回来的「定格值」在消费端怎么还原成世界坐标 —— **必须带模式**。
+ *   一手 `th18:0x433f34`（`etOn`）的绝对路（`th18:0x433f5b`–`0x433f92`）里**没有敌人位置**：
+ *   `props.xy = origins[i].xy + offsets[i].xy`；只有相对路（`th18:0x433f9e`–`0x433ff4`）才是
+ *   `props.xy = 敌人位置 + offsets[i]` ⇒ 站点按同一条判据（`origins[i].z > 0.9f`，常量 `th18:0x4b916c`）
+ *   分别存「世界坐标」与「相对量」，这里再按同一标志还原。
+ *   ⚠ 反向做（把绝对槽的定格值也当相对量）会让壳被母机**拖着走**、离 `etOffsetAbs` 的锚点越来越远。*/
+void yk_emit_latch_reconstruct(const float enemy_xy[2], const float latch_xy[2], int abs_mode, float out_xy[2])
+{
+    if (!out_xy || !latch_xy) return;
+    if (abs_mode) {                                      /* 定格值 = 世界坐标（绝对锚）*/
+        out_xy[0] = latch_xy[0];
+        out_xy[1] = latch_xy[1];
+    } else {                                             /* 定格值 = 相对量 ⇒ 用**当前**敌人位置重建 */
+        out_xy[0] = (enemy_xy ? enemy_xy[0] : 0.0f) + latch_xy[0];
+        out_xy[1] = (enemy_xy ? enemy_xy[1] : 0.0f) + latch_xy[1];
+    }
+}
+
 /* ★★★ 2026-09-26（owner #37，两次实跑同一条）：**这条槽的发射点是不是就在敌人本体上**
  *   （一手依据与「为什么严格 == 0」写在 `youkai_core.h` 的声明那段）。*/
 int yk_emit_on_body(const float off3[3], const float org3[3])

@@ -191,3 +191,41 @@ void Boss2_220: { timerReset(); killAllAsync(); enmKillAll(); … } # ★ 每一
 3. **`YK_FAM_LIFE = 1` 是占位值**（`youkai_core.h` 自己标着 TODO(数值设计)）：在 1 点血的使魔 +
    钉在发射口上的几何关系下，「建出来就死」是常态，任何「使魔没了就掐闸」的语义都会被这个值放大成永久效应。
    修法应**同时**决定这个值（或者决定「掐闸」这件事要不要保留）。
+
+## 8. 「发弹点」本身：`props[i]+0x08/0x0c/0x10` 的完整写点与读点（2026-10-11，纯静态）
+
+> 本节回答 108 卡「发弹点 → 使魔壳」映射的地基问题：**这三格到底是什么、谁写、谁读**。
+> 方法：`local/_scratch/thdis.py` 逐指令 + 全 `.text` 线性反汇编扫位移 `0x5a0/0x5a4/0x5a8`（capstone，`skipdata`）。
+> 卡侧落地与缺陷清单：[`HANDOFF-108-EMITTER-STATIC-VERIFY.md`](../../../mods/th18.v1.00a/card-expand/HANDOFF-108-EMITTER-STATIC-VERIFY.md)。
+
+### 8.1 写点（全量，✅）
+
+| 地址 | 谁 | 写什么 |
+| --- | --- | --- |
+| `0x433f8a` + `0x433f92` | `etOn`（op **601**）**绝对路** | `origins[i].xy + offsets[i].xy`、`z = 0`（**不加敌人位置**）|
+| `0x433fec` + `0x433ff4` | `etOn` **相对路** | `*(float3*)(data+0x44) + offsets[i]`（`0x413280` = `mov eax,ecx; ret` 恒等）|
+| `0x434b5b`/`0x434b6d`/`0x434b7f` | **`laserNew`（op 700）** | **不是坐标**：`arg1/arg2/arg3` = 当前长度 / 目标长度 / 长度上限 |
+| `0x433ee1` | **`etCopy`（op 614）** | `rep movsd` 0x122 dword 整槽拷贝（含这三格）+ 拷 offsets/origins |
+| `0x433e05` | **`etNew`（op 600）** | `memset(props[i],0,0x488)` |
+
+### 8.2 读点（全量，✅）
+
+- **子弹出生点**：`0x4251ea movq xmm0,[esi+8]` → `0x4251ef movq [edx],xmm0`（x/y）；`0x4251f3 mov eax,[esi+0x10]` → `0x4251f6 mov [edx+8],eax`（z）；
+  `0x4251f9 movss xmm0,[esi+0x24]`（`etDist`）非零 ⇒ `0x425219 call 0x429bc0` 后加到 `[edx]`/`[edx+4]`。
+- **瞄准**：`0x427841`/`0x427846`（`th18:0x427810` 里对自机做 atan2）。
+- **激光**：`0x4351f5`/`0x435206`/`0x435224`（`laserOn` op 702）、`0x4353c2`/`0x4353f0`/`0x435587`（`laserStOn` op 703）
+  —— 读出来当**长度**格。光束起点由 `laserOn` 用**与 `etOn` 相同的闭式**现算（`0x435104`–`0x435196`），
+  经描述符交给 `0x448920` 的各 mode initialize（mode0 `0x4493d2`）⇒ **起点不是这三格**。
+
+⇒ 结论：这三格是「**弹出生点**」与「**激光长度**」两义共用的同一格；
+只有 `etOn` 之后、下一次改写之前，它才等于「上一发的出生点」，且**只在相对路里**才等于「敌人位置 + 活偏移」。
+
+### 8.3 字段图上与本篇 §1/§2 有关的订正（✅）
+
+- `props+0x14/+0x18` = **`angle_1`/`angle_2`**（`etAngle` `0x4341ed`/`0x434200`），**不是** `count_1/count_2`；
+  两层发射计数是两个 i16 `props+0x46c`/`+0x46e`（`etCount` `0x434262`/`0x43426f` 写，`0x42789e`/`0x4278b4` 读）。
+- `props+0x1c/+0x20` = `speed_1`/`speed_2`（线性速度两端）；`props+0x24` 唯一写者 = `etDist`（`0x434140`）；
+  `props+0x470` = `aim_type`（`etAim` `0x434849`）；`props+0x474` 只有 `etNew` 写。
+- `etClear`/`etClearAll`/`etCancel`/`etCancel2`/`etClear2` **完全不碰 `props`**（打的是子弹/激光管理器）
+  ⇒ 不能拿它们当「重置某个槽」。
+- ★ **`etOnAuto` / `etDelay` 在 TH18 不存在**（只 `th08.eclm:105/107`）—— 引 TH08 那套时别把它当成两作共有。

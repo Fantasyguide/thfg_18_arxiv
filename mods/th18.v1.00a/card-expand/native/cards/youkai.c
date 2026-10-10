@@ -578,21 +578,27 @@ static void yk_slot_offsets(uint8_t *e, int i, float off3[3], float org3[3])
  *   ⇒ 活偏移字段在**同一帧内**就被清回 (0,0)，而我们是**每帧采样** ⇒ 壳只在那一帧闪一下（一闪一缩）。
  *   修法（**0 新站点**）：在**已在用**的站点 `th18:0x433ffa`（`yk_on_shot_slot`）里，把 `etOn` 刚写好的
  *   `props[i]+0x08/+0x0c/+0x10`（**offset_final**）抄一份到卡侧**每槽小缓存**；壳的目标位置优先用它。
- *   缓存按 `(enemy_id, slot)` 存（`s_emit_latch[]`，8 组环形；同一个 `(enemy,槽)` 只保留最新一份）。*/
-typedef struct { uint32_t enemy_id; int16_t slot; uint8_t used; uint32_t frame; float x, y, z; } yk_emit_latch_t;
+ *   缓存按 `(enemy_id, slot)` 存（`s_emit_latch[]`，8 组环形；同一个 `(enemy,槽)` 只保留最新一份）。
+ * ★★★★ 2026-10-11（**纯静态核实**，全文 `HANDOFF-108-EMITTER-STATIC-VERIFY.md` §1.2/§2）：
+ *   缓存里**必须同时记模式**。一手 `th18:0x433f34` 的 `etOn` 有两条写路径：
+ *     · 相对路（`origins[i].z <= 0.9f`，判据 `th18:0x433f52`）：`props = 敌人位置(此刻) + offsets[i]`；
+ *     · 绝对路（`origins[i].z > 0.9f`）：`props.xy = origins[i].xy + offsets[i].xy`、`z = 0`（**不加敌人位置**）。
+ *   ⇒ 绝对模式**不能**存成「props − 敌人位置」（那样消费端 `敌人位置 + 它` 会把壳拖着走、离锚点越来越远）。*/
+typedef struct { uint32_t enemy_id; int16_t slot; uint8_t used; uint8_t abs_mode; uint32_t frame; float x, y, z; } yk_emit_latch_t;
 #define YK_EMIT_LATCH_N 32   /* ★ 8 → 16：多敌人/多槽时 8 格会被挤出（owner：版顶正中间的幽灵壳）*/
 static yk_emit_latch_t s_emit_latch[YK_EMIT_LATCH_N];
 static unsigned s_emit_latch_head;
 static unsigned s_emit_latch_logged;      /* 判据：打过几行 `latched=` */
 static unsigned s_emit_dist0;            /* ★ 硬约束回滚后：恒 0（保留格子只为日志口径稳定；我们**从不**写 props）*/
 
-static void yk_emit_latch_put(uint32_t enemy_id, int slot, float x, float y, float z)
+static void yk_emit_latch_put(uint32_t enemy_id, int slot, float x, float y, float z, int abs_mode)
 {
     unsigned k;
     for (k = 0; k < YK_EMIT_LATCH_N; ++k) {
         yk_emit_latch_t *L = &s_emit_latch[k];
         if (L->used && L->enemy_id == enemy_id && L->slot == (int16_t)slot) {
             L->x = x; L->y = y; L->z = z;             /* 同一槽 ⇒ 覆盖成最新 */
+            L->abs_mode = (uint8_t)(abs_mode ? 1 : 0);
             L->frame = ce_sdk_frame();                /* ★ phantom 修复：记帧号 = 「本波开过火」的时间戳 */
             return;
         }
@@ -600,6 +606,7 @@ static void yk_emit_latch_put(uint32_t enemy_id, int slot, float x, float y, flo
     {   yk_emit_latch_t *L = &s_emit_latch[s_emit_latch_head];
         s_emit_latch_head = (s_emit_latch_head + 1u) % YK_EMIT_LATCH_N;
         L->enemy_id = enemy_id; L->slot = (int16_t)slot; L->used = 1;
+        L->abs_mode = (uint8_t)(abs_mode ? 1 : 0);
         L->x = x; L->y = y; L->z = z; L->frame = ce_sdk_frame();
     }
 }
@@ -862,6 +869,10 @@ static unsigned s_gatecheck_logged;  /* ★ gate check 打了几行 */
 static unsigned s_emit_badtype;    /* ★ type 在黑名单 ⇒ 不建壳的槽数 */
 static unsigned s_emit_noorigin;   /* ★ 出点 (0,0)/无定格 ⇒ 不建壳的槽数 */
 static int      s_cur_have_latch;  /* 本槽本帧有没有定格值（循环内临时量）*/
+/* ★ 2026-10-11（静态核实后）：本槽本帧的位置来源，四选一 —— `latch-abs` / `latch-rel` / `live-abs` / `live-rel`。
+ *   `latch-*` = 站点 `0x433ffa` 记下的「上一发 `etOn` 用的点」（绝对模式存世界坐标、相对模式存相对量）；
+ *   `live-*`  = 没有定格值时按引擎闭式每帧重算（`origins[z]>0.9` 判绝对）。只用于日志判读。*/
+static const char *s_cur_pos_src = "?";
 static unsigned s_sample_logged;   /* ★ SAMPLE 数据行已打几条 */
 #define YK_SAMPLE_LOG_N 48u   /* 12 → 48：5 面那类多槽场景 12 行不够看 */
 static unsigned s_emit_notfam;     /* （保留：旧「大怪闸」的计数，闸已撤 ⇒ 恒 0）*/
@@ -972,17 +983,20 @@ static int yk_emit_phantom_seen(uint32_t enemy_id, int slot)
     return 0;
 }
 
-/* 取该 `(敌人, 槽)` 的定格 offset；返回 0 = 还没发过弹（调用方回落到活偏移）。*/
-static int yk_emit_latch_get(uint32_t enemy_id, int slot, float out3[3])
+/* 取该 `(敌人, 槽)` 的定格值；返回 0 = 还没发过弹（调用方回落到**活偏移/原点重算**）。
+ * ★ `out_abs` 回填模式：1 = 存的是**绝对世界坐标**（`etOffsetAbs`），0 = 存的是**相对量**（要加当前敌人位置）。*/
+static int yk_emit_latch_get(uint32_t enemy_id, int slot, float out3[3], int *out_abs)
 {
     unsigned k;
     for (k = 0; k < YK_EMIT_LATCH_N; ++k) {
         const yk_emit_latch_t *L = &s_emit_latch[k];
         if (L->used && L->enemy_id == enemy_id && L->slot == (int16_t)slot) {
             out3[0] = L->x; out3[1] = L->y; out3[2] = L->z;
+            if (out_abs) *out_abs = (int)L->abs_mode;
             return 1;
         }
     }
+    if (out_abs) *out_abs = 0;
     return 0;
 }
 
@@ -2831,7 +2845,10 @@ static void yk_run_action(yk_card_t *s, const yk_action_t *act)   /* s 可为 NU
                    "count_1=%d count_2=%d fired_age=%u stage=%d pos=(%.1f,%.1f) life=%d",
                    s_shell_logged, act->enemy_id, act->slot,
                    *(const int32_t *)(srcprops + 0x00), *(const int32_t *)(srcprops + 0x04),
-                   *(const int32_t *)(srcprops + 0x14), *(const int32_t *)(srcprops + 0x18),
+                   /* ★ 2026-10-11 静态核实订正：引擎的**两层发射计数**是两个 i16 ——
+                    *   `props+0x46c` / `props+0x46e`（一手 `th18:0x42789e`/`0x4278b4` 读它当循环上限；
+                    *   `etNew` 把它们设成 `0x00010001`，`th18:0x433e2c`）。原读 `+0x14/+0x18` 是错的标签。*/
+                   (int)*(const int16_t *)(srcprops + 0x46c), (int)*(const int16_t *)(srcprops + 0x46e),
                    (unsigned)yk_emit_fired_age(act->enemy_id, act->slot),
                    (int)CE_CURRENT_STAGE(), (double)act->x, (double)act->y, (int)life);
         {   /* ★ 坐标审计（owner：「先给数据」）：spawn **传进去**的坐标 vs 引擎**实际落点**。*/
@@ -2842,10 +2859,11 @@ static void yk_run_action(yk_card_t *s, const yk_action_t *act)   /* s 可为 NU
                    act->enemy_id, act->slot, (double)act->x, (double)act->y,
                    ap ? (double)ap[0] : 0.0, ap ? (double)ap[1] : 0.0,
                    ap ? (double)(ap[0] - act->x) : 0.0, ap ? (double)(ap[1] - act->y) : 0.0,
-                   *(const int32_t *)((const uint8_t *)f + YK_EMIT_PROPS + (size_t)act->slot * YK_EMIT_PROP_STRIDE + 0x00),
-                   *(const int32_t *)((const uint8_t *)f + YK_EMIT_PROPS + (size_t)act->slot * YK_EMIT_PROP_STRIDE + 0x04),
-                   *(const int32_t *)((const uint8_t *)f + YK_EMIT_PROPS + (size_t)act->slot * YK_EMIT_PROP_STRIDE + 0x14),
-                   *(const int32_t *)((const uint8_t *)f + YK_EMIT_PROPS + (size_t)act->slot * YK_EMIT_PROP_STRIDE + 0x18));
+                   /* ★ 2026-10-11 订正：这里原来读的是**我们自己那只壳**的 props（标签却写 `source_props`）
+                    *   ⇒ 恒 0。源 = 上面已经取好的 `srcprops`（母机那一格）。*/
+                   *(const int32_t *)(srcprops + 0x00),
+                   *(const int32_t *)(srcprops + 0x04),
+                   (int)*(const int16_t *)(srcprops + 0x46c), (int)*(const int16_t *)(srcprops + 0x46e));
         }
         }
         yk_fam_created(&s_map, act->enemy_id, act->slot, fid);
@@ -2991,7 +3009,7 @@ static void yk_familiars_tick(yk_card_t *s)
     uint8_t *e;
     yk_action_t act;
     yk_action_t tail[YK_FAM_MAX];
-    float off3[3], org3[3], wxy[2];
+    float off3[3], wxy[2];
     int i, n;
 
     if (!em || !CE_PLAYER()) {
@@ -3032,35 +3050,39 @@ static void yk_familiars_tick(yk_card_t *s)
             /* ★★★★ 2026-10-01 晚（owner：「**你使魔建在了敌人的正下方一个位置**，但是**是本体发弹**」）
              *   ——**坐标口径订正（一手 `th18:0x433f9e`）**：`props[i]+0x08/0x0c/0x10` 是**世界坐标**
              *   （`lea ecx,[edi+0x44]` → `call 0x413280` 取敌人位置 → `addss …, [edi+esi*4+0x4e58]`
-             *    加相对偏移 → `movq [esi+0x5a0]` / `mov [esi+0x5a8]` = `props+0x08/0x0c/0x10`）。
-             *   ⚠ 我们原来把它当**相对偏移**塞进 `yk_emit_world_pos()` ⇒ **又加了一次敌人位置**
-             *   ⇒ 壳落到「敌人 + 世界偏移 + 敌人」（y 向下 ⇒ **看着正好在正下方**），
-             *     而距离判据算的是 `|敌人 + 世界偏移|`（恒很大）⇒ `bodyport` 恒 0、一面照旧冒壳——全对上了。
-             *   ⇒ 现在：**有定格值 ⇒ 直接当发射点世界坐标**；**没定格值 ⇒ 才回落活偏移**（那组是相对量）。*/
-            /* ★★★★★ 2026-10-01 晚（owner log 直认：`emitter_world = 2 × enemy_pos`）——
-             *   **任何 props 消费点都不得再加敌人位置**（一手 `0x433f9e`：`props+0x08/0x0c/0x10`
-             *   已经是「敌人位置 + 相对偏移」= **世界坐标**）。
-             *   ⇒ 有定格值用定格值；**没有定格值就直接读 `props+0x08/0x0c` 本身**（同一格、世界坐标），
-             *     **彻底不调** `yk_emit_world_pos()`（那条会再加敌人位置/原点 ⇒ 二次叠加 ⇒
-             *     `emitter_world = 2×enemy_pos`、`d2 = |2×enemy_pos|²` ⇒ 本体口被当成 32px 外 ⇒
-             *     一面照旧冒壳 ✓ 与 owner 的 log 完全对上）。*/
-            /* ★★★★★ 2026-10-01 晚（**位置来源定案**，POSSRC 证据：`live` 恒 0、`props` 才是对的）：
-             *   出点 = **`props[i]+0x08/0x0c`（绝对世界坐标）**；有定格值用定格值，否则直接读 props；
-             *   **任何情况都不加敌人位置**（`yk_emit_world_pos` 那条路**已废弃** —— 它吃 `data+0x4e58`，
-             *   而那份在 TH18 **恒 0** ⇒ 旧公式 = 敌人位置 + 0 = 壳贴母机身上（"以前看起来没问题"的真因）。*/
-            {   float lo[3];
-                const uint8_t *pp = e + YK_EMIT_PROPS + (size_t)i * YK_EMIT_PROP_STRIDE;
-                s_cur_have_latch = yk_emit_latch_get(id, i, lo) ? 1 : 0;
+             *    加相对偏移 → `movq [esi+0x5a0]` / `mov [esi+0x5a8]` = `props+0x08/0x0c/0x10`）。*/
+            /* ★★★★★ 2026-10-11（**纯静态核实**后的位置定案；全文 `HANDOFF-108-EMITTER-STATIC-VERIFY.md`）：
+             *   一手 `th18:0x433f34`（`etOn`）只有两条写发弹点的路，且两条都能**每帧重算**：
+             *     · 相对路（`origins[i].z <= 0.9f`，判据 `th18:0x433f52`）= `敌人位置 + offsets[i]`（`th18:0x433fb4`）；
+             *     · 绝对路（`origins[i].z > 0.9f`）        = `origins[i].xy + offsets[i].xy`（`th18:0x433f6d/0x433f76`）。
+             *   ⛔ **不许再把 `props[i]+0x08/0x0c` 当世界坐标回落**：那三格是**两义共用**的一格 ——
+             *     `etOn` 时是弹出生点，`laserNew`（`th18:0x434b5b/0x434b6d/0x434b7f`）时是**激光的长度三元组**
+             *     （当前长/目标长/上限，消费者 `th18:0x449438`/`0x44a676`/`0x44a6f7`，**根本不是坐标**），
+             *     且 `etCopy`（`th18:0x433ee1`）会整块拷贝进别的槽 ⇒ 拿它当位置 = 壳冻在旧快照 / 落在激光参数上。
+             *   ★ 缓存（latch）仍然必要（同帧 `etOffset→etOn→etOffset(0)` 那一族，138 组），但它现在**带模式**：
+             *     绝对模式存的是**世界坐标**，相对模式存的是**相对量**（见站点 `yk_on_shot_slot`）。
+             *   ★ 没有缓存时的回落 = **`yk_emit_world_pos()`**（`youkai_core.c:363`，带单测；语义与引擎**逐条同形**：
+             *     `org3[2] > 0.9` ⇒ `origins + offsets`，否则 `敌人位置 + offsets`）—— 上一版把它**停用**了，
+             *     理由是「`data+0x4e58` 恒 0」；**那条观察已证伪**（`etOffsetRad` `th18:0x434107/0x434118`
+             *     就写这个数组、`etOn` 相对路 `th18:0x433fb4` 就加它）⇒ 现在恢复使用。*/
+            {   float lo[3], lof[3], orgf[3];
+                int lo_abs = 0;
+                s_cur_have_latch = yk_emit_latch_get(id, i, lo, &lo_abs) ? 1 : 0;
                 if (s_cur_have_latch && !(lo[0] == 0.0f && lo[1] == 0.0f)) {
-                    /* 定格的是**相对量** ⇒ 每帧用**当前**敌人位置重建世界坐标（壳跟着母机走）。*/
-                    wxy[0] = epos[0] + lo[0];
-                    wxy[1] = epos[1] + lo[1];
+                    /* 定格值 = 站点 `0x433ffa` 抄回的「上一发 `etOn` 用的点」，**带模式** ⇔
+                     * 绝对槽存世界坐标、相对槽存相对量（纯逻辑在 `youkai_core.c`，带单测）。*/
+                    yk_emit_latch_reconstruct(epos, lo, lo_abs, wxy);
+                    s_cur_pos_src = lo_abs ? "latch-abs" : "latch-rel";
                 } else {
-                    wxy[0] = *(const float *)(pp + 0x08);
-                    wxy[1] = *(const float *)(pp + 0x0c);
+                    /* 没缓存（从没 `etOn` 过 / 被 32 格环挤出 / 中途装上卡）⇒ **按引擎的闭式重算**：
+                     * 这正是「此刻若 `etOn(i)` 引擎会算出的点」，不是陈旧的 props 快照。
+                     * 同一个闭式也是 `laserOn`（`th18:0x435104`–`0x435196`）算激光起点用的 ⇒ 激光槽同点。*/
+                    __builtin_memcpy(lof, e + YK_EMIT_OFFSETS + (size_t)i * YK_EMIT_VEC_STRIDE, sizeof(float) * 3);
+                    __builtin_memcpy(orgf, e + YK_EMIT_ORIGINS + (size_t)i * YK_EMIT_VEC_STRIDE, sizeof(float) * 3);
+                    yk_emit_world_pos(epos, lof, orgf, wxy);
+                    s_cur_pos_src = (orgf[2] > YK_ORIGIN_ABS_THRESHOLD) ? "live-abs" : "live-rel";
                 }
                 off3[0] = wxy[0]; off3[1] = wxy[1]; off3[2] = 0.0f;   /* 仅供调试打印 */
-                (void)org3;
             }
             /* ★★★★ 2026-10-11（owner：那一堆**发射口使魔**冻住不跟母机动）——**20 帧连续 TRACK**：
              *   选一个「有壳」的 (敌人,槽)，连续 20 帧把 6 个量并列打出来，一次判死三种可能。*/
@@ -3079,17 +3101,15 @@ static void yk_familiars_tick(yk_card_t *s)
                 if (tse && tse->fam_id) { fid = tse->fam_id; fc = yk_familiar_by_id(fid) ? ce_enemy_pos(yk_familiar_by_id(fid)) : 0; }
                 const uint8_t *ppx = e + YK_EMIT_PROPS + (size_t)i * YK_EMIT_PROP_STRIDE;
                 ce_log("youkai/emit TRACK: frame=%u enemy_id %u slot %d | enemy_pos=(%.1f,%.1f) | "
-                       "props08/0c=(%.1f,%.1f) | latch=(%.1f,%.1f) age=%u | src=%s | target=(%.1f,%.1f) | "
+                       "props08/0c=(%.1f,%.1f) | src=%s | target=(%.1f,%.1f) | "
                        "fam=%u fam_cur=(%.1f,%.1f) | pinned_this_frame=%d",
                        (unsigned)ce_sdk_frame(), id, i, (double)epos[0], (double)epos[1],
                        (double)*(const float *)(ppx + 0x08), (double)*(const float *)(ppx + 0x0c),
-                       (double)off3[0], (double)off3[1], (unsigned)yk_emit_fired_age(id, i),
-                       s_cur_have_latch ? "latch" : "props", (double)wxy[0], (double)wxy[1],
+                       s_cur_pos_src, (double)wxy[0], (double)wxy[1],
                        fid, fc ? (double)fc[0] : 0.0, fc ? (double)fc[1] : 0.0,
                        (s_pin_last_fam == fid && s_pin_last_frame == ce_sdk_frame()) ? 1 : 0);
-                ce_log("youkai/emit TRACK2: rel=(%.1f,%.1f) recomputed=(%.1f,%.1f) pin_in=(%.1f,%.1f) frame=%u",
-                       (double)off3[0], (double)off3[1],
-                       (double)(epos[0] + off3[0]), (double)(epos[1] + off3[1]),
+                ce_log("youkai/emit TRACK2: src=%s target=(%.1f,%.1f) pin_in=(%.1f,%.1f) frame=%u",
+                       s_cur_pos_src, (double)wxy[0], (double)wxy[1],
                        (double)s_pin_last_x, (double)s_pin_last_y, (unsigned)ce_sdk_frame());
                 --s_trk_left;
             } else if (s_trk_left == 0 && s_trk_slot < 0) {
@@ -3154,30 +3174,20 @@ static void yk_familiars_tick(yk_card_t *s)
                        (e2 && e2->fam_id) ? 1 : 0);
             }
             /* ★★★ 2026-09-26（owner #37，两次实跑同一条：「**发射口与敌人重合不应该建立使魔**」/
-             *   「依旧能看见敌人的身上有魔法阵」）：**体上炮口直接跳过整格**。
-             *   为什么是 `continue`（跳过）而不是「建的时候拒掉」：
-             *     ① 若在 `yk_note_slot` **之后**拒建 ⇒ 表里留下 `active=1 / fam_id=0 / broken=0` 的条目
-             *        ⇒ 同一个 `CREATE` 分支**每帧**再命中一次（每帧一次失败 + 日志刷屏）；
-             *     ② 若在 `yk_note_slot` 里「不建但不清」⇒ 这一格一旦曾经建过壳（`fam_seen=1`），
-             *        壳撤掉后闸会**夹住敌人本体炮**（`yk_shot_slot_suppressed` 只看 `fam_seen`），
-             *        要等 `YK_EMIT_REBUILD_TTL`（600 帧）才自动重建；
-             *     ③ 跳过 ⇒ 本帧「没扫到这一格」⇒ `yk_frame_end` 当场退休该条目（原来有壳就发一次
-             *        `WITHDRAW`，壳与跟随 VM 一起收掉），`fam_seen` 归零、闸恒放行。
-             *   判据 = `yk_emit_on_body()`（相对模式 + 偏移恰好 (0,0)；一手与数据统计见 core 的声明段）。
+             *   「依旧能看见敌人的身上有魔法阵」）：**体上炮口不建使魔**。
+             * ★★★★★ 2026-10-11（**静态核实**后发现这里原来是坏代码，已删）：
+             *   旧写法 `yk_emit_on_body(off3, org3)` ①`off3` 那时已被赋成**世界发弹点**（不是相对偏移）、
+             *   ②`org3` **从未赋值**（只有 `(void)org3;`）⇒ 绝对模式那一支读的是栈上野值（UB），
+             *   而「相对偏移恰好 (0,0)」这个**真判据从没被求值过**。
+             *   一手（`HANDOFF-108-EMITTER-STATIC-VERIFY.md`）：`etOn` 相对路 `props = 敌人位置 + offsets[i]`
+             *   ⇒ `offsets == (0,0) ⇔ 发弹点 == 敌人位置`，而下面那道 `YK_EMIT_SHELL_MIN_DIST`（48 px）距离闸
+             *   算的正是「目标点与母机的距离」⇒ **体上炮口 = 距离 0 < 48 已被它拒掉**（计数 `s_emit_bodyport`、
+             *   日志 `is a BODY PORT`）。两处判据重复只会漂移，所以这里只留距离闸那一处。
              *   ⚠ 与 TH08 的关系：原作**从不**把发射口翻译成使魔（`etOn` handler `th08:0x41b883` 只有
              *     两条指令 + 跳尾；全 exe 5 处 `create_enemy` 没一处在 `et*` 家族里），使魔只由 ECL 的
              *     `familiarCreate*` 显式产生，而「体上发射口」在原作是**常态**（`ecldata8` 的 `Sub14`
-             *     整族一只使魔都不建）⇒ 这条跳过是**复刻原作的默认行为**，不是我们发明的门。*/
-            if (yk_emit_on_body(off3, org3)) {
-                if (s->emit_body_skipped < 0xffffu) ++s->emit_body_skipped;
-                if (s->logged_emit_body < 8) {
-                    ++s->logged_emit_body;
-                    ce_log("youkai: emitter slot %d of enemy_id %u IS the enemy's own body "
-                           "(relative offsets 0,0) - NO familiar built (owner #37); TH08 never "
-                           "turns body emitters into familiars either", i, (unsigned)id);
-                }
-                continue;
-            }
+             *     整族一只使魔都不建）⇒ 这条跳过是**复刻原作的默认行为**，不是我们发明的门。
+             *   `yk_emit_on_body()` 本身（`youkai_core.c`，带单测）保留为**纯逻辑复刻**，不再从 tick 调。*/
             /* ★★★ 2026-10-01（owner 实跑：一面道中 boss 出现「不是发弹点的使魔」）——**诊断**：
              *   配了但本波**从没 `etOn`** 的槽 ⇒ 不建壳（`yk_note_slot` 的 `fired` 门）。
              *   第一条判据日志给出 `(enemy_id, slot)`、`type`、`color`、`count_1/2`（`props+0x14/+0x18`；
@@ -3194,9 +3204,10 @@ static void yk_familiars_tick(yk_card_t *s)
                 ++s_post_logged;
                 ce_log("youkai/emit POST: enemy_id %u slot %d src=%s latch_age=%u count_1=%d count_2=%d "
                        "fired_age=%u bullets=%d produced=%d pos=(%.1f,%.1f)",
-                       id, i, s_cur_have_latch ? "latch" : "props",
+                       id, i, s_cur_pos_src,
                        (unsigned)yk_emit_fired_age(id, i),
-                       *(const int32_t *)(pp2 + 0x14), *(const int32_t *)(pp2 + 0x18),
+                       /* ★ 真计数 = `props+0x46c/+0x46e` 两个 i16（一手 `th18:0x42789e`/`0x4278b4`）*/
+                       (int)*(const int16_t *)(pp2 + 0x46c), (int)*(const int16_t *)(pp2 + 0x46e),
                        (unsigned)yk_emit_fired_age(id, i), (int)s_cur_bc, (int)yk_prod_get(id, i),
                        (double)wxy[0], (double)wxy[1]);
             }
@@ -3250,16 +3261,18 @@ static void yk_familiars_tick(yk_card_t *s)
                 ++s_sample_logged;
                 ce_log("youkai/emit SAMPLE: stage=%d enemy_id=%u sprite=%d w=%d h=%d slot=%d type=%d color=%d "
                        "count_1=%d count_2=%d dist2=%.1f is_body_port=%d fired_age=%u life=%d "
-                       "enemy_pos=(%.1f,%.1f) emitter_world=(%.1f,%.1f) => %s",
+                       "enemy_pos=(%.1f,%.1f) emitter_world=(%.1f,%.1f) src=%s => %s",
                        (int)CE_CURRENT_STAGE(), id, spid, w, h, i,
                        *(const int32_t *)((const uint8_t *)e + YK_EMIT_PROPS + (size_t)i * YK_EMIT_PROP_STRIDE + 0x00),
                        *(const int32_t *)((const uint8_t *)e + YK_EMIT_PROPS + (size_t)i * YK_EMIT_PROP_STRIDE + 0x04),
-                       *(const int32_t *)((const uint8_t *)e + YK_EMIT_PROPS + (size_t)i * YK_EMIT_PROP_STRIDE + 0x14),
-                       *(const int32_t *)((const uint8_t *)e + YK_EMIT_PROPS + (size_t)i * YK_EMIT_PROP_STRIDE + 0x18),
+                       /* ★ 真计数（两个 i16）在 `props+0x46c/+0x46e`，不是 `+0x14/+0x18`（2026-10-11 订正）*/
+                       (int)*(const int16_t *)(e + YK_EMIT_PROPS + (size_t)i * YK_EMIT_PROP_STRIDE + 0x46c),
+                       (int)*(const int16_t *)(e + YK_EMIT_PROPS + (size_t)i * YK_EMIT_PROP_STRIDE + 0x46e),
                        (double)((wxy[0] - epos[0]) * (wxy[0] - epos[0]) + (wxy[1] - epos[1]) * (wxy[1] - epos[1])),
                        bodyport, (unsigned)yk_emit_fired_age(id, i),
                        (int)*(const int32_t *)(e + YK_ED_LIFE_CUR),
                        (double)epos[0], (double)epos[1], (double)wxy[0], (double)wxy[1],
+                       s_cur_pos_src,
                        bodyport ? "REJECT(off-body)" : "CREATE");
             }
             /* ★★★★★ 2026-10-01 晚（owner：「**一瞬间**出现的、在**版顶正中间**的使魔」）：
@@ -3319,24 +3332,34 @@ static void yk_familiars_tick(yk_card_t *s)
                 }
             }
             if (active && !s_cur_have_latch) {
-                /* ★ 诊断（owner 复核 #162 的两个边界）：**无定格值**的槽会走 props 直读 ⇒ 那种情况可能又冻。
-                 *   这里只计数 + 每 60 帧一行，先看它到底常见不常见（不改行为）。*/
+                /* ★ 诊断（2026-10-11 静态核实后改写）：**无定格值**的槽走 `live-*`（按引擎闭式每帧重算，
+                 *   见上面位置块的注）—— 那**不再等于「冻结」**（旧版读 props 快照才会冻）。这里只计数，
+                 *   用来判「定格环（32 格）到底有没有被挤出」。*/
                 ++s_dh_nolatch;
                 if ((ce_sdk_frame() % 60u) == 0u && s_dh_nolatch_logged < 32u) {
                     ++s_dh_nolatch_logged;
-                    ce_log("youkai/emit NOLATCH: enemy_id %u slot %d -> props direct (freeze risk) count=%u",
-                           id, i, s_dh_nolatch);
+                    ce_log("youkai/emit NOLATCH: enemy_id %u slot %d -> live recompute (%s) count=%u "
+                           "(no latch entry: evicted from the 32-slot ring / never fired since load)",
+                           id, i, s_cur_pos_src, s_dh_nolatch);
                 }
             }
             if (active && !yk_emit_far_enough(wxy[0] - epos[0], wxy[1] - epos[1], YK_EMIT_SHELL_MIN_DIST)) {
+                /* ★ 2026-10-11 静态核实顺手修：这里原来是**双层同函数调用**
+                 *   （`if (!seen()) { if (!seen()) ++counter; log }`）⇒ 第一次调用已把条目写进表，
+                 *   第二次必然返回 1 ⇒ `s_emit_bodyport` **永远不涨**（日志倒还是每 (敌人,槽) 一行）。
+                 *   现在去重一次、计数与日志都只做一遍。*/
                 if (!yk_emit_bodyport_seen(id, i)) {
-                    if (!yk_emit_bodyport_seen(id, i)) ++s_emit_bodyport;   /* ★ 按 (敌人,槽) 去重 */
+                    ++s_emit_bodyport;   /* ★ 按 (敌人,槽) 去重 */
                     ce_log("youkai/emit: slot %d of enemy_id %u is a BODY PORT (distance %.1f px < %.0f) "
                            "=> NO familiar (owner 2026-10-01: nothing before the stage boss; TH08 counts "
                            "only `familiarCreate*` entities as familiars)",
                            i, id, (double)yk_emit_len(wxy[0] - epos[0], wxy[1] - epos[1]),
                            (double)YK_EMIT_SHELL_MIN_DIST);
                 }
+                /* ★ 「体上炮口」= 发弹点与母机**重合**（`etOn` 相对路里 `offsets == (0,0)`）。
+                 *   它与上面那道 48 px 闸不是一回事（闸更宽）⇒ 单独喂台账那一格（`#37` 口径）。*/
+                if (wxy[0] == epos[0] && wxy[1] == epos[1] && s->emit_body_skipped < 0xffffu)
+                    ++s->emit_body_skipped;
                 ++i; continue;
             }
             if (active && !yk_emit_fired_recently(id, i) && !yk_fired_sticky_get(id, i) &&
@@ -3347,7 +3370,7 @@ static void yk_familiars_tick(yk_card_t *s)
                        "color=%d count_1=%d count_2=%d) => NO familiar (this is owner's "
                        "'not-a-fire-point' ghost; shell is created only after a real etOn)",
                        i, id, *(const int32_t *)(pr0 + 0x00), *(const int32_t *)(pr0 + 0x04),
-                       *(const int32_t *)(pr0 + 0x14), *(const int32_t *)(pr0 + 0x18));
+                       (int)*(const int16_t *)(pr0 + 0x46c), (int)*(const int16_t *)(pr0 + 0x46e));
             }
             if (yk_note_slot(&s_map, id, i, active, wxy, &act)) yk_run_action(s, &act);
             yk_emitkey_note(id, i, active, act.fam_id, s_ledger_frame);   /* ★ 诊断：序号稳不稳 */
@@ -7117,28 +7140,34 @@ static int yk_on_shot_slot(ce_card_t *c, const ce_enemy_shot_t *ev)
 {
     if (!YK_ENABLE_CARD) return 0;                    /* ★ 总开关：整卡 no-op */
     if (!YK_ENABLE_MAP_LAYER) return 0;                  /* ★ ⑨：闸也停（不掐任何 etOn）*/
-    /* ★★★ 普查 ①（0 新站点）：`etOn` 已经把 **offset_final** 写进 `props[i]+0x08/+0x0c/+0x10`
+    /* ★★★ 普查 ①（0 新站点）：`etOn` 已经把发弹点写进 `props[i]+0x08/+0x0c/+0x10`
      *   （就在本断点之前那几步）⇒ 立刻抄回卡侧缓存，供壳的**目标位置**使用。
-     *   `ev->enemy` 只在本次回调内有效 ⇒ 只读、只抄，不缓存指针。*/
+     *   `ev->enemy` 只在本次回调内有效 ⇒ 只读、只抄，不缓存指针。
+     * ★★★★★ 2026-10-11（**纯静态核实**后的定案；全文 `HANDOFF-108-EMITTER-STATIC-VERIFY.md` §1.2/§2）：
+     *   一手 `th18:0x433f34`：`etOn` 有**两条**写路径，缓存必须按同一条判据分流，否则位置必错：
+     *     · 相对路（`origins[i].z <= 0.9f`，判据 `th18:0x433f52`）：`props.xy = 敌人位置(此刻) + offsets[i]`
+     *       ⇒ 缓存**相对量** `props − 敌人位置(此刻)`；消费端 `敌人位置(每帧) + 它` ⇒ 壳跟着母机走。
+     *     · 绝对路（`origins[i].z > 0.9f`，`etOffsetAbs`）：`props.xy = origins[i].xy + offsets[i].xy`
+     *       （**不含敌人位置**）⇒ 缓存**世界坐标本身**；若这里还减敌人位置、消费端再加回来，
+     *       壳就会被母机**拖着走**、离锚点越来越远（`etOffsetAbs` 全库 22 处，含锚在自机身上那种）。
+     *   `0.9f` 与引擎同一个常量（`0x4b916c`，直读 `.rdata`）。*/
     if (ev && ev->enemy && ev->slot >= 0 && ev->slot < YK_EMIT_SLOTS) {
-        /* ★★★★ 2026-10-01 晚（**回退到已知 good 的取位公式**）：latch **活相对偏移本身**
-         *   （`data+0x4e58` = `enemy+0x6084+i*0xc`），**不再**消费 `props+0x08/0x0c/0x10`（世界坐标）——
-         *   旧版（`2b9aea82`，owner 说「昨天之前都是好的」）就是用 `yk_emit_world_pos(epos, 活偏移, org3)`
-         *   ⇒ 位置天然正确；我们改成直接吃 `props+0x08/…` 才引入二次叠加/正下方/(0,0)。
-         *   latch 只为了**冻结**「`etOffset(0,0)` 同帧收回」那一瞬，**语义与旧版完全一致**。*/
-        /* ★★★★ 2026-10-01 晚（POSSRC 证据：`data+0x4e58` 在 TH18 **恒 0**）——改回 latch **props 的
-         *   绝对世界坐标**（`props[i]+0x08/0x0c/0x10`；一手 `0x433f9e`）⇒ 直接当位置、**不叠加敌人位置**。*/
         const uint8_t *prr = (const uint8_t *)ev->enemy + YK_EMIT_PROPS
                             + (size_t)ev->slot * YK_EMIT_PROP_STRIDE;
-        /* ★★★★★ 2026-10-11（owner：壳「**不会跟着本体运动**」）：`props+0x08/0x0c` 是 **`etOn` 那一刻的
-         *   世界坐标快照**（= 当时的敌人位置 + 偏移）⇒ 直接用它当目标 ⇒ 母机移动后壳**冻在快照点**。
-         *   ⇒ 站点上改记 **相对量**：`rel = props_world − enemy_pos(此刻)`；消费端每帧 `敌人位置(此刻) + rel`
-         *     ⇒ 壳**跟着母机走**、且每次 `etOn` 刷新 rel ⇒ 每波旋转也照旧生效。*/
+        const float *org_abs = (const float *)((const uint8_t *)ev->enemy + YK_EMIT_ORIGINS
+                                              + (size_t)ev->slot * YK_EMIT_VEC_STRIDE);
         const float *ep_now = ce_enemy_pos((uint8_t *)ev->enemy);
-        float lx = *(const float *)(prr + 0x08) - (ep_now ? ep_now[0] : 0.0f);
-        float ly = *(const float *)(prr + 0x0c) - (ep_now ? ep_now[1] : 0.0f);
-        float lz = *(const float *)(prr + 0x10);
-        yk_emit_latch_put(ev->enemy_id, ev->slot, lx, ly, lz);
+        int lat_abs = (org_abs[2] > YK_ORIGIN_ABS_THRESHOLD) ? 1 : 0;
+        float lx, ly, lz;
+        if (lat_abs) {                       /* 绝对锚：存世界坐标（消费端不再加敌人位置）*/
+            lx = *(const float *)(prr + 0x08);
+            ly = *(const float *)(prr + 0x0c);
+        } else {                             /* 相对：存 `props − 敌人位置(此刻)` = `offsets[i]` */
+            lx = *(const float *)(prr + 0x08) - (ep_now ? ep_now[0] : 0.0f);
+            ly = *(const float *)(prr + 0x0c) - (ep_now ? ep_now[1] : 0.0f);
+        }
+        lz = *(const float *)(prr + 0x10);
+        yk_emit_latch_put(ev->enemy_id, ev->slot, lx, ly, lz, lat_abs);
         {
             uint32_t fr = ce_sdk_frame();
             int k = yk_fk_bump(ev->enemy_id, ev->slot, fr);
@@ -8562,12 +8591,12 @@ static int on_tick_2(ce_card_t *c)
      *   `move` 涨 = 槽在换位置（瞬移或插值）；`create/withdraw/hp_reset` 不涨 = **没有重建、没有重置血量**。*/
     if ((s_ledger_frame % 120u) == 0u && (s_emit_move || s->spawns || s->lost || s->silent)) {
         {
-            float lz[3];
-            int have = yk_emit_latch_get(0u, 0, lz);       /* 只为日志占位；下面打「最近一次定格」*/
-            (void)have;
+            /* ★ 2026-10-11 静态核实：这里原来有个**丢弃返回值**的 `yk_emit_latch_get(0,0,lz)` 占位调用
+             *   （只为了「打一行日志」）—— 已删（签名带模式后它是死代码；日志本就不需要它）。*/
             ce_log("youkai/emit: move %u create %u withdraw %u hp_reset %u latch_logs=%u dist0=%u phantom=%u bodyport=%u notfam=%u noorigin=%u badtype=%u nobullet=%u fire_seen=%u "
                    "(position-only pinning: offset changes never rebuild the shell nor reset its HP; "
-                   "shell targets the FROZEN offset_final from the etOn site; AUDIT §BE #208/#210)",
+                   "shell target = the engine's own fire-point formula, recomputed per frame; "
+                   "AUDIT §BE #208/#210; static verify: HANDOFF-108-EMITTER-STATIC-VERIFY.md)",
                    s_emit_move, s->spawns, s->lost + s->silent, s_emit_hp_reset, s_emit_latch_logged,
                    s_emit_dist0, s_emit_phantom, s_emit_bodyport, s_emit_notfam, s_emit_noorigin, s_emit_badtype, s_emit_nobullet, s_fire_seen);
         }

@@ -1059,8 +1059,18 @@ int     yk_fam_variant(int slot);
 /* 发射点世界坐标（`etOn` 的算法，IDEAS.md §1.3）：`origins[i].z > 0.9` = 绝对模式。 */
 #define YK_ORIGIN_ABS_THRESHOLD 0.9f
 void yk_emit_world_pos(const float enemy_xy[2], const float off3[3], const float org3[3], float out_xy[2]);
-/* 活跃判据：`props[i].type != 0`（`etNew` 清零、只有 `etSprite` 写它，spec §6.3）。 */
+/* 活跃判据：`props[i].type != 0`（`etNew` 清零、只有 `etSprite` 写它，spec §6.3）。
+ * ★ 2026-10-11 静态核实补注（`HANDOFF-108-EMITTER-STATIC-VERIFY.md` §1.6）：它是**电平**、
+ *   语义只到「本槽被 ECL 装了非零弹种」（唯一写者 `etSprite` `th18:0x43404e`；`etNew` 全清），
+ *   **不是**「这是个真发弹点」的充分条件 —— `props+0x00 == 0` 的槽（原生 5 处 `etSprite(slot,0,·)`）
+ *   照样能被 `laserOn` 发激光（`th18:0x4351a4` 把 type 当表下标、**没有 0 分支**）。*/
 int  yk_emit_active(uint16_t prop_type);
+
+/* ★ 定格值（`etOn` 站点 `th18:0x433ffa` 抄回的那一份）在消费端的重建 —— **必须带模式**：
+ *   `abs_mode != 0`（`etOffsetAbs` 槽）⇒ 定格值本身就是**世界坐标**，原样返回（不跟母机走）；
+ *   `abs_mode == 0`（相对槽）        ⇒ 定格值是 `props − 敌人位置` ⇒ 返回 `敌人位置(当前) + 定格值`。
+ *   依据：`etOn` 的绝对路里**没有敌人位置**（`th18:0x433f5b`–`0x433f92`），相对路才有（`th18:0x433f9e`）。*/
+void yk_emit_latch_reconstruct(const float enemy_xy[2], const float latch_xy[2], int abs_mode, float out_xy[2]);
 
 /* ★★★ 2026-09-26（owner #37 两次实跑：「**发射口与敌人重合不应该建立使魔**」「依旧能看见敌人的身上
  *   有魔法阵」）：这条槽**是不是敌人自己的炮口**（= 发射点就在本体上）⇒ 卡侧**跳过整格**、不建使魔。

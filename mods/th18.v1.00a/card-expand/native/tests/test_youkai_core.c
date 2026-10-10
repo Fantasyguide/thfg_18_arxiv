@@ -825,6 +825,31 @@ int main(void)
     CHECK(yk_emit_active(1) == 1);
     CHECK(yk_emit_active(0x1234) == 1);              /* `props[i].type != 0` = 活跃 */
 
+    /* ★★★★★ 2026-10-11（纯静态核实 `HANDOFF-108-EMITTER-STATIC-VERIFY.md` §2）：
+     *   **定格值的消费端重建必须带模式** —— 站点 `th18:0x433ffa` 对绝对槽（`etOffsetAbs`）存的是
+     *   **世界坐标**（`etOn` 绝对路 `th18:0x433f5b`–`0x433f92` 里没有敌人位置），对相对槽存的是
+     *   `props − 敌人位置`。反着做 ⇒ 绝对槽的壳会被母机拖着走。*/
+    {   float lat[2], rout[2];
+        ep[0] = 5.0f; ep[1] = 6.0f;
+        lat[0] = 10.0f; lat[1] = -4.0f;
+        yk_emit_latch_reconstruct(ep, lat, 0, rout);      /* 相对：敌人位置 + 定格值 */
+        CHECK(rout[0] == 15.0f && rout[1] == 2.0f);
+        yk_emit_latch_reconstruct(ep, lat, 1, rout);      /* 绝对：原样世界坐标（**不**加敌人位置）*/
+        CHECK(rout[0] == 10.0f && rout[1] == -4.0f);
+        /* 母机移动 ⇒ 相对槽跟走、绝对槽**钉住**（「壳冻住不跟母机动」的反面：绝对槽本就该钉住）。*/
+        ep[0] = 105.0f; ep[1] = 6.0f;
+        yk_emit_latch_reconstruct(ep, lat, 0, rout);
+        CHECK(rout[0] == 115.0f && rout[1] == 2.0f);
+        yk_emit_latch_reconstruct(ep, lat, 1, rout);
+        CHECK(rout[0] == 10.0f && rout[1] == -4.0f);
+        yk_emit_latch_reconstruct(0, lat, 0, rout);       /* 敌人坐标指针为空也安全 */
+        CHECK(rout[0] == 10.0f && rout[1] == -4.0f);
+        rout[0] = 1.0f; rout[1] = 2.0f;
+        yk_emit_latch_reconstruct(ep, 0, 0, rout);        /* 定格值指针为空：不写（保持原值）*/
+        CHECK(rout[0] == 1.0f && rout[1] == 2.0f);
+        yk_emit_latch_reconstruct(ep, lat, 0, 0);         /* 输出指针为空也安全 */
+    }
+
     /* ★★★ 2026-09-26（owner #37「发射口与敌人重合不应该建立使魔」）：体上炮口的判据。
      *   相对模式 + 偏移恰好 (0,0) ⇒ 1（跳过这一格、不建使魔）；绝对模式（org.z > 阈值）恒 0
      *   （位置是脚本 `etOffsetAbs` 给的，与本体无关）；任何非 0 偏移 ⇒ 0（那是**有意摆远**的发射口，
