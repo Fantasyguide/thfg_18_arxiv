@@ -1258,6 +1258,7 @@ static float s_hud_applied_dx, s_hud_applied_dy;
  *       （脚本再怎么改 `pos`，我们这一帧都会把它算回去）。*/
 static float s_hud_design_x[TRANCE_HUD_N], s_hud_design_y[TRANCE_HUD_N];
 static uint8_t s_hud_design_ok[TRANCE_HUD_N];
+static float s_hud_geom_log_x = -1.0f, s_hud_geom_log_y = -1.0f;   /* ★ z18：稳态探针节流 */
 #define TRANCE_HUD_DX ((s_hud_slot.x) - (TRANCE_HUD_BASE_X))
 #define TRANCE_HUD_DY ((s_hud_slot.y) - (TRANCE_HUD_BLOCK_BOTTOM))
 
@@ -3990,6 +3991,17 @@ static void trance_hud_tick(const trance_card_t *s)
         }
     }
 
+    /* ★ z18：**逐 VM 墨迹探针挪到每帧**（原来打在 spawn 分支里 ⇒ 只能看到"设计位置"、
+     *   看不到稳态 ⇒ 上一轮 113 的 100+px 偏差就是这么漏掉的）。节流：槽位变化时一行。*/
+    if (s_hud_geom_log_x != s_hud_slot.x || s_hud_geom_log_y != s_hud_slot.y) {
+        int q4;
+        s_hud_geom_log_x = s_hud_slot.x; s_hud_geom_log_y = s_hud_slot.y;
+        ce_log("trance: hud 稳态 slot (%.0f,%.0f) DX %.0f DY %.0f — 逐 VM 墨迹：",
+               (double)s_hud_slot.x, (double)s_hud_slot.y,
+               (double)TRANCE_HUD_DX, (double)TRANCE_HUD_DY);
+        for (q4 = 0; q4 < TRANCE_HUD_N; ++q4) ce_hud_vm_probe("trance.hud", (uint32_t)s_hud_vm[q4]);
+    }
+
     /* ① 缺哪支补哪支（一手在关卡开始一次性建；我们每帧兜底：anm 重载 / 首帧还没装载都能自愈）
      *   ⚠ 诊断：**重建次数要记**（若每帧都在重建 ⇒ 说明 id 追不回 VM ⇒ 会像漏水的桶一样涨到崩）。
      *   ★★ 2026-09-13 第三轮：**兜底必须有上限** —— 若 `ce_anm_spawn_ui()` 因为任何原因返回 0
@@ -4040,7 +4052,6 @@ static void trance_hud_tick(const trance_card_t *s)
         for (k = 0; k < TRANCE_HUD_N; ++k) {
             const uint8_t *vm = ce_anm_get_vm((uint32_t)s_hud_vm[k]);
             const float *ep = vm ? (const float *)(vm + CE_ANM_VM_POS) : 0;
-            ce_hud_vm_probe("trance.hud", (uint32_t)s_hud_vm[k]);
             ce_log("trance:   hud[%d] script %d entity_pos (%d,%d) sprite %d%s",
                    k, trance_hud_script(k), ep ? (int)ep[0] : -9999, ep ? (int)ep[1] : -9999,
                    vm ? *(const int32_t *)(vm + CE_ANM_VM_SPRITE_ID) : -1,

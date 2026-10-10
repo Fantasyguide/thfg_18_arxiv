@@ -4895,7 +4895,9 @@ static void __attribute__((noinline)) yk_spell_probe(const char *tag)
  *   = 466，小号位再 +2 = 468）+ 上下各 4 px pad（照 §6.1 口径）。
  *   ⚠ 认领值**不参与定位**（`yk_gauge_hud_update()` 里锚点是常量）—— 它只为「这一格归我」的记账。*/
 #define YK_HUD_BLOCK_W 256.0f
-#define YK_HUD_BLOCK_H  64.0f
+#define YK_HUD_BLOCK_H  53.0f     /* ★★★ 2026-10-03z18（owner：「108 高度可以往里收几px
+                                   *   （最终高度大概是现在的 107 108 平均即可）」）——107 高 42、108 原 64
+                                   *   ⇒ 取平均 **53**。⚠ 只改**声明**：画法锚在槽的下沿 ⇒ 画面不动。*/
 
 /* ---- 人妖槽的每帧漂移（TH08 `Player::move` 的聚焦状态机，一手）--------------------------------
  * 一手形状（`th08_dec/src/Player.cpp` 那段，逐条地址见 `engine/player/th08/03-...md` §2.2 的
