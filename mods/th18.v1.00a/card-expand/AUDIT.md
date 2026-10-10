@@ -5048,6 +5048,8 @@ UI 列表尾插、组内后生成者后画（§2b.4）。
 
 | 2026-10-03z33/z34 | **116 数字 y 恢复 `−10.25`**（`git log -G` 查到当年的值；我这几轮的 −4.0/−6.5 是无依据试错）+ **0 级不显示 releaseable 条**（owner 判断正确：**压暗广播用 label 4 = 淡到满亮把它点亮**）⇒ 广播加 `can_release` 门 | 见下方「§BE 详录 #267」 |
 
+| 2026-10-03z35/z36 | ★★ **「HUD 布局跨游玩记忆」**：重置判据只有"关卡号变化" ⇒ 重开同关不重置；且 `release` 后的 `reserved` 幽灵位仍被 **count/enum** 计数（台账/覆盖层显示已删卡的块）⇒ 补**自机对象"无→有"**当新一局信号 + count/enum 跳过 reserved | 见下方「§BE 详录 #268」 |
+
 
 > **§BE 详录 #42（2026-09-20 · P1「缺音效一批」8 条 + 音效表扩容新增 5 枚别作原版 SE）**
 >
@@ -30827,5 +30829,32 @@ releaseable**，可能是 HUD 统一之后的 **opacity 刷写问题**？」
 - **改**：`if (can_release && s->hud_strip) ce_anm_interrupt(..., dim);`
   ⇒ 0 级 / 不可解放时**一个 interrupt 都不发**（停在 label 3 的 alpha 0 ✓）；
   可解放时照旧跟着"带"一起淡（与 TH16 一手的 `interrupt_tree(5/4)` 一致 ✓）。
+
+**验证**：`make check` **rc=0**（`test_sdk_core` 1430 / `dllx87` 0 / `check-docs` 449 全绿）。
+
+---
+
+### §BE 详录 #268 —— 2026-10-03z35/z36：**HUD 布局跨游玩记忆**（owner：「你看 log 就知道了」）
+
+**谁改的**：统筹（goal `goal-1bb4eac7`）。
+
+**log 里的证据（owner 指的那几行）**
+```
+trace: card 108 on_stage_start (+0x34) first hit
+wba_wc: stage start -> ... core/HUD/roar VMs cleared; HUD slot kept (shop path = on_load is NOT t…
+senro: on_delete（收 HUD 文字 + 退出无敌 / 计分声明）
+hud: ===== claim_pinned —— 4 slot(s) claimed ... =====
+hud:   #0  card 107 LEFT   surface (124,924) 280x42   ← **107 已经从卡组里删掉了，占位还在** ✗
+```
+
+**两个独立缺陷**
+| # | 缺陷 | 机制 |
+| :-: | --- | --- |
+| A | **重开同一关不重置整张表** | 唯一重置判据是 `ce_hud_stage_begin()` 的「**关卡号变化**」（`if (stage == s_hud_stage) return;`）⇒ **重开 stage 1（号还是 1）不重置** ⇒ 上一局的占位整张带进新一局（各卡又是"`claimed(id)` 为真就沿用缓存槽"）✗ |
+| B | **`reserved` 幽灵位仍被计数/枚举** | `ce_hud_slot_release()` 只标 `reserved = 1`（§4.4 局中删卡不当场重排 ✓）；`reserved` **不算在场**（`hud_band_union` / 碰撞检查都已跳过 ✓）⇒ 但 **`ce_hud_slot_count()` / `ce_hud_slot_enum()` 没跳过** ✗ ⇒ 台账与调试覆盖层仍显示**已删卡的块**（上面那个 `#0 card 107`）✗ |
+
+**修法**
+- **A**：补一个**真正的一局/一关起点信号** = **自机对象 `CE_PLAYER()` 从"无"变"有"**（关卡里非空、菜单/结算里为空；是引擎自己的状态，不依赖关卡号）⇒ 那一刻 `ce_hud_stage_begin(-1)` 把纪元作废 ⇒ 下一帧各卡认领时**整表重排** ✓；只认这一条**边沿** ⇒ 同关里换面/暂停/商店都不触发 ✓。并打一行 `hud: 新一局（自机对象出现）⇒ 槽位表重置` 便于以后对账。
+- **B**：`ce_hud_slot_count()` / `ce_hud_slot_enum()` 与"带"的口径统一 ⇒ **跳过 `reserved`** ✓（台账不再列幽灵块 ✓，覆盖层不再画幽灵框 ✓）。
 
 **验证**：`make check` **rc=0**（`test_sdk_core` 1430 / `dllx87` 0 / `check-docs` 449 全绿）。

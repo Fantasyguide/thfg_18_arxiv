@@ -2622,7 +2622,25 @@ int __cdecl BP_ce_item_frame(x86_reg_t *regs, void *bp_info)
         static int s_dim_was = -1;
         const int dim_before = ce_hud_band_dim_dimmed();
         int dim_now;
-        ce_hud_band_dim_tick(ce_player_pos());
+        /* ★★★★ 2026-10-03z35（owner：「**bug：hud 布局跨游玩记忆**，你看 log 就知道了」）——
+     *   症结：槽位表的唯一重置判据是 **`ce_hud_stage_begin()` 的"关卡号变化"**
+     *   （`sdk_core.c`：`if (stage == s_hud_stage) return;`）⇒
+     *   **重开同一关（关卡号还是 1）不会重置** ⇒ 上一局整张占位表被新一局沿用 ✗
+     *   （各卡又是"`ce_hud_slot_claimed(id)` 为真就沿用缓存槽"⇒ 一并沿用 ✗）。
+     *   ⇒ 补一个**真正的一局/一关起点信号**：**自机对象从"无"变"有"**
+     *     （`CE_PLAYER()` 在关卡里非空、菜单/结算里为空 ✓，而且是**引擎自己**的状态，
+     *      不依赖关卡号）⇒ 那一刻把纪元打回 **−1**，下一帧各卡认领时按新一局重排 ✓。
+     *   ⚠ 只认"无→有"这一条边沿：同一关里换面/暂停/商店都不会触发 ✓（自机一直在）。*/
+    {
+        static int s_play_was = -1;
+        const int play_now = (CE_PLAYER() != 0);
+        if (s_play_was == 0 && play_now) {
+            ce_hud_stage_begin(-1);          /* 纪元作废 ⇒ 下次认领整表重排 */
+            ce_log("hud: 新一局（自机对象出现）⇒ 槽位表重置（原来只看关卡号 ⇒ 重开同关会沿用上一局）");
+        }
+        s_play_was = play_now;
+    }
+    ce_hud_band_dim_tick(ce_player_pos());
     ce_hud_debug_blocks_tick();   /* ★ z17：把声明块画出来（debug；宏可关）*/
         dim_now = ce_hud_band_dim_dimmed();
         if (s_dim_was != dim_now) {

@@ -1466,7 +1466,14 @@ void ce_hud_band_dim_tick(const float *pp)
 int ce_hud_slot_count(void)
 {
     int i, n = 0;
-    for (i = 0; i <= CE_SDK_CARD_ID_MAX; ++i) if (s_hud[i].used) ++n;
+    /* ★★★ 2026-10-03z36（owner：「bug：**hud 布局跨游玩记忆**，你看 log 就知道了」）——
+     *   `release` 只把槽标成 `reserved`（§4.4 局中删卡不重排），而 `reserved` **不算在场**
+     *   （`hud_band_union` / 碰撞检查都已跳过它）⇒ 但**计数/枚举没跳过** ✗
+     *   ⇒ 台账与调试覆盖层还在显示**已删卡的幽灵块**（实跑 log：deck 里已经没有 107、
+     *     `senro: on_delete` 也跑过了，台账却仍列 `#0 card 107`）✗。
+     *   ⇒ 与"带"的口径统一：**reserved 不计入 `count`/`enum`** ✓。*/
+    for (i = 0; i <= CE_SDK_CARD_ID_MAX; ++i)
+        if (s_hud[i].used && !s_hud[i].reserved) ++n;
     return n;
 }
 
@@ -1475,7 +1482,7 @@ int ce_hud_slot_enum(int nth, uint32_t *out_id, ce_hud_slot_t *out)
     int i, n = 0;
     if (nth < 0) return 0;
     for (i = 0; i <= CE_SDK_CARD_ID_MAX; ++i) {
-        if (!s_hud[i].used) continue;
+        if (!s_hud[i].used || s_hud[i].reserved) continue;   /* ★ z36：保留位（已删卡）不算在场 */
         if (n++ != nth) continue;
         if (out_id) *out_id = (uint32_t)i;
         if (out) {
