@@ -30203,3 +30203,24 @@ releaseable `+31/−16`）把数字对到**外框心** ⇒ `DIGIT_X640 = +25.5`�
 `hud.vm trance.hud … size 64x96 scale 2.00x2.00 draw 表面 (…)`、
 `hud.vm youkai.bar …` 这类行 ⇒ 我按「落点 ± 尺寸×缩放/2」重算 **113 / 108 / 117** 的声明块
 （谁出块、出多少，一目了然），把声明一次性对齐到墨迹。
+
+## §BE 详录 #217（2026-10-01）：坐标口径订正 —— props+0x08/0x0c/0x10 是世界坐标
+
+**owner**：「你使魔建在了敌人的**正下方**一个位置，但是**是本体发弹**，你对**发射口和本体的位置理解有偏移**」。
+**一手（`th18:0x433f9e`，`etOn` 相对路）**：
+```
+433f9e  lea   ecx,[edi+0x44]           ; &enemy->pos (zEnemyData+0x44 = zEnemy+0x1270)
+433fa1  call  0x413280                 ; eax = 敌人位置指针
+433fa6  movss xmm2,[eax] / xmm1,[eax+4] / xmm0,[eax+8]
+433fb4  addss xmm2,[edi+esi*4+0x4e58]  ; + 相对偏移 x (同 y/z)
+433fec  movq  [esi+0x5a0],xmm2         ; props+0x08/0x0c = x,y
+433ff4  mov   [esi+0x5a8],eax          ; props+0x10 = z
+```
+⇒ **props[i]+0x08/0x0c/0x10 = 敌人位置 + 相对偏移 = 世界坐标**（与普查一致，已一手确认）。
+
+**我们的 bug**：把这三格当**相对偏移**塞进 `yk_emit_world_pos()`（内部会再加敌人位置/原点）⇒ **重复叠加**
+⇒ 壳落到（敌人 + 世界偏移 + 敌人）；y 向下 ⇒ 观感 = 敌人正下方；距离判据算「敌人 + 世界偏移」恒 ≥32px
+⇒ `bodyport` 恒 0、一面照旧冒壳。
+
+**修法**：有定格值 ⇒ **直接当发射点世界坐标**；无定格值 ⇒ 回落活偏移（`data+0x4e58` 是相对量）。
+**坐标审计日志（前 8 槽）**：`youkai/emit COORD: enemy … | enemy_pos=… | props08/0c/10=… | emitter_world=… spawn=… | d2=… min=32 | active=…`。

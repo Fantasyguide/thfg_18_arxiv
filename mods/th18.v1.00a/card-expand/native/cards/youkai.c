@@ -641,6 +641,23 @@ static unsigned yk_emit_fired_age(uint32_t enemy_id, int slot)
     return 0xffffu;
 }
 
+static unsigned s_coord_logged;    /* ★ 坐标审计已打几行 */
+#define YK_COORD_LOG_N 8
+static uint32_t s_coord_enemy[YK_COORD_LOG_N];
+static int16_t  s_coord_slot[YK_COORD_LOG_N];
+static unsigned s_coord_head;
+static int yk_emit_coord_seen(uint32_t enemy_id, int slot)
+{
+    unsigned k;
+    for (k = 0; k < YK_COORD_LOG_N; ++k)
+        if (s_coord_enemy[k] == enemy_id && s_coord_slot[k] == (int16_t)slot) return 1;
+    {   unsigned idx = s_coord_head % YK_COORD_LOG_N;
+        s_coord_head = (s_coord_head + 1u) % YK_COORD_LOG_N;
+        s_coord_enemy[idx] = enemy_id; s_coord_slot[idx] = (int16_t)slot;
+    }
+    return 0;
+}
+
 static unsigned s_emit_bodyport;   /* ★ 本体口（距离 < 阈值）⇒ 不建壳的槽数 */
 #define YK_EMIT_BODYPORT_LOG_N 8
 static uint32_t s_bodyport_enemy[YK_EMIT_BODYPORT_LOG_N];
@@ -2481,6 +2498,19 @@ static void yk_run_action(yk_card_t *s, const yk_action_t *act)   /* s 可为 NU
                    *(const int32_t *)(srcprops + 0x14), *(const int32_t *)(srcprops + 0x18),
                    (unsigned)yk_emit_fired_age(act->enemy_id, act->slot),
                    (int)CE_CURRENT_STAGE(), (double)act->x, (double)act->y, (int)life);
+        {   /* ★ 坐标审计（owner：「先给数据」）：spawn **传进去**的坐标 vs 引擎**实际落点**。*/
+            const float *ap = ce_enemy_pos(f);
+            ce_log("youkai/emit COORD-SPAWN: (enemy_id %u, slot %d) requested=(%.1f,%.1f) "
+                   "engine_actual=(%.1f,%.1f) delta=(%.1f,%.1f) | source_props type=%d color=%d "
+                   "count_1=%d count_2=%d",
+                   act->enemy_id, act->slot, (double)act->x, (double)act->y,
+                   ap ? (double)ap[0] : 0.0, ap ? (double)ap[1] : 0.0,
+                   ap ? (double)(ap[0] - act->x) : 0.0, ap ? (double)(ap[1] - act->y) : 0.0,
+                   *(const int32_t *)((const uint8_t *)f + YK_EMIT_PROPS + (size_t)act->slot * YK_EMIT_PROP_STRIDE + 0x00),
+                   *(const int32_t *)((const uint8_t *)f + YK_EMIT_PROPS + (size_t)act->slot * YK_EMIT_PROP_STRIDE + 0x04),
+                   *(const int32_t *)((const uint8_t *)f + YK_EMIT_PROPS + (size_t)act->slot * YK_EMIT_PROP_STRIDE + 0x14),
+                   *(const int32_t *)((const uint8_t *)f + YK_EMIT_PROPS + (size_t)act->slot * YK_EMIT_PROP_STRIDE + 0x18));
+        }
         }
         yk_fam_created(&s_map, act->enemy_id, act->slot, fid);
         yk_pin_familiar(f, act->x, act->y);
@@ -2644,7 +2674,18 @@ static void yk_familiars_tick(yk_card_t *s)
             int active = yk_slot_type(e, i);
             /* 不活跃、又不是我们认识的槽 ⇒ 连表都不用碰（扫得快、条目也少）。*/
             if (!active && !yk_map_find(&s_map, id, i)) continue;
-            yk_slot_offsets(e, i, off3, org3);
+            /* ★★★★ 2026-10-01 晚（owner：「**你使魔建在了敌人的正下方一个位置**，但是**是本体发弹**」）
+             *   ——**坐标口径订正（一手 `th18:0x433f9e`）**：`props[i]+0x08/0x0c/0x10` 是**世界坐标**
+             *   （`lea ecx,[edi+0x44]` → `call 0x413280` 取敌人位置 → `addss …, [edi+esi*4+0x4e58]`
+             *    加相对偏移 → `movq [esi+0x5a0]` / `mov [esi+0x5a8]` = `props+0x08/0x0c/0x10`）。
+             *   ⚠ 我们原来把它当**相对偏移**塞进 `yk_emit_world_pos()` ⇒ **又加了一次敌人位置**
+             *   ⇒ 壳落到「敌人 + 世界偏移 + 敌人」（y 向下 ⇒ **看着正好在正下方**），
+             *     而距离判据算的是 `|敌人 + 世界偏移|`（恒很大）⇒ `bodyport` 恒 0、一面照旧冒壳——全对上了。
+             *   ⇒ 现在：**有定格值 ⇒ 直接当发射点世界坐标**；**没定格值 ⇒ 才回落活偏移**（那组是相对量）。*/
+            {   float lo[3];
+                if (yk_emit_latch_get(id, i, lo)) { wxy[0] = lo[0]; wxy[1] = lo[1]; }
+                else { yk_slot_offsets(e, i, off3, org3); yk_emit_world_pos(epos, off3, org3, wxy); }
+            }
             /* ★ 普查 ①：**发弹定格**优先（活偏移在同一帧内可能已被 `etOffset(0,0)` 清掉 ⇒ 壳一闪一缩）。
              *   定格值只在 `etOn` 那一刻更新 ⇒ 壳停在「那一刻的出点」；没发过弹 ⇒ 回落活偏移。*/
             {   float lo[3];
@@ -2690,6 +2731,29 @@ static void yk_familiars_tick(yk_card_t *s)
             /* ★★★★ 2026-10-01（owner 硬口径：「一面到关底之前一点使魔不该有」）：
              *   **只有「发射点离本体 ≥ `YK_EMIT_SHELL_MIN_DIST`」的槽才算 TH08 式独立使魔**；
              *   本体口（距离 ≈ 0，小怪身上那种）⇒ **不建壳**。**只读**（硬约束不变）。*/
+            /* ★ 坐标审计（owner：「先给数据、别猜」）：敌人位置 / `props+0x08/0x0c/0x10` 原样 /
+             *   我们算出的发射点 / 壳将要 spawn 的位置 —— 四个量并列（前 8 个槽各一次）。*/
+            if (active && s_coord_logged < 8u && !yk_emit_coord_seen(id, i)) {
+                const uint8_t *pr1 = e + YK_EMIT_PROPS + (size_t)i * YK_EMIT_PROP_STRIDE;
+                ++s_coord_logged;
+                ce_log("youkai/emit COORD: enemy %u slot %d | enemy_pos=(%.1f,%.1f) | "
+                       "props08/0c/10=(%.1f,%.1f,%.1f) | emitter_world=(%.1f,%.1f) spawn=(%.1f,%.1f) | "
+                       "d2=%.1f min=%.0f | active=%d",
+                       id, i, (double)epos[0], (double)epos[1],
+                       (double)*(const float *)(pr1 + 0x08), (double)*(const float *)(pr1 + 0x0c),
+                       (double)*(const float *)(pr1 + 0x10), (double)wxy[0], (double)wxy[1],
+                       (double)wxy[0], (double)wxy[1],
+                       (double)((wxy[0] - epos[0]) * (wxy[0] - epos[0]) + (wxy[1] - epos[1]) * (wxy[1] - epos[1])),
+                       (double)YK_EMIT_SHELL_MIN_DIST, active);
+            }
+            /* ★ B（owner 推断：`type=4/7/8` 可能根本**不是弹口**）：类型白名单旋钮。
+             *   `YK_EMIT_SHELL_TYPES` = 允许建壳的 `props+0x00` 值（**0 = 全接受 = 现状**；
+             *   要「只对弹口建壳」时把它设成经一手确认的那几个值）。**语义表尚未一手确认** ⇒
+             *   本批**不猜**：先靠 `COORD`/`COORD-SPAWN`/台账把 `type` 分布打出来，再填这张表。*/
+            if (active && YK_EMIT_SHELL_TYPES != 0) {
+                int ty = *(const int32_t *)((const uint8_t *)e + YK_EMIT_PROPS + (size_t)i * YK_EMIT_PROP_STRIDE);
+                if (!yk_emit_type_allowed(ty, YK_EMIT_SHELL_TYPES)) { ++i; continue; }
+            }
             if (active && !yk_emit_far_enough(wxy[0] - epos[0], wxy[1] - epos[1], YK_EMIT_SHELL_MIN_DIST)) {
                 if (!yk_emit_bodyport_seen(id, i)) {
                     ++s_emit_bodyport;
