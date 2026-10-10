@@ -16324,3 +16324,15 @@ else if (s_aura_charge > 0.0f)                 { ★ 收束（含 interrupt / �
 | cap | `input mask changed` 日志 **8 → 24**（方向键不再吃光额度）|
 | 判据 | 按**兜底键 X**（或空格，若接通）⇒ 使魔**全死**（`DEBUG-KEY … killed N`）⇒ `BROKEN set` ⇒ 该口**停火**（`veto=1`）⇒ 下一波重建；一面关底前仍 0 壳；不按 ⇒ 无输出、行为不变 |
 | 登记 | `AUDIT.md` §BE #233；`HANDOFF-108.md` §3 第 119 行 |
+
+### 2.1ccc-66 2026-10-01 (card 108 · owner 点破): **空格 = 调试键，走 `ce_key_down(CE_VK_SPACE)`**
+
+| 项 | 说明 |
+| --- | --- |
+| 一手 | **`ce_key_down(int vk)`** = `sdk.h:832` / `sdk.c:397`，实现 = **`GetKeyboardState`**（user32 **原始键盘状态**，不是游戏输入掩码、**不进 replay 输入流**）；`CE_VK_SPACE = 0x20`（ …（§BE #234）|
+| 边沿 | 它只给**电平**（`GetKeyboardState`）⇒ **自己记 `s_dbg_space_prev`**（同 `input_synth.c:398` 注释的做法）⇒ 按下那一刻触发，**长按不连发** |
+| 为什么不用 `0x4ca428` | ① 它的掩码里**没有空格位**（本局 log 只见 `0x10/0x20/0x40/0x80` + `0x008`）；② `sdk.h:822` 说明那批键**不进 replay 输入流** ⇒ 旧的 `YK_DEBUG_KEY_MASK/_MASK2`（X 兜底）**已退役** |
+| 日志 | `youkai/debug: SPACE(ce_key_down) => killed N familiars (mapping M / orbit K) - normal death path (they die next frame => BROKEN set => the emitter s …（§BE #234）|
+| 不吞键 | 只**读电平**，不写输入、不改键 |
+| 判据 | 按空格 ⇒ 使魔全死 ⇒ `BROKEN set` ⇒ 该口**停火**（`veto=1`、`vetoed` 涨）⇒ **下一波重建**；一面关底前仍 0 壳；不按 ⇒ 无输出、行为不变 |
+| 登记 | `AUDIT.md` §BE #234；`HANDOFF-108.md` §3 第 120 行 |

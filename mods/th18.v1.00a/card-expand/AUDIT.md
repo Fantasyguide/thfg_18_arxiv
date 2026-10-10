@@ -30978,3 +30978,18 @@ youkai/emit SAMPLE: stage=5 enemy_id=158 sprite=16 w=64 h=96 slot=0 type=9 color
 
 **判据**：按兜底键 ⇒ 使魔全死 ⇒ `BROKEN set` ⇒ 该口停火（`veto=1`）⇒ 下一波重建；一面关底前仍 0 壳；
 不按 ⇒ 无输出、行为不变。
+
+## §BE 详录 #234（2026-10-01）：调试键改走 `ce_key_down(CE_VK_SPACE)`（owner 点破）
+
+**owner**：「**一直以来的空格键都是调试**」。**一手**：`int ce_key_down(int vk)` = `sdk.h:832` / `sdk.c:397`，
+实现 = **`GetKeyboardState`**（user32 原始键盘状态，**不进 replay 输入流**）；`CE_VK_SPACE = 0x20`（`sdk.h:829`）；
+先例 = `animal.c:3988` `ce_key_down(CE_VK_SPACE)`、`input_synth.c:162`。
+
+**改法**：调试击杀键 = **`ce_key_down(CE_VK_SPACE)` + 自记边沿**（`s_dbg_space_prev`；同 `input_synth.c:398` 注释），
+按下那一刻触发、长按不连发；**只读电平 ⇒ 不吞键/不改键**。
+**退役**：旧的 `YK_DEBUG_KEY_MASK = 0x001` / `YK_DEBUG_KEY_MASK2 = 0x002`（X 兜底）—— 因为
+**`0x4ca428` 的掩码里没有空格位**（log 只见 `0x10/0x20/0x40/0x80` + `0x008`），且 `sdk.h:822` 说那批键不进 replay 流。
+`input mask changed` 日志**保留**（排障无害）。
+
+**日志**：`youkai/debug: SPACE(ce_key_down) => killed N familiars (mapping M / orbit K) - normal death path …`。
+**判据**：按空格 ⇒ 全死 ⇒ `BROKEN set` ⇒ 该口停火（`veto=1`）⇒ 下一波重建；一面关底前仍 0 壳；不按 ⇒ 无输出、行为不变。

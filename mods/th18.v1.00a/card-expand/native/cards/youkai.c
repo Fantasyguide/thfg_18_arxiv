@@ -665,15 +665,12 @@ static int yk_emit_coord_seen(uint32_t enemy_id, int slot)
     return 0;
 }
 
-/* ★ 调试键（owner）：开关 + 掩码 + 边沿状态。❓ 掩码待一手核（见调用处注）。*/
+/* ★ 调试键（owner：「**一直以来的空格键都是调试**」）：开关 + 电平边沿状态。
+ *   触发 = `ce_key_down(CE_VK_SPACE)`（`sdk.h:832`/`sdk.c:397`，`GetKeyboardState`）；
+ *   ⛔ 旧的 `0x4ca428` 掩码方案（`YK_DEBUG_KEY_MASK/…_MASK2`）**已退役**（该掩码没有空格位）。*/
 #define YK_DEBUG_SPACE_KILL 1
-/* ★ 2026-10-01 晚（owner「空格没用」+ log 反证）：`0x4ca428` 那一族**没有 0x001**
- *   （log 只见到 `0x10/0x20/0x40/0x80`=方向、`0x008`=低速）⇒ 空格**很可能不在 replay 掩码里**
- *   ⇒ ① 保留空格（待找到**原始键盘状态**的地址后接上）；② **兜底键 = `0x002`**（TH 系 X/射击位，
- *     `log` 里会打出它的实际掩码值 ⇒ owner 一眼能确认是哪个键）。*/
-#define YK_DEBUG_KEY_MASK   0x001u   /* ❓待核：空格（replay 掩码里似乎没有这一位）*/
-#define YK_DEBUG_KEY_MASK2  0x002u   /* ★ 兜底：X 位（不与低速 0x008 冲突）*/
-static uint32_t s_dbg_prev_input;
+static int      s_dbg_space_prev;       /* 空格电平边沿 */
+static uint32_t s_dbg_prev_input;       /* 仅用于排障日志 */
 static unsigned s_dbg_mask_logged;
 
 static unsigned s_raw_logged;         /* ★ RAW 打了几行 */
@@ -7939,16 +7936,15 @@ static int on_tick_2(ce_card_t *c)
      *   ❓ 空格位 = `YK_DEBUG_KEY_MASK`（= `0x001`，TH 系 Z/射击位）**待一手核**：本块会打前 8 次
      *     输入掩码变化（`held=0x…`）⇒ 若按空格不出 `SPACE` 行，用那行掩码即可定出正确位。*/
     if (YK_DEBUG_SPACE_KILL) {
-        uint32_t held = CE_INPUT_HELD();
-        uint32_t edges = held & ~s_dbg_prev_input;
-        if (s_dbg_mask_logged < 24u && held != s_dbg_prev_input) {
-            ++s_dbg_mask_logged;
-            ce_log("youkai/debug: input mask changed held=0x%08x (prev=0x%08x) edges=0x%08x "
-                   "(debug space-kill mask=0x%03x)", (unsigned)held, (unsigned)s_dbg_prev_input,
-                   (unsigned)edges, (unsigned)YK_DEBUG_KEY_MASK);
-        }
-        s_dbg_prev_input = held;
-        if (edges & (YK_DEBUG_KEY_MASK | YK_DEBUG_KEY_MASK2)) {
+        /* ★★★★ 2026-10-01 晚（owner：「**一直以来的空格键都是调试**」）——改用 SDK 现成接口：
+         *   **`ce_key_down(CE_VK_SPACE)`**（`sdk.h:832` / `sdk.c:397` = `GetKeyboardState`，
+         *   **user32 原始键盘状态**，不是游戏输入掩码、**不进 replay 输入流**；只给**电平** ⇒
+         *   **边沿自己记**（先例：`animal.c:3988` `ce_key_down(CE_VK_SPACE)`；`input_synth.c:162`）。
+         *   为什么不用 `0x4ca428`：它的掩码里**没有空格位**（log 只见 `0x10/0x20/0x40/0x80`+`0x008`），
+         *   且 `sdk.h:822` 说明那批键**不进 replay 输入流**。
+         *   ⇒ 按下那一刻触发（长按不连发）；**只读电平、不吞键、不改键**。*/
+        int down = ce_key_down(CE_VK_SPACE) ? 1 : 0;
+        if (down && !s_dbg_space_prev) {
             unsigned m = 0, k = 0, j;
             for (j = 0; j < YK_FAM_MAX; ++j) {
                 uint8_t *f;
@@ -7962,10 +7958,20 @@ static int on_tick_2(ce_card_t *c)
                 f = yk_familiar_by_id(s_orbit[j].fam_id);
                 if (f) { *(int32_t *)(f + YK_ED_LIFE_CUR) = 0; ++k; }
             }
-            ce_log("youkai/debug: DEBUG-KEY(0x%03x) => killed %u familiars (mapping %u / orbit %u) - normal death "
-                   "path (they die next frame => BROKEN set => the emitter slot is vetoed until a "
-                   "wave/rearm edge or the TTL)", (unsigned)(edges & (YK_DEBUG_KEY_MASK | YK_DEBUG_KEY_MASK2)),
-                   m + k, m, k);
+            ce_log("youkai/debug: SPACE(ce_key_down) => killed %u familiars (mapping %u / orbit %u) - "
+                   "normal death path (they die next frame => BROKEN set => the emitter slot is vetoed "
+                   "until a wave/rearm edge or the TTL)", m + k, m, k);
+        }
+        s_dbg_space_prev = down;
+    }
+    /* ★ 排障用（无害）：前 24 次**游戏输入掩码**变化各打一行（`0x4ca428`；空格不在其中）。*/
+    if (s_dbg_mask_logged < 24u) {
+        uint32_t held = CE_INPUT_HELD();
+        if (held != s_dbg_prev_input) {
+            ++s_dbg_mask_logged;
+            ce_log("youkai/debug: input mask changed held=0x%08x (prev=0x%08x) [0x4ca428; no space bit]",
+                   (unsigned)held, (unsigned)s_dbg_prev_input);
+            s_dbg_prev_input = held;
         }
     }
     yk_side_lock_tick();                                  /* ★ owner ④：锁形态（B / 灵界 / 咆哮）*/
