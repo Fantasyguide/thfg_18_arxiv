@@ -2594,6 +2594,18 @@ int __cdecl BP_ce_item_frame(x86_reg_t *regs, void *bp_info)
         uint8_t *mgr = CE_ABILITY_MGR();
         if (mgr) {
             const int32_t root = *(const int32_t *)(mgr + CE_MGR_SEL_CARD_VM);
+            /* ★ z19：**先打一行诊断**（不管找没找到 VM）—— 上一版只在找到 VM 时才打，
+             *   结果一条都没有 ⇒ 看不出是 `mgr+0x3c` 是 0、还是 VM 查不到。*/
+            {
+                static int32_t s_nat_root_logged = -1;
+                if (s_nat_root_logged != root) {
+                    s_nat_root_logged = root;
+                    ce_log("hud: native face probe — mgr+0x3c(树根 id)=%d, mgr+0x38(选中卡)=%d, "
+                           "get_vm(root)=%p", (int)root,
+                           (int)*(const int32_t *)(mgr + CE_MGR_SELECTED_ACTIVE),
+                           (void *)ce_anm_get_vm((uint32_t)root));
+                }
+            }
             if (root) {
                 const uint32_t a = (uint32_t)ce_hud_band_dim_alpha() & 0xffu;
                 static int32_t s_nat_logged;
