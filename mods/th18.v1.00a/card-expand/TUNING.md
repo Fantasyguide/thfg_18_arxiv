@@ -16116,7 +16116,7 @@ else if (s_aura_charge > 0.0f)                 { ★ 收束（含 interrupt / �
 | 运行期验证 | 写前/写后 + **下一帧**再读 `hitbox`（前 8 只壳）：`youkai: hitbox fam_id=… before=(…) after=(…)` / `… NEXT-FRAME before=(…) => engine did NOT clobber (still 0x0) / ENGINE CLOBBERED hitbox (write too late)` |
 | 判据 | 自机贴上去撞（含按 shift）**不掉命、不被击退**、火力与无敌时间不变；壳**仍可被自机弹打掉** |
 | 登记 | `AUDIT.md` §BE #216；`HANDOFF-108.md` §3 第 102 行 |
-#### 2.1ccc-46a 排查记录（结论：bit1 假设作废，改用 109 的 `setHitbox(0,0)`）
+#### 2.1ccc-46a 排查记录（bit1 作废 → `setHitbox(0,0)` → **`setHitbox` 也作废，正解见 §2.1ccc-50**）
 
 | 步骤 | 现状 / 做法 |
 | --- | --- |
@@ -16147,3 +16147,13 @@ else if (s_aura_charge > 0.0f)                 { ★ 收束（含 interrupt / �
 | 无体术（不动）| `hitbox` 归零**生效且不被覆盖**（owner log：1155 行 `NEXT-FRAME before=(0.0,0.0)`、`0 行 CLOBBERED`）⇒ 这条视为成功；owner 感到的碰撞可能来自**阴阳玉本体**那些真敌机 |
 | 判据 | 一面关底前 **0 壳**（`bodyport` 显著 >0 或 `create`≈0）；已知场景仍有壳且**壳压在出点上** |
 | 登记 | `AUDIT.md` §BE #218；`HANDOFF-108.md` §3 第 105 行 |
+
+### 2.1ccc-50 2026-10-01 (card 108 · owner 转来 109 线一手): 无体术正解 = `no_hitbox_timer` (`e+0x6334`) = 2
+
+| 项 | 说明 |
+| --- | --- |
+| 一手链 | `zEnemyData+0x5108` = **`no_hitbox_timer.current`**（定名 `engine/ecl/th18/01-boss-interrupts-and-spellcard.md:45`）⇒ 绝对 **`e+0x6334`**；接触致伤在 `EnemyData_ …（`AUDIT §BE #219`）|
+| 落笔 | `yk_pin_familiar()` 每帧 `*(int32_t *)(f + YK_ENEMY_NO_HITBOX_TIMER) = 2;` ⇒ **不碰 `flags_lo`** ⇒ 壳**仍可被自机弹打中 / 可被锁定 / 计数照常**，只是撞上去不掉血 |
+| 作废链 | bit1（静态推）→ 作废；`setHitbox(0,0)`（`enemy+0x1344`，按 109 ECL 注释）→ **也作废**：体术走三个通用几何判定（圆 `0x45cd90` / OBB `0x45cea0` / AABB `0x45cc20`，判据是**双方几何体**）⇒ 敌机盒设 0 只能让「敌机那半」为 0 ⇒ 得不到「没有体术判定」 |
+| 判据 | 撞上去（含 shift）**不掉命 / 不被击退**；壳仍可被打掉/被锁定。日志 `youkai: no_hitbox fam_id=… (e+0x6334) before=… after=2 ; engine gate 0x42f51c (>0 => skip contact damage)` + `NEXT-FRAME before=…` |
+| 109 侧残留 | `pofv.c:5830-5839` 那行 `*(int32_t *)(e+0x635c) &= ~0x22;`（旧自创口径：让 EX 能致伤）已按 owner 口径**删除** + 注释更新 + 协作登记（`AUDIT §BE #219-B`）|

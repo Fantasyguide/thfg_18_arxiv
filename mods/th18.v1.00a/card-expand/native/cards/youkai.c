@@ -901,10 +901,16 @@ static void yk_pin_follow_step(yk_pin_follow_t *pf, uint32_t fam_id, float tx, f
     if (pf->age < 0xffffu) ++pf->age;
 }
 
-#define YK_ENEMY_HITBOX_SIZE      (0x122c + 0x118)  /* ★ `zEnemyData+0x118` = hitbox_size（体术盒）；
-                                                   *   一手：109 的灵 ECL `setHitbox(0.0f,0.0f)`
-                                                   *   （`assets/ecl/spirit109.ecl.txt:76–81`）= 无体术，
-                                                   *   受击盒 `hurtbox_size`（`+0x110`）保留 ⇒ 仍可被打掉。*/
+/* ★★★★ 2026-10-01 晚（**109 线一手定名 ⇒ 无体术正解**）：`zEnemyData + 0x5108` =
+ *   **`no_hitbox_timer.current`**（`engine/ecl/th18/01-boss-interrupts-and-spellcard.md:45` 定名）
+ *   ⇒ 绝对 = `zEnemy + 0x122c + 0x5108` = **`e + 0x6334`**。
+ *   接触致伤判定在 `EnemyData__step_game_logic 0x42ed40`，**前置闸 `0x42f51c`：`+0x5108 > 0`
+ *   ⇒ 引擎自己跳过接触致伤判定**（纯读）⇒ 每帧写 `= 2` 即可 ⇒ 壳**仍会被自机弹打中 / 可被锁定 /
+ *   计数照常**，只是撞上去不掉血。**不碰 `flags_lo`**。
+ *   ⛔ 作废：先前按 109 ECL 注释采用的 `setHitbox(0,0)`（`enemy+0x1344`）—— 体术走三个**通用几何判定**
+ *   （圆 `0x45cd90` / OBB `0x45cea0` / AABB `0x45cc20`，判据是**双方几何体**）⇒ 把敌机盒设 0
+ *   只能让「敌机那半」为 0，**永远得不到「没有体术判定」**（除非能让 `hitbox_2 < 0`）⇒ **已撤**。*/
+#define YK_ENEMY_NO_HITBOX_TIMER  (0x122c + 0x5108)   /* = e + 0x6334 */
 
 static void yk_pin_familiar(uint8_t *f, float x, float y)
 {
@@ -936,28 +942,24 @@ static void yk_pin_familiar(uint8_t *f, float x, float y)
          *   所以「出生 → 死亡 / 重建」全程无体术。**不再写 `enemy+0x635c` 的 bit1**
          *   （那条是静态推的、owner 实跑证明**没有生效** ⇒ 换成 109 这条已被实跑验证过的做法）。*/
         {
-            float *hb = (float *)(f + YK_ENEMY_HITBOX_SIZE);
-            float bx = hb[0], by = hb[1];
-            hb[0] = 0.0f;
-            hb[1] = 0.0f;
+            int32_t *nh = (int32_t *)(f + YK_ENEMY_NO_HITBOX_TIMER);
+            int32_t before = *nh;
+            *nh = 2;                                  /* ★ 每帧写 ≥1 ⇒ 引擎闸 `0x42f51c` 命中 ⇒ 无体术 */
             if (s_bodywrite_logged < 8u) {
                 ++s_bodywrite_logged;
-                ce_log("youkai: hitbox fam_id=%u (enemy+0x1344 = zEnemyData+0x118) before=(%.1f,%.1f) "
-                       "after=(%.1f,%.1f) => no body attack (109's `setHitbox(0,0)`, spirit109.ecl.txt:81); "
-                       "hurtbox (enemy+0x133c) untouched",
-                       *(const uint32_t *)(f + CE_ENEMY_ID), (double)bx, (double)by,
-                       (double)hb[0], (double)hb[1]);
+                ce_log("youkai: no_hitbox fam_id=%u (e+0x6334) before=%d after=%d ; engine gate 0x42f51c "
+                       "(>0 => skip contact damage); flags_lo untouched (still shootable/targetable)",
+                       *(const uint32_t *)(f + CE_ENEMY_ID), (int)before, (int)*nh);
             }
-            {   /* 下一帧再核一次：引擎有没有把它盖回去（盖回 ⇒ 时机不对，要挪到更早）。*/
+            {   /* 下一帧再核一次：引擎有没有把它盖回去 / 递减到 0。*/
                 unsigned k;
                 uint32_t fid = *(const uint32_t *)(f + CE_ENEMY_ID);
                 for (k = 0; k < YK_BODYCHK_N; ++k) {
                     if (s_bodychk_fam[k] == fid && s_bodychk_done[k] == 0u) {
                         s_bodychk_done[k] = 1u;
-                        ce_log("youkai: hitbox fam_id=%u NEXT-FRAME before=(%.1f,%.1f) => %s", fid,
-                               (double)bx, (double)by,
-                               (bx == 0.0f && by == 0.0f) ? "engine did NOT clobber (still 0x0)"
-                                                           : "ENGINE CLOBBERED hitbox (write too late)");
+                        ce_log("youkai: no_hitbox fam_id=%u NEXT-FRAME before=%d => %s", fid, (int)before,
+                               (before > 0) ? "ok (>0)"
+                                            : "ENGINE ZEROED it (write too late / must also set earlier)");
                         break;
                     }
                 }

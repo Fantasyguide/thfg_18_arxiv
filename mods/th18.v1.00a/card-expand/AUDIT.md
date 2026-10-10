@@ -30277,3 +30277,26 @@ script 178 (游标) sprite 401 size 16x32 scale 1.00 draw 表面 (436, 916)
 （届时一并处理"声明块偏左"的观感）。
 
 **验证**：`make check` **rc=0**（`test_sdk_core` 1430 / `dllx87` 0 / `check-docs` 449 全绿）。
+
+## §BE 详录 #219（2026-10-01）：无体术正解 = `no_hitbox_timer`（`e+0x6334`）= 2；并清 109 的一处残留
+
+**A. 108（本卡）**：改为 `yk_pin_familiar()` 每帧 `*(int32_t *)(f + 0x6334) = 2;`
+（`YK_ENEMY_NO_HITBOX_TIMER = 0x122c+0x5108`）。一手链：字段定名 `no_hitbox_timer.current`
+（`engine/ecl/th18/01-boss-interrupts-and-spellcard.md:45`）；接触致伤在 `EnemyData__step_game_logic 0x42ed40`，
+**前置闸 `0x42f51c`：`+0x5108 > 0` ⇒ 引擎跳过接触致伤判定** ⇒ 借引擎自带闸，**不碰 `flags_lo`**
+⇒ 壳仍被自机弹打中/可锁定/计数照常。**曾错误采用 `setHitbox(0,0)`（`enemy+0x1344`）——已撤**：
+体术走三个通用几何判定（圆 `0x45cd90` / OBB `0x45cea0` / AABB `0x45cc20`，判据是**双方几何体**）
+⇒ 敌机盒设 0 只能让「敌机那半」为 0，永远得不到「没有体术判定」。诊断行同步改为
+`youkai: no_hitbox fam_id=… (e+0x6334) before=… after=2 ; engine gate 0x42f51c …` + `NEXT-FRAME before=…`。
+
+**B. 109（`native/cards/pofv.c:5830-5839`，别人的卡 —— 协作登记）**
+· **文件**：`native/cards/pofv.c`（EX 分支）。
+· **改了什么**：删除一行 `*(int32_t *)(e + 0x635c) &= ~0x22;`（清 `flags_lo` bit1/bit5 ⇒ 允许 EX 体术致伤），
+  并把那段「EX 装上 hitbox 24×24」的过时注释改成说明来龙去脉的一小段。
+· **为什么**：owner 2026-10-01 口径「**所有灵都没有体术**」；109 线只读报告给出一手定名 ——
+  无体术的正解是 **`no_hitbox_timer`（`e+0x6334`）= 2**（引擎前置闸 `0x42f51c` 自跳过），
+  而 `flags_lo` 那两位是**旧的自创口径**。
+· **谁改的**：卡 108 的 agent（本轮）。
+· **怎么验证的**：`make -s check`（12726 checks / 449 文档）+ `dllx87` + `capcheck` 全绿；
+  行为面 = EX 不 no longer 开体术致伤（与 owner 口径一致）。
+· **范围**：只删这一行 + 改注释，**不动 109 的其它逻辑**。

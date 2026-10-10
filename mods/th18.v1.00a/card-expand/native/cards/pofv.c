@@ -5835,8 +5835,14 @@ static int on_tick_2(ce_card_t *c)
                          *   （绝对 `e+0x1344` ✗），**不是攻击盒** ✗ ⇒ 已撤掉（不再污染受击盒 ✓）。
                          *   一手：EX 要致伤 ⇒ **`no_hitbox_timer = 0`**（`e+0x6334` ✓）＋
                          *   **`flags_lo` 不带 `0x22`**（`e+0x635c` ✓）—— 两者由下面/summary 那行每帧维护 ✓。*/
-                        *(int32_t *)(e + 0x635c) &= ~0x22;   /* 清掉伤害闸的 bit1/bit5 ⇒ 允许体术致伤 ✓ */
-                        ce_log("pofv: EX 装上 hitbox 24×24 ⇒ 接触自机会致伤（一手 ③ 己方伤害）");
+                        /* ⛔ 2026-10-01 晚（**owner 口径**：所有灵/使魔都**没有体术**；109 线只读报告
+                         *   给了一手定名：无体术的正解 = **`no_hitbox_timer`（`e+0x6334`）= 2**，
+                         *   引擎前置闸 `0x42f51c` 自跳过接触致伤）
+                         *   ⇒ 原来这行 `&= ~0x22`（清 `flags_lo` bit1/bit5 让 EX **能**致伤）是**旧的自创口径**，
+                         *     已按 owner 口径**删除**；EX 要致伤也一律不再开（唯一正解那条只做「关」）。
+                         *   ⚠ 本改动只删这一行 + 更新注释，**不动 109 的其它逻辑**；协作登记见 `AUDIT.md` §BE。*/
+                        ce_log("pofv: EX no longer enables body damage (owner 2026-10-01: all spirits have "
+                               "no body attack; no_hitbox_timer is the only lever, and it only turns it OFF)");
                     }
                     s_spirit_vm[sl] = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), ring, 8);
                     /* ★★★ owner 2026-10-06：「**th09 幽灵实际上没有这个晕光，所以得去掉**」✓
