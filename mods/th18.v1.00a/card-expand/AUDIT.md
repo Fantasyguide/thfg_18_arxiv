@@ -31090,3 +31090,22 @@ hud: native face probe — mgr+0x3c(树根 id)=1853554533, mgr+0x38(选中卡)=1
   仍用 `vm+0x28`（脚本号 ∈ 1..4）**校验** ✓；首次扫到打一行列出 script1..4 的 id ✓。
 
 **验证**：`make check` **rc=0**（`test_sdk_core` 1430 / `dllx87` 0 / `check-docs` 449 全绿）。
+
+## §BE 详录 #237（2026-10-01）：spawn **设父** + **同出点共壳**（owner 19:12 log 两组现场）
+
+**① 空格「啥用没有」**：`SPACE KILL/SKIP/PARENT` **全 0**；`SPAWN: slot 0 fam_id=160 / slot 1 fam_id=161`（`ret=1`）
+⇒ 壳建了，但**我们 spawn 时没写父**（`zEnemy+0x6834`）⇒ `yk_shell_parent_ok()` 把**自己的壳全拒**。
+**修**：spawn 成功后写 `*(u32*)(f + YK_ENEMY_PARENT_ID) = act->enemy_id;`（这条父子关系本来就该有）。
+
+**② 5 面中 boss「只建了一个使魔」**：`SPAWN slot 0 pos=(-69.6,135.3)` 与 `slot 1` **同一坐标**；
+`COORD-SPAWN` 显示 `requested == engine_actual`（不是落点问题）⇒ **两壳重叠**。
+**修**：**按 (母机, 出点) 去重**（ε = 0.5 px）—— 新槽出点与同母机已有壳重合 ⇒ **不再 spawn**，
+改调新 core 函数 **`yk_map_bind_fam(m, enemy_id, slot, fam_id)`**（`fam_seen=1 / fired=1 / active=1`）
+⇒ 观感一只；**打死它两个槽一起停火**（`yk_fam_broken` 逐槽扫同 id）。日志：
+`youkai/emit: slot i shares the shell of an existing slot (fam_id …, pos …) => no second entity (killing it closes BOTH slots)`。
+
+**顺带待办**：`RAW:`（每槽原始偏移）这次仍没打出来（158/162 一条都没有）⇒ 下一批核它的触发条件
+（嵌在 scan 的 `active` 分支里，可能被前面的 `continue` 跳过）。
+
+**判据**：① 按空格 ⇒ `SPACE KILL` 出现、只有活着的我壳死、**母机不掉血**；② 5 面中 boss 看到**一只**壳、
+**打死它两个槽都停火**；③ 下一波重建；④ 一面关底前 0 壳。

@@ -16358,3 +16358,14 @@ else if (s_aura_charge > 0.0f)                 { ★ 收束（含 interrupt / �
 | 待办（下一批，重要）| 把 **pin 位置 / 站点闸 / 转嫁落点 / 绕转 / orphan 清理**全部改走 `yk_shell_parent_ok()`；并**清理注册表生命周期**（死亡/撤销/换波/换场/换关/`KILL_ALL`/`run_reset`/`on_delete` 全清），核实 `fam_id` 在换波时确实被清零、`enemy_id` 与 `fam_id` 不混用 |
 | 判据 | ① 按空格 ⇒ **只有当前活着的我们的壳**死（`KILL` 的 id 与 `SPAWN` 记录一致、母机绝不在其中）；② **道中 boss 血量不掉/不消失**（任何波、任何一次按键）；③ 打死 ⇒ 该槽**停火**（`veto=1`）⇒ **下一波重建**；④ 一面关底前仍 0 壳 |
 | 登记 | `AUDIT.md` §BE #236；`HANDOFF-108.md` §3 第 122 行 |
+
+### 2.1ccc-69 ★★★ 2026-10-01 (card 108 · owner 两组现场): spawn 设父 + 同出点共壳
+
+| 项 | 说明 |
+| --- | --- |
+| ① 空格「啥用没有」（19:12 log）| `SPACE KILL/SKIP/PARENT` **全 0**；而 `SPAWN: slot 0 fam_id=160 / slot 1 fam_id=161`（`ret=1`）⇒ 壳建了，但**我们 spawn 时没写父** ⇒ `yk_shell_parent_ok()` 把**自己的壳全拒 …（§BE #237）|
+| ② 5 面中 boss「只建了一个使魔」| `SPAWN slot 0 pos=(-69.6,135.3)` 与 `SPAWN slot 1 pos=(-69.6,135.3)` **同一坐标**；`COORD-SPAWN` 显示 requested == engine_actual（不是落点问题）⇒ **两壳重叠**。**修**：**按 …（§BE #237）|
+| 日志 | `youkai/emit: slot i shares the shell of an existing slot (fam_id …, pos …) => no second entity (killing it closes BOTH slots)`（前 8 次）|
+| 顺带待办 | `RAW:` 每槽原始偏移这次仍没打出来（158/162 一条都没有）⇒ 下一批确认 `RAW` 的触发条件（它嵌在 scan 的 `active` 分支里，可能被前面的 `continue` 跳过）|
+| 判据 | ① 按空格 ⇒ `SPACE KILL` 出现、只有活着的我壳死、母机不掉血；② 5 面中 boss 看到**一只**壳且**打死它两个槽都停火**；③ 下一波重建；④ 一面关底前 0 壳 |
+| 登记 | `AUDIT.md` §BE #237；`HANDOFF-108.md` §3 第 123 行 |

@@ -983,6 +983,21 @@ int yk_spell_name_is_time(const uint8_t *name, int maxlen)
 }
 
 /* ★ 2026-10-01（phantom 修复）：卡侧把「站点上见过 `etOn`」翻成这一格。*/
+void yk_map_bind_fam(yk_map_t *m, uint32_t enemy_id, int slot, uint32_t fam_id)
+{
+    yk_slot_t *e;
+    if (!m || !fam_id) return;
+    e = yk_map_find(m, enemy_id, slot);
+    if (!e) e = yk_map_alloc(m, enemy_id, slot);
+    if (!e) return;
+    e->fam_id = fam_id;
+    e->fam_seen = 1;                 /* 它现在有壳（共用）⇒ 闸与死亡识别都按「有壳」走 */
+    e->fired = 1;
+    e->active = 1;
+    e->broken = 0;
+    e->no_fam_frames = 0;
+}
+
 void yk_map_set_fired(yk_map_t *m, uint32_t enemy_id, int slot, int fired)
 {
     yk_slot_t *e;

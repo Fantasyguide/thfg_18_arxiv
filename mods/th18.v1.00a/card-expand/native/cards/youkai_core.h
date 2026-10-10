@@ -1328,7 +1328,11 @@ void yk_follow_step(float *xy, float sx, float sy, float tx, float ty, int age, 
  *   语义 = 1:1 映射那条：**只有当这一格没有壳、且它没被打死(`broken`)** 才建新的；
  *   **位置/目标变化完全不参与** —— 本函数**没有**位置参数，这就是「瞬移不重建」的结构性证明
  *   （沿 `yk_pin_familiar()` 那条路只写位置字段，见 `AUDIT.md` §BE #208 的逐行表）。*/
-void yk_map_set_fired(yk_map_t *m, uint32_t enemy_id, int slot, int fired);   /* 见 `yk_slot_t.fired` */
+void yk_map_set_fired(yk_map_t *m, uint32_t enemy_id, int slot, int fired);
+/* ★ 2026-10-01 晚（owner：5 面中 boss 两槽出点完全相同）——**同出点共壳**：
+ *   把 `(enemy_id, slot)` 的表项**绑到已存在的壳 id** 上（不再新建实体）⇒ 观感一只、
+ *   打死它两个槽一起停火（`yk_fam_broken` 逐槽扫同 id）。*/
+void yk_map_bind_fam(yk_map_t *m, uint32_t enemy_id, int slot, uint32_t fam_id);   /* 见 `yk_slot_t.fired` */
 int  yk_shell_needs_rebuild(int have_shell, int broken);
 /* ★★★★ 2026-10-01（owner 硬约束 ②）：**时符期间，使魔受到的伤害不得转嫁给敌人**。
  *   owner 逐字：「另外，**对于时符**，应该程序内可能有定义，**这个使魔的伤害肯定不能返回到敌人身上**」。

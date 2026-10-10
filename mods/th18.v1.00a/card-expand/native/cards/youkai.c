@@ -671,6 +671,7 @@ static int yk_emit_coord_seen(uint32_t enemy_id, int slot)
 #define YK_DEBUG_SPACE_KILL 1
 static int      s_dbg_space_prev;       /* 空格电平边沿 */
 static unsigned s_dbg_ids_logged;       /* ★ 前 3 次按键打 ids 清单 */
+static unsigned s_shared_logged;        /* ★ 「同出点共用壳」日志条数 */
 static uint32_t s_dbg_prev_input;       /* 仅用于排障日志 */
 static unsigned s_dbg_mask_logged;
 
@@ -2591,6 +2592,37 @@ static void yk_run_action(yk_card_t *s, const yk_action_t *act)   /* s 可为 NU
             yk_slot_t *slc = yk_map_find(&s_map, act->enemy_id, act->slot);
             if (slc && slc->fam_id) ++s_emit_hp_reset;
         }
+        /* ★★★★ 2026-10-01 晚（owner：5 面中 boss「两个槽出点完全相同」）——**同出点去重**：
+         *   新槽的出点若与**同一母机已有壳**的位置重合（ε 内）⇒ **不再 spawn 第二只**，
+         *   而是把该槽**绑到那只壳上**（`yk_map_bind_fam`）⇒ 观感 = 一只（与「一槽一壳 = 视觉代理」一致），
+         *   且打死那只壳会让**两个槽一起停火**（`yk_fam_broken` 逐槽扫同 id —— 见 core）。*/
+        {
+            unsigned q;
+            uint32_t shared = 0;
+            for (q = 0; q < YK_FAM_MAX; ++q) {
+                yk_slot_t *o = &s_map.e[q];
+                uint8_t *of;
+                if (!o->fam_id || o->enemy_id != act->enemy_id) continue;
+                if (o->slot == act->slot) continue;
+                of = yk_familiar_by_id(o->fam_id);
+                if (!of) continue;
+                {   float dx = o->x - act->x, dy = o->y - act->y;
+                    if (dx < 0.0f) dx = -dx;
+                    if (dy < 0.0f) dy = -dy;
+                    if (dx <= 0.5f && dy <= 0.5f) { shared = o->fam_id; break; }   /* ε = 0.5 px */
+                }
+            }
+            if (shared) {
+                yk_map_bind_fam(&s_map, act->enemy_id, act->slot, shared);
+                if (s_shared_logged < 8u) {
+                    ++s_shared_logged;
+                    ce_log("youkai/emit: slot %d shares the shell of an existing slot (fam_id %u, pos "
+                           "(%.1f,%.1f)) => no second entity (killing it closes BOTH slots)",
+                           act->slot, shared, (double)act->x, (double)act->y);
+                }
+                return;
+            }
+        }
         uint8_t *f = yk_spawn_familiar(act->x, act->y, life);
         uint32_t fid;
         if (!f) {
@@ -2603,6 +2635,9 @@ static void yk_run_action(yk_card_t *s, const yk_action_t *act)   /* s 可为 NU
             return;
         }
         fid = *(uint32_t *)(f + CE_ENEMY_ID);
+        /* ★ 2026-10-01 晚（owner：空格「啥用没有」= 我们的壳**父链是 0** ⇒ 活体校验全拒）：
+         *   spawn 后把父 id 写成**该槽的母机 id** ⇒ ① 空格可用；② 这条父子关系本来就该有。*/
+        *(uint32_t *)(f + YK_ENEMY_PARENT_ID) = act->enemy_id;
         ce_log("youkai/emit SPAWN: slot %d fam_id=%u ret=%d pos=(%.1f,%.1f) enemy_id %u",
                act->slot, fid, f ? 1 : 0, (double)act->x, (double)act->y, act->enemy_id);
         /* ★★★ 2026-10-01（owner：「依旧有一系列不该出现的发弹口使魔」）——**建壳诊断**（前 24 只）：
