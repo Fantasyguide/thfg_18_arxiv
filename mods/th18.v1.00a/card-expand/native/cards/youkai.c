@@ -745,6 +745,8 @@ static unsigned s_fire_seen;            /* ★ 无条件计数：站点上见过
 static unsigned s_firesum_logged;       /* ★ FIRESUM 行数 */
 static unsigned s_fcout_logged;         /* ★ FIRECOUNT 行数 */
 static unsigned s_dh_body, s_dh_near, s_dh_far, s_dh_logged;   /* ★ DISTHIST 计数 */
+static uint32_t s_pin_last_fam; static uint32_t s_pin_last_frame;   /* ★ TRACK：最近被钉的壳/帧 */
+static uint32_t s_trk_enemy; static int s_trk_slot = -1; static int s_trk_left;   /* ★ TRACK 目标与剩余帧 */
 static unsigned s_site_logged;          /* ★ SITE(call#>=2) 行数 */
 static unsigned s_og_logged;            /* ORIGIN-GATE 总行数 */
 
@@ -1204,6 +1206,9 @@ static int yk_shell_parent_ok(uint8_t *f, uint32_t expected_parent)
 
 static void yk_pin_familiar(uint8_t *f, float x, float y)
 {
+    /* ★ TRACK 用：记「这一帧钉过哪只壳」（owner 要看 pinned_this_frame）。*/
+    s_pin_last_fam = *(const uint32_t *)(f + CE_ENEMY_ID);
+    s_pin_last_frame = ce_sdk_frame();
     *(float *)(f + CE_ENEMY_POS_X) = x;                   /* final_pos（spec §3.5 指定的那两格）*/
     *(float *)(f + CE_ENEMY_POS_Y) = y;
     *(float *)(f + YK_ENEMY_ABS_POS) = x;                 /* + abs_pos（见文件头的 ⚠ 差异说明）*/
@@ -3041,13 +3046,39 @@ static void yk_familiars_tick(yk_card_t *s)
                 const uint8_t *pp = e + YK_EMIT_PROPS + (size_t)i * YK_EMIT_PROP_STRIDE;
                 s_cur_have_latch = yk_emit_latch_get(id, i, lo) ? 1 : 0;
                 if (s_cur_have_latch && !(lo[0] == 0.0f && lo[1] == 0.0f)) {
-                    wxy[0] = lo[0]; wxy[1] = lo[1];
+                    /* 定格的是**相对量** ⇒ 每帧用**当前**敌人位置重建世界坐标（壳跟着母机走）。*/
+                    wxy[0] = epos[0] + lo[0];
+                    wxy[1] = epos[1] + lo[1];
                 } else {
                     wxy[0] = *(const float *)(pp + 0x08);
                     wxy[1] = *(const float *)(pp + 0x0c);
                 }
                 off3[0] = wxy[0]; off3[1] = wxy[1]; off3[2] = 0.0f;   /* 仅供调试打印 */
                 (void)org3;
+            }
+            /* ★★★★ 2026-10-11（owner：那一堆**发射口使魔**冻住不跟母机动）——**20 帧连续 TRACK**：
+             *   选一个「有壳」的 (敌人,槽)，连续 20 帧把 6 个量并列打出来，一次判死三种可能。*/
+            if (s_trk_left > 0 && s_trk_enemy == id && s_trk_slot == i) {
+                uint8_t *tf = yk_familiar_by_id(0);   /* 占位避免未用告警 */
+                uint32_t fid = 0;
+                const float *fc = 0;
+                yk_slot_t *tse = yk_map_find(&s_map, id, i);
+                (void)tf;
+                if (tse && tse->fam_id) { fid = tse->fam_id; fc = yk_familiar_by_id(fid) ? ce_enemy_pos(yk_familiar_by_id(fid)) : 0; }
+                const uint8_t *ppx = e + YK_EMIT_PROPS + (size_t)i * YK_EMIT_PROP_STRIDE;
+                ce_log("youkai/emit TRACK: frame=%u enemy_id %u slot %d | enemy_pos=(%.1f,%.1f) | "
+                       "props08/0c=(%.1f,%.1f) | latch=(%.1f,%.1f) age=%u | src=%s | target=(%.1f,%.1f) | "
+                       "fam=%u fam_cur=(%.1f,%.1f) | pinned_this_frame=%d",
+                       (unsigned)ce_sdk_frame(), id, i, (double)epos[0], (double)epos[1],
+                       (double)*(const float *)(ppx + 0x08), (double)*(const float *)(ppx + 0x0c),
+                       (double)off3[0], (double)off3[1], (unsigned)yk_emit_fired_age(id, i),
+                       s_cur_have_latch ? "latch" : "props", (double)wxy[0], (double)wxy[1],
+                       fid, fc ? (double)fc[0] : 0.0, fc ? (double)fc[1] : 0.0,
+                       (s_pin_last_fam == fid && s_pin_last_frame == ce_sdk_frame()) ? 1 : 0);
+                --s_trk_left;
+            } else if (s_trk_left == 0 && s_trk_slot < 0 && active && yk_map_find(&s_map, id, i) &&
+                       yk_map_find(&s_map, id, i)->fam_id) {
+                s_trk_enemy = id; s_trk_slot = i; s_trk_left = 20;   /* 锁定第一只有壳的槽，连续 20 帧 */
             }
             /* ★ phantom 修复：把「站点上最近真开过火」翻成表里的 `fired` 位（`yk_note_slot` 用它决定建壳）。
              *   `type != 0` 只说明**被配置过**；配了却整波不发弹的槽（`count=0` / 被 `etDelay` 压制 /
@@ -7057,8 +7088,13 @@ static int yk_on_shot_slot(ce_card_t *c, const ce_enemy_shot_t *ev)
          *   绝对世界坐标**（`props[i]+0x08/0x0c/0x10`；一手 `0x433f9e`）⇒ 直接当位置、**不叠加敌人位置**。*/
         const uint8_t *prr = (const uint8_t *)ev->enemy + YK_EMIT_PROPS
                             + (size_t)ev->slot * YK_EMIT_PROP_STRIDE;
-        float lx = *(const float *)(prr + 0x08);
-        float ly = *(const float *)(prr + 0x0c);
+        /* ★★★★★ 2026-10-11（owner：壳「**不会跟着本体运动**」）：`props+0x08/0x0c` 是 **`etOn` 那一刻的
+         *   世界坐标快照**（= 当时的敌人位置 + 偏移）⇒ 直接用它当目标 ⇒ 母机移动后壳**冻在快照点**。
+         *   ⇒ 站点上改记 **相对量**：`rel = props_world − enemy_pos(此刻)`；消费端每帧 `敌人位置(此刻) + rel`
+         *     ⇒ 壳**跟着母机走**、且每次 `etOn` 刷新 rel ⇒ 每波旋转也照旧生效。*/
+        const float *ep_now = ce_enemy_pos((uint8_t *)ev->enemy);
+        float lx = *(const float *)(prr + 0x08) - (ep_now ? ep_now[0] : 0.0f);
+        float ly = *(const float *)(prr + 0x0c) - (ep_now ? ep_now[1] : 0.0f);
         float lz = *(const float *)(prr + 0x10);
         yk_emit_latch_put(ev->enemy_id, ev->slot, lx, ly, lz);
         {

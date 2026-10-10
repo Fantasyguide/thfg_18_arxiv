@@ -31549,3 +31549,19 @@ wait(12);  %B = %B + %D;
 **新观测**：每 60 帧 `youkai/emit DISTHIST: stage=%d bodies(<48)=%u near(48..64)=%u far(>=64)=%u (min_dist=48)`
 （按**被检槽**计数）⇒ 下一局看有没有「真口落在 48–64 被误拒」（有 ⇒ 按那一个场景加白名单条目或下调阈值）。
 **判据**：5 面道中**擦边离体壳消失**（`bodyport` 涨、`create` 在这些小怪上为 0）、**5 面中 boss 两只壳仍在**。
+
+### #257 2026-10-11: 映射壳冻结 — 20 帧 TRACK 诊断 + 相对量 latch 修法（owner 订正：都是发射口使魔）
+
+owner 订正：那一堆**都是发射口（映射层）使魔** ⇒ 焦点 = 映射层的位置来源（不是绕转环）。
+
+本批两件：
+① 20 帧连续 TRACK（锁定第一只有壳的槽，逐帧并列 6 个量）：
+`youkai/emit TRACK: frame=%u enemy_id N slot i | enemy_pos=(x,y) | props08/0c=(x,y) | latch=(x,y) age=%u | src=latch|props | target=(x,y) | fam=%u fam_cur=(x,y) | pinned_this_frame=%d`
+（`pinned_this_frame` 通过在 `yk_pin_familiar()` 里记 `fam/frame` 得到。）
+② 修法（已落，未提交）：站点 latch 改记 **`rel = props_world - enemy_pos(此刻)`**，消费端每帧 **`敌人位置(此刻) + rel`**
+⇒ 壳跟母机走；每次 `etOn` 刷新 `rel` ⇒ 每波旋转仍生效。根因 = `props+0x08/0x0c` 是 **`etOn` 时刻的世界快照** ⇒ 母机移动后不变 ⇒ 壳冻在快照点。
+③ `DISTHIST` 口径改为按**本帧所有活跃槽**分三档（<48 / 48..64 / >=64）计数。
+
+判读（三种）：① props 在变而 `pinned=0` 或 `target` 不变 ⇒ 更新链断（修那段）；
+② props 恒定而母机在动 ⇒ 引擎把出点定格在 `etOn` 时刻（那就用 `BMPROBE2` + 弹位置对照决定该不该自己发明跟随）；
+③ props 与 target 都在变而 `fam_cur` 不动 ⇒ 写位置那一步失败（修 pin）。

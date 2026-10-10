@@ -16555,3 +16555,14 @@ else if (s_aura_charge > 0.0f)                 { ★ 收束（含 interrupt / �
 | 改动 | `YK_EMIT_SHELL_MIN_DIST` **32.0f → 48.0f**（单测同步）；`YK_EMIT_SCENE_WHITELIST` **默认 0（关）**，表结构备用 |
 | 观测 | 每 60 帧 `youkai/emit DISTHIST: stage=… bodies(<48)=N near(48..64)=N far(>=64)=N (min_dist=48)` ⇒ 查「真口落 48–64 被误拒」 |
 | 判据 | 5 面道中擦边离体壳消失（`bodyport` 涨）；5 面中 boss 两只壳仍在（若只剩一只 ⇒ 回槽级链路查）|
+
+#### 2.1ccc-84 2026-10-11：映射壳跟着母机走（latch 相对量）+ TRACK 诊断
+
+| 项 | 说明 |
+| --- | --- |
+| owner 订正 | 冻住的那堆是**发射口（映射层）使魔**，不是绕转环 |
+| 根因 | 站点 latch 的 `props+0x08/0x0c` 是 `etOn` 时刻的世界坐标**快照** ⇒ 母机移动后不变 ⇒ 壳冻在快照点 |
+| 修法 | 站点记 **rel = props_world - enemy_pos(此刻)**；消费端每帧 **敌人位置(此刻) + rel** ⇒ 跟母机走；每次 `etOn` 刷新 rel ⇒ 每波旋转仍生效 |
+| 新诊断 | 连续 20 帧 `TRACK: frame=… enemy_pos=… props08/0c=… latch=… age=… src=… target=… fam=… fam_cur=… pinned_this_frame=…` |
+| DISTHIST | 口径改为**本帧所有活跃槽**分三档（<48 / 48..64 / >=64）|
+| 判据 | 映射壳跟着出点动（target 每帧变、fam_cur 跟着走）；大妖精附近没有多余的一只；5 面中 boss 两只壳仍在 |
