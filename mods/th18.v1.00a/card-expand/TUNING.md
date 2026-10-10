@@ -16290,3 +16290,14 @@ else if (s_aura_charge > 0.0f)                 { ★ 收束（含 interrupt / �
 | ③ ring 防挤出 | `YK_FIRED_STICKY_N` **32 → 64**、`YK_EMIT_LATCH_N` **16 → 32**（5 面多槽 + 多敌机时避免覆盖；`latch=0` 会在 SLOTSTATE 行里显形）|
 | 判据（下一版）| 5 面道中 boss **每个真正发弹的槽都有壳**（`SLOTSTATE … => shell=1`）；打死任一只 ⇒ 该槽**停火**（`gate check … => veto=1`）⇒ 下一波重建；一面关底前仍 0 壳 |
 | 登记 | `AUDIT.md` §BE #230；`HANDOFF-108.md` §3 第 116 行 |
+
+### 2.1ccc-63 2026-10-01 (card 108 · 5 面「两槽 emitter_world 相同」): SPAWN / RAW 两条日志 + SLOTSTATE 选槽修正
+
+| 项 | 说明 |
+| --- | --- |
+| 反证（16:33 log）| `gate check (158, slot 0) fam_seen=1 have_fam_id=1 broken=0 => veto=0` **与 `(158, slot 1)` 同** ⇒ **slot 1 在站点侧也有条目**；而两槽 `emitter_world` **完全相同**（`(-70.0,128.1)`）⇒ 疑「两只壳叠在同一格」或「一只根本没 spawn」|
+| ① 新增 `SPAWN:` | 每次建壳：`youkai/emit SPAWN: slot i fam_id=%u ret=%d pos=(x,y) enemy_id N` ⇒ 与台账 `create`/实际存活数对照，判「spawn 失败」还是「建了但重叠」|
+| ② 新增 `RAW:` | 每个 (敌人,槽) 一次，直接读 `data+0x4e58 + k*0xc`（k=0..3）：`youkai/emit RAW: enemy_id N slot k => off=(x,y,z)` ⇒ 若 slot0 与 slot1 **原始值相同** ⇒ 要么 ECL 真这么写（照 TH18 侧语义），要么我们**下标/步长读错**（步长应为 `0xc` = float2+float）|
+| ③ SLOTSTATE 选槽修正 | 原来 64 行被同一个 `slot 0` 吃光（去重环 96 不够）⇒ 现：**只对 `active` 的槽**打、去重环 **96 → 256**；配合 ② 的 `RAW`（每个 (敌人,槽) 一次）就能看到 158 的两槽 |
+| 判据 | 5 面中 boss **两个槽各有 1 只壳、位置不同**（若 ECL 确实同位置 ⇒ 也要能看出是**2 只**）；打死任一槽 ⇒ 该槽 **停火**（`veto=1`）；下一波重建；一面关底前仍 0 壳 |
+| 登记 | `AUDIT.md` §BE #231；`HANDOFF-108.md` §3 第 117 行 |

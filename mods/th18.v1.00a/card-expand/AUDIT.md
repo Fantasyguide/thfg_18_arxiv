@@ -30936,3 +30936,15 @@ youkai/emit SAMPLE: stage=5 enemy_id=158 sprite=16 w=64 h=96 slot=0 type=9 color
 
 **判据**：5 面道中 boss **每个真正发弹的槽都有壳**（`SLOTSTATE … => shell=1`）；打死任一只 ⇒ 该槽**停火**
 （`gate check … => veto=1`）⇒ 下一波重建；一面关底前仍 0 壳。
+
+## §BE 详录 #231（2026-10-01）：5 面两槽 `emitter_world` 相同 ⇒ SPAWN / RAW 日志 + SLOTSTATE 选槽修正
+
+**反证（16:33 log）**：`gate check (158, slot 0) fam_seen=1 have_fam_id=1 broken=0 => veto=0` —— **slot 1 完全相同**
+⇒ **slot 1 在站点侧有条目**（不是没建）；而两槽 `emitter_world` **完全相同**（`(-70.0,128.1)`）⇒ 疑「两壳叠一格」或「一只未 spawn」。
+
+**本批三条**：① `SPAWN:` 每次建壳打 `slot/fam_id/ret/pos`（判 spawn 失败 vs 重叠）；
+② `RAW:` 每个 (敌人,槽) 一次，直接读 `data+0x4e58+k*0xc`（k=0..3）⇒ 判「ECL 真同位置」还是「我们下标/步长读错」；
+③ SLOTSTATE 原来 64 行被同一 `slot 0` 吃光（去重环 96 不够）⇒ 改为**只对 active 槽**打、去重环 **96 → 256**。
+
+**判据**：5 面中 boss **两槽各有 1 只壳且位置不同**（若 ECL 确实同位置 ⇒ 也要能看出是 2 只）；打死任一槽 ⇒ **停火**（`veto=1`）；
+下一波重建；一面关底前仍 0 壳。

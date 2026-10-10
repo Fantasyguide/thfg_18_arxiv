@@ -651,6 +651,7 @@ static unsigned s_coord_head;
 static int  yk_fired_sticky_get(uint32_t enemy_id, int slot);
 static void yk_fired_sticky_clear(uint32_t enemy_id, int slot);
 static int  yk_slotstate_seen(uint32_t enemy_id, int slot);
+static int  yk_raw_seen(uint32_t enemy_id, int slot);
 
 static int yk_emit_coord_seen(uint32_t enemy_id, int slot)
 {
@@ -664,8 +665,25 @@ static int yk_emit_coord_seen(uint32_t enemy_id, int slot)
     return 0;
 }
 
+static unsigned s_raw_logged;         /* ★ RAW 打了几行 */
+#define YK_RAW_N 128
+static uint32_t s_raw_enemy[YK_RAW_N];
+static int16_t  s_raw_slot[YK_RAW_N];
+static unsigned s_raw_head;
+static int yk_raw_seen(uint32_t enemy_id, int slot)
+{
+    unsigned k;
+    for (k = 0; k < YK_RAW_N; ++k)
+        if (s_raw_enemy[k] == enemy_id && s_raw_slot[k] == (int16_t)slot) return 1;
+    {   unsigned idx = s_raw_head % YK_RAW_N;
+        s_raw_head = (s_raw_head + 1u) % YK_RAW_N;
+        s_raw_enemy[idx] = enemy_id; s_raw_slot[idx] = (int16_t)slot;
+    }
+    return 0;
+}
+
 static unsigned s_slotstate_logged;   /* ★ SLOTSTATE 打了几行 */
-#define YK_SLOTSTATE_N 96
+#define YK_SLOTSTATE_N 256
 static uint32_t s_slotstate_enemy[YK_SLOTSTATE_N];
 static int16_t  s_slotstate_slot[YK_SLOTSTATE_N];
 static unsigned s_slotstate_head;
@@ -2563,6 +2581,8 @@ static void yk_run_action(yk_card_t *s, const yk_action_t *act)   /* s 可为 NU
             return;
         }
         fid = *(uint32_t *)(f + CE_ENEMY_ID);
+        ce_log("youkai/emit SPAWN: slot %d fam_id=%u ret=%d pos=(%.1f,%.1f) enemy_id %u",
+               act->slot, fid, f ? 1 : 0, (double)act->x, (double)act->y, act->enemy_id);
         /* ★★★ 2026-10-01（owner：「依旧有一系列不该出现的发弹口使魔」）——**建壳诊断**（前 24 只）：
          *   逐只给出 `(enemy_id, slot)`、`type/color`、`count_1/count_2`、`fired_age`（距该槽最近一次
          *   `etOn` 过了多少帧）、`stage`、以及建壳用的坐标 ⇒ 用来判「配了没发出 / 激光槽 / `etCopy` / 别类」。
@@ -2785,10 +2805,22 @@ static void yk_familiars_tick(yk_card_t *s)
             if (active) yk_map_set_fired(&s_map, id, i,
                                          yk_fired_sticky_get(id, i) || yk_emit_fired_recently(id, i));
             else yk_fired_sticky_clear(id, i);
+            /* ★ 2026-10-01 晚（owner：「两张壳 `emitter_world` 完全相同 ⇒ 叠在同一格」）——**原始偏移**：
+             *   直接读 `data+0x4e58 + i*0xc`（活相对偏移，步长 `0xc` = float2 + float），
+             *   用来判「ECL 真给同位置」还是「我们的下标/步长读错」。每个 (敌人,槽) 一次。*/
+            if (s_raw_logged < 48u && !yk_raw_seen(id, i)) {
+                int k;
+                ++s_raw_logged;
+                for (k = 0; k < 4; ++k) {
+                    const float *rr = (const float *)(e + YK_EMIT_OFFSETS + (size_t)k * YK_EMIT_VEC_STRIDE);
+                    ce_log("youkai/emit RAW: enemy_id %u slot %d => off=(%.3f,%.3f,%.3f)", id, k,
+                           (double)rr[0], (double)rr[1], (double)rr[2]);
+                }
+            }
             /* ★★★ 2026-10-01 晚（owner：5 面「一直有一个发弹点没建使魔」）——**槽级状态**（每槽一行，cap 64）：
              *   `SLOTSTATE: enemy_id N slot i active=… fired=… sticky=… have_fam_id=… fam_seen=… latch=… => shell=…`
              *   ⇒ 一眼看出某个槽是**没被看见 active** / **fired|sticky 没置上** / **被别处跳过**（含 ring 挤出 ⇒ `latch=0`）。*/
-            if (s_slotstate_logged < 64u && !yk_slotstate_seen(id, i)) {
+            if (s_slotstate_logged < 64u && active && !yk_slotstate_seen(id, i)) {
                 yk_slot_t *e2 = yk_map_find(&s_map, id, i);
                 ++s_slotstate_logged;
                 ce_log("youkai/emit SLOTSTATE: enemy_id %u slot %d active=%d fired=%d sticky=%d "
