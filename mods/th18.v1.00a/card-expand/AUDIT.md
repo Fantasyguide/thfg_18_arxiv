@@ -31673,3 +31673,29 @@ vs **场地 `x∈[-192,192]`（`th18:0x4b946c`/`0x4b933c`）、`y∈[0,448]`（`
 **不受影响**。要它们也免删，逐卡换成 `ce_spawn_enemy_keep_offscreen()` 即可 —— 但这会改变它们的离场行为
 （飞出去会一直留着，需要卡侧自己收），**留给 owner 拍**。
 **闸门**：`make check` 全绿（`test_sdk_core: 1436 passed, 0 failed`）、`check-docs` 全过、`gen_def --check` 通过。
+
+### #277 2026-10-11（owner 拍板）：出框免删**改成默认**（`ce_spawn_enemy` 全体生效）
+
+**owner 原话**：「我希望能用到，因为这样在动画上是好的」（回答 #276 末尾那个问题）。
+
+**改动**：`native/sdk.h` 的 `ce_spawn_enemy()` 现在**自动**置 `flags_lo |= 0xC`
+（= `CE_ENEMY_FLAG_KEEP_OFFSCREEN`，见 #276 / `engine/enemy/th18/09-enemy-offscreen-removal.md`）；
+新增 `ce_spawn_enemy_cullable()` 与 `ce_enemy_cullable_offscreen()` 作**显式退回**；
+`ce_spawn_enemy_keep_offscreen()` 保留为等价别名（108 用它把意图写在调用点）。
+`sdk_core.h` 新增纯函数 `ce_enemy_flags_cullable_offscreen()` + 4 条断言。
+
+**对既有卡的影响面（协作须知，逐条列出）**：
+
+| 卡 | 调用点 | 之前 | 之后 | 有自己的一生吗 |
+| --- | --- | --- | --- | --- |
+| 108 永夜抄使魔 | `youkai.c` `yk_spawn_familiar_parent()` | 出框即删 | **出框留着**（本来就想要） | ✅ `YK_FAM_LIFE` + 卡侧 `on_delete`/收尾 |
+| 109 小町/四季（灵） | `pofv.c:5778` `ce_spawn_enemy("CESpirit109")` | 出框即删 | 出框留着，到 `POFV_SPIRIT_LIFE` 才死 | ✅ 有限 life（ECL/卡侧计数收尾）|
+| 112 飞碟 | `ufo.c:1954`（令牌本体/壳）、`ufo.c:1930`（破片大消弹环 `UFO_ETBREAK2_LIFE`）| 出框即删 | 出框留着，到 life 才死 | ✅ 有限 life |
+| 灵梦信仰点（`faith.c:1524`）| `FAITH_GF_LIFE` | 出框即删 | 出框留着 | ✅ 有限 life |
+
+⇒ **没有永久孤儿**：`life` 到点 / `enmKillAll` / 换关清场照旧收。代价 = 留着的敌人仍占
+`enemy_count_real`、一个 anm VM 槽与每帧一次 tick（自建壳的 ECL 是惰性 `wait(1000)`，可忽略）。
+
+**若哪一类召唤物本来就该靠离场消失**：显式改成 `ce_spawn_enemy_cullable(...)`（一行）。
+
+**闸门**：`make check` 全绿（`test_sdk_core: 1440 passed, 0 failed`）、`check-docs` 全过、`gen_def --check` 通过。

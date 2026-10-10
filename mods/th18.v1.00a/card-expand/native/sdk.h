@@ -1140,46 +1140,69 @@ void ce_fairy_claim_instance(uint32_t card_id, int32_t enemy_id);               
 int  ce_fairy_instance_claimed(int32_t enemy_id);                                   /* 只读 */
 void ce_fairy_claim_clear(uint32_t card_id);                                        /* 删卡/换关收干净 */
 
-/* ---- 自建真敌人载体（108 使魔 / 112 彩虹令牌 / 后续任何「要能被打、能掉东西」的实体）----
- * 一手 ABI 见 `engine.h` 的 `CE_FN_ALLOCATE_NEW_ENEMY`：名字是**加载中的 `default.ecl` 的 ECL 子程序名**
- * （不是 C 函数名），查不到时 `0x48b3a0` 干净退出 ⇒ 占位期可用原版自带的惰性壳（108 用 `"NoEnemyDebug"`）。
- * `spawn` 至少 0x54 字节（字段表 `engine.h` 的 `CE_SPAWN_*`；卡可只填 pos/life/main_drop，其余 0）。
- * ⚠ `spawn+0x14`（life）必须 < 1000；⚠ **禁止在敌人死亡栈里调**（DEATH §2.4：死亡回调中析构/新建会重入）。
- * 返回新敌人指针（NULL = 失败）。调用方自己保证主线程（桩 / 断点 / tick 回调内）。*/
-static inline void *ce_spawn_enemy(const char *ecl_name, const void *spawn_params)
-{
-    void *mgr = (void *)CE_ENEMY_MGR();
-    if (!mgr || !ecl_name || !spawn_params) return 0;
-    return ((ce_fn_alloc_enemy_t)CE_FN_ALLOCATE_NEW_ENEMY)(mgr, ecl_name, (void *)spawn_params, 0);
-}
-
 /* ---- ★ 出框免删（2026-10-11，纯静态核实；全文 `engine/enemy/th18/09-enemy-offscreen-removal.md`）----
  * **引擎规则**：每帧 `EnemyManager__on_tick` `th18:0x42df50` 会把「**精灵盒完全离开场地矩形**」的敌人
- * **摘链释放**（链：`0x42fe80` → `0x42ff80` → `0x42e5a0` 返回 -1 → `call [vtable+0x14]`(1) = `0x42d220`）。
+ * **摘链释放**（链：`0x42fe80` → `0x42ff80` → `0x42e5a0` 返回 -1 → `call [vtable+0x14]`(1) = `0x42d220`，
+ * 后者到最后 `test [ebp+8],1` → `0x48dca1` **真的 free 掉对象**）。
  * 盒 = `final_pos ± final_sprite_size × 0.5`；场地 = `x ∈ [-192,192]`、`y ∈ [0,448]`。
- * ⇒ **任何我们自己生成的敌人（使魔壳 / UFO 令牌 / 灵 / 召唤物）只要飞出去就被删掉**。
  *
  * **反制** = 置 `flags_lo` 的 bit2|bit3（`CE_ENEMY_FLAG_KEEP_OFFSCREEN`，掩码 `0xC`）——
  * 两条出界分支各查一位，置了就返回 0（不删）。★ ZUN 自己的原生 ECL 就是这么用的
  * （`flagSet(12)` 4 处，全在会飞出画面的 `Phantom01/02` 上；`flagClear(12)` 4 处收回）。
  *
- * **默认不改既有行为**：`ce_spawn_enemy()` 不置这两位（怕把「该被引擎清掉的召唤物」留成孤儿，
- * 例：109 的灵 / 112 的令牌都指望引擎自己收）。要留的用下面这个包装（或自己调 `ce_enemy_keep_offscreen()`）。
- * ⚠ 时机：必须在对象已经是活的之后（`ce_spawn_enemy` 返回之后或下一帧都行；整局有效，不用每帧刷）。*/
+ * ★★ **2026-10-11 二轮（owner：「我希望能用到，因为这样在动画上是好的」）⇒ 默认变成「免删」**：
+ * `ce_spawn_enemy()` 现在**自动**置这两位 ⇒ 我们生成的敌人（108 使魔壳 / 109 灵 / 112 令牌 / 灵梦信仰点…）
+ * **飞出去不再被引擎收走**，动画/轨迹能连续地飞回来。
+ * 安全性（本轮静态核过）：所有这些实体的 `life` 都是**有限值**（`YK_FAM_LIFE` / `POFV_SPIRIT_LIFE` /
+ * `UFO_ETBREAK2_LIFE` / `FAITH_GF_LIFE`），到点照旧死；`enmKillAll` / 换关清场也照旧收
+ * ⇒ **不会产生永久孤儿**，只是「出框不再等于立即删」。
+ * 不想要这条的用 `ce_spawn_enemy_cullable()`（或事后 `ce_enemy_cullable_offscreen()`）显式退回引擎的老行为。
+ * ⚠ 代价：留着的敌人仍占 `enemy_count_real` / anm VM 槽 / 每帧 tick（惰性壳的 ECL 是 `wait(1000)`，很便宜）。*/
 static inline void ce_enemy_keep_offscreen(void *e)
 {
     if (!e) return;
     /* 掩码的纯逻辑在 `sdk_core.h`（主机单测覆盖）；这里只做落笔。*/
     *(int32_t *)((uint8_t *)e + CE_ENEMY_FLAGS) = ce_enemy_flags_keep_offscreen(*(int32_t *)((uint8_t *)e + CE_ENEMY_FLAGS));
 }
+static inline void ce_enemy_cullable_offscreen(void *e)
+{
+    if (!e) return;
+    *(int32_t *)((uint8_t *)e + CE_ENEMY_FLAGS) = ce_enemy_flags_cullable_offscreen(*(int32_t *)((uint8_t *)e + CE_ENEMY_FLAGS));
+}
 /* 编译期把两处定义钉在一起：`engine.h` 的两位 ↔ `sdk_core.h` 的掩码（防将来只改一边）。*/
 _Static_assert(CE_ENEMY_KEEP_OFFSCREEN_MASK ==
                ((int32_t)CE_ENEMY_FLAG_KEEP_OFFSCREEN_X | (int32_t)CE_ENEMY_FLAG_KEEP_OFFSCREEN_Y),
                "keep-offscreen mask must equal the two engine flag bits (engine.h vs sdk_core.h)");
+
+/* ★ 默认 = 免删（见上）。这个包装只是**把意图写在调用点上**（等价于 `ce_spawn_enemy`），
+ *   108 使魔壳用它 —— 壳钉在发射口上，发射口经常在画面外。*/
+static inline void *ce_spawn_enemy_keep_offscreen(const char *ecl_name, const void *spawn_params);
+
+/* ---- 自建真敌人载体（108 使魔 / 112 彩虹令牌 / 109 灵 / 灵梦信仰点…）----
+ * 一手 ABI 见 `engine.h` 的 `CE_FN_ALLOCATE_NEW_ENEMY`：名字是**加载中的 `default.ecl` 的 ECL 子程序名**
+ * （不是 C 函数名），查不到时 `0x48b3a0` 干净退出 ⇒ 占位期可用原版自带的惰性壳（108 用 `"NoEnemyDebug"`）。
+ * `spawn` 至少 0x54 字节（字段表 `engine.h` 的 `CE_SPAWN_*`；卡可只填 pos/life/main_drop，其余 0）。
+ * ⚠ `spawn+0x14`（life）必须 < 1000；⚠ **禁止在敌人死亡栈里调**（DEATH §2.4：死亡回调中析构/新建会重入）。
+ * ★ 默认**置出框免删位**（见上一条的完整说明）。
+ * 返回新敌人指针（NULL = 失败）。调用方自己保证主线程（桩 / 断点 / tick 回调内）。*/
+static inline void *ce_spawn_enemy(const char *ecl_name, const void *spawn_params)
+{
+    void *mgr = (void *)CE_ENEMY_MGR();
+    void *e;
+    if (!mgr || !ecl_name || !spawn_params) return 0;
+    e = ((ce_fn_alloc_enemy_t)CE_FN_ALLOCATE_NEW_ENEMY)(mgr, ecl_name, (void *)spawn_params, 0);
+    ce_enemy_keep_offscreen(e);      /* ★ 默认：出框不被引擎删（`flags_lo |= 0xC`）*/
+    return e;
+}
 static inline void *ce_spawn_enemy_keep_offscreen(const char *ecl_name, const void *spawn_params)
 {
+    return ce_spawn_enemy(ecl_name, spawn_params);   /* 现在就是默认行为（保留以便调用点自述意图）*/
+}
+/* ★ 显式退回引擎的老行为（出框即被收）——给「寿命/存在本来就该由离场决定」的召唤物用。*/
+static inline void *ce_spawn_enemy_cullable(const char *ecl_name, const void *spawn_params)
+{
     void *e = ce_spawn_enemy(ecl_name, spawn_params);
-    ce_enemy_keep_offscreen(e);
+    ce_enemy_cullable_offscreen(e);
     return e;
 }
 

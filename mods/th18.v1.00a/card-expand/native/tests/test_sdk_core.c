@@ -21,6 +21,11 @@ static void test_keep_offscreen(void)
     CHECK(ce_enemy_flags_keep_offscreen(0x10) == 0x1C);       /* 不动别人的位（免伤 0x10 共存）*/
     CHECK(ce_enemy_flags_keep_offscreen(0x10000) == 0x1000C); /* 与「进过屏」位共存 */
     CHECK((ce_enemy_flags_keep_offscreen(0x40000000) & 0x40000000) != 0);  /* 大怪标记不被清掉 */
+    /* 反向（显式退回引擎老行为）：只清这两位，别人的位一个不动 */
+    CHECK(ce_enemy_flags_cullable_offscreen(0x0C) == 0);
+    CHECK(ce_enemy_flags_cullable_offscreen(0x1C) == 0x10);          /* 免伤位 0x10 留着 */
+    CHECK(ce_enemy_flags_cullable_offscreen(0x1000C) == 0x10000);    /* 「进过屏」位留着 */
+    CHECK(ce_enemy_flags_cullable_offscreen(0x40000000) == 0x40000000);
 }
 
 static void test_registry(void)

@@ -86,15 +86,23 @@ Y_OUT: if (!(flags_lo & 0x10000)) return 0   ; 没进过屏 ⇒ 不删
   `spawn+0x18` bit0 → `flags_lo ^= 0x80000`、`spawn+0x1c` bit0 → `flags_lo ^= 0x4000000`、
   `spawn+0x14 >= 1000` → `flags_lo |= 0x40000000`（见 `0x42d839`–`0x42d8fc`）
   ⇒ **必须在 `ce_spawn_enemy()` 返回之后自己写** `enemy+0x635c |= 0xC`。
-- SDK 落笔：`ce_enemy_keep_offscreen(e)` / `ce_spawn_enemy_keep_offscreen(name, spawn)`（`sdk.h`），
-  掩码常量 `CE_ENEMY_KEEP_OFFSCREEN_MASK`（`sdk_core.h`，主机单测覆盖），
-  位名 `CE_ENEMY_FLAG_KEEP_OFFSCREEN_X/Y`（`engine.h`）。**默认不改既有行为**，要留的显式调。
+- SDK 落笔（`sdk.h`）：
+  · `ce_spawn_enemy(name, spawn)` —— ★ **2026-10-11 二轮起默认置 `0xC`**（owner 拍板：
+    「我希望能用到，因为这样在动画上是好的」）⇒ 我们生成的敌人出框不再被引擎收走；
+  · `ce_spawn_enemy_keep_offscreen(name, spawn)` —— 等价别名，**把意图写在调用点上**（108 使魔壳用它）；
+  · `ce_spawn_enemy_cullable(name, spawn)` / `ce_enemy_cullable_offscreen(e)` —— **显式退回**引擎老行为；
+  · 掩码常量 `CE_ENEMY_KEEP_OFFSCREEN_MASK` 与两个纯函数（`sdk_core.h`，主机单测覆盖），
+    位名 `CE_ENEMY_FLAG_KEEP_OFFSCREEN_X/Y`（`engine.h`）。
 
-### 3.1 什么时候**不该**用
+### 3.1 为什么「默认打开」是安全的（本轮静态核过）
 
-出框免删只解决「引擎替我们收尸」。若某个召唤物的寿命本来就该由**离场**决定
-（例：109 的灵、112 的令牌令牌如果设计成飞出去就消失），置 `0xC` 会让它**永远留着**，
-除非卡侧另有回收（`on_delete` / 到点自删 / 换关清场）。⇒ **逐卡决定**，别全局默认打开。
+出框免删只取消「**引擎替我们按离场收尸**」这一条路；敌人该走的死法一条没少：
+`life` 到 0、`enmKillAll`、段首清场、换关 `destroy_all` 都照旧。
+而**我们所有 `ce_spawn_enemy` 调用点的 `life` 都是有限值**
+（108 `YK_FAM_LIFE`、109 `POFV_SPIRIT_LIFE`、112 `UFO_ETBREAK2_LIFE`、灵梦信仰点 `FAITH_GF_LIFE`）
+⇒ 不存在「永久孤儿」。
+**代价**：留着的敌人仍占 `enemy_count_real`、一个 anm VM 槽与每帧一次 tick（自建壳的 ECL 是惰性 `wait(1000)`，
+开销可忽略）。若某类召唤物**本来就该靠离场消失**，显式用 `ce_spawn_enemy_cullable()`。
 
 ## 4. 相关
 

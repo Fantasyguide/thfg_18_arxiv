@@ -244,8 +244,10 @@
 - **本轮落笔**：`sdk.h` 新增 `ce_enemy_keep_offscreen()` / `ce_spawn_enemy_keep_offscreen()`
   （掩码 `CE_ENEMY_KEEP_OFFSCREEN_MASK` 在 `sdk_core.h`，带单测；位名在 `engine.h`）；
   `youkai.c` 的 `yk_spawn_familiar_parent()` 改用它 ⇒ **映射壳与绕转壳都不会再因出框被引擎删掉**。
-- ⚠ **没有全局默认打开**：`ce_spawn_enemy()` 行为不变（109 的灵 / 112 的令牌是否也该免删要逐卡拍，
-  否则它们飞出去会变成永远留着的孤儿）。要不要给 112/109 也开，见 `AUDIT.md` §BE 详录 #276 的问题条目。
+- ★★ **2026-10-11 二轮（owner 拍板「我希望能用到，因为这样在动画上是好的」）**：
+  `ce_spawn_enemy()` **默认就置 `0xC`** ⇒ 我们生成的**所有**敌人（108 使魔壳 / 109 灵 / 112 令牌 /
+  灵梦信仰点）出框都不再被引擎收走；要退回老行为的用 `ce_spawn_enemy_cullable()`。
+  安全性 = 各调用点的 `life` 都是有限值（到点照旧死）⇒ 没有永久孤儿。登记 `AUDIT.md` §BE 详录 #277。
 
 ## 8. 相关
 
