@@ -30993,3 +30993,21 @@ youkai/emit SAMPLE: stage=5 enemy_id=158 sprite=16 w=64 h=96 slot=0 type=9 color
 
 **日志**：`youkai/debug: SPACE(ce_key_down) => killed N familiars (mapping M / orbit K) - normal death path …`。
 **判据**：按空格 ⇒ 全死 ⇒ `BROKEN set` ⇒ 该口停火（`veto=1`）⇒ 下一波重建；一面关底前仍 0 壳；不按 ⇒ 无输出、行为不变。
+
+## §BE 详录 #235（2026-10-01）：空格只杀**注册过的壳**（owner：空格把道中 boss 带走了）
+
+**现象**：owner 按空格 ⇒ **道中 boss 被带走** ⇒ 击杀循环打到了**母机本体**（`fam_id` 里混进母机 id / 自指 / 未注册 id）。
+
+**修法**：击杀前先收集 **母机白名单**：`s_map.e[].enemy_id`（我们认过的母机）+ 绕转的 `parent_id`；
+只杀满足全部条件的 id：① registry 命中（`s_map[].fam_id` 或 `s_orbit[].fam_id`）② **实体存在**（`yk_familiar_by_id`）
+③ **不在母机白名单** ④ **非自指**（`fam_id != 该槽 enemy_id`）⇒ 其余一律 `SKIP`，**绝不写它的 life**。
+
+**清单日志（前 3 次按键，逐 id 一行）**：`youkai/debug: SPACE KILL id=%u (registered shell)` /
+`… SPACE SKIP id=%u (parent/unregistered => NOT killed)` / `… SPACE PARENT id=%u (mothership; never touched)`。
+
+**判据**：按空格 ⇒ **只有我们的壳死**（母机只出现在 `PARENT` 行）；**道中 boss 血量不掉/不消失**；随后该槽**停火**
+（`veto=1`）⇒ 下一波重建；一面关底前仍 0 壳。
+
+**待办（更彻底，下一批）**：把「**这是我们的壳**」收敛成**单一校验函数**（注册表命中 + 实体存在 + 父 id 匹配，
+例如 `yk_is_our_shell(id)`），让 pin 位置 / 站点闸 / 转嫁落点 / 绕转 / orphan 清理**全部走它**，
+避免同类误伤再现。

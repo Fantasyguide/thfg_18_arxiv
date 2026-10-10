@@ -670,6 +670,7 @@ static int yk_emit_coord_seen(uint32_t enemy_id, int slot)
  *   ⛔ 旧的 `0x4ca428` 掩码方案（`YK_DEBUG_KEY_MASK/…_MASK2`）**已退役**（该掩码没有空格位）。*/
 #define YK_DEBUG_SPACE_KILL 1
 static int      s_dbg_space_prev;       /* 空格电平边沿 */
+static unsigned s_dbg_ids_logged;       /* ★ 前 3 次按键打 ids 清单 */
 static uint32_t s_dbg_prev_input;       /* 仅用于排障日志 */
 static unsigned s_dbg_mask_logged;
 
@@ -7946,21 +7947,59 @@ static int on_tick_2(ce_card_t *c)
         int down = ce_key_down(CE_VK_SPACE) ? 1 : 0;
         if (down && !s_dbg_space_prev) {
             unsigned m = 0, k = 0, j;
+            /* ★★★★★ 2026-10-01 晚（owner：「我空格**直接带走道中 boss** 了」）——**只杀我们注册过的壳**：
+             *   · **注册表** = `s_map.e[].fam_id`（映射壳）∪ `s_orbit[].fam_id`（绕转使魔），
+             *     且必须**实体存在**；
+             *   · **母机 id 一律不碰**：先把所有 `s_map.e[].enemy_id`（= 我们认过的母机）收进 `own_parents[]`，
+             *     任何 id 命中它就 **skip**（这条专治「把母机当壳」）；
+             *   · 顺带 skip：`fam_id == 所在槽的 enemy_id`（自指异常）、实体查不到、id 为 0。
+             *   · 前 3 次按键打出 `ids/own/skipped` 三个清单 ⇒ 一眼看出谁被误杀。*/
+            uint32_t own_parents[YK_FAM_MAX];
+            uint32_t ids[YK_FAM_MAX + YK_ORBIT_MAX];
+            uint32_t skipped[YK_FAM_MAX + YK_ORBIT_MAX];
+            unsigned np = 0, ni = 0, ns = 0;
+            for (j = 0; j < YK_FAM_MAX; ++j)
+                if (s_map.e[j].enemy_id) own_parents[np++] = s_map.e[j].enemy_id;
             for (j = 0; j < YK_FAM_MAX; ++j) {
+                uint32_t id = s_map.e[j].fam_id;
                 uint8_t *f;
-                if (!s_map.e[j].fam_id) continue;
-                f = yk_familiar_by_id(s_map.e[j].fam_id);
-                if (f) { *(int32_t *)(f + YK_ED_LIFE_CUR) = 0; ++m; }
+                int is_parent = 0, q;
+                if (!id) continue;
+                if (id == s_map.e[j].enemy_id) { skipped[ns++] = id; continue; }
+                for (q = 0; q < (int)np; ++q) if (own_parents[q] == id) { is_parent = 1; break; }
+                if (is_parent) { skipped[ns++] = id; continue; }
+                f = yk_familiar_by_id(id);
+                if (!f) { skipped[ns++] = id; continue; }
+                *(int32_t *)(f + YK_ED_LIFE_CUR) = 0;
+                ids[ni++] = id;
+                ++m;
             }
             for (j = 0; j < YK_ORBIT_MAX; ++j) {
+                uint32_t id = s_orbit[j].fam_id;
                 uint8_t *f;
-                if (!s_orbit[j].fam_id) continue;
-                f = yk_familiar_by_id(s_orbit[j].fam_id);
-                if (f) { *(int32_t *)(f + YK_ED_LIFE_CUR) = 0; ++k; }
+                int is_parent = 0, q;
+                if (!id) continue;
+                for (q = 0; q < (int)np; ++q) if (own_parents[q] == id) { is_parent = 1; break; }
+                if (is_parent || id == s_orbit[j].parent_id) { skipped[ns++] = id; continue; }
+                f = yk_familiar_by_id(id);
+                if (!f) { skipped[ns++] = id; continue; }
+                *(int32_t *)(f + YK_ED_LIFE_CUR) = 0;
+                ids[ni++] = id;
+                ++k;
             }
             ce_log("youkai/debug: SPACE(ce_key_down) => killed %u familiars (mapping %u / orbit %u) - "
                    "normal death path (they die next frame => BROKEN set => the emitter slot is vetoed "
                    "until a wave/rearm edge or the TTL)", m + k, m, k);
+            if (s_dbg_ids_logged < 3u) {
+                unsigned q;
+                ++s_dbg_ids_logged;
+                for (q = 0; q < ni; ++q)
+                    ce_log("youkai/debug: SPACE KILL id=%u (registered shell)", ids[q]);
+                for (q = 0; q < ns; ++q)
+                    ce_log("youkai/debug: SPACE SKIP id=%u (parent/unregistered => NOT killed)", skipped[q]);
+                for (q = 0; q < np; ++q)
+                    ce_log("youkai/debug: SPACE PARENT id=%u (mothership; never touched)", own_parents[q]);
+            }
         }
         s_dbg_space_prev = down;
     }

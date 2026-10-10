@@ -16336,3 +16336,14 @@ else if (s_aura_charge > 0.0f)                 { ★ 收束（含 interrupt / �
 | 不吞键 | 只**读电平**，不写输入、不改键 |
 | 判据 | 按空格 ⇒ 使魔全死 ⇒ `BROKEN set` ⇒ 该口**停火**（`veto=1`、`vetoed` 涨）⇒ **下一波重建**；一面关底前仍 0 壳；不按 ⇒ 无输出、行为不变 |
 | 登记 | `AUDIT.md` §BE #234；`HANDOFF-108.md` §3 第 120 行 |
+
+### 2.1ccc-67 ★★★ 2026-10-01 (card 108 · owner「空格直接把道中 boss 带走」): **只杀注册过的壳**
+
+| 项 | 说明 |
+| --- | --- |
+| 现象 | 按空格 ⇒ **道中 boss 被带走** ⇒ 我们的击杀循环打到了**母机本体**（`fam_id` 里混进母机 id / 自指 / 未注册 id）|
+| 修法（正解）| 击杀前先收集 **母机白名单**（`s_map.e[].enemy_id` = 我们认过的母机）+ 绕转的 `parent_id`；**只杀** registry 命中（`s_map[].fam_id` / `s_orbit[].fam_id`）**且实体存在**且**不在母机白名单**且**非自指**的 id；其余一律 `SKIP` |
+| 清单日志（前 3 次按键）| 每个被杀 id 一行 `youkai/debug: SPACE KILL id=%u (registered shell)`；每个被跳 id 一行 `… SPACE SKIP id=%u (parent/unregistered => NOT killed)`；每个母机一行 `… SPACE PARENT id=%u (mothership; never touched)` |
+| 判据 | 按空格 ⇒ **只有我们的壳死**（`KILL` 行全是壳、母机只在 `PARENT` 行）；**道中 boss 血量不掉/不消失**；随后该槽**停火**（`veto=1`）⇒ 下一波重建；一面关底前仍 0 壳 |
+| 待办（更彻底）| 把「**这是我们的壳**」收敛成单一校验函数（注册表命中 + 实体存在 + 父 id 匹配，例如 `yk_is_our_shell(id)`），让 pin/站点闸/转嫁/绕转/orphan 清理**全部走它** —— 本轮先修空格键这条消费点并打清单，下一批做统一收敛 |
+| 登记 | `AUDIT.md` §BE #235；`HANDOFF-108.md` §3 第 121 行 |
