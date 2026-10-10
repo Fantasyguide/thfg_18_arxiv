@@ -16584,3 +16584,12 @@ else if (s_aura_charge > 0.0f)                 { ★ 收束（含 interrupt / �
 | TRACK 聚焦 | 只在**母机本帧位移 > 0.5 px** 时打（每槽最多 20 行）⇒ 一局即可判「壳跟不跟」|
 | NOLATCH | 无定格值（走 props 直读，可能又冻）的槽**计数 + 每 60 帧一行日志**；若常见 ⇒ 改成「props 减当时敌人位置」存 rel |
 | 判据 | ① 映射壳跟着出点动（TRACK 的 target/fam_cur 同步变化）；② 大妖精附近无多余一只；③ 5 面中 boss 两只壳仍在 |
+
+#### 2.1ccc-87 2026-10-11：TRACK 只锁真壳 + TRACK2（rel/recomputed/pin_in）+ bodyport 去重 + NEARBAND
+
+| 项 | 说明 |
+| --- | --- |
+| TRACK 选槽 | **只锁 `fam_id != 0`**；没有壳时打一次 `TRACK: (no shell yet)` |
+| TRACK2 | `rel=(x,y)` / `recomputed=(敌人位置+rel)` / `pin_in=(实际喂进 pin 的值)` ⇒ 判 #162 是否生效 |
+| bodyport | 台账改为**按 (敌人,槽) 去重**（不再是按帧累加）|
+| NEARBAND | 距离落 **48–64** 的槽逐个打一行（含 enemy/slot/dist/props/enemy_pos）⇒ 查「48 误拒」|

@@ -31594,3 +31594,17 @@ owner 订正：那一堆**都是发射口（映射层）使魔** ⇒ 焦点 = �
    (b) **无定格值**（站点未见过该槽的 etOn）时仍走 props 直读 ⇒ **可能又冻**；新增 `NOLATCH` 计数/日志
       `youkai/emit NOLATCH: enemy_id N slot i -> props direct (freeze risk) count=%u`（每 60 帧一行，上限 32）
       ⇒ 先量它到底常见不常见；若常见，再按 owner 的口径把它也改成「读到的 props 减去**当时**敌人位置」存 rel。
+
+### #260 2026-10-11（log 03:11 / build 03:08:01）: TRACK 抓错对象已修 + 三项观测口径订正
+
+**现场**：TRACK 锁到了 `fam=0`（无壳）的槽 ⇒ 只能打印 latch，回答不了「有壳时跟不跟」；
+`bodyport=45900`（明显是**按帧累加**）；`DISTHIST` 出现过 `near(48..64)=1`（48–64 带内确实有槽）。
+
+**本批（全部观测层）**：
+① **TRACK 只锁 `fam != 0` 的真壳**；本局若还没有壳 ⇒ 打一次 `TRACK: (no shell yet)`（不再被无壳槽占额度）；
+② TRACK 行后**新增 TRACK2 行**：`rel=(x,y) recomputed=(敌人位置+rel) pin_in=(实际喂进 yk_pin_familiar 的值) frame=…`
+  ⇒ 三者一比即可判 #162 有没有生效（`pin_in` 在 `yk_pin_familiar()` 里记录）；
+③ 台账 `bodyport` 改为**按 `(敌人,槽)` 去重计数**（用既有 `yk_emit_bodyport_seen` 环）⇒ 以后读到的是「多少个不同的槽被拒」；
+④ `DISTHIST` 的 **near 带（48..64）** 现在**逐个槽打一行**：
+  `youkai/emit NEARBAND: enemy_id N slot i dist2=… (dist=…) props08/0c=(…) enemy_pos=(…) => rejected by 48px gate (possible false reject)`（上限 32）
+  ⇒ 直接看有没有「本该有壳却被 48 拒掉」的场景。

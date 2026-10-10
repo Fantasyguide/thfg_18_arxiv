@@ -746,9 +746,12 @@ static unsigned s_firesum_logged;       /* ★ FIRESUM 行数 */
 static unsigned s_fcout_logged;         /* ★ FIRECOUNT 行数 */
 static unsigned s_dh_body, s_dh_near, s_dh_far, s_dh_logged;   /* ★ DISTHIST 计数 */
 static unsigned s_dh_nolatch, s_dh_nolatch_logged;   /* ★ 无定格值（props 直读）计数 */
+static unsigned s_dh_near_logged;                    /* ★ NEARBAND 行数 */
 static uint32_t s_pin_last_fam; static uint32_t s_pin_last_frame;   /* ★ TRACK：最近被钉的壳/帧 */
+static float s_pin_last_x, s_pin_last_y;   /* ★ 实际喂给 yk_pin_familiar 的值 */
 static uint32_t s_trk_enemy; static int s_trk_slot = -1; static int s_trk_left;   /* ★ TRACK 目标与剩余帧 */
 static int s_trk_moving;   /* ★ 只在本帧母机位移 > 0.5px 时打 TRACK（owner：一局就能看出壳有没有跟着动）*/
+static unsigned s_trk_noshell_logged;   /* ★ (no shell yet) 只打一次 */
 static unsigned s_site_logged;          /* ★ SITE(call#>=2) 行数 */
 static unsigned s_og_logged;            /* ORIGIN-GATE 总行数 */
 
@@ -1211,6 +1214,7 @@ static void yk_pin_familiar(uint8_t *f, float x, float y)
     /* ★ TRACK 用：记「这一帧钉过哪只壳」（owner 要看 pinned_this_frame）。*/
     s_pin_last_fam = *(const uint32_t *)(f + CE_ENEMY_ID);
     s_pin_last_frame = ce_sdk_frame();
+    s_pin_last_x = x; s_pin_last_y = y;   /* ★ TRACK2 用：实际喂进 pin 的值 */
     *(float *)(f + CE_ENEMY_POS_X) = x;                   /* final_pos（spec §3.5 指定的那两格）*/
     *(float *)(f + CE_ENEMY_POS_Y) = y;
     *(float *)(f + YK_ENEMY_ABS_POS) = x;                 /* + abs_pos（见文件头的 ⚠ 差异说明）*/
@@ -3083,10 +3087,19 @@ static void yk_familiars_tick(yk_card_t *s)
                        s_cur_have_latch ? "latch" : "props", (double)wxy[0], (double)wxy[1],
                        fid, fc ? (double)fc[0] : 0.0, fc ? (double)fc[1] : 0.0,
                        (s_pin_last_fam == fid && s_pin_last_frame == ce_sdk_frame()) ? 1 : 0);
+                ce_log("youkai/emit TRACK2: rel=(%.1f,%.1f) recomputed=(%.1f,%.1f) pin_in=(%.1f,%.1f) frame=%u",
+                       (double)off3[0], (double)off3[1],
+                       (double)(epos[0] + off3[0]), (double)(epos[1] + off3[1]),
+                       (double)s_pin_last_x, (double)s_pin_last_y, (unsigned)ce_sdk_frame());
                 --s_trk_left;
-            } else if (s_trk_left == 0 && s_trk_slot < 0 && active && yk_map_find(&s_map, id, i) &&
-                       yk_map_find(&s_map, id, i)->fam_id) {
-                s_trk_enemy = id; s_trk_slot = i; s_trk_left = 20;   /* 锁定第一只有壳的槽，连续 20 帧 */
+            } else if (s_trk_left == 0 && s_trk_slot < 0) {
+                yk_slot_t *te = yk_map_find(&s_map, id, i);
+                if (active && te && te->fam_id) {                    /* ★ 只锁 fam != 0 的真壳 */
+                    s_trk_enemy = id; s_trk_slot = i; s_trk_left = 20;
+                } else if (s_trk_noshell_logged < 1u) {
+                    ++s_trk_noshell_logged;
+                    ce_log("youkai/emit TRACK: (no shell yet) - waiting for a slot with fam_id != 0");
+                }
             }
             /* ★ phantom 修复：把「站点上最近真开过火」翻成表里的 `fired` 位（`yk_note_slot` 用它决定建壳）。
              *   `type != 0` 只说明**被配置过**；配了却整波不发弹的槽（`count=0` / 被 `etDelay` 压制 /
@@ -3284,7 +3297,18 @@ static void yk_familiars_tick(yk_card_t *s)
             {   float ddx = wxy[0] - epos[0], ddy = wxy[1] - epos[1];
                 float dd2 = ddx * ddx + ddy * ddy;
                 if (dd2 < 48.0f * 48.0f) ++s_dh_body;
-                else if (dd2 < 64.0f * 64.0f) ++s_dh_near;
+                else if (dd2 < 64.0f * 64.0f) {
+                    const uint8_t *ppn = e + YK_EMIT_PROPS + (size_t)i * YK_EMIT_PROP_STRIDE;
+                    ++s_dh_near;
+                    if (s_dh_near_logged < 32u && !yk_emit_reject_seen(id, i)) {
+                        ++s_dh_near_logged;
+                        ce_log("youkai/emit NEARBAND: enemy_id %u slot %d dist2=%.1f (dist=%.1f) props08/0c=(%.1f,%.1f) "
+                               "enemy_pos=(%.1f,%.1f) => rejected by 48px gate (possible false reject)",
+                               id, i, (double)dd2, (double)yk_emit_len(ddx, ddy),
+                               (double)*(const float *)(ppn + 0x08), (double)*(const float *)(ppn + 0x0c),
+                               (double)epos[0], (double)epos[1]);
+                    }
+                }
                 else ++s_dh_far;
                 if ((ce_sdk_frame() % 60u) == 0u && s_dh_logged < 64u) {
                     ++s_dh_logged;
@@ -3306,7 +3330,7 @@ static void yk_familiars_tick(yk_card_t *s)
             }
             if (active && !yk_emit_far_enough(wxy[0] - epos[0], wxy[1] - epos[1], YK_EMIT_SHELL_MIN_DIST)) {
                 if (!yk_emit_bodyport_seen(id, i)) {
-                    ++s_emit_bodyport;
+                    if (!yk_emit_bodyport_seen(id, i)) ++s_emit_bodyport;   /* ★ 按 (敌人,槽) 去重 */
                     ce_log("youkai/emit: slot %d of enemy_id %u is a BODY PORT (distance %.1f px < %.0f) "
                            "=> NO familiar (owner 2026-10-01: nothing before the stage boss; TH08 counts "
                            "only `familiarCreate*` entities as familiars)",
