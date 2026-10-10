@@ -676,12 +676,49 @@ static unsigned s_dbg_kill_n;
 static uint32_t s_dbg_kill_frame;
 static unsigned s_shared_logged;        /* ★ 「同出点共用壳」日志条数 */
 static unsigned s_hp_logged;            /* ★ hp 日志条数 */
+/* ★★★★ 2026-10-01 晚（owner：「它依旧是一个**离体的**使魔，**明明那里根本不是发弹口**」）：
+ *   「真的出过弹」= 建壳的**前提**。观测 = **敌弹管理器计数** `CE_BM_BULLET_COUNT`（`0x7d0`，
+ *   `engine.h:744`）的**帧间增长**：某槽最近一次 `etOn`（定格帧）落在「计数增长」的那一帧/前后一帧
+ *   ⇒ 记「该槽出过弹」（粘性，本波内有效）。只 `etOn` 过而 **0 子弹** ⇒ 不建壳。*/
+#define YK_PROD_N 64
+static uint32_t s_prod_enemy[YK_PROD_N];
+static int16_t  s_prod_slot[YK_PROD_N];
+static unsigned s_prod_head;
+static unsigned s_emit_nobullet;      /* REJECT(no-bullets) 计数 */
+static int32_t  s_prev_bc;            /* 上一帧的敌弹总数 */
+
+static void yk_prod_set(uint32_t enemy_id, int slot)
+{
+    unsigned k;
+    for (k = 0; k < YK_PROD_N; ++k)
+        if (s_prod_enemy[k] == enemy_id && s_prod_slot[k] == (int16_t)slot) return;
+    {   unsigned idx = s_prod_head % YK_PROD_N;
+        s_prod_head = (s_prod_head + 1u) % YK_PROD_N;
+        s_prod_enemy[idx] = enemy_id; s_prod_slot[idx] = (int16_t)slot;
+    }
+}
+static int yk_prod_get(uint32_t enemy_id, int slot)
+{
+    unsigned k;
+    for (k = 0; k < YK_PROD_N; ++k)
+        if (s_prod_enemy[k] == enemy_id && s_prod_slot[k] == (int16_t)slot) return 1;
+    return 0;
+}
+static void yk_prod_clear(uint32_t enemy_id, int slot)
+{
+    unsigned k;
+    for (k = 0; k < YK_PROD_N; ++k)
+        if (s_prod_enemy[k] == enemy_id && s_prod_slot[k] == (int16_t)slot) { s_prod_enemy[k] = 0u; s_prod_slot[k] = -1; return; }
+}
 /* ★ 临时调试旋钮（owner）：「发射口使魔血量暂时 1」；**0 = 关闭覆盖**（恢复正式口径）。*/
 #define YK_EMIT_FAM_HP_OVERRIDE 1
 #define YK_EMIT_SHARE_SAME_POS 0   /* ⛔ 默认 0 = **关闭**（owner：「它是对称的两个使魔应当是」⇒ 同出点是我们读错位置，不是 ECL 本意；函数保留待用）*/
 static uint32_t s_dbg_prev_input;       /* 仅用于排障日志 */
 static unsigned s_dbg_mask_logged;
 
+static unsigned s_post_logged;        /* ★ POST 打了几行 */
+static int32_t  s_cur_bc;             /* 本帧敌弹总数 */
+static int      s_cur_bc_grew;        /* 本帧是否增长 */
 static unsigned s_possrc_logged;      /* ★ POSSRC 打了几行 */
 #define YK_POSSRC_N 128
 static uint32_t s_possrc_enemy[YK_POSSRC_N];
@@ -2922,9 +2959,16 @@ static void yk_familiars_tick(yk_card_t *s)
              *   `type != 0` 只说明**被配置过**；配了却整波不发弹的槽（`count=0` / 被 `etDelay` 压制 /
              *   只在某分支 `etOn`）⇒ **不建壳**（owner 报的「不是发弹点的使魔」）。*/
             /* ★ 粘性口径（见上面 `yk_fired_sticky_*` 的注）：开过火就记住，只在槽不活跃时清。*/
+            /* ★ 敌弹总数（帧间增长 = 「这一帧真的产了弹」）*/
+            {   uint8_t *bm = CE_BULLET_MGR();
+                int32_t bc = bm ? *(const int32_t *)(bm + CE_BM_BULLET_COUNT) : 0;
+                s_cur_bc_grew = (bc > s_prev_bc) ? 1 : 0;
+                s_cur_bc = bc;
+            }
+            if (active && s_cur_bc_grew && yk_emit_fired_recently(id, i)) yk_prod_set(id, i);
             if (active) yk_map_set_fired(&s_map, id, i,
                                          yk_fired_sticky_get(id, i) || yk_emit_fired_recently(id, i));
-            else yk_fired_sticky_clear(id, i);
+            else { yk_fired_sticky_clear(id, i); yk_prod_clear(id, i); }
             /* ★ 2026-10-01 晚（owner：「两张壳 `emitter_world` 完全相同 ⇒ 叠在同一格」）——**原始偏移**：
              *   直接读 `data+0x4e58 + i*0xc`（活相对偏移，步长 `0xc` = float2 + float），
              *   用来判「ECL 真给同位置」还是「我们的下标/步长读错」。每个 (敌人,槽) 一次。*/
@@ -2985,6 +3029,18 @@ static void yk_familiars_tick(yk_card_t *s)
              *   本体口（距离 ≈ 0，小怪身上那种）⇒ **不建壳**。**只读**（硬约束不变）。*/
             /* ★ 坐标审计（owner：「先给数据、别猜」）：敌人位置 / `props+0x08/0x0c/0x10` 原样 /
              *   我们算出的发射点 / 壳将要 spawn 的位置 —— 四个量并列（前 8 个槽各一次）。*/
+            /* ★ POST（前 24 次）：位置来源 + 定格年龄 + 计数 + 帧 + 敌弹总数 ⇒ 判「那里是不是发弹口」。*/
+            if (active && s_post_logged < 24u && !yk_emit_coord_seen(id, i)) {
+                const uint8_t *pp2 = e + YK_EMIT_PROPS + (size_t)i * YK_EMIT_PROP_STRIDE;
+                ++s_post_logged;
+                ce_log("youkai/emit POST: enemy_id %u slot %d src=%s latch_age=%u count_1=%d count_2=%d "
+                       "fired_age=%u bullets=%d produced=%d pos=(%.1f,%.1f)",
+                       id, i, s_cur_have_latch ? "latch" : "props",
+                       (unsigned)yk_emit_fired_age(id, i),
+                       *(const int32_t *)(pp2 + 0x14), *(const int32_t *)(pp2 + 0x18),
+                       (unsigned)yk_emit_fired_age(id, i), (int)s_cur_bc, (int)yk_prod_get(id, i),
+                       (double)wxy[0], (double)wxy[1]);
+            }
             if (active && s_coord_logged < 8u && !yk_emit_coord_seen(id, i)) {
                 const uint8_t *pr1 = e + YK_EMIT_PROPS + (size_t)i * YK_EMIT_PROP_STRIDE;
                 ++s_coord_logged;
@@ -3066,6 +3122,16 @@ static void yk_familiars_tick(yk_card_t *s)
                 }
                 ++i; continue;
             }
+            /* ★ 建壳前提：**该槽真的出过弹**（本波内）——只 `etOn` 过而 0 子弹 ⇒ 不建。*/
+            if (active && !yk_prod_get(id, i)) {
+                if (!yk_emit_reject_seen(id, i)) {
+                    ++s_emit_nobullet;
+                    ce_log("youkai/emit: REJECT(no-bullets) enemy_id %u slot %d (etOn seen but the enemy "
+                           "bullet count never grew for this slot) => NO familiar (owner: that spot is "
+                           "not a fire point at all)", id, i);
+                }
+                ++i; continue;
+            }
             if (active && !yk_emit_far_enough(wxy[0] - epos[0], wxy[1] - epos[1], YK_EMIT_SHELL_MIN_DIST)) {
                 if (!yk_emit_bodyport_seen(id, i)) {
                     ++s_emit_bodyport;
@@ -3090,6 +3156,7 @@ static void yk_familiars_tick(yk_card_t *s)
             yk_emitkey_note(id, i, active, act.fam_id, s_ledger_frame);   /* ★ 诊断：序号稳不稳 */
         }
     }
+    s_prev_bc = s_cur_bc;   /* ★ 帧间比较基准（敌弹总数）*/
     /* 帧末：本帧没扫到的条目 = 敌人没了（过场全清 / 静默移除）⇒ 有使魔就撤，然后退休。*/
     n = yk_frame_end(&s_map, tail, (int)YK_FAM_MAX);
     yk_run_actions(s, tail, n);
@@ -8157,11 +8224,11 @@ static int on_tick_2(ce_card_t *c)
             float lz[3];
             int have = yk_emit_latch_get(0u, 0, lz);       /* 只为日志占位；下面打「最近一次定格」*/
             (void)have;
-            ce_log("youkai/emit: move %u create %u withdraw %u hp_reset %u latched=%u dist0=%u phantom=%u bodyport=%u notfam=%u noorigin=%u badtype=%u "
+            ce_log("youkai/emit: move %u create %u withdraw %u hp_reset %u latched=%u dist0=%u phantom=%u bodyport=%u notfam=%u noorigin=%u badtype=%u nobullet=%u "
                    "(position-only pinning: offset changes never rebuild the shell nor reset its HP; "
                    "shell targets the FROZEN offset_final from the etOn site; AUDIT §BE #208/#210)",
                    s_emit_move, s->spawns, s->lost + s->silent, s_emit_hp_reset, s_emit_latch_logged,
-                   s_emit_dist0, s_emit_phantom, s_emit_bodyport, s_emit_notfam, s_emit_noorigin, s_emit_badtype);
+                   s_emit_dist0, s_emit_phantom, s_emit_bodyport, s_emit_notfam, s_emit_noorigin, s_emit_badtype, s_emit_nobullet);
         }
     }
     focused = yk_focused();                               /* ★ owner ④：本卡眼中的侧（锁期间钉住）*/
