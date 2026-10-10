@@ -2671,55 +2671,19 @@ int __cdecl BP_ce_item_frame(x86_reg_t *regs, void *bp_info)
                            (void *)ce_anm_get_vm((uint32_t)root));
                 }
             }
-            if (root) {
-                const uint32_t a = (uint32_t)ce_hud_band_dim_alpha() & 0xffu;
-                /* ★★★ 2026-10-03z43（owner：「**主动卡压暗和其他 hud 压暗没有耦合**」）——
-                 *   一手机制（`engine/card/th18/15-selected-card-hud.md` §1）：那棵树 = script0（根，
-                 *   **没有 sprite、写它没有画面效果**）+ **script1..4**（真正画东西的四支）。
-                 *   旧实现写 `root + i (i=0..4)` 并要求脚本号 ∈ 1..4 ⇒
-                 *   **子 VM 的 id 不连续时全被跳过**，等于一支都没写 ✗（画面只由**引擎自己的闸**驱动
-                 *   ⇒ 这就是"没耦合"）。实测：root = 1853554533（10 位，与各卡 VM id 的量级都不同）。
-                 *   ⇒ 改成**在树根附近扫描 ±8**、按**脚本号 1..4** 识别并写 color alpha ✓；
-                 *     首次扫到就打一行（列出 id:script），以后一眼可查。*/
-                static int32_t s_nat_scan_logged = -1;
-                int32_t found[4]; int nf = 0, q;
-                for (q = 0; q < 4; ++q) found[q] = 0;
-                /* ★★★ 2026-10-03z46（owner：「**耦合扫描呢？**」——两轮 0 支，说明方向错了）——
-                 *   不再猜 id 步长：**命名金矿给了结构**（`local/vendor/th-re-data/data/th18.v1.00a/
-                 *   type-structs-own.json`）：
-                 *     · `zAnmVmSuffix.list_of_children` 在 **VM+0x50**（`zAnmVmList` 侵入式双向链表，
-                 *       `zAnmVmList = { entry(zAnmVm*), next(+4), prev(+8), … }`）；
-                 *     · `zAnmVmSuffix.parent_vm` 在 +0x7c；
-                 *     · `zAnmVmSuffix.id` 在 +0x0。
-                 *   ⇒ 正解 = **从根 VM 走它自己的子链表**（不再依赖 id 是否连续）✓。*/
-                {
-                    uint8_t *rvm = (uint8_t *)ce_anm_get_vm((uint32_t)root);
-                    if (rvm) {
-                        uint8_t *head = rvm + 0x50;                       /* list_of_children */
-                        uint8_t *node = *(uint8_t *const *)(head + 0x4);  /* head.next */
-                        int guard = 0;
-                        while (node && node != head && guard++ < 16) {
-                            uint8_t *child = *(uint8_t *const *)node;     /* node.entry = 子 VM* */
-                            if (child) {
-                                const int32_t sc = *(const int32_t *)(child + CE_ANM_VM_SCRIPT_ID);
-                                ce_anm_set_color(*(const uint32_t *)(child + CE_ANM_VM_SUFFIX_ID),
-                                                 (a << 24) |
-                                                 (*(const uint32_t *)(child + CE_ANM_VM_COLOR1) & 0x00ffffffu));
-                                ++nf;
-                                if (sc >= 1 && sc <= 4 && !found[sc - 1]) found[sc - 1] = 1;
-                            }
-                            node = *(uint8_t *const *)(node + 0x4);        /* node.next */
-                        }
-                    }
-                }
-                if (s_nat_scan_logged != root) {
-                    s_nat_scan_logged = root;
-                    ce_log("hud: native face 耦合 —— root %d 周围扫到 %d 支可写 VM："
-                           "script1=%d script2=%d script3=%d script4=%d（band alpha=%u）",
-                           (int)root, nf, (int)found[0], (int)found[1], (int)found[2], (int)found[3],
-                           (unsigned)a);
-                }
-            }
+            /* ★★★★ 2026-10-03z47（**两起崩溃**：`th18.exe.86452.dmp`(16:27) / `.88004.dmp`(19:38)）——
+             *   两次日志都**恰好停在上面那行探针之后**（日志到此为止），而"耦合"那行**一次都没打出来**
+             *   ⇒ 崩在**扫描 / 子链表遍历**里（读/写任意地址）✗。
+             *   时间也对得上：16:27 = stride 版（`root ± k×32767`）、19:38 = 子链表版（`rvm + 0x50`）
+             *   ⇒ **两次崩溃都是这一段**。
+             *   ⇒ **本轮先止血：整段写路径删掉**（只留上面那行探针 —— 它已证明是安全的）。
+             *   下次调查的正确姿势（写在这里免得再犯）：
+             *     · 每次解引用前先校验可读（`IsBadReadPtr(ptr, len)` / SEH 包裹）；
+             *     · **先只读不改**，把链表的实际形态（节点数 / `entry` / 脚本号）打出来，确认无误再谈写；
+             *     · 并且把"关掉它不崩"当作**负对照**先验收 ✓。
+             *   ⚠ 教训：这两版都是"推理 → 直接用"（`mgr+0x3c` 是 id 还是指针、子节点在哪都没证实）
+             *     ⇒ 涉及**引擎指针**的新代码必须先做只读探针。*/
+
         }
     }
     /* ★ 帧初：清「这次死亡由谁救」闩锁（用户 2026-09-12 定案：救援层 107 → 117 → 决死 B → 113；
