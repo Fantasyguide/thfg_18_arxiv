@@ -999,6 +999,7 @@ void ce_hud_vm_probe(const char *tag, uint32_t id)
 #define CE_HUD_DBG_MAX  16                       /* 同时可视化的**块数**上限（16×4 = 64 支 VM）*/
 static uint32_t s_dbg_edge[CE_HUD_DBG_MAX][4];   /* 每块 4 条边：0=上 1=下 2=左 3=右 */
 static int      s_dbg_rows;                      /* 已经建好的行数（按**实际块数**增长，不预开 257 行）*/
+static int32_t  s_dbg_stage = -1;               /* ★ z25：池子对应的关卡号（换关要整池重建）*/
 
 static uint32_t hud_dbg_spawn_edge(const float *p)
 {
@@ -1014,6 +1015,18 @@ void ce_hud_debug_blocks_tick(void)
     int n = ce_hud_slot_count(), i, e;
 
     if (n > CE_HUD_DBG_MAX) n = CE_HUD_DBG_MAX;
+    /* ★★★ 2026-10-03z25（owner：「113 **依旧框画在右边**」）——**真因**：
+     *   引擎**换关时会清掉 UI 列表的 VM**，而本池只在"第一帧"建过一次 ⇒
+     *   旧的边 VM 句柄全成了**陈旧/失效**的 id：`ce_anm_get_vm()` 查不到、**但屏幕上仍留着上一关的框**
+     *   （上一关 12 张卡时确实把块排到过右侧）⇒ 看起来就像"113 的框在右边" ✗。
+     *   ⇒ 改成**按关卡重建整池**（`CE_CURRENT_STAGE()` 变化 ⇒ 全部句柄作废、重新建），
+     *     并**去掉"每帧自愈重建"**（查不到就每帧新建 = VM 洪水 ✗）。*/
+    if (CE_CURRENT_STAGE() != s_dbg_stage) {
+        s_dbg_stage = CE_CURRENT_STAGE();
+        for (i = 0; i < CE_HUD_DBG_MAX; ++i)
+            for (e = 0; e < 4; ++e) s_dbg_edge[i][e] = 0;   /* 引擎已清 ⇒ 只作废句柄 */
+        s_dbg_rows = 0;
+    }
     if (n > s_dbg_rows) {                        /* 按**实际块数**懒惰加行（不预开 257 行）*/
         const float org[3] = { 0.0f, 0.0f, 0.0f };
         int r;
@@ -1033,16 +1046,8 @@ void ce_hud_debug_blocks_tick(void)
 
     for (i = 0; i < s_dbg_rows; ++i) {
         uint32_t col;
-        /* ★★★ 2026-10-03z24：**自愈** —— 日志实测这些边 VM **全是死的**（`(no VM)`）⇒
-         *   我画出来的框是失效/陈旧的 ⇒ owner 看到"黄框在右侧"就是它 ✗。
-         *   每帧检查、死了立刻重建（与各卡同款的自愈套路）。*/
-        for (e = 0; e < 4; ++e) {
-            if (s_dbg_edge[i][e] && ce_anm_get_vm(s_dbg_edge[i][e])) continue;
-            {
-                const float org[3] = { 0.0f, 0.0f, 0.0f };
-                s_dbg_edge[i][e] = hud_dbg_spawn_edge(org);
-            }
-        }
+        /* ⚠ 不做"每帧自愈"（z24 那版查不到就每帧新建 ⇒ VM 洪水 ✗）：
+         *   句柄只在**建行时**与**换关时**更新（见上）。若某支中途真被别处删了，下一关会重建 ✓。*/
         float x, y, w, h, t = 2.0f;             /* 边宽 2 表面 px */
         if (i >= n || !ce_hud_slot_enum(i, &id, &sl)) {
             for (e = 0; e < 4; ++e)
