@@ -930,6 +930,13 @@ int yk_emit_gap_is_new_wave(int eton_gap, int gap_ref)
 /* ★★★★ 2026-10-01（owner 真判据）：`bit3`（耐久符卡 / 超时不算 bonus failed）优先，名字兜底。*/
 /* ★★★★ 2026-10-01（owner：「一面到关底之前一点使魔不该有」）：发射点离本体够远才算「独立使魔」。
  *   纯函数、无浮点返回；用平方比较 ⇒ 不调 sqrt。*/
+int yk_emit_type_allowed(int type, unsigned mask)
+{
+    if (mask == 0u) return 1;                    /* 白名单为空 = 全接受（现状）*/
+    if (type < 0 || type > 31) return 0;
+    return ((mask >> (unsigned)type) & 1u) ? 1 : 0;
+}
+
 int yk_emit_far_enough(float dx, float dy, float min_dist)
 {
     float d2 = dx * dx + dy * dy;

@@ -16136,3 +16136,14 @@ else if (s_aura_charge > 0.0f)                 { ★ 收束（含 interrupt / �
 | 坐标审计（已加）| 前 8 个槽各一行 `youkai/emit COORD: enemy … \| enemy_pos=(x,y) \| props08/0c/10=(x,y,z) \| emitter_world=(x,y) spawn=(x,y) \| d2=… min=32 \| active=…` ⇒ 四个量并列 |
 | 判据 | **本体发弹的敌人 ⇒ 不建壳**（`bodyport` 开始涨）；真正离体发射 ⇒ **壳正好落在出点上** |
 | 登记 | `AUDIT.md` §BE #217；`HANDOFF-108.md` §3 第 104 行 |
+
+### 2.1ccc-49 2026-10-01 (card 108): 坐标空间对齐 + 类型白名单（都先给数据）
+
+| 项 | 说明 |
+| --- | --- |
+| A 坐标空间 | 一手 `th18:0x433f9e`：`props+0x08/0x0c/0x10` = `enemy_pos + 相对偏移` = **绝对世界坐标** ⇒ 我们的 latch **直接用**（不再叠加）；无 latch 才回落相对量 `data+0x4e58`（§2.1ccc-48）|
+| A 数据（本批新增两条日志）| ① `youkai/emit COORD: enemy … \| enemy_pos=… \| props08/0c/10=… \| emitter_world=… spawn=… \| d2=… min=32 \| active=…` ② `youkai/emit COORD-SPAWN: (enemy_id,slot) requested=… engine_actual=… delta=… \| source_props type/color/count_1/count_2` ⇒ 一张表定死偏移在哪一环（含 `ce_spawn_enemy` 落点语义）|
+| B 类型白名单 | 新旋钮 **`YK_EMIT_SHELL_TYPES`**（`youkai_core.h`）：**0 = 全接受（现状）**；否则 bit(`props+0x00`) 允许建壳。⚠ **`type` 取值语义（1..8 各是什么）本批未一手确认** ⇒ **不猜**：先靠上面两条日志把一面小怪的 …（§BE #218）|
+| 无体术（不动）| `hitbox` 归零**生效且不被覆盖**（owner log：1155 行 `NEXT-FRAME before=(0.0,0.0)`、`0 行 CLOBBERED`）⇒ 这条视为成功；owner 感到的碰撞可能来自**阴阳玉本体**那些真敌机 |
+| 判据 | 一面关底前 **0 壳**（`bodyport` 显著 >0 或 `create`≈0）；已知场景仍有壳且**壳压在出点上** |
+| 登记 | `AUDIT.md` §BE #218；`HANDOFF-108.md` §3 第 105 行 |

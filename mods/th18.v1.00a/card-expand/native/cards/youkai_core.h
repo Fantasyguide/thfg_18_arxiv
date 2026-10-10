@@ -1367,6 +1367,12 @@ int  yk_spell_xfer_block(int spell_flags, int name_is_time, int boss_no_damage);
  *   每条 `etOn` 的实测距离，下一轮按数据校准）。**只读**（硬约束不变：不写发弹参数/位置）。*/
 #define YK_EMIT_SHELL_MIN_DIST 32.0f
 int  yk_emit_far_enough(float dx, float dy, float min_dist);
+/* ★ B（owner 推断）：**只有「弹发射口」类型才建壳**。`props+0x00` 的取值语义**尚未一手确认**
+ *   （`etSprite` arg1 写它：`0x43404e`；真发路径 `0x427810` 的分支表待挖）⇒ 本批给一个**显式白名单**，
+ *   默认 **0 = 全接受**（= 现状），确认后改成位掩码（bit n = 允许 type == n，n ≤ 31）。
+ *   `yk_emit_type_allowed(type, mask)` = 纯函数（单测覆盖）。*/
+#define YK_EMIT_SHELL_TYPES 0     /* 0 = 全接受；否则 bit(type) 允许建壳 */
+int  yk_emit_type_allowed(int type, unsigned mask);
 /* ★★★ 2026-10-01（#209 · **主功能**：打死使魔 ⇒ 关闭该发射口）：**「这一条 `etOn` 算不算新一波」**（纯函数）。
  *   判据 = 间隔 ≥ `YK_EMIT_WAVE_GAP`(24) **且** 间隔 ≥ `4 × gap_ref`（该槽自己的波内间隔最小值；
  *   `gap_ref <= 0` = 还没观测到 ⇒ 只用绝对阈值）。⇒ **缓发敌人（波内间隔就有 30/60 帧）不会被误放行**，
