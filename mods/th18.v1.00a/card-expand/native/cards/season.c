@@ -1562,6 +1562,24 @@ static int on_tick_2(ce_card_t *c)
             ce_option_drop(c, &s->opt[i]);
         }
     }
+    /* ★★★ 2026-10-03z45（owner：「th16 的**季节子机的本体 VM** 有奇怪的残留，**位置会固定在那，
+     *   但是转**」）——先把尺子架起来：**每秒一行**，把每颗子机的实况打全：
+     *   `ptr`（槽）/ `in_use`（引擎占用位）/ `vm`（`option+0xb0` 的 VM id）/ `live`（VM 还在不在）/
+     *   `pos`（引擎的定点位置）。判读：**槽已空（`ptr=0` 或 `in_use=0`）但 `vm` 还 live ⇒ 残留那支** ✓
+     *   （位置不再有人更新 ⇒ "固定在那"；脚本自己的 angle 还在跑 ⇒ "但是转"）。*/
+    if ((s->frame % 60u) == 0u) {
+        int q6;
+        const int lv6 = level_of(s);
+        ce_log("season: sub-plane 快照 L=%d want=%d —", lv6, opts_for(lv6));
+        for (q6 = 0; q6 < SEASON_OPTS; ++q6) {
+            uint8_t *o6 = s->opt[q6].ptr;
+            uint32_t vm6 = o6 ? *(const uint32_t *)(o6 + CE_OPT_ANM_ID) : 0u;
+            ce_log("season:   opt[%d] ptr=%p in_use=%d vm=0x%x live=%d pos=(%.1f,%.1f)",
+                   q6, (void *)o6, o6 ? (int)*(const int32_t *)(o6 + CE_OPT_IN_USE) : -1,
+                   (unsigned)vm6, (vm6 && ce_anm_get_vm(vm6)) ? 1 : 0,
+                   o6 ? (double)ce_option_x(o6) : 0.0, o6 ? (double)ce_option_y(o6) : 0.0);
+        }
+    }
     return 0;
 }
 
