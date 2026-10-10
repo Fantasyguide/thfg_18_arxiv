@@ -16347,3 +16347,14 @@ else if (s_aura_charge > 0.0f)                 { ★ 收束（含 interrupt / �
 | 判据 | 按空格 ⇒ **只有我们的壳死**（`KILL` 行全是壳、母机只在 `PARENT` 行）；**道中 boss 血量不掉/不消失**；随后该槽**停火**（`veto=1`）⇒ 下一波重建；一面关底前仍 0 壳 |
 | 待办（更彻底）| 把「**这是我们的壳**」收敛成单一校验函数（注册表命中 + 实体存在 + 父 id 匹配，例如 `yk_is_our_shell(id)`），让 pin/站点闸/转嫁/绕转/orphan 清理**全部走它** —— 本轮先修空格键这条消费点并打清单，下一批做统一收敛 |
 | 登记 | `AUDIT.md` §BE #235；`HANDOFF-108.md` §3 第 121 行 |
+
+### 2.1ccc-68 ★★★ 2026-10-01 (card 108 · owner「空格把 boss 炸了」): **活体校验 = 父子匹配**
+
+| 项 | 说明 |
+| --- | --- |
+| 证据（19:09 log）| `SPACE KILL id=93/94/…/104 (registered shell)` ×34 行，**全是 "registered shell"**；`SPACE SKIP=0` / `SPACE PARENT=0`（**白名单一次都没拦住**）；而真实壳 id 在 **160+**（`B …（§BE #236）|
+| 修法（本批）| 新增**统一活体校验** `yk_shell_parent_ok(f, expected_parent)`：壳的 **`zEnemy+0x6834`（`YK_ENEMY_PARENT_ID`）必须等于该注册槽的母机 id**（回收来的 id **父链不同** ⇒ 直接判不是我们的壳）；**空格键**先过它再写 `life` |
+| 日志 | `SPACE KILL/SKIP/PARENT` 照旧（现在 `SKIP` 会真正出现：过期/父链不符的 id 落这里）|
+| 待办（下一批，重要）| 把 **pin 位置 / 站点闸 / 转嫁落点 / 绕转 / orphan 清理**全部改走 `yk_shell_parent_ok()`；并**清理注册表生命周期**（死亡/撤销/换波/换场/换关/`KILL_ALL`/`run_reset`/`on_delete` 全清），核实 `fam_id` 在换波时确实被清零、`enemy_id` 与 `fam_id` 不混用 |
+| 判据 | ① 按空格 ⇒ **只有当前活着的我们的壳**死（`KILL` 的 id 与 `SPAWN` 记录一致、母机绝不在其中）；② **道中 boss 血量不掉/不消失**（任何波、任何一次按键）；③ 打死 ⇒ 该槽**停火**（`veto=1`）⇒ **下一波重建**；④ 一面关底前仍 0 壳 |
+| 登记 | `AUDIT.md` §BE #236；`HANDOFF-108.md` §3 第 122 行 |

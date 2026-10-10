@@ -31042,3 +31042,22 @@ hud: native face probe — mgr+0x3c(树根 id)=1853554533, mgr+0x38(选中卡)=1
   `hud: native face 耦合 —— root … 周围扫到 N 支可写 VM：script1=… script2=… script3=… script4=…（band alpha=…）`
 
 **验证**：`make check` **rc=0**（`test_sdk_core` 1430 / `dllx87` 0 / `check-docs` 449 全绿）。
+
+## §BE 详录 #236（2026-10-01）：空格杀错（93..104）= **过期 registry id + 引擎 id 回收** ⇒ 活体校验（父子匹配）
+
+**证据（19:09 log）**：`SPACE KILL id=93/94/…/104 (registered shell)` ×34 行（全是 "registered shell"）；
+`SPACE SKIP=0` / `SPACE PARENT=0`（白名单一次都没拦住）；而真实壳 id 在 **160+**
+（`BROKEN set … from fam 160/164/165`）⇒ 表里留着**旧波/旧关的 `fam_id`**，**引擎回收了这些 id**
+（下一波重建后可能就是 boss）⇒ 照过期 id 写 `life = 0` ⇒ **boss 炸** ✓。
+
+**修法**：新增**统一活体校验** `yk_shell_parent_ok(f, expected_parent)` —— 壳的 `zEnemy+0x6834`
+（`YK_ENEMY_PARENT_ID`）**必须等于该注册槽的母机 id**；**回收来的 id 父链不同** ⇒ 判「不是我们的壳」。
+空格键现在**先过它再写 `life`**，`SPACE SKIP` 会真正出现。
+
+**待办（下一批，重要）**：① 把 **pin 位置 / 站点闸 / 转嫁落点 / 绕转 / orphan 清理**全部改走这个校验；
+② **注册表生命周期**：死亡 / 撤销 / 换波 / 换场 / 换关 / `KILL_ALL` / `run_reset` / `on_delete` 全清；
+核实 `fam_id` 在换波时确实清零、`enemy_id` 与 `fam_id` 不混用。
+
+**判据**：① 按空格 ⇒ **只有当前活着的我们的壳**死（`KILL` 的 id 与 `SPAWN` 记录一致、母机绝不在其中）；
+② **道中 boss 血量不掉/不消失**（任何波、任何按键）；③ 打死 ⇒ 该槽**停火**（`veto=1`）⇒ **下一波重建**；
+④ 一面关底前仍 0 壳。

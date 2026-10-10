@@ -1035,6 +1035,19 @@ static void yk_no_body_attack(uint8_t *f)
     if (f) *(int32_t *)(f + YK_ENEMY_NO_HITBOX_TIMER) = 2;
 }
 
+/* ★★★★★ 2026-10-01 晚（owner：空格杀到 **93..104** 那批「过期 registry id」⇒ 引擎 **id 回收** ⇒ 杀到 boss）：
+ *   **活体校验**：`(母机, 壳)` 必须**父子匹配** —— 壳的 `zEnemy+0x6834`（`YK_ENEMY_PARENT_ID`）
+ *   必须等于**该注册槽的母机 id**；回收来的 id 父链不同 ⇒ **不算我们的壳**。
+ *   ⚠ 这是「这是我们的壳吗」的**统一判据**：空格键已走它；**pin / 站点闸 / 转嫁 / 绕转 / orphan 清理
+ *     下一批统一改走它**（登记 `TUNING §2.1ccc-68` 待办）。*/
+static int yk_shell_parent_ok(uint8_t *f, uint32_t expected_parent)
+{
+    uint32_t pid;
+    if (!f || !expected_parent) return 0;
+    pid = *(const uint32_t *)(f + YK_ENEMY_PARENT_ID);
+    return (pid == expected_parent) ? 1 : 0;
+}
+
 static void yk_pin_familiar(uint8_t *f, float x, float y)
 {
     *(float *)(f + CE_ENEMY_POS_X) = x;                   /* final_pos（spec §3.5 指定的那两格）*/
@@ -7970,6 +7983,7 @@ static int on_tick_2(ce_card_t *c)
                 if (is_parent) { skipped[ns++] = id; continue; }
                 f = yk_familiar_by_id(id);
                 if (!f) { skipped[ns++] = id; continue; }
+                if (!yk_shell_parent_ok(f, s_map.e[j].enemy_id)) { skipped[ns++] = id; continue; }
                 *(int32_t *)(f + YK_ED_LIFE_CUR) = 0;
                 ids[ni++] = id;
                 ++m;
@@ -7983,6 +7997,7 @@ static int on_tick_2(ce_card_t *c)
                 if (is_parent || id == s_orbit[j].parent_id) { skipped[ns++] = id; continue; }
                 f = yk_familiar_by_id(id);
                 if (!f) { skipped[ns++] = id; continue; }
+                if (!yk_shell_parent_ok(f, s_orbit[j].parent_id)) { skipped[ns++] = id; continue; }
                 *(int32_t *)(f + YK_ED_LIFE_CUR) = 0;
                 ids[ni++] = id;
                 ++k;
