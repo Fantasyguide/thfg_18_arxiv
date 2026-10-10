@@ -16176,3 +16176,38 @@ else if (s_aura_charge > 0.0f)                 { ★ 收束（含 interrupt / �
 | 我们侧已知 | 外扩是**径向**速度 `YK_ORBIT_RADIAL_SPEED = YK_ORBIT_FINAL_RADIUS / YK_ORBIT_EXPAND_FRAMES`（❓ = 0.6 px/帧，`youkai_core.h:2417`，`youkai_core.c:2149` 用它 `r = 径 …（详见 `AUDIT.md` §BE #220）|
 | TH08 一手样本（`local/_scratch/th08f/*.txt`）| `moveCircle(60, %F0, %F1, 0.8333333f)`（4a）、`moveCircle(20, …, 1.5f)`、`moveCircle(20, …, 2.5f)`、`moveCircle(120, %F0, %F1, %F2)`（4bsp）；`moveCircleChan …（详见 `AUDIT.md` §BE #220）|
 | 下一步 | ① 定位我们的角速度常量与行号；② 从 `0x440xxx` 的 `moveCircle` handler 逐参核对实参语义；③ 做对照表（我们 vs 4a/4b/5/8 各处）+ 差几倍；④ 对齐（不同场景不同速率 ⇒ 按场景/ring 表或旋钮）|
+
+### 2.1ccc-53 2026-10-01 (card 108 · owner log 直认): props 消费点**一律不加敌人位置**
+
+| 项 | 说明 |
+| --- | --- |
+| 证据（15:09 log）| `COORD: enemy 81 slot 0 \| enemy_pos=(118.9,171.7) \| props08/0c/10=(118.9,171.7,0.0) \| emitter_world=(237.8,343.4)` ⇒ **emitter = 2 × enemy_pos**、`d2=43627.3 = 118.9²+171.7²` ⇒ **回落路仍在二次叠加** |
+| 根因 | 坐标订正时只改了「有定格值」那一支；**回落支**（以及我上一改留下的**重复块**）仍走 `yk_emit_world_pos()` ⇒ 又加一次敌人位置 |
+| 修法 | **任何 props 消费点都不再加敌人位置**：有定格值 ⇒ 用定格值；无定格值 ⇒ **直接读 `props[i]+0x08/0x0c` 本身**（一手 `0x433f9e`：它已是世界坐标）；该消费点**彻底删掉** `yk_emit_world_pos(epos, …)` 调用（含上一改留下的重复块）|
+| 判据（本版 log 应看到）| ① `COORD:` 里 **`emitter_world == props08/0c/10`**（不再 2×）；② stage-1 本体口 ⇒ **`bodyport` 大幅上涨、`create`≈0**；③ 只有真正离体的发射点才建壳 |
+| 另一线索（待你定）| `enemy_id 169 slot 0 type=8 count_1≈1.5f count_2≈0.51f pos=(0,256) life=2333/33333 fired_age=83` —— 像一面 boss/中 boss 的槽；**该不该建壳取决于 `type=8` 语义**（`YK_EMIT_SHELL_TYPES` 白名单那条，待一手）|
+| 登记 | `AUDIT.md` §BE #221；`HANDOFF-108.md` §3 第 108 行 |
+
+### 2.1ccc-54 ⛔ **已撤** 2026-10-01 (card 108 · owner 否掉): 「大怪/尺寸白名单」判据
+
+| 项 | 说明 |
+| --- | --- |
+| owner 原话 | 「**一面道中 boss 实测有发射口使魔，但是不应该有**」⇒ 一面（小怪 **+ 中 boss**）全 0 壳；「该有」清单 = 4 面大妖精 / 4 面道中 boss / 5–6 面道中 boss 非符 / 米斯蒂亚 |
+| 第二项判据（复用）| **`yk_big_by_sprite_id(w, h, spid)`** —— 绕转层已有的「大怪」判据：sprite 白名单 `{72..87} ∪ {292..307}` + 原始尺寸 ≥ `64×64`（`youkai_core.h:2233+`）；读法同绕转层：`yk_enemy_sprite_size(e,&w,&h)` + `yk_sprite_id_for(e,id)` |
+| 为什么够 | 一面小怪与一面中 boss 的 sprite **不在白名单**里 ⇒ 直接排除；4 面大妖精（48×48 的 72..87 族）等在白名单里 ⇒ 保留 |
+| 被拒原因分开打 | `REJECT(off-body …)`（距离 <32px）与 **`REJECT(not-familiar-class) enemy_id … sprite=… w=… h=… stage=…`**（不在大怪白名单）；台账新增 **`notfam=N`** |
+| ❓ 待补 | 若某些**移植/被替换的 boss**（米斯蒂亚那类、leveledit 换上的）不在白名单却该有壳 ⇒ **只往显式场景表补那一条**（按 `enemy_id`/ECL/关卡 + sprite 组合），**不放宽到全体** |
+| 本局数据 | `CREATE shell #19 (enemy_id 169, slot 0) type=8 color=14 pos=(0.0,256.0) life=2333 stage=1` ⇒ 这就是**一面道中 boss**（owner 说不该有壳）；本版起它会被 `not-familiar-class` 拒（下一版 log 里 `notfam` 应涨、`create`≈0）|
+| 登记 | `AUDIT.md` §BE #222；`HANDOFF-108.md` §3 第 109 行 |
+
+### 2.1ccc-55 2026-10-01 (card 108 · owner 否掉 #54 后): **SAMPLE 数据收集版**（先给数据、owner 指认，再写闸）
+
+| 项 | 说明 |
+| --- | --- |
+| owner 原话 | 「注意，**不是只有大怪才有可能有发射口使魔**。**6 面道中的妖精也有发射口使魔**，你这个闸不对」|
+| 已撤 | `yk_enemy_qualifies_for_shell()` 的「大怪/尺寸白名单」那一条（`yk_big_by_sprite_id` 门）—— **只从壳的建置路撤掉**；绕转层自己那套大怪判据**不动**。保留「被拒原因」的日志框架 |
+| 现在的行为 | **数据收集版**：对每个活跃槽打**一行全量字段**（前 `YK_SAMPLE_LOG_N = 12` 行）——`SAMPLE: stage/enemy_id/sprite/w/h/slot/type/color/count_1/count_2/dist2/is_body_port/fired_ …（§BE #223）|
+| 待收到的对照样本 | **不该有**：一面小怪（本体口）、**一面道中 boss**（enemy 169, type=8, pos=(0,256)）；**该有**：**6 面道中的妖精**（owner 刚说）、4 面大妖精 / 4 面道中 boss / 5–6 面中 boss 非符 / 米斯蒂亚 |
+| 下一步（数据到手后）| 用真实数据推判据（当前最可疑 = **slot `type`**：一面中 boss 的 `type=8` 可能根本不是弹发射口，而 6 面妖精是 ⇒ 那就是 `YK_EMIT_SHELL_TYPES` 白名单，**不是尺寸**）——**先不猜**|
+| 流程纪律 | 这类「判据类」改动：**先出 SAMPLE + owner 指认，再写成闸** |
+| 登记 | `AUDIT.md` §BE #223；`HANDOFF-108.md` §3 第 109 行 |

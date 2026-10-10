@@ -30468,3 +30468,16 @@ hud.vm ink trance.hud id … ⇒ x …..… y …..…（居中锚）
 ⇒ 以后"画面 vs 声明块"的差**可以直接在日志里对**（不用等截图）。
 
 **验证**：`make check` **rc=0**（`test_sdk_core` 1430 / `dllx87` 0 / `check-docs` 449 全绿）。
+
+## §BE 详录 #223（2026-10-01）：**撤回「大怪白名单」闸 ⇒ 改 SAMPLE 数据收集版**
+
+**owner 否掉**：「注意，**不是只有大怪才有可能有发射口使魔**。**6 面道中的妖精也有发射口使魔**，你这个闸不对」
+⇒ #222 的 `yk_big_by_sprite_id` 门**已从壳的建置路删除**（绕转层自己那套大怪判据**不动**）。
+
+**现行为**：对每个活跃槽打一行**全量字段**（前 12 行）：
+`youkai/emit SAMPLE: stage=… enemy_id=… sprite=… w=… h=… slot=… type=… color=… count_1=… count_2=… dist2=… is_body_port=… fired_age=… life=… enemy_pos=(…) emitter_world=(…) => CREATE / REJECT(off-body)`；
+仍然**只**保留既有的**距离闸**（`off-body`）。
+
+**待收对照样本**：不该有 = 一面小怪（本体口）、一面道中 boss（169, type=8, pos=(0,256)）；
+该有 = **6 面道中妖精**（owner 新给）、4 面大妖精 / 4 面道中 boss / 5–6 面中 boss 非符 / 米斯蒂亚。
+**流程纪律（本轮记下）**：判据类改动**先出 SAMPLE + owner 指认**，再写成闸。
