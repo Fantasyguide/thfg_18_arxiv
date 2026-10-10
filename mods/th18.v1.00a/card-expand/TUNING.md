@@ -16449,3 +16449,14 @@ else if (s_aura_charge > 0.0f)                 { ★ 收束（含 interrupt / �
 | ③ 台账 | `nobullet=` 已接上（`s_emit_nobullet` → 台账行）；注意它按 `(敌人,槽)` **去重**（`yk_emit_reject_seen`）⇒ 上限 = 不同槽数，不是次数 |
 | 判据 | ① 5 面中 boss 的壳**回来**（左右各一只）；② 5 面道中小怪 **0 壳**；③ 6 面道中妖精 / 4 面那些**仍有壳**；④ `POST`/`BMPROBE` 能在真发弹帧看到**某个计数在涨**（证明观测修对）；⑤ 一枪一个 ⇒ 停火 ⇒ 下一波重建；⑥ 母机不掉血 |
 | 登记 | `AUDIT.md` §BE #244；`HANDOFF-108.md` §3 第 130 行 |
+
+### 2.1ccc-77 2026-10-01 (card 108 · C0 + C1): HP 覆盖归零 + FIRE/ORIGIN-GATE 观测（只加观测）
+
+| 项 | 说明 |
+| --- | --- |
+| **C0** | `YK_EMIT_FAM_HP_OVERRIDE` **1 → 0** ⇒ 「壳只活几帧」立即消失（正式口径恢复：母机 HP÷3 × 机体系数）|
+| **C1（只观测，不改行为）** | 站点 `0x433ffa` **每次 fire 一行**：`youkai/emit FIRE: enemy_id N slot i k=%d type=… color=… props08/0c/10=(x,y,z) offsets[slot]=(x,y,z) origins[slot]=(x,y, …（§BE #245）|
+| C1 自检 | `youkai/emit ORIGIN-GATE: enemy N slot i k=%d closed=%d veto=%d (per-k veto not implemented yet - C1 observation only)`（每帧，只对**表里有条目**的槽打；总 96 行上限）|
+| 顺手修三坑 | ① `BODY PORT` 打**真实距离**（新 `yk_emit_len()`：牛顿迭代，**不调 sqrt** ⇒ 不走 x87）；② 误导日志：台账 `latched=` → **`latch_logs=`**；`CONFIGURED but has NOT fired` 现在**也看 s …（§BE #245）|
+| C2（等 C1 数据）| 身份 = `(enemy_id, slot, k)`：站点每次 fire 记 k；壳 = 每 k 一只、位置取**该次 fire 的出点**（`props+0x08/0x0c`）⇒ 两侧各自跟出点**旋转**；**否决按 k 匹配**（打死 k=0 ⇒ 只否决 k=0 那条 `etOn`，k=1 …（§BE #245）|
+| 登记 | `AUDIT.md` §BE #245；`HANDOFF-108.md` §3 第 131 行 |

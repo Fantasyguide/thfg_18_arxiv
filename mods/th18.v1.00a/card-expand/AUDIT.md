@@ -31311,3 +31311,20 @@ mgr+0x3c = 14974827 ⇒ 解释①(当 VM 指针) 不可读 ✗ ⇒ 解释② get
 - 每关一行：`hud: native face 耦合写入 N 支（band alpha=…）`。
 
 **验证**：`make check` **rc=0**（`test_sdk_core` 1430 / `dllx87` 0 / `check-docs` 449 全绿）。
+
+## §BE 详录 #245（2026-10-01）：C0（HP 覆盖归零）+ C1（FIRE / ORIGIN-GATE 观测）
+
+**C0**：`YK_EMIT_FAM_HP_OVERRIDE` **1 → 0** ⇒ 「壳只活几帧」立即消失（恢复正式 HP 口径）。
+**C1（只加观测，不改行为）**：站点每次 fire 一行
+`youkai/emit FIRE: enemy_id N slot i k=%d type=… color=… props08/0c/10=(…) offsets[slot]=(…) origins[slot]=(…) frame=%u`；
+`k` = **同帧内该槽第几次 fire**（`ce_sdk_frame()` 帧边界清 k，上限 8）。另有每帧
+`youkai/emit ORIGIN-GATE: enemy N slot i k=%d closed=%d veto=%d (per-k veto not implemented yet - C1 observation only)`
+（只对表里有条目的槽打，总 96 行上限）。
+
+**顺手修**：① `BODY PORT` 改打**真实距离**（`yk_emit_len()` 用牛顿迭代、不调 sqrt ⇒ 不走 x87）；
+② 台账 `latched=` → `latch_logs=`；`CONFIGURED but has NOT fired` 也看 **sticky**（命中不再打）；
+③ **`fam_full` 必打**（表满拒槽时一行）。
+
+**C2 设计（待 C1 数据确认「同帧两次 fire」）**：身份 = `(enemy_id, slot, k)`；壳 = 每 k 一只、位置取该次 fire 的出点
+⇒ 两侧各自跟出点**旋转**；**否决按 k 匹配**（打死 k=0 ⇒ 只否决 k=0）；清空沿用四放行口；同帧多原点由 k 覆盖
+（上限 8、超出并入最后一个）；跨帧同 k = 同一只壳（只动位置、不重建）。

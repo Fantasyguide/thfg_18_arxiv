@@ -64,7 +64,8 @@
                                                     * `.type` = `+0x00`（**int32**，见 `yk_slot_type` 的注）*/
 #define YK_EMIT_PROP_STRIDE 0x488
 #define YK_EMIT_OFFSETS     (YK_DATA_OFF + 0x4e58)
-#define YK_EMIT_OFFSETS_ABS (0x122c + 0x4e58)  /* ★ = enemy+0x6084：**绝对**活相对偏移地址（旧版 good 公式的量）*/ /* `bullet_mgr_offsets[i]`：相对偏移（float2 xy + float）*/
+#define YK_EMIT_OFFSETS_ABS (0x122c + 0x4e58)
+#define YK_EMIT_ORIGINS_ABS (0x122c + 0x4f18)  /* ★ = enemy+0x6144：绝对 origins（stride 0xc）*/  /* ★ = enemy+0x6084：**绝对**活相对偏移地址（旧版 good 公式的量）*/ /* `bullet_mgr_offsets[i]`：相对偏移（float2 xy + float）*/
 #define YK_EMIT_ORIGINS     (YK_DATA_OFF + 0x4f18) /* `bullet_mgr_origins[i]`：绝对原点；`.z > 0.9` = 绝对模式 */
 #define YK_EMIT_VEC_STRIDE  0x0c
 /* 敌人字段（engine.h 没有的几条）*/
@@ -711,7 +712,7 @@ static void yk_prod_clear(uint32_t enemy_id, int slot)
         if (s_prod_enemy[k] == enemy_id && s_prod_slot[k] == (int16_t)slot) { s_prod_enemy[k] = 0u; s_prod_slot[k] = -1; return; }
 }
 /* ★ 临时调试旋钮（owner）：「发射口使魔血量暂时 1」；**0 = 关闭覆盖**（恢复正式口径）。*/
-#define YK_EMIT_FAM_HP_OVERRIDE 1
+#define YK_EMIT_FAM_HP_OVERRIDE 0   /* ★ C0：1 → 0（Q2「壳只活几帧」立刻消失）*/
 #define YK_EMIT_SHARE_SAME_POS 0   /* ⛔ 默认 0 = **关闭**（owner：「它是对称的两个使魔应当是」⇒ 同出点是我们读错位置，不是 ECL 本意；函数保留待用）*/
 static uint32_t s_dbg_prev_input;       /* 仅用于排障日志 */
 static unsigned s_dbg_mask_logged;
@@ -720,6 +721,10 @@ static unsigned s_post_logged;        /* ★ POST 打了几行 */
 /* ★ 观测未证实前：**不把 produced 当硬性前提**（默认 0 = 关 ⇒ 距离闸是唯一闸）。*/
 #define YK_EMIT_REQUIRE_BULLETS 0
 static unsigned s_bmprobe_logged;     /* ★ BM 原始探针已打几帧 */
+static unsigned s_fire_logged;        /* ★ FIRE 行数 */
+static unsigned s_og_logged;          /* ★ ORIGIN-GATE 行数 */
+static uint32_t s_fire_frame;         /* FIRE 的帧号（帧边界清 k）*/
+static uint8_t  s_fire_k[32];         /* 每槽本帧 fire 次数（k）*/
 static int32_t  s_cur_bc;             /* 本帧敌弹总数 */
 static int      s_cur_bc_grew;        /* 本帧是否增长 */
 static unsigned s_possrc_logged;      /* ★ POSSRC 打了几行 */
@@ -803,7 +808,18 @@ static int16_t  s_bodyport_slot[YK_EMIT_BODYPORT_LOG_N];
 static unsigned s_bodyport_head;
 
 /* 距离（诊断/日志用；无浮点返回值 ⇒ 返回 float 会过 x87，这里只给「平方」辅助）。*/
-static float yk_emit_dist(float dx, float dy) { return dx * dx + dy * dy; }  /* 平方，日志里说明 */
+static float yk_emit_dist(float dx, float dy) { return dx * dx + dy * dy; }  /* 平方（BM 探针用）*/
+/* ★ C1 顺手：真实距离（**无 sqrt 调用** —— i686 的 sqrt 走 x87；这里 3 次牛顿迭代足够打印用）。*/
+static float yk_emit_len(float dx, float dy)
+{
+    float a = dx < 0.0f ? -dx : dx, b = dy < 0.0f ? -dy : dy, g, h;
+    if (a < b) { g = b; h = a; } else { g = a; h = b; }
+    if (g <= 0.0f) return 0.0f;
+    h = h / g;
+    {   float x = 0.5f * (1.0f + h), y = 0.5f * (h / x), z = 0.5f * (x + y), w = 0.5f * (z + h / z);
+        return g * w;
+    }
+}
 
 static int yk_emit_bodyport_seen(uint32_t enemy_id, int slot)
 {
@@ -2701,6 +2717,8 @@ static void yk_run_action(yk_card_t *s, const yk_action_t *act)   /* s 可为 NU
         uint32_t fid;
         if (!f) {
             if (s) ++s->fam_full;
+            if (s) ce_log("youkai/emit: fam_full=%u (map table refused a slot) - enemy_id %u slot %d",
+                          s->fam_full, act->enemy_id, act->slot);
             if (s && !s->logged_full) {
                 s->logged_full = 1;
                 ce_log("youkai: familiar spawn FAILED at (%.1f, %.1f) - one emitter stays "
@@ -3155,12 +3173,13 @@ static void yk_familiars_tick(yk_card_t *s)
                     ce_log("youkai/emit: slot %d of enemy_id %u is a BODY PORT (distance %.1f px < %.0f) "
                            "=> NO familiar (owner 2026-10-01: nothing before the stage boss; TH08 counts "
                            "only `familiarCreate*` entities as familiars)",
-                           i, id, (double)yk_emit_dist(wxy[0] - epos[0], wxy[1] - epos[1]),
+                           i, id, (double)yk_emit_len(wxy[0] - epos[0], wxy[1] - epos[1]),
                            (double)YK_EMIT_SHELL_MIN_DIST);
                 }
                 ++i; continue;
             }
-            if (active && !yk_emit_fired_recently(id, i) && !yk_emit_phantom_seen(id, i)) {
+            if (active && !yk_emit_fired_recently(id, i) && !yk_fired_sticky_get(id, i) &&
+                !yk_emit_phantom_seen(id, i)) {
                 const uint8_t *pr0 = e + YK_EMIT_PROPS + (size_t)i * YK_EMIT_PROP_STRIDE;
                 ++s_emit_phantom;
                 ce_log("youkai/emit: slot %d of enemy_id %u is CONFIGURED but has NOT fired (type=%d "
@@ -6954,6 +6973,39 @@ static int yk_on_shot_slot(ce_card_t *c, const ce_enemy_shot_t *ev)
         float ly = *(const float *)(prr + 0x0c);
         float lz = *(const float *)(prr + 0x10);
         yk_emit_latch_put(ev->enemy_id, ev->slot, lx, ly, lz);
+        /* ★★★ C1（只观测）：「同一帧内该槽的第 k 次 fire」——身份 = `(enemy, slot, k)`（C2 的正解）。
+         *   帧边界用 `ce_sdk_frame()`；`k` 每槽每帧从 0 起，上限 8（超出并入最后一个）。*/
+        {
+            uint32_t fr = ce_sdk_frame();
+            if (fr != s_fire_frame) { s_fire_frame = fr; __builtin_memset(s_fire_k, 0, sizeof s_fire_k); }
+            int k = (int)s_fire_k[ev->slot & (YK_EMIT_SLOTS - 1)];
+            if (s_fire_k[ev->slot & (YK_EMIT_SLOTS - 1)] < 8u) ++s_fire_k[ev->slot & (YK_EMIT_SLOTS - 1)];
+            if (s_fire_logged < 96u) {
+                const float *olf = (const float *)((const uint8_t *)ev->enemy + YK_EMIT_OFFSETS_ABS
+                                                  + (size_t)ev->slot * YK_EMIT_VEC_STRIDE);
+                const float *orf = (const float *)((const uint8_t *)ev->enemy + YK_EMIT_ORIGINS_ABS
+                                                  + (size_t)ev->slot * YK_EMIT_VEC_STRIDE);
+                const uint8_t *prf = (const uint8_t *)ev->enemy + YK_EMIT_PROPS
+                                   + (size_t)ev->slot * YK_EMIT_PROP_STRIDE;
+                ++s_fire_logged;
+                ce_log("youkai/emit FIRE: enemy_id %u slot %d k=%d type=%d color=%d props08/0c/10=(%.1f,%.1f,%.1f) "
+                       "offsets[slot]=(%.1f,%.1f,%.1f) origins[slot]=(%.1f,%.1f,%.1f) frame=%u",
+                       ev->enemy_id, ev->slot, k, *(const int32_t *)(prf + 0x00),
+                       *(const int32_t *)(prf + 0x04), (double)lx, (double)ly, (double)lz,
+                       (double)olf[0], (double)olf[1], (double)olf[2],
+                       (double)orf[0], (double)orf[1], (double)orf[2], (unsigned)fr);
+            }
+            /* ORIGIN-GATE（每帧自检；只对「有壳/进闸」的槽打；总 96 行 + 每敌 8 行双上限）。*/
+            if (yk_map_find(&s_map, ev->enemy_id, ev->slot) && s_og_logged < 96u) {
+                yk_slot_t *g = yk_map_find(&s_map, ev->enemy_id, ev->slot);
+                ce_log("youkai/emit ORIGIN-GATE: enemy %u slot %d k=%d closed=%d veto=%d "
+                       "(per-k veto not implemented yet - C1 observation only)",
+                       ev->enemy_id, ev->slot, k,
+                       (g && g->fam_seen && g->broken) ? 1 : 0,
+                       (g && g->fam_seen && !g->fam_id) ? 1 : 0);
+                ++s_og_logged;
+            }
+        }
         yk_fired_sticky_set(ev->enemy_id, ev->slot);   /* ★ 粘性「本波开过火」*/
         /* ★★★★★ 2026-10-01（**owner 硬约束，回滚**）：owner 逐字「**但是无论如何，你只能不发弹，
          *   **不能改发弹位置**」⇒ 本卡**永远不写 `props` 的任何一格**（`+0x24` 的 `etDist` 归零
@@ -8241,7 +8293,7 @@ static int on_tick_2(ce_card_t *c)
             float lz[3];
             int have = yk_emit_latch_get(0u, 0, lz);       /* 只为日志占位；下面打「最近一次定格」*/
             (void)have;
-            ce_log("youkai/emit: move %u create %u withdraw %u hp_reset %u latched=%u dist0=%u phantom=%u bodyport=%u notfam=%u noorigin=%u badtype=%u nobullet=%u "
+            ce_log("youkai/emit: move %u create %u withdraw %u hp_reset %u latch_logs=%u dist0=%u phantom=%u bodyport=%u notfam=%u noorigin=%u badtype=%u nobullet=%u "
                    "(position-only pinning: offset changes never rebuild the shell nor reset its HP; "
                    "shell targets the FROZEN offset_final from the etOn site; AUDIT §BE #208/#210)",
                    s_emit_move, s->spawns, s->lost + s->silent, s_emit_hp_reset, s_emit_latch_logged,
