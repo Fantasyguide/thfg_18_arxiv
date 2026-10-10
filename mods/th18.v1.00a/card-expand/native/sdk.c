@@ -1023,14 +1023,26 @@ void ce_hud_debug_blocks_tick(void)
                s_dbg_rows, n);
         /* ★ z23：**覆盖层自探针** —— owner 报「黄框画在右侧」，而台账里 113 的块在 248..392
          *   ⇒ 先证明"我画的框到底在哪"（用同一支墨迹探针读它自己的 VM）。*/
-        ce_hud_vm_probe("dbg.edge_top", s_dbg_edge[0][0]);
-        ce_hud_vm_probe("dbg.edge_left", s_dbg_edge[0][2]);
+        if (s_dbg_edge[0][0] && s_dbg_edge[0][2]) {
+            ce_hud_vm_probe("dbg.edge_top", s_dbg_edge[0][0]);
+            ce_hud_vm_probe("dbg.edge_left", s_dbg_edge[0][2]);
+        }
         s_dbg_rows = n;
     }
     if (!s_dbg_rows) return;
 
     for (i = 0; i < s_dbg_rows; ++i) {
         uint32_t col;
+        /* ★★★ 2026-10-03z24：**自愈** —— 日志实测这些边 VM **全是死的**（`(no VM)`）⇒
+         *   我画出来的框是失效/陈旧的 ⇒ owner 看到"黄框在右侧"就是它 ✗。
+         *   每帧检查、死了立刻重建（与各卡同款的自愈套路）。*/
+        for (e = 0; e < 4; ++e) {
+            if (s_dbg_edge[i][e] && ce_anm_get_vm(s_dbg_edge[i][e])) continue;
+            {
+                const float org[3] = { 0.0f, 0.0f, 0.0f };
+                s_dbg_edge[i][e] = hud_dbg_spawn_edge(org);
+            }
+        }
         float x, y, w, h, t = 2.0f;             /* 边宽 2 表面 px */
         if (i >= n || !ce_hud_slot_enum(i, &id, &sl)) {
             for (e = 0; e < 4; ++e)

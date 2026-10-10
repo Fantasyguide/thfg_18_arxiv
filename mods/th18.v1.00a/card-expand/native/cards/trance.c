@@ -1279,6 +1279,7 @@ static float s_hud_applied_dx, s_hud_applied_dy;
 static float s_hud_design_x[TRANCE_HUD_N], s_hud_design_y[TRANCE_HUD_N];
 static uint8_t s_hud_design_ok[TRANCE_HUD_N];
 static float s_hud_geom_log_x = -1.0f, s_hud_geom_log_y = -1.0f;   /* ★ z18：稳态探针节流 */
+static int   s_hud_geom_log_n = -1;                                 /* ★ z24：在场 VM 数（变化也触发）*/
 #define TRANCE_HUD_DX ((s_hud_slot.x) - (TRANCE_HUD_BASE_X))
 #define TRANCE_HUD_DY ((s_hud_slot.y) - (TRANCE_HUD_BLOCK_BOTTOM))
 
@@ -4014,13 +4015,23 @@ static void trance_hud_tick(const trance_card_t *s)
 
     /* ★ z18：**逐 VM 墨迹探针挪到每帧**（原来打在 spawn 分支里 ⇒ 只能看到"设计位置"、
      *   看不到稳态 ⇒ 上一轮 113 的 100+px 偏差就是这么漏掉的）。节流：槽位变化时一行。*/
-    if (s_hud_geom_log_x != s_hud_slot.x || s_hud_geom_log_y != s_hud_slot.y) {
-        int q4;
-        s_hud_geom_log_x = s_hud_slot.x; s_hud_geom_log_y = s_hud_slot.y;
+    {
+        int nvm = 0, q5;
+        for (q5 = 0; q5 < TRANCE_HUD_N; ++q5)
+            if (s_hud_vm[q5] && ce_anm_get_vm((uint32_t)s_hud_vm[q5])) ++nvm;
+        /* ★ z24：触发条件加了「**四支都起来了**」（原来只看槽位变化 ⇒ 单 113 时槽位不变、
+         *   第一帧又还没建 VM ⇒ 稳态数据一直没打出来）。*/
+        if (s_hud_geom_log_x != s_hud_slot.x || s_hud_geom_log_y != s_hud_slot.y ||
+            nvm != s_hud_geom_log_n) {
+            int q4;
+            s_hud_geom_log_x = s_hud_slot.x; s_hud_geom_log_y = s_hud_slot.y;
+            s_hud_geom_log_n = nvm;
         ce_log("trance: hud 稳态 slot (%.0f,%.0f) DX %.0f DY %.0f — 逐 VM 墨迹：",
                (double)s_hud_slot.x, (double)s_hud_slot.y,
                (double)TRANCE_HUD_DX, (double)TRANCE_HUD_DY);
-        for (q4 = 0; q4 < TRANCE_HUD_N; ++q4) ce_hud_vm_probe("trance.hud", (uint32_t)s_hud_vm[q4]);
+            for (q4 = 0; q4 < TRANCE_HUD_N; ++q4)
+                ce_hud_vm_probe("trance.hud", (uint32_t)s_hud_vm[q4]);
+        }
     }
 
     /* ① 缺哪支补哪支（一手在关卡开始一次性建；我们每帧兜底：anm 重载 / 首帧还没装载都能自愈）
