@@ -16381,3 +16381,14 @@ else if (s_aura_charge > 0.0f)                 { ★ 收束（含 interrupt / �
 | 顺带 | `RAW:` 上版没出 ⇒ 本版把它放在**槽循环最前**（与 POSSRC 同处），确保一定打到 |
 | 判据 | ① 5 面中 boss 看到**对称的两只**壳（左/右各一，位置与出点一致）；② 打死任一只 ⇒ **该槽**停火（另一只不受影响）；③ 下一波重建；④ 一面关底前 0 壳；⑤ 按空格 ⇒ 只死活着的我壳、母机不掉血 |
 | 登记 | `AUDIT.md` §BE #238；`HANDOFF-108.md` §3 第 124 行 |
+
+### 2.1ccc-71 ★★★ 2026-10-01 (card 108 · owner「空格杀死不死」): 清挡死标志 + 写后验证 + POSSRC/RAW 过滤
+
+| 项 | 说明 |
+| --- | --- |
+| 证据（本局 log）| `SPACE(ce_key_down) => killed 2 familiars` **×41**（同一组反复杀）、`SPACE KILL=6 / PARENT=6 / SKIP=0`；而**没有** `BROKEN set` / `released by` ⇒ **`life` 写了但壳没真死** |
+| ① 修（击杀路径）| `life.current = 0` **之外**再 **清 `CE_ENEMY_FLAG_NO_DAMAGE`**（我们在壳上按侧写过的免伤位 —— 它会让伤害段被跳过、死亡流程不进）；映射壳与绕转壳都清 |
+| ② 写后验证（下一帧）| `youkai/debug: SPACE VERIFY fam=%u life_after=%d alive=%d flags=0x%08x`（最多 8 个 id）⇒ 若 `life_after` 又非 0 / `alive=1` ⇒ **有人在复活/重置它**（我们的 pin 或重建逻辑）⇒ 顺着改 |
+| ③ POSSRC/RAW 过滤 | 上一版 8 行 POSSRC **全被 `enemy_id 1` 的 slot 0..7（全 0）吃光** ⇒ 改成**只对 `active` 的槽**打（`yk_slot_type() != 0`）、cap **8→64**、仍按 `(敌人,槽)` 去重 ⇒ 下一版**必须**能看到 `158 slot 0/1` 的两个来源值 |
+| 判据 | ① 按空格 ⇒ 壳**真的死**（`BROKEN set` 出现、`SPACE VERIFY … alive=0`）、母机不掉血；② 5 面中 boss **位置来源查清** ⇒ 修成**对称两只**；③ 打死 ⇒ 该槽**停火**（`veto=1`）⇒ 下一波重建；④ 一面关底前 0 壳 |
+| 登记 | `AUDIT.md` §BE #239；`HANDOFF-108.md` §3 第 125 行 |

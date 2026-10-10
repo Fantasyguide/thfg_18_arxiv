@@ -31128,3 +31128,18 @@ youkai/emit POSSRC: enemy_id N slot i | live=data+0x4e58(+i*0xc)=(x,y,z)
 
 **判据**：① 5 面中 boss 看到**对称的两只**壳（左/右各一，与出点一致）；② 打死任一只 ⇒ **该槽**停火（另一只不受影响）；
 ③ 下一波重建；④ 一面关底前 0 壳；⑤ 按空格 ⇒ 只死活着的我壳、母机不掉血。
+
+## §BE 详录 #239（2026-10-01）：空格杀不死 ⇒ 清挡死标志 + 写后验证 + POSSRC/RAW 过滤
+
+**证据**：`SPACE(ce_key_down) => killed 2 familiars` **×41**（同一组反复杀）；`SPACE KILL=6 / PARENT=6 / SKIP=0`；
+而**没有** `BROKEN set` / `released by` ⇒ **`life` 写了但壳没真死**。
+
+**① 修**：`life.current = 0` 之外**再清 `CE_ENEMY_FLAG_NO_DAMAGE`**（我们在壳上按侧写过的免伤位会让伤害段跳过、
+死亡流程不进）；映射壳与绕转壳都清。
+**② 写后验证**（下一帧，最多 8 个 id）：`youkai/debug: SPACE VERIFY fam=%u life_after=%d alive=%d flags=0x%08x`
+⇒ 若 `life_after` 又非 0 / `alive=1` ⇒ 有人在复活/重置它（我们的 pin 或重建逻辑）。
+**③** `POSSRC`/`RAW` 上一版被 `enemy_id 1` 的 slot 0..7（全 0）吃光 ⇒ 改为**只对 `active` 槽**打、cap 8→64、
+仍按 `(敌人,槽)` 去重 ⇒ 下一版必须能看到 `158 slot 0/1`。
+
+**判据**：① 按空格 ⇒ 壳**真的死**（`BROKEN set`、`SPACE VERIFY … alive=0`）、母机不掉血；② 5 面中 boss
+**位置来源查清** ⇒ 修成**对称两只**；③ 打死 ⇒ 该槽**停火**（`veto=1`）⇒ 下一波重建；④ 一面关底前 0 壳。

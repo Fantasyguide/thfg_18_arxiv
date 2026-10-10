@@ -671,6 +671,9 @@ static int yk_emit_coord_seen(uint32_t enemy_id, int slot)
 #define YK_DEBUG_SPACE_KILL 1
 static int      s_dbg_space_prev;       /* 空格电平边沿 */
 static unsigned s_dbg_ids_logged;       /* ★ 前 3 次按键打 ids 清单 */
+static uint32_t s_dbg_kill_ids[8];      /* ★ 待验证的被杀 id */
+static unsigned s_dbg_kill_n;
+static uint32_t s_dbg_kill_frame;
 static unsigned s_shared_logged;        /* ★ 「同出点共用壳」日志条数 */
 #define YK_EMIT_SHARE_SAME_POS 0   /* ⛔ 默认 0 = **关闭**（owner：「它是对称的两个使魔应当是」⇒ 同出点是我们读错位置，不是 ECL 本意；函数保留待用）*/
 static uint32_t s_dbg_prev_input;       /* 仅用于排障日志 */
@@ -2855,7 +2858,7 @@ static void yk_familiars_tick(yk_card_t *s)
              *   （**绝对世界坐标**）；`world_from_live` = `epos + live`；`world_from_props` = props 原样。
              *   ⇒ 若 props 两槽不同而 live 相同 ⇒ **live 读法/下标错** ⇒ 位置改用 props（**不再叠加**）；
              *     若两边都相同 ⇒ 再核下标/步长。*/
-            if (s_possrc_logged < 8u && !yk_possrc_seen(id, i)) {
+            if (s_possrc_logged < 64u && yk_slot_type(e, i) && !yk_possrc_seen(id, i)) {
                 const float *rl = (const float *)(e + YK_EMIT_OFFSETS + (size_t)i * YK_EMIT_VEC_STRIDE);
                 const uint8_t *pp = e + YK_EMIT_PROPS + (size_t)i * YK_EMIT_PROP_STRIDE;
                 float px = *(const float *)(pp + 0x08), py = *(const float *)(pp + 0x0c);
@@ -2902,7 +2905,7 @@ static void yk_familiars_tick(yk_card_t *s)
             /* ★ 2026-10-01 晚（owner：「两张壳 `emitter_world` 完全相同 ⇒ 叠在同一格」）——**原始偏移**：
              *   直接读 `data+0x4e58 + i*0xc`（活相对偏移，步长 `0xc` = float2 + float），
              *   用来判「ECL 真给同位置」还是「我们的下标/步长读错」。每个 (敌人,槽) 一次。*/
-            if (s_raw_logged < 48u && !yk_raw_seen(id, i)) {
+            if (s_raw_logged < 64u && yk_slot_type(e, i) && !yk_raw_seen(id, i)) {
                 int k;
                 ++s_raw_logged;
                 for (k = 0; k < 4; ++k) {
@@ -8029,6 +8032,18 @@ static int on_tick_2(ce_card_t *c)
          *   为什么不用 `0x4ca428`：它的掩码里**没有空格位**（log 只见 `0x10/0x20/0x40/0x80`+`0x008`），
          *   且 `sdk.h:822` 说明那批键**不进 replay 输入流**。
          *   ⇒ 按下那一刻触发（长按不连发）；**只读电平、不吞键、不改键**。*/
+        /* ★ 写后验证（下一帧）：`life_after` 又变非 0 / `alive=1` ⇒ 有人在复活它（我们的 pin/重建）。*/
+        if (s_dbg_kill_n && ce_sdk_frame() != s_dbg_kill_frame) {
+            unsigned q;
+            for (q = 0; q < s_dbg_kill_n; ++q) {
+                uint32_t kid = s_dbg_kill_ids[q];
+                uint8_t *kf = yk_familiar_by_id(kid);
+                ce_log("youkai/debug: SPACE VERIFY fam=%u life_after=%d alive=%d flags=0x%08x", kid,
+                       kf ? (int)*(const int32_t *)(kf + YK_ED_LIFE_CUR) : -999,
+                       kf ? 1 : 0, kf ? (unsigned)*(const uint32_t *)(kf + CE_ENEMY_FLAGS) : 0u);
+            }
+            s_dbg_kill_n = 0;
+        }
         int down = ce_key_down(CE_VK_SPACE) ? 1 : 0;
         if (down && !s_dbg_space_prev) {
             unsigned m = 0, k = 0, j;
@@ -8056,6 +8071,10 @@ static int on_tick_2(ce_card_t *c)
                 f = yk_familiar_by_id(id);
                 if (!f) { skipped[ns++] = id; continue; }
                 if (!yk_shell_parent_ok(f, s_map.e[j].enemy_id)) { skipped[ns++] = id; continue; }
+                /* ★ 2026-10-01 晚（owner：41 次按键、41 次 killed 2，但壳**没死**）：
+                 *   `life = 0` 之外还要**清掉会挡死的标志**（我们在壳上按侧写过的
+                 *   `CE_ENEMY_FLAG_NO_DAMAGE`）—— 否则伤害段被跳过、死亡流程不进。*/
+                *(uint32_t *)(f + CE_ENEMY_FLAGS) &= ~(uint32_t)CE_ENEMY_FLAG_NO_DAMAGE;
                 *(int32_t *)(f + YK_ED_LIFE_CUR) = 0;
                 ids[ni++] = id;
                 ++m;
@@ -8070,6 +8089,7 @@ static int on_tick_2(ce_card_t *c)
                 f = yk_familiar_by_id(id);
                 if (!f) { skipped[ns++] = id; continue; }
                 if (!yk_shell_parent_ok(f, s_orbit[j].parent_id)) { skipped[ns++] = id; continue; }
+                *(uint32_t *)(f + CE_ENEMY_FLAGS) &= ~(uint32_t)CE_ENEMY_FLAG_NO_DAMAGE;
                 *(int32_t *)(f + YK_ED_LIFE_CUR) = 0;
                 ids[ni++] = id;
                 ++k;
@@ -8077,6 +8097,9 @@ static int on_tick_2(ce_card_t *c)
             ce_log("youkai/debug: SPACE(ce_key_down) => killed %u familiars (mapping %u / orbit %u) - "
                    "normal death path (they die next frame => BROKEN set => the emitter slot is vetoed "
                    "until a wave/rearm edge or the TTL)", m + k, m, k);
+            for (j = 0; j < ni && j < 8u; ++j) { s_dbg_kill_ids[j] = ids[j]; }
+            s_dbg_kill_n = (ni < 8u) ? ni : 8u;
+            s_dbg_kill_frame = ce_sdk_frame();
             if (s_dbg_ids_logged < 3u) {
                 unsigned q;
                 ++s_dbg_ids_logged;
