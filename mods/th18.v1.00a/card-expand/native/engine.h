@@ -305,6 +305,16 @@
 #define CE_ANM_VM_FLAGS_HI         0x538      /* int32：flags_hi（bits22–24 = resolutionMode；bit20/21 = layer 区间派生位）*/
 #define CE_ANM_VM_COLOR2           0x528      /* D3DCOLOR：`color2()` 写的第二个色（渐变条靠它）*/
 #define CE_ANM_VM_COLOR1           0x524      /* D3DCOLOR 0xAARRGGBB：Tenshi 0x40eb4c 无命中写 0xffffffff、0x40eb60 有命中写 0xff0080ff（= 蓝 (0,128,255)）*/
+/* ★ 2026-10-03z51：**alpha 插值器**（`zInterpInt`，命名金矿）—— 引擎每帧用它算出的 `current`
+ * 覆盖 `color_1/color_2` 的 A ⇒ **只写 color 会被它顶掉（实跑症状：闪烁）**。
+ * 结构：+0x0 `initial`、+0x4 `goal`、+0x10 `current` ⇒ 三处都写同一个值，动画怎么跑都收敛到它 ✓。
+ * 两个插值器：`alpha1_i` = prefix+**0x140**、`alpha2_i` = prefix+**0x31c**（`type-structs-own.json`）。*/
+#define CE_ANM_VM_ALPHA1_I         0x140
+#define CE_ANM_VM_ALPHA2_I         0x31c
+#define CE_ANM_VM_INTERP_INITIAL   0x0
+#define CE_ANM_VM_INTERP_GOAL      0x4
+#define CE_ANM_VM_INTERP_CURRENT   0x10
+#define CE_ANM_VM_COLOR2           0x528
 #define CE_ANM_VM_LAYER            0x18       /* ★ int32：**绘制层**（世界列表成员按它分桶）。
                                               * 一手（2026-09-16w，子 agent 诊断 + 本卡复核）：
                                               *   · 写入口只有一条 = 脚本的 `layer()` 指令：opcode 304 → handler `0x47b67b`

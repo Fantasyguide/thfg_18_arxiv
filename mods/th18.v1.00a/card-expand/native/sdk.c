@@ -1142,9 +1142,22 @@ void ce_hud_native_face_dim_tick(void)
         uint8_t *ch;
         if (IsBadReadPtr(node, 12)) break;
         ch = *(uint8_t *const *)node;
-        if (ch && !IsBadReadPtr(ch, CE_ANM_VM_COLOR1 + 4)) {
+        if (ch && !IsBadReadPtr(ch, CE_ANM_VM_ALPHA2_I + CE_ANM_VM_INTERP_CURRENT + 4)) {
             const uint32_t old = *(const uint32_t *)(ch + CE_ANM_VM_COLOR1);
+            const uint32_t old2 = *(const uint32_t *)(ch + CE_ANM_VM_COLOR2);
+            int32_t *i1, *i2;
             *(uint32_t *)(ch + CE_ANM_VM_COLOR1) = (a << 24) | (old & 0x00ffffffu);
+            *(uint32_t *)(ch + CE_ANM_VM_COLOR2) = (a << 24) | (old2 & 0x00ffffffu);
+            /* ★ z51：**连插值器一起写**（`initial/goal/current` 三处）——否则引擎每帧用
+             *   它算出的 `current` 覆盖颜色 A ⇒ 我们和引擎**交替胜出 = 闪烁** ✓（owner 实跑）。*/
+            i1 = (int32_t *)(ch + CE_ANM_VM_ALPHA1_I);
+            i2 = (int32_t *)(ch + CE_ANM_VM_ALPHA2_I);
+            i1[CE_ANM_VM_INTERP_INITIAL / 4] = (int32_t)a;
+            i1[CE_ANM_VM_INTERP_GOAL / 4]    = (int32_t)a;
+            i1[CE_ANM_VM_INTERP_CURRENT / 4] = (int32_t)a;
+            i2[CE_ANM_VM_INTERP_INITIAL / 4] = (int32_t)a;
+            i2[CE_ANM_VM_INTERP_GOAL / 4]    = (int32_t)a;
+            i2[CE_ANM_VM_INTERP_CURRENT / 4] = (int32_t)a;
             ++nw;
         }
         node = *(uint8_t *const *)(node + 0x4);
