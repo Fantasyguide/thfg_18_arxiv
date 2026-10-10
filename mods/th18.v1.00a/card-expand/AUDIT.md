@@ -30919,3 +30919,20 @@ youkai/emit SAMPLE: stage=5 enemy_id=158 sprite=16 w=64 h=96 slot=0 type=9 color
 
 **判据（下一版）**：打死 5 面道中 boss 的发射口使魔 ⇒ ① **该口这一波立刻停火**（`veto=1`、台账 `vetoed` 涨）；
 ② **下一波重建**（`released by WAVE-EDGE/REARM` + `create` 再涨）；③ 一面关底前仍 0 壳。
+
+## §BE 详录 #230（2026-10-01）：5 面「一直有一个发弹点没建使魔」⇒ 槽级 SLOTSTATE + gate check 过滤
+
+**现场（16:31 log）**：`BROKEN set for (enemy_id 158, slot 0) from fam 160 (kind=0)` ✓（死亡→broken 通）；
+但 158 的 SAMPLE **只有 slot 0**（16:18 那局 0/1 都有）⇒ **slot 1 从未建壳** ⇒ 玩家打不到它 ⇒
+**永不 broken ⇒ 永不停火** —— 与 owner 描述完全一致。
+
+**本批三件事**：
+① **槽级日志**（每槽一行，cap 64）：`youkai/emit SLOTSTATE: enemy_id N slot i active=%d fired=%d sticky=%d
+   have_fam_id=%d fam_seen=%d latch=%d => shell=%d` ⇒ 分辨「没看见 active」「fired/sticky 没置」「ring 挤出（`latch=0`）」
+   「被别处跳过」；
+② **`gate check` 过滤**：原来只打前 8 条全局（全是 stage 1 的 3/4/5）⇒ 改成**只对表里有条目且 `fam_seen`/`broken` 有值**
+   的槽打，上限 8 → 24；`fam_seen=-1 / broken=-1` = **查不到条目**的哨兵（从没建过壳）；
+③ **ring 防挤出**：`YK_FIRED_STICKY_N` 32 → 64、`YK_EMIT_LATCH_N` 16 → 32。
+
+**判据**：5 面道中 boss **每个真正发弹的槽都有壳**（`SLOTSTATE … => shell=1`）；打死任一只 ⇒ 该槽**停火**
+（`gate check … => veto=1`）⇒ 下一波重建；一面关底前仍 0 壳。

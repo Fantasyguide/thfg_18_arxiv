@@ -16279,3 +16279,14 @@ else if (s_aura_charge > 0.0f)                 { ★ 收束（含 interrupt / �
 | ⑤ 重建边沿 | owner 说的「下一波」在 5 面道中非符里应是 **`etNew` 重新武装**（主复位口 ①）；下版看 `BROKEN set` 之后有没有 `released by …` 与 `create` 再涨 |
 | 判据（下一版）| 打死 5 面道中 boss 的发射口使魔 ⇒ ① **该口这一波立刻停火**（`gate check … => veto=1`、`vetoed` 涨）② **下一波重建**（`released by WAVE-EDGE/REARM` + `create` 再涨）③ 一面关底前仍 0 壳 |
 | 登记 | `AUDIT.md` §BE #229；`HANDOFF-108.md` §3 第 115 行 |
+
+### 2.1ccc-62 2026-10-01 (card 108 · owner 5 面「一直有一个发弹点没建使魔」): 槽级 SLOTSTATE + gate check 过滤
+
+| 项 | 说明 |
+| --- | --- |
+| 现场（16:31 log）| `BROKEN set for (enemy_id 158, slot 0) from fam 160 (kind=0)` ✓ 死亡识别通；但 158 的 SAMPLE **只有 slot 0**（16:18 那局 0/1 都有）⇒ **slot 1 从未建壳 ⇒ 打不到 ⇒ 永不 broken ⇒ 永不停火**（与 owner 描述一致）|
+| ① 新增槽级日志（每槽一行，cap 64）| `youkai/emit SLOTSTATE: enemy_id N slot i active=%d fired=%d sticky=%d have_fam_id=%d fam_seen=%d latch=%d => shell=%d` ⇒ 直接看出该槽是**没被看见 active** / **fired|sticky 没置上** / **被 ring 挤出（`latch=0`）** / **被别处跳过** |
+| ② gate check 过滤（原来只打前 8 条全局 ⇒ 全是 stage 1 的 3/4/5，永远看不到 158）| 改成**只对表里有条目且 `fam_seen`/`broken` 有值**的 `(enemy,slot)` 打，上限 **8 → 24**；并说明 `fam_seen=-1 / broken=-1` = **查不到条目**的哨兵（这槽我们从没建过壳）|
+| ③ ring 防挤出 | `YK_FIRED_STICKY_N` **32 → 64**、`YK_EMIT_LATCH_N` **16 → 32**（5 面多槽 + 多敌机时避免覆盖；`latch=0` 会在 SLOTSTATE 行里显形）|
+| 判据（下一版）| 5 面道中 boss **每个真正发弹的槽都有壳**（`SLOTSTATE … => shell=1`）；打死任一只 ⇒ 该槽**停火**（`gate check … => veto=1`）⇒ 下一波重建；一面关底前仍 0 壳 |
+| 登记 | `AUDIT.md` §BE #230；`HANDOFF-108.md` §3 第 116 行 |

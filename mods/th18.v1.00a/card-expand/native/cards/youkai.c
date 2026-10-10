@@ -579,7 +579,7 @@ static void yk_slot_offsets(uint8_t *e, int i, float off3[3], float org3[3])
  *   `props[i]+0x08/+0x0c/+0x10`（**offset_final**）抄一份到卡侧**每槽小缓存**；壳的目标位置优先用它。
  *   缓存按 `(enemy_id, slot)` 存（`s_emit_latch[]`，8 组环形；同一个 `(enemy,槽)` 只保留最新一份）。*/
 typedef struct { uint32_t enemy_id; int16_t slot; uint8_t used; uint32_t frame; float x, y, z; } yk_emit_latch_t;
-#define YK_EMIT_LATCH_N 16   /* ★ 8 → 16：多敌人/多槽时 8 格会被挤出（owner：版顶正中间的幽灵壳）*/
+#define YK_EMIT_LATCH_N 32   /* ★ 8 → 16：多敌人/多槽时 8 格会被挤出（owner：版顶正中间的幽灵壳）*/
 static yk_emit_latch_t s_emit_latch[YK_EMIT_LATCH_N];
 static unsigned s_emit_latch_head;
 static unsigned s_emit_latch_logged;      /* 判据：打过几行 `latched=` */
@@ -647,6 +647,11 @@ static unsigned s_coord_logged;    /* ★ 坐标审计已打几行 */
 static uint32_t s_coord_enemy[YK_COORD_LOG_N];
 static int16_t  s_coord_slot[YK_COORD_LOG_N];
 static unsigned s_coord_head;
+/* ★ 前置声明（SLOTSTATE 打点在扫描里、helper 定义在文件后段）。*/
+static int  yk_fired_sticky_get(uint32_t enemy_id, int slot);
+static void yk_fired_sticky_clear(uint32_t enemy_id, int slot);
+static int  yk_slotstate_seen(uint32_t enemy_id, int slot);
+
 static int yk_emit_coord_seen(uint32_t enemy_id, int slot)
 {
     unsigned k;
@@ -655,6 +660,23 @@ static int yk_emit_coord_seen(uint32_t enemy_id, int slot)
     {   unsigned idx = s_coord_head % YK_COORD_LOG_N;
         s_coord_head = (s_coord_head + 1u) % YK_COORD_LOG_N;
         s_coord_enemy[idx] = enemy_id; s_coord_slot[idx] = (int16_t)slot;
+    }
+    return 0;
+}
+
+static unsigned s_slotstate_logged;   /* ★ SLOTSTATE 打了几行 */
+#define YK_SLOTSTATE_N 96
+static uint32_t s_slotstate_enemy[YK_SLOTSTATE_N];
+static int16_t  s_slotstate_slot[YK_SLOTSTATE_N];
+static unsigned s_slotstate_head;
+static int yk_slotstate_seen(uint32_t enemy_id, int slot)
+{
+    unsigned k;
+    for (k = 0; k < YK_SLOTSTATE_N; ++k)
+        if (s_slotstate_enemy[k] == enemy_id && s_slotstate_slot[k] == (int16_t)slot) return 1;
+    {   unsigned idx = s_slotstate_head % YK_SLOTSTATE_N;
+        s_slotstate_head = (s_slotstate_head + 1u) % YK_SLOTSTATE_N;
+        s_slotstate_enemy[idx] = enemy_id; s_slotstate_slot[idx] = (int16_t)slot;
     }
     return 0;
 }
@@ -709,7 +731,7 @@ static int yk_emit_bodyport_seen(uint32_t enemy_id, int slot)
  *   ⇒ 改成**本波内粘性**：该 `(enemy_id,slot)` **`etOn` 过一次**就记住，直到
  *     ① 该槽变不活跃（`!active`）② 换场/换波（整表 reset）才清 —— 与 core 里 `yk_slot_t.fired`
  *     的清理口径一致（`!active` / `yk_fam_wave_clear`）。*/
-#define YK_FIRED_STICKY_N 32
+#define YK_FIRED_STICKY_N 64   /* 32 → 64：5 面多槽 + 多敌机时防挤出 */
 static uint32_t s_fired_enemy[YK_FIRED_STICKY_N];
 static int16_t  s_fired_slot[YK_FIRED_STICKY_N];
 static unsigned s_fired_head;
@@ -2763,6 +2785,19 @@ static void yk_familiars_tick(yk_card_t *s)
             if (active) yk_map_set_fired(&s_map, id, i,
                                          yk_fired_sticky_get(id, i) || yk_emit_fired_recently(id, i));
             else yk_fired_sticky_clear(id, i);
+            /* ★★★ 2026-10-01 晚（owner：5 面「一直有一个发弹点没建使魔」）——**槽级状态**（每槽一行，cap 64）：
+             *   `SLOTSTATE: enemy_id N slot i active=… fired=… sticky=… have_fam_id=… fam_seen=… latch=… => shell=…`
+             *   ⇒ 一眼看出某个槽是**没被看见 active** / **fired|sticky 没置上** / **被别处跳过**（含 ring 挤出 ⇒ `latch=0`）。*/
+            if (s_slotstate_logged < 64u && !yk_slotstate_seen(id, i)) {
+                yk_slot_t *e2 = yk_map_find(&s_map, id, i);
+                ++s_slotstate_logged;
+                ce_log("youkai/emit SLOTSTATE: enemy_id %u slot %d active=%d fired=%d sticky=%d "
+                       "have_fam_id=%d fam_seen=%d latch=%d => shell=%d",
+                       id, i, active, (int)(yk_fired_sticky_get(id, i) || yk_emit_fired_recently(id, i)),
+                       (int)yk_fired_sticky_get(id, i), (e2 && e2->fam_id) ? 1 : 0,
+                       e2 ? (int)e2->fam_seen : -1, (int)s_cur_have_latch,
+                       (e2 && e2->fam_id) ? 1 : 0);
+            }
             /* ★★★ 2026-09-26（owner #37，两次实跑同一条：「**发射口与敌人重合不应该建立使魔**」/
              *   「依旧能看见敌人的身上有魔法阵」）：**体上炮口直接跳过整格**。
              *   为什么是 `continue`（跳过）而不是「建的时候拒掉」：
@@ -6724,7 +6759,10 @@ static int yk_on_shot_slot(ce_card_t *c, const ce_enemy_shot_t *ev)
     {   /* ★ 打点 ③/④：本站点读到的三条件与最终裁定（owner 要的 `gate check` 行；前 8 次）。*/
         yk_slot_t *g = yk_map_find(&s_map, ev->enemy_id, ev->slot);
         int veto = yk_shot_slot_gate(&s_map, ev->enemy_id, ev->slot, have);
-        if (s_gatecheck_logged < 8u) {
+        /* ⚠ 只对**我们真管过的槽**打（表里有条目且 `fam_seen`/`broken` 有值）——
+         *   原来只打前 8 条全局 ⇒ 全是 stage 1 的 enemy 3/4/5，永远看不到 158。
+         *   `fam_seen=-1 / broken=-1` = **查不到条目**的哨兵（这槽我们从没建过壳）。*/
+        if (g && (g->fam_seen || g->broken) && s_gatecheck_logged < 24u) {
             ++s_gatecheck_logged;
             ce_log("youkai/emit: gate check (enemy_id %u, slot %d) fam_seen=%d have_fam_id=%d broken=%d "
                    "=> veto=%d (veto=1 means this etOn is CLAMPED)",
