@@ -659,6 +659,7 @@ static int yk_emit_coord_seen(uint32_t enemy_id, int slot)
     return 0;
 }
 
+static unsigned s_gatecheck_logged;  /* ★ gate check 打了几行 */
 static unsigned s_emit_badtype;    /* ★ type 在黑名单 ⇒ 不建壳的槽数 */
 static unsigned s_emit_noorigin;   /* ★ 出点 (0,0)/无定格 ⇒ 不建壳的槽数 */
 static int      s_cur_have_latch;  /* 本槽本帧有没有定格值（循环内临时量）*/
@@ -6720,7 +6721,18 @@ static int yk_on_shot_slot(ce_card_t *c, const ce_enemy_shot_t *ev)
      * 而且只在本次回调内有效（同帧 sweep 可能删它）。 */
     have = yk_slot_fam_id(&s_map, ev->enemy_id, ev->slot);
     rearms_before = yk_map_rearms(&s_map);
-    if (!yk_shot_slot_gate(&s_map, ev->enemy_id, ev->slot, have)) return 0;
+    {   /* ★ 打点 ③/④：本站点读到的三条件与最终裁定（owner 要的 `gate check` 行；前 8 次）。*/
+        yk_slot_t *g = yk_map_find(&s_map, ev->enemy_id, ev->slot);
+        int veto = yk_shot_slot_gate(&s_map, ev->enemy_id, ev->slot, have);
+        if (s_gatecheck_logged < 8u) {
+            ++s_gatecheck_logged;
+            ce_log("youkai/emit: gate check (enemy_id %u, slot %d) fam_seen=%d have_fam_id=%d broken=%d "
+                   "=> veto=%d (veto=1 means this etOn is CLAMPED)",
+                   ev->enemy_id, ev->slot, g ? (int)g->fam_seen : -1, (int)(have ? 1 : 0),
+                   g ? (int)g->broken : -1, veto);
+        }
+        if (!veto) return 0;
+    }
     /* ★★★ 2026-09-22（P8-5）：**每一次「夹持期开始」记一行完整的上下文**（含 boss 与活跃槽数）。
      * 记账判据 = `rearms` 涨（= 闸刚置上 `rearm_pending`，一个夹持期只记一次）。
      * ⚠ 不逐帧逐槽打（16 槽 × 60 fps = 每秒上千行，会把日志淹掉）——「每次」按**夹持期**计。*/
@@ -6861,6 +6873,15 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
     if (ev->kind == CE_EDEATH_KILL_ALL) {
         yk_fam_wave_clear(&s_map, ev->id);       /* 不是我们的使魔 ⇒ 返回 0，什么都不做 */
         return;                                  /* 清场不算击破（本函数开头那段约定）⇒ 不进 +N 那条路 */
+    }
+    {   /* ★ 2026-10-01 晚（owner：5 面道中「使魔被打死了，但**没重建、也没否决发弹**」）：
+         *   打点 ①/②：`broken` 到底有没有真打上（`on_enemy_death` ⇒ `KILLED/BOMB_KILL` 广播）。*/
+        yk_slot_t *slt = yk_map_find_fam(&s_map, ev->id);
+        if (slt) {
+            ce_log("youkai/emit: BROKEN set for (enemy_id %u, slot %d) from fam %u (kind=%u) "
+                   "=> this slot must go silent until a wave/rearm edge or the %d-frame TTL",
+                   slt->enemy_id, (int)slt->slot, ev->id, (unsigned)ev->kind, (int)YK_EMIT_REBUILD_TTL);
+        }
     }
     if (!yk_fam_broken(&s_map, ev->id)) {
         /* ★★ 2026-09-22：**不是我们的使魔** ⇒ 这是一次普通击破 —— 人妖槽与刻符的涨源就在这里。*/

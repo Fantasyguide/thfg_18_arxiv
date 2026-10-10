@@ -30903,3 +30903,19 @@ youkai/emit SAMPLE: stage=5 enemy_id=158 sprite=16 w=64 h=96 slot=0 type=9 color
 清位只在 **槽变不活跃** 与 **整表 reset**；`yk_map_set_fired()` 用「粘性 ∨ 近 3 帧」；② **SAMPLE 12 → 48**。
 
 **判据**：① 5 面道中 boss 非符**有发射口使魔**（压出点）；② **打死它 ⇒ 该口这一波不再发弹**；③ **一面关底前仍 0 壳**。
+
+## §BE 详录 #229（2026-10-01）：5 面道中「打死了但没重建、没否决发弹」⇒ 逐环打点
+
+**owner 现场**：「那就是使魔被打死了，但是 **1、没有重建**；**2、没有否决发弹**」。
+
+**本局 log 已知**：`youkai/kill:` 只到 stage 1（#27/#31/#38/#43）⇒ **没有 enemy 158 的 kill 行**；
+`released by …` **一条也没有** ⇒ 从没夹过（与「没否决」一致）。
+
+**本批新增两条打点**（下一版一局即可定位）：
+① **死亡路径**：`youkai/emit: BROKEN set for (enemy_id N, slot i) from fam F (kind=K) => this slot must go
+   silent until a wave/rearm edge or the 600-frame TTL`（在 `on_enemy_death` 里按 fam 反查槽，`yk_fam_broken()` 之前）；
+② **站点路径**：`youkai/emit: gate check (enemy_id N, slot i) fam_seen=%d have_fam_id=%d broken=%d => veto=%d`
+   （前 8 次）—— 可区分「我们从没建过壳（`fam_seen=0`）」「壳还在（`have_fam_id=1`）」「`broken=1` 但 `veto=0`（真正的 bug）」。
+
+**判据（下一版）**：打死 5 面道中 boss 的发射口使魔 ⇒ ① **该口这一波立刻停火**（`veto=1`、台账 `vetoed` 涨）；
+② **下一波重建**（`released by WAVE-EDGE/REARM` + `create` 再涨）；③ 一面关底前仍 0 壳。

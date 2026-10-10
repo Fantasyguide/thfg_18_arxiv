@@ -16267,3 +16267,15 @@ else if (s_aura_charge > 0.0f)                 { ★ 收束（含 interrupt / �
 | 修法（粘性）| 卡片侧新增 `s_fired_sticky[]`（32 格，按 `(enemy_id,slot)`）：**站点上 `etOn` 过一次就记住**；清位只有两处：**槽变不活跃（`!active`）** 与 **整表 reset（换场/换波）**；`yk_map_set_fired()` 用「粘性 ∨ 近 3 帧」 |
 | 判据 | ① 5 面道中 boss 非符**有发射口使魔**（压在出点上）；② **打死它 ⇒ 该口这一波不再发弹**；③ **一面关底前仍 0 壳**（三条同时成立）|
 | 登记 | `AUDIT.md` §BE #228；`HANDOFF-108.md` §3 第 114 行 |
+
+### 2.1ccc-61 2026-10-01 (card 108 · owner 现场): 5 面道中「打死了但①没重建②没否决发弹」⇒ 逐环打点
+
+| 环 | 本批动作 / 已知数据 |
+| --- | --- |
+| ① 死亡被看见？| 现有 `youkai/kill:` 行**只覆盖到 stage 1 的 #27/#31/#38/#43**（本局 log）；**没有 5 面（enemy 158）的 kill 行** ⇒ 两种可能：壳没被打死，或死亡广播没被我们认到。已加打点 ② |
+| ② `broken` 有没有真打上 | **新增日志**：`youkai/emit: BROKEN set for (enemy_id N, slot i) from fam F (kind=K) => this slot must go silent until a wave/rearm edge or the 600-frame T …（§BE #229）|
+| ③ 站点读到 broken 了吗 | **新增日志**：`youkai/emit: gate check (enemy_id N, slot i) fam_seen=%d have_fam_id=%d broken=%d => veto=%d (veto=1 means this etOn is CLAMPED)` —— 前 8 次； …（§BE #229）|
+| ④ 被放行口放掉？| 现成日志 `released by <WAVE-EDGE(enmKillAll) / WAVE-GAP(adaptive) / TTL(600 frames)>` + 台账 `vetoed[]`；本局 log 里**一条 `released by` 都没有** ⇒ 说明**从没夹过**（与「没否决发弹」一致）|
+| ⑤ 重建边沿 | owner 说的「下一波」在 5 面道中非符里应是 **`etNew` 重新武装**（主复位口 ①）；下版看 `BROKEN set` 之后有没有 `released by …` 与 `create` 再涨 |
+| 判据（下一版）| 打死 5 面道中 boss 的发射口使魔 ⇒ ① **该口这一波立刻停火**（`gate check … => veto=1`、`vetoed` 涨）② **下一波重建**（`released by WAVE-EDGE/REARM` + `create` 再涨）③ 一面关底前仍 0 壳 |
+| 登记 | `AUDIT.md` §BE #229；`HANDOFF-108.md` §3 第 115 行 |
