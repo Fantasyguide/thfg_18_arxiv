@@ -671,6 +671,18 @@ static int yk_emit_coord_seen(uint32_t enemy_id, int slot)
  *   ⛔ 旧的 `0x4ca428` 掩码方案（`YK_DEBUG_KEY_MASK/…_MASK2`）**已退役**（该掩码没有空格位）。*/
 #define YK_DEBUG_SPACE_KILL 1
 static int      s_dbg_space_prev;       /* 空格电平边沿 */
+/* ★★★★ 2026-10-01 晚（owner：**「帮我写一个带108=无敌的 debug 功能」**）：
+ *   自机无敌 —— 一手：`CE_PLAYER_INVULN_TIMER` = **`player+0x47774`**（`zTimer{prev,cur,float}`；
+ *   复活 `0x45c35e` 置 `{0x117,0x118,280.0}`、决死救回 60、炸弹各自置 —— `engine.h:448/509/510`）。
+ *   落笔 = **每帧把 `cur` 刷新到 ≥ 60**（计时器一读完就补，最稳；不动标志位、不动敌人、不动别的卡）。
+ *   键 = **`I`（`0x49`）** —— 不在游戏操作里（`sdk.h` 的 `CE_VK_A/S/C/D/SPACE/CONTROL/SHIFT` 都不是它）；
+ *   **按下切换 ON/OFF**（边沿检测、长按不连发）；日志每次一行。**调试功能，发布前可关**。*/
+#define YK_DEBUG_INVINCIBLE 1
+#define YK_DEBUG_INVINCIBLE_VK 0x49   /* 'I' */
+#define YK_DEBUG_INVINCIBLE_MIN 60    /* 每帧把 cur 刷到至少这么多帧 */
+static int      s_dbg_inv_on;
+static int      s_dbg_inv_prev;
+static int      s_dbg_inv_logged;
 static unsigned s_dbg_ids_logged;       /* ★ 前 3 次按键打 ids 清单 */
 static uint32_t s_dbg_kill_ids[8];      /* ★ 待验证的被杀 id */
 static unsigned s_dbg_kill_n;
@@ -8342,6 +8354,20 @@ static int on_tick_2(ce_card_t *c)
             }
         }
         s_dbg_space_prev = down;
+    }
+    if (YK_DEBUG_INVINCIBLE) {
+        int d = ce_key_down(YK_DEBUG_INVINCIBLE_VK) ? 1 : 0;
+        if (d && !s_dbg_inv_prev) {
+            s_dbg_inv_on = !s_dbg_inv_on;
+            s_dbg_inv_logged = 1;
+            ce_log("youkai/debug: INVINCIBLE %s (player+0x47774 cur>=%d per frame) - debug only, card 108",
+                   s_dbg_inv_on ? "ON" : "OFF", (int)YK_DEBUG_INVINCIBLE_MIN);
+        }
+        s_dbg_inv_prev = d;
+        if (s_dbg_inv_on) {
+            ce_timer_t *iv = CE_PLAYER_INVULN();
+            if (iv && iv->cur < YK_DEBUG_INVINCIBLE_MIN) iv->cur = YK_DEBUG_INVINCIBLE_MIN;
+        }
     }
     /* ★ 排障用（无害）：前 24 次**游戏输入掩码**变化各打一行（`0x4ca428`；空格不在其中）。*/
     if (s_dbg_mask_logged < 24u) {

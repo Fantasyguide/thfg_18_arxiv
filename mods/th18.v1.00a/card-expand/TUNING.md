@@ -16460,3 +16460,15 @@ else if (s_aura_charge > 0.0f)                 { ★ 收束（含 interrupt / �
 | 顺手修三坑 | ① `BODY PORT` 打**真实距离**（新 `yk_emit_len()`：牛顿迭代，**不调 sqrt** ⇒ 不走 x87）；② 误导日志：台账 `latched=` → **`latch_logs=`**；`CONFIGURED but has NOT fired` 现在**也看 s …（§BE #245）|
 | C2（等 C1 数据）| 身份 = `(enemy_id, slot, k)`：站点每次 fire 记 k；壳 = 每 k 一只、位置取**该次 fire 的出点**（`props+0x08/0x0c`）⇒ 两侧各自跟出点**旋转**；**否决按 k 匹配**（打死 k=0 ⇒ 只否决 k=0 那条 `etOn`，k=1 …（§BE #245）|
 | 登记 | `AUDIT.md` §BE #245；`HANDOFF-108.md` §3 第 131 行 |
+
+### 2.1ccc-78 2026-10-01 (card 108 · owner): 调试键「108 = 无敌」
+
+| 项 | 说明 |
+| --- | --- |
+| 开关 | `YK_DEBUG_INVINCIBLE`（默认 1，调试用；发布前可关）；键 = **`I`（`0x49`）**（`sdk.h` 已用 A/S/C/D/SPACE/CONTROL/SHIFT）|
+| 一手（无敌字段）| `CE_PLAYER_INVULN_TIMER` = **`player+0x47774`**（`zTimer{prev,cur,float}`）；写点：复活 `0x45c35e` 置 `{0x117,0x118,280.0}`、决死救回 60、炸弹各自置（`engine.h:448/509/510`）|
+| 落笔 | **每帧把 `cur` 刷到 ≥ `YK_DEBUG_INVINCIBLE_MIN`(60)**（读完就补，最稳）⇒ 只作用于**自机**；不动标志位、不动敌人、不动别的卡 |
+| 交互 | `ce_key_down(0x49)` + **边沿检测**（按下切换 ON/OFF、长按不连发）；**不吞键、不改键** |
+| 日志 | `youkai/debug: INVINCIBLE ON/OFF (player+0x47774 cur>=60 per frame) - debug only, card 108`（每次切换一行）|
+| 判据 | ① 按键切换（ON/OFF 各一行）；② ON 时撞弹/撞使魔不掉命、不被击退、可穿弹幕；③ OFF 时立刻恢复原状；④ 不影响其它输入与别的卡 |
+| 登记 | `AUDIT.md` §BE #246；`HANDOFF-108.md` §3 第 132 行 |

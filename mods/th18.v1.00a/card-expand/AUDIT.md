@@ -31353,3 +31353,13 @@ mgr+0x3c = 14974827 ⇒ 解释①(当 VM 指针) 不可读 ✗ ⇒ 解释② get
 
 **判据**：① 同一 `enemy_id`+`slot` 在同 `frame` 出现 `k=0` 与 `k=1`；② 两者 `props08/0c` **±90° 对称**；
 ③ **中 boss（5 面，`life 13000`）的 FIRE 行出现**；④ C0 之后壳不再「只活几帧」。
+
+## §BE 详录 #246（2026-10-01）：调试键「108 = 无敌」（owner）
+
+**开关**：`YK_DEBUG_INVINCIBLE = 1`（调试用，发布前可关）；**键 = `I`（`0x49`）**（`sdk.h` 已用 A/S/C/D/SPACE/CONTROL/SHIFT，`I` 空闲）。
+**一手**：`CE_PLAYER_INVULN_TIMER` = **`player+0x47774`**（`zTimer{prev,cur,float}`；写点：复活 `0x45c35e`
+置 `{0x117,0x118,280.0}`、决死救回 60、炸弹各自置 —— `engine.h:448/509/510`）。
+**落笔**：每帧把 `cur` 刷到 `>= 60`（`YK_DEBUG_INVINCIBLE_MIN`）⇒ 只作用于**自机**，不动标志位/敌人/别的卡。
+**边沿**：`ce_key_down(0x49)` + 自记边沿（长按不连发）；**不吞键、不改键**。
+**日志**：`youkai/debug: INVINCIBLE ON/OFF (player+0x47774 cur>=60 per frame) - debug only, card 108`。
+**判据**：① 按键切换；② ON 时不掉命/不被击退/可穿弹幕；③ OFF 立刻恢复；④ 不影响其它输入与别的卡。
