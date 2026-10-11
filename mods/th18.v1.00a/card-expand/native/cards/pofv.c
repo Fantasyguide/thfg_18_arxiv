@@ -3198,8 +3198,8 @@ static void pofv_barrier_vm_sync(void)
         s_barrier_vm_glow = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
                              CE_ANM_ABILITY_SCRIPT_POFV109_BARRIER_RING, POFV_BARRIER_VM_LAYER_GLOW);   /* ★ owner 口径：黄环 = `drawRing(28,8,24)` ✓ */
     if (!s_barrier_vm_disc)
-        s_barrier_vm_disc = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
-                            CE_ANM_ABILITY_SCRIPT_POFV109_BARRIER_DISC, POFV_BARRIER_VM_LAYER_DISC);   /* 2026-10-11：整罩已烤进 446，这里留着同位置再平涂一次（无害）*/
+        /* 2026-10-11：整罩已烤进 446（含白心）=> 白盘 VM 不再起（否则两层白心叠着）。*/
+        s_barrier_vm_disc = 0;   /* 2026-10-11：整罩已烤进 446，这里留着同位置再平涂一次（无害）*/
     if (s_barrier_vm_glow) {
         vm_set_world_pos((uint32_t)s_barrier_vm_glow, p[0], p[1]);
         ce_anm_set_scale((uint32_t)s_barrier_vm_glow, k_glow, k_glow);
@@ -3242,6 +3242,19 @@ static void pofv_barrier_tick(void)
          *   ★ 下面那个 `pofv_barrier_nearest_bullet(...)` 只为**给位移定方向** ✓（★ 它**不消弹** ✗）⇒ 保留 ✓。
          *   ❓若你的意思是"**连无敌也不给**"（纯标识 ✓），★ 说一声我把 `ce_invuln_request` 那行也收了 ✓。*/
         int n = 0;
+        /* ★★★ 2026-10-11 owner：短周期重发（一手是"罩子侧不断重发同一支演出弹" ✓，
+         *   脚本 10 帧就完 ✓）—— 我原来是"起一次、6 帧淡出自删" ✗ ⇒ 中间会空 ✗。
+         *   ⇒ 这里每 8 帧重发一台 446（= 整罩烤图，含白心 ✓）。*/
+        {
+            static int s_re;
+            if (--s_re <= 0) {
+                if (s_barrier_vm_glow && ce_anm_get_vm((uint32_t)s_barrier_vm_glow))
+                    ce_anm_delete((uint32_t)s_barrier_vm_glow);
+                s_barrier_vm_glow = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
+                                        CE_ANM_ABILITY_SCRIPT_POFV109_BARRIER_RING, POFV_BARRIER_VM_LAYER_GLOW);
+                s_re = 8;
+            }
+        }
         pofv_barrier_vm_sync();   /* ★ 视觉：白圆 + 黄外发光（每帧跟随自机 ✓）*/
         if (n > 0) {
             s_barrier_on = 0;
