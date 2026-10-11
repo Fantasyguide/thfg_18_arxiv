@@ -2560,6 +2560,11 @@ static int   s_c1_dmg_ov[POFV_C1_SHOTS_PER_GROUP];
  *   ★ **停 4 帧**，★ 然后以 **14.0** 继续 ✓。
  *   ★ 判据（子 agent 只读到这儿）：★ **±16 内 + y 越过** ✓ ⇒ 本卡自己遍历敌机判 ✓
  *     （`CE_ENEMY_FOREACH` ✓；不用 `fabs` ⇒ 免 libm/x87 ✓）。*/
+/* ★★ 一手常量（我走**节表**读 ✓，`local/th19.v1.10c/th19.exe`）：
+ *   · `DAT_005aa30c` = **16.0** ✓ = 判据里的**水平线带宽 K** ✓；
+ *   · `DAT_005aa230` = **1.0** ✓  = **转向步长**（方向档位每帧 +1 ✓，共 4 帧 ⇒ 与 STOP_FRAMES 同值 ✓）。*/
+#define POFV_C1S_BAND        16.0f
+#define POFV_C1S_TURN_STEP    1.0f
 #define POFV_C1S_STOP_FRAMES   4
 #define POFV_C1S_RESUME_SPD  14.0f
 static int   s_c1_stop[POFV_C1_SHOTS_PER_GROUP];
@@ -2809,14 +2814,20 @@ static void pofv_c1_tick(void)
             {   uint8_t *em2 = CE_ENEMY_MGR(), *e2; int hit2 = 0;
                 CE_ENEMY_FOREACH(em2, e2) {
                     const float *ep = ce_enemy_pos(e2);
-                    /* ★★★ 2026-10-11 照一手补全 ✓（子 agent 原文：「±16 内 + y 越过」✓）：
-                     *   ★ 原来我只做了「x、y 都在 ±16 内」✗（少了「越过」那一半 ✓）。
-                     *   ★ 越过 = 这一帧子弹的 y **跨过了**敌机的 y ⇒ `(prev_y - ey) * (y - ey) <= 0` ✓
-                     *     （带符号相乘 ⇒ 变号即穿过 ✓；贴边恰好相等也算 ✓）。*/
+                    /* ★★★★ 2026-10-11 **照 TH19 一手订正** ✓（`FUN_0054c080` 反编译 ✓，
+                     *   `local/th19.v1.10c/decomp/all.c:246937` 起；owner 语义 ✓
+                     *   「当**水平方向**上发现敌人，**水平转向**」）：
+                     *   ★ 一手判据（原文）：
+                     *     · `enemy.y - K <= bullet.y <= enemy.y + K` ✓ = **同一水平线**（Y 在带内 ✓）
+                     *     · `bullet.x <= enemy.x - K || enemy.x + K <= bullet.x` ✓ = **横向有距离** ✓
+                     *   ★ 常量（我走**节表**读的 ✓）：`DAT_005aa30c` = **16.0** ✓。
+                     *   ⚠ ★ 我先前那句「±16 内 + **y 越过**」✗ **作废** ✓ —— 一手是**带（band）**，
+                     *     不是"这一帧跨过" ✗（那是子 agent 只读到一半的表述 ✓）。*/
                     const float ex = ep[0] - s_c1_x[t];
-                    const float ey_now = ep[1] - s_c1_y[t];
-                    const float ey_prev = ep[1] - s_c1_py[t];
-                    if (ex > -16.0f && ex < 16.0f && (ey_prev * ey_now) <= 0.0f) { hit2 = 1; break; }
+                    const float ey = ep[1] - s_c1_y[t];
+                    if (ey > -POFV_C1S_BAND && ey < POFV_C1S_BAND          /* ★ 同一水平线 ✓ */
+                        && (ex <= -POFV_C1S_BAND || ex >= POFV_C1S_BAND))  /* ★ 横向有距离 ✓ */
+                    { hit2 = 1; break; }
                 }
                 if (hit2) {
                     s_c1_stop[t] = POFV_C1S_STOP_FRAMES;      /* ★ 一手 ✓ 停 4 帧 */
