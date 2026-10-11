@@ -868,6 +868,7 @@ static void pofv_hud_chg_claim(void)
  *     · `ratio_chg` = **蓄力比例** ⇒ **左端白段**（叠在蓝上 ✓，规格 ②）。
  *   内部自带「**部分死 ⇒ 整组重建**（保生成序：底槽 → 蓝填充 → 白段 → 4 标 ✓）」；
  *   句柄全 0（首次 / 全被收走）⇒ 直接按同一顺序新建 ✓。 */
+static int pofv_barrier_have(void);   /* ★ 罩子「有没有」= 那个标识 VM `s_barrier_vm_disc` ✓；定义在后 ✓ */
 static void pofv_hud_charge_bar(float fx, float fy, float ratio_rei, float ratio_chg)
 {
     const float bx = fx + POFV_HUD_CHG_BORDER;
@@ -923,8 +924,22 @@ static void pofv_hud_charge_bar(float fx, float fy, float ratio_rei, float ratio
     if (s_hud_chg_fill_vm) {
         ce_anm_set_pos((uint32_t)s_hud_chg_fill_vm, bx, by, 0.0f);
         ce_anm_set_scale((uint32_t)s_hud_chg_fill_vm, fr * POFV_HUD_CHG_FILL_W, POFV_HUD_CHG_FILL_H);
-        ce_anm_set_color((uint32_t)s_hud_chg_fill_vm, tdim | (POFV_HUD_CHG_FILL_COL & 0xffffffu));
-        ce_anm_set_color2((uint32_t)s_hud_chg_fill_vm, tdim | (POFV_HUD_CHG_FILL_COL & 0xffffffu));
+        /* ★★ #4 **一手行为**（owner 2026-10-11 ✓）：
+         *   「当**能放 C3 / C4、但没有罩子**的时候，条的**蓝色部分就会开始闪烁**，
+         *     催促你该开 C3 C4 蓄罩子了」✓
+         *   ⇒ ★ 判据 = **蓄力 ≥ C3 阈值** ✓（= 够得着 C3/C4 ✓）**且** ★ **罩子不在** ✓
+         *     （★ 罩子的"有/无"就是**那个标识 VM** `s_barrier_vm_disc` ✓ —— ★ owner：
+         *      「它只是**一个标识我有罩子保护的 VM**」✓，★ **没有碰撞箱** ✓）
+         *   ⇒ ★ 闪烁 = 每 **10 帧**一轮（★ 沿用标签那套节奏 ✓），★ 亮/暗只改**顶点色 alpha** ✓。*/
+        {
+            const uint32_t base = tdim | (POFV_HUD_CHG_FILL_COL & 0xffffffu);
+            const uint32_t dim  = (0x40u << 24) | (POFV_HUD_CHG_FILL_COL & 0xffffffu);
+            const int urge = (s_aura_charge >= 1700.0f)   /* = POFV_C3_THRESH ✓（宏在后 ⇒ 用字面量 ✓）*/
+                          && !pofv_barrier_have()
+                          && (((s_card_frames / 10) & 1) != 0);
+            ce_anm_set_color((uint32_t)s_hud_chg_fill_vm, urge ? dim : base);
+            ce_anm_set_color2((uint32_t)s_hud_chg_fill_vm, urge ? dim : base);
+        }
     }
     /* ③ **白段 = 蓄力比例**（规格 ② ✓）：同一左端、**叠在蓝上** ✓ */
     if (s_hud_chg_white_vm) {
@@ -1168,7 +1183,13 @@ static int pofv_aura_key(void)
 /* ⚠ 2026-10-11 owner 第二次实跑：「**蓄力速度还是快**」✗ ⇒ ★ 再降一半以上 ⇒ **5/帧** ✓
  *   （= 一手 `20/帧` 的 **1/4** ✓；★ 满 `M=500` 约 **100 帧 ≈ 1.7 s** ✓、★ 满 2500 约 **500 帧 ≈ 8.3 s** ✓）。
  *   ★ 一手那 20 是"源满格"的值 ✗，本卡开局 `M` 只有 500 ✓ ⇒ 手感上确实该更慢 ✓（★ 仍是 ❓自定旋钮 ✓）。*/
-#define POFV_CHG_RATE_AT_SRC_MAX 5.0f
+/* ★★ 2026-10-11 owner **实测**：★ 兽王园一手「**从 0 到满蓄力 2500 的时间 = 4.167 s**」✓✓
+ *   ⇒ ★ `4.167 × 60 = 250 帧` ✓ ⇒ ★★ **2500 ÷ 250 = `10/帧`** ✓✓
+ *   （★ owner 补：「由于代码设置的**人为性**，这肯定对应一些**整数**」✓ —— ★ 正是 **250 帧** ✓！）
+ * ⇒ ★ 于是**涨率 = 10/帧** ✓ —— ★ 这不是手感猜测 ✗，★ 是你的**实测** ✓。
+ * ⚠ 我此前的两次都错 ✗：★ 先 20（★ 从反编译的 `2 ×` 误读来 ✗）、★ 后被手感误导砍成 5 ✗
+ *   ⇒ ★ 现在以**实测**为准 ✓（★ 与 `clamp(源,0,200) × 10/100` 在**源 = 100** 时**完全一致** ✓）。*/
+#define POFV_CHG_RATE_AT_SRC_MAX 10.0f
 /* ★★★★ 2026-10-10 owner（**上限量 = 灵力**，一手 `S+0x24` 的等价物 ✓）：一手 `S+0x24` 的**初值**
  *   = `clamp(S+0x28,0,2500)` = **C1 阈值**（不是 0 ✗）；拾道具 `+= 15 × clamp(S+0x98,0,100)/100`；
  *   当前蓄力 `AuraCtrlInf+0x94/+0x98` 的**上限**就是它 ✓。
@@ -2765,6 +2786,9 @@ static void pofv_barrier_dir_from(float dx, float dy)
     s_barrier_dx = s_c2_dir36[bi][0];
     s_barrier_dy = s_c2_dir36[bi][1];
 }
+
+/* ★ 罩子「有没有」✓：★ 就是那个**标识 VM** ✓ —— owner：「它只是**一个标识我有罩子保护的 VM**」✓，★ 没有碰撞箱 ✓。*/
+static int pofv_barrier_have(void) { return s_barrier_vm_disc != 0; }
 
 static void pofv_barrier_clear(void)
 {
