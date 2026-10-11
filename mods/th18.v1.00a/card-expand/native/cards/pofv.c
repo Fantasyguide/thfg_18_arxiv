@@ -1152,7 +1152,10 @@ static int pofv_aura_key(void)
  *   ⚠ 我上一版按 owner 的"太快"把它砍成 **10** ✗ —— ★ 那是**手感猜测** ✓，★ 现已被代码推翻 ✓
  *     ⇒ ★ **恢复 20** ✓。（"太快"的真因见 TUNING：★ 一手还有「**阶段消费**」✓ ——
  *     发一档要扣 `阈值 − 上限` ✓，★ 本卡没实现 ⇒ 才会一直顶在 `M` 上不动 ✓。）*/
-#define POFV_CHG_RATE_AT_SRC_MAX 20.0f
+/* ⚠ 2026-10-11 owner 第二次实跑：「**蓄力速度还是快**」✗ ⇒ ★ 再降一半以上 ⇒ **5/帧** ✓
+ *   （= 一手 `20/帧` 的 **1/4** ✓；★ 满 `M=500` 约 **100 帧 ≈ 1.7 s** ✓、★ 满 2500 约 **500 帧 ≈ 8.3 s** ✓）。
+ *   ★ 一手那 20 是"源满格"的值 ✗，本卡开局 `M` 只有 500 ✓ ⇒ 手感上确实该更慢 ✓（★ 仍是 ❓自定旋钮 ✓）。*/
+#define POFV_CHG_RATE_AT_SRC_MAX 5.0f
 /* ★★★★ 2026-10-10 owner（**上限量 = 灵力**，一手 `S+0x24` 的等价物 ✓）：一手 `S+0x24` 的**初值**
  *   = `clamp(S+0x28,0,2500)` = **C1 阈值**（不是 0 ✗）；拾道具 `+= 15 × clamp(S+0x98,0,100)/100`；
  *   当前蓄力 `AuraCtrlInf+0x94/+0x98` 的**上限**就是它 ✓。
@@ -5488,7 +5491,11 @@ static int on_tick_2(ce_card_t *c)
              *   （`bx = fx + BORDER` ✓，见 `pofv_hud_charge_bar` ✓）
              *   ⇒ ★ **居中只需改这一个数** ✓ —— ★ 底槽/条/刻度/标签**一起居中** ✓（★ 不会互相错位 ✓）。
              *   ★ 原值 = `s_hud_chg_slot.x`（申领槽左沿 = 跟随货架 ✗）；★ 一手是跟随自机 ✗ ⇒ 两者都**偏离一手** ✓。*/
-            const float fx = (POFV_HUD_SCREEN_W_SURF - POFV_HUD_CHG_BLOCK_W_SURF) * 0.5f;
+            /* ⚠ 2026-10-11 owner 实跑：「**它现在很靠右，画出去了**」✗ ⇒ ★ "整屏 1280 居中"这个理解**不对** ✗
+             *   （★ 坐标空间不是 1280 宽 ✓）⇒ ★ 改成 **在申领到的槽内居中** ✓ —— ★ 槽本身就是"安全可画区" ✓
+             *   ⇒ ★ 居中且**一定在屏内** ✓。★ 仍是 ❓自定（一手跟随自机 ✗）。*/
+            const float fx = s_hud_chg_slot.x
+                           + (s_hud_chg_slot.w - POFV_HUD_CHG_BLOCK_W_SURF) * 0.5f;
             const float fy = s_hud_chg_slot.y - POFV_HUD_CHG_BLOCK_H_SURF;   /* 块底对齐 ✓ */
             pofv_hud_charge_bar(fx, fy, ratio_rei, ratio_chg);
         }
