@@ -1904,6 +1904,16 @@ static const pofv_c1_shot_t s_c1_table[POFV_C1_GROUPS][POFV_C1_SHOTS_PER_GROUP] 
  * ⚠ 伤害源**每帧按当前位置重新发**（= 本卡暴风 `storm_hit_clipped` 的既有套路 ✓），
  *   故单帧 `life` 给 2（≈ 等效一个"跟着弹走"的源 ✓）；见 `pofv_c1_tick()`。*/
 #define POFV_C1_HIT_LIFE   2
+/* ★★ C1 的**两段运动**（一手 plNN.sht tick = `0x54b380`，灵梦 set10 的 `+0x4c = 8` ⇒ 表 `0x5a0400[8]`）：
+ *   `cmp [ecx+0x1c], 0x78`（= **120** 帧）⇒
+ *     · **age < 120**：`速度 -= [0x5aa228]`（= **0.95**）且夹在 `[0x5aa1f4]`（= **0.2**）⇒ 停在 0.2 不动 ✓
+ *     · **age >= 120**：`速度 += [0x5aa1f4]`（= **0.2**）⇒ **重新出发** ✓
+ *   ⇒ ★ 正是 owner 口述的「在发射点前一个距离**停下**、**停很长时间**，然后**再向前运动**」✓
+ *   ★ 一手**没有撞墙反弹** ✗（`EX_BOUNCE` 是 **TH16** 的 ECL 概念，见 `engine/ecl/th16/ECL-info.md`）⇒ 本卡那条删掉 ✓。*/
+#define POFV_C1_DECEL       0.95f   /* ★ 一手 0x5aa228 = 0.95 ✓ */
+#define POFV_C1_HOLD_SPD    0.2f    /* ★ 一手 0x5aa1f4 = 0.2 ✓（停住的下限）*/
+#define POFV_C1_HOLD_AT       120   /* ★ 一手 `cmp [ecx+0x1c], 0x78` = 120 帧 ✓ */
+#define POFV_C1_REACCEL     0.2f    /* ★ 一手 同上那个 0.2 ✓（重新出发的加速度）*/
 #define POFV_C1_HIT_W      30.0f   /* ★ owner Q4：= 一手弹体 30x30 ✓ */
 #define POFV_C1_HIT_H      30.0f
 #define POFV_C1_BULLET_LIFE 999          /* ★ 一手 ✓（`pl00.sht` 第 10 项的寿命 = 999）；
@@ -2392,6 +2402,7 @@ static void power_vm_sync(void)
 static int s_c1_live[POFV_C1_SHOTS_PER_GROUP];      /* 每行一发：-1 = 空 */
 static float s_c1_x[POFV_C1_SHOTS_PER_GROUP], s_c1_y[POFV_C1_SHOTS_PER_GROUP];
 static float s_c1_vx[POFV_C1_SHOTS_PER_GROUP], s_c1_vy[POFV_C1_SHOTS_PER_GROUP];
+static float s_c1_spd[POFV_C1_SHOTS_PER_GROUP];   /* ★ 标量速度（一手 `shot+0x6c` ✓，两段运动改它 ✓）*/
 static int s_c1_age[POFV_C1_SHOTS_PER_GROUP];
 static int s_c1_bounce[POFV_C1_SHOTS_PER_GROUP];   /* ★ 一手 `EX_BOUNCE`：已撞墙次数 ✓ */
 static int32_t s_c1_vm[POFV_C1_SHOTS_PER_GROUP];
@@ -2425,8 +2436,9 @@ static void pofv_c1_fire(void)
         if (di < 0) di += 36;
         s_c1_x[t] = pp[0] + r->x;
         s_c1_y[t] = pp[1] + r->y;
-        s_c1_vx[t] = s_c2_dir36[di][0] * r->spd;
-        s_c1_vy[t] = s_c2_dir36[di][1] * r->spd;
+        s_c1_vx[t] = s_c2_dir36[di][0];      /* ★ 单位方向（速度另存 ⇒ 两段运动只改标量 ✓）*/
+        s_c1_vy[t] = s_c2_dir36[di][1];
+        s_c1_spd[t] = r->spd;                 /* ★ 一手：初始速度来自弹表（灵梦 14 ✓）*/
         s_c1_age[t] = 0;
         s_c1_bounce[t] = 0;
         s_c1_live[t] = 1;
@@ -2448,19 +2460,17 @@ static void pofv_c1_tick(void)
     for (t = 0; t < POFV_C1_SHOTS_PER_GROUP; ++t) {
         float pos[3];
         if (!s_c1_live[t]) continue;
-        s_c1_x[t] += s_c1_vx[t];
-        s_c1_y[t] += s_c1_vy[t];
-        ++s_c1_age[t];
-        /* ★★ 一手 `EX_BOUNCE`（type 64、**4 次**、★ `walls = 13` = **上|左|右** ✓）：
-         *   撞到这三面就**反弹**（速度分量取反 ✓），最多 4 次；★ **下边不弹** ✗（一手 walls 没有"下" ✓）
-         *   —— 撞下边或次数用完就正常出屏收掉 ✓。*/
-        if (s_c1_bounce[t] < POFV_C1_BOUNCE_MAX) {
-            int hit = 0;
-            if ((POFV_C1_BOUNCE_MASK & 4) && s_c1_x[t] < -POFV_FIELD_HALF_W) { s_c1_x[t] = -POFV_FIELD_HALF_W; s_c1_vx[t] = -s_c1_vx[t]; hit = 1; }
-            if ((POFV_C1_BOUNCE_MASK & 8) && s_c1_x[t] >  POFV_FIELD_HALF_W) { s_c1_x[t] =  POFV_FIELD_HALF_W; s_c1_vx[t] = -s_c1_vx[t]; hit = 1; }
-            if ((POFV_C1_BOUNCE_MASK & 1) && s_c1_y[t] < 0.0f)                 { s_c1_y[t] = 0.0f;                 s_c1_vy[t] = -s_c1_vy[t]; hit = 1; }
-            if (hit) ++s_c1_bounce[t];
+        /* ★★ 一手 `0x54b380` 两段运动 ✓：age < 120 ⇒ 减速（下限 0.2）；age ≥ 120 ⇒ 重新加速 ✓ */
+        if (s_c1_age[t] < POFV_C1_HOLD_AT) {
+            s_c1_spd[t] -= POFV_C1_DECEL;
+            if (s_c1_spd[t] < POFV_C1_HOLD_SPD) s_c1_spd[t] = POFV_C1_HOLD_SPD;
+        } else {
+            s_c1_spd[t] += POFV_C1_REACCEL;
         }
+        s_c1_x[t] += s_c1_vx[t] * s_c1_spd[t];
+        s_c1_y[t] += s_c1_vy[t] * s_c1_spd[t];
+        ++s_c1_age[t];
+        /* ★★ 2026-10-11 照一手删掉**撞墙反弹** ✗ —— 一手没有这条 ✓（见上面常量区的说明 ✓）*/
         if (s_c1_x[t] < -POFV_FIELD_HALF_W || s_c1_x[t] > POFV_FIELD_HALF_W ||
             s_c1_y[t] < 0.0f || s_c1_y[t] > POFV_FIELD_H || s_c1_age[t] >= POFV_C1_BULLET_LIFE) {
             if (s_c1_vm[t]) { ce_anm_delete((uint32_t)s_c1_vm[t]); s_c1_vm[t] = 0; }

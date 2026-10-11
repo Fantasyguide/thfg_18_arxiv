@@ -4,14 +4,14 @@
 ★★★ 一手出处（本脚本是**切图**，不是自绘）
 ────────────────────────────────────────
 一手：TH19 v1.10c `pl00.anm` 的 **script10**（= 灵梦 C1 那 4 发用的脚本）里写的是
-      `sprite(sprite38)`；该 anm 引用的贴图是 **`player/pl00/pl00.png`**，
+      `sprite(sprite38)`；该 anm 引用的贴图是 **`player/pl00/pl00s.png`**（★ 2026-10-11 订正：原写 pl00.png 是错的 ✗），
       而它的 entry 表写着 **`sprite38: { x: 1, y: 81, w: 30, h: 30 }`**。
 ⇒ 本脚本就是**从那张图切 (1,81,30,30)**，**1:1 原生切图、不改色**。
 源（在 gitignored 的 `local/`，构建时取）：
-  local/th19.v1.10c/anm/pl00f/player/pl00/pl00.png
+  local/th19.v1.10c/anm/pl00f/player/pl00/pl00s.png
   取法（见 HANDOFF-109-C1-C4.md §6.2）：
     thdat -x 19 local/th19.v1.10c/th19.dat pl00.anm
-    thanm -x 19 pl00.anm player/pl00/pl00.png      # ⚠ 它会误报 not found，但文件其实已导出
+    thanm -x 19 pl00.anm player/pl00/pl00s.png      # ⚠ 它会误报 not found，但文件其实已导出
 ⚠ 已知存疑：切出来**像灵梦的立绘碎片**（红白缎带），不像一颗"弹" —— 但那是**一手自己引用的**，
   照抄即可（见 HANDOFF-109-C1-C4.md §6.2 的记录）。
 """
@@ -25,7 +25,7 @@ for _ in range(8):
     if (_root / "local").is_dir():
         break
     _root = _root.parent
-SRC = _root / "local/th19.v1.10c/anm/pl00f/player/pl00/pl00.png"
+SRC = _root / "local/th19.v1.10c/anm/pl00f/player/pl00/pl00s.png"   # ★ 订正：pl00s.png ✓
 OUT = ROOT / "POFV109_C1_BULLET.png"   # ★ 文件名 = ORDER 的 NAME
                                        #   ⇒ anm 内部名 = `ability/POFV109_C1_BULLET.png` ✓
                                        #   （build_ability.py:459 就是这么拼的 ✓）
