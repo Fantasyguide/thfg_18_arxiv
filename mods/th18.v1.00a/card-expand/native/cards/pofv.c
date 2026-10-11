@@ -2718,9 +2718,16 @@ static void pofv_c1_tick(void)
             }
         }
         /* ★★ 灵梦 C1 的**残影** ✓（一手 script12 ✓）：每帧在弹的位置补一台 ✓（卡侧驱动 ✓）。*/
+        /* ★★★ 2026-10-11 **先关掉**（阶段仪表定位 ✓）：★ 日志最后一行是 `[STAGE] 14`（= 这里 ✓），
+         *   ★ 而 `[STAGE] 15`（残影 tick ✓）**从没出现** ⇒ ★ **卡死就在 `pofv_c1_trail_spawn` 里** ✗
+         *   （最可能是 `ce_anm_spawn(433)` 在引擎里自旋 ✓）。
+         *   ⇒ ★ 先**整条关掉**做决定性验证 ✓：★ 若卡死消失 ⇒ 就是它 ✓，再换画法 ✓
+         *     （例：把残影交回脚本 `scriptNewRoot` ✓ / 或换一台常驻 VM 手动摆位置 ✓）。*/
+#if 0
         if (s_c1_kind[t] == 0 && s_c1_grp[t] == POFV_C1_GROUP_REI
             && (s_c1_age[t] % POFV_C1_TRAIL_EVERY) == 0)
             pofv_c1_trail_spawn(s_c1_x[t], s_c1_y[t]);
+#endif
         if (s_c1_kind[t] == 1) {
             /* ★★ 一手 `0x54c830`（魔理沙 ✓）：★ **原地不动**，长度每帧 **+12**、封顶 **512**，
              *   ★ `age > 119` 收 ✓（贴图 256 宽 ⇒ `scale.x = 长度 / 256` ✓）。*/
