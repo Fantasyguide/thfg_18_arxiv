@@ -2648,7 +2648,8 @@ static void pofv_c1_fire(void)
                 s_c1_age[t] = 0; s_c1_bounce[t] = 0; s_c1_live[t] = 1;
                 s_c1_vm[t] = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
                                 CE_ANM_ABILITY_SCRIPT_POFV109_C1M_BEAM, POFV_C1_VM_LAYER);
-                if (s_c1_vm[t]) ce_anm_set_pos((uint32_t)s_c1_vm[t], s_c1_x[t], s_c1_y[t], 0.0f);
+                pofv_stage_set(23);   /* ★ 写位置前 */
+        if (s_c1_vm[t]) ce_anm_set_pos((uint32_t)s_c1_vm[t], s_c1_x[t], s_c1_y[t], 0.0f);
             }
         }
     }
@@ -2696,10 +2697,12 @@ static void pofv_c1_tick(void)
             if (s_c1_stop[t] > 0) {
                 --s_c1_stop[t];
                 if (s_c1_stop[t] == 0) s_c1_spd[t] = POFV_C1S_RESUME_SPD;   /* ★ 一手 ✓ 14.0 */
-                ++s_c1_age[t];
+                pofv_stage_set(22);   /* ★ 移动后/年龄前 */
+        ++s_c1_age[t];
                 if (s_c1_vm[t]) ce_anm_set_pos((uint32_t)s_c1_vm[t], s_c1_x[t], s_c1_y[t], 0.0f);
                 pos[0] = s_c1_x[t]; pos[1] = s_c1_y[t]; pos[2] = 0.0f;
-                ce_damage_rect(pos, 0.0f, POFV_C1_HIT_LIFE, (float)s_c1_dmg_ov[t],
+                pofv_stage_set(24);   /* ★ 伤害调用前 */
+        ce_damage_rect(pos, 0.0f, POFV_C1_HIT_LIFE, (float)s_c1_dmg_ov[t],
                                POFV_C1_HIT_W, POFV_C1_HIT_H);
                 continue;
             }
@@ -2754,10 +2757,12 @@ static void pofv_c1_tick(void)
         } else {
             s_c1_spd[t] += POFV_C1_REACCEL;
         }
+        pofv_stage_set(21);   /* ★ 移动前 */
         s_c1_x[t] += s_c1_vx[t] * s_c1_spd[t];
         s_c1_y[t] += s_c1_vy[t] * s_c1_spd[t];
         ++s_c1_age[t];
         /* ★★ 2026-10-11 照一手删掉**撞墙反弹** ✗ —— 一手没有这条 ✓（见上面常量区的说明 ✓）*/
+        pofv_stage_set(25);   /* ★ 出界检查前 */
         if (s_c1_x[t] < -POFV_FIELD_HALF_W || s_c1_x[t] > POFV_FIELD_HALF_W ||
             s_c1_y[t] < 0.0f || s_c1_y[t] > POFV_FIELD_H || s_c1_age[t] >= POFV_C1_BULLET_LIFE) {
             if (s_c1_vm[t]) { ce_anm_delete((uint32_t)s_c1_vm[t]); s_c1_vm[t] = 0; }
