@@ -2736,6 +2736,10 @@ static void pofv_c3_tick(void)
 #define POFV_BARRIER_PUSH       128.0f   /* ★ 一手 ✓ 位移单位 */
 #define POFV_BARRIER_PUSH_V     2.0f     /* ★ 一手 ✓ 初速（线性衰减到 0）*/
 static int32_t s_barrier_vm_disc;        /* ★ 内层：白圆（脚本 428）*/
+/* ★★ #5（owner ✓）：「**获取 109 的时候会给一个罩子**（对应 TH19 **开局给你一个罩子** ✓）」✓
+ *   ⇒ 卡侧：`clear_card()` 里把这个标志置 1 ✓（它同时覆盖 **构造 / 换局 / 重开** ✓，都是"重新拿到卡" ✓）
+ *     ⇒ ★ 等到 tick 里**自机存在**时再发 ✓（★ 构造那一瞬没有自机 ✗，不能直接起罩 ✓）。*/
+static int s_barrier_grant_pending;
 static int32_t s_barrier_vm_glow;        /* ★ 外层：黄外发光（脚本 429）*/
 static int   s_barrier_on;               /* 盾在不在 */
 static int   s_barrier_brk;              /* 破罩计时（>0 = 禁移 + 位移中）*/
@@ -2826,6 +2830,16 @@ static void pofv_barrier_vm_sync(void)
 }
 
 /* ★ 给盾（一手：C3/C4 才给；本卡先挂在结界张开上升沿 ❓）*/
+/* ★★ #5：★ tick 里消费"开局/获取时给一个罩" ✓（★ 有自机才发 ✓）。*/
+static void pofv_barrier_fire(void);   /* ★ 定义在后（`grant_tick` 要用它 ✓）*/
+static void pofv_barrier_grant_tick(void)
+{
+    const float *p = ce_player_pos();
+    if (!s_barrier_grant_pending || !p) return;
+    s_barrier_grant_pending = 0;
+    pofv_barrier_fire();
+}
+
 static void pofv_barrier_fire(void)
 {
     s_barrier_on = 1;
@@ -2834,6 +2848,7 @@ static void pofv_barrier_fire(void)
 /* ★ 每帧：盾挡 1 发 ⇒ 破罩；破罩后跑那三件事 */
 static void pofv_barrier_tick(void)
 {
+    pofv_barrier_grant_tick();   /* ★ #5：获取 109 ⇒ 给一个罩子 ✓ */
     const float *pp = ce_player_pos();
     if (!pp) return;
     if (s_barrier_on) {
@@ -3663,6 +3678,7 @@ static void clear_card(ce_card_t *c)
      *   句柄清 0 + 认领标记复位（活着的帧下一帧会重新认领/重建 ✓；`on_delete` 那条路 tick 已停也无妨 ✓）。*/
     if (s_hud_chg_track_vm) { ce_anm_delete((uint32_t)s_hud_chg_track_vm); s_hud_chg_track_vm = 0; }
     ce_hud_vm_text_clear(&s_hud_chg_lv_text);   /* ★ 铁律：文本 VM 也要收 ✓ */
+    s_barrier_grant_pending = 1;                /* ★ #5：重新拿到卡 ⇒ 再给一个罩 ✓ */
     if (s_hud_chg_fill_vm)  { ce_anm_delete((uint32_t)s_hud_chg_fill_vm);  s_hud_chg_fill_vm  = 0; }
     if (s_hud_chg_white_vm) { ce_anm_delete((uint32_t)s_hud_chg_white_vm); s_hud_chg_white_vm = 0; }
     { int i9; for (i9 = 0; i9 < POFV_HUD_CHG_TICKS; ++i9)
@@ -4794,7 +4810,12 @@ static int on_tick_2(ce_card_t *c)
          *   ⇒ ★ **与角色无关** ✓：本卡挂在 **C3 / C4 的阈值**上 ✓（★ 所以放在**角色门之外** ✓
          *   —— 魔理沙/早苗的 C3/C4 还没做，但"蓄到这一档就回罩"是通的 ✓）。*/
         if (s_aura_charge >= c3_at) {
-            if (!s_barrier_lv) { pofv_barrier_fire(); s_barrier_lv = 1; }
+            /* ★★ 触发点订正（owner #4 口径 ✓「**开 C3 C4 蓄罩子**」）：
+             *   原先挂在**结界张开的上升沿** ✗（那行旧注释自己就写着"等 C3/C4 做好后改成按阈值" ✓）
+             *   ⇒ 现在改按**蓄力到 C3 阈值**给盾 ✓（= 够得着 C3/C4 才能蓄罩 ✓，与一手一致 ✓）。*/
+            if (s_aura_charge >= POFV_C3_THRESH) {
+                if (!s_barrier_lv) { pofv_barrier_fire(); s_barrier_lv = 1; }
+            } else s_barrier_lv = 0;
         } else s_barrier_lv = 0;
 
         /* ★ ⑤ C3/C4 —— **早苗**分支（一手 = 刷 ExAttack2 子敌人；她的 ExtraAttack00 不存在
