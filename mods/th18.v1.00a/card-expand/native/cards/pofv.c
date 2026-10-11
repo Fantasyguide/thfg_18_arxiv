@@ -1968,6 +1968,9 @@ static const pofv_c1_shot_t s_c1_table[POFV_C1_GROUPS][POFV_C1_SHOTS_PER_GROUP] 
  * **** 32×32 ≈ 一手 30×30 的弹体 ✓（`pl00.anm` script10）；`life` = 到出屏为止的帧数上限。
  * ⚠ 伤害源**每帧按当前位置重新发**（= 本卡暴风 `storm_hit_clipped` 的既有套路 ✓），
  *   故单帧 `life` 给 2（≈ 等效一个"跟着弹走"的源 ✓）；见 `pofv_c1_tick()`。*/
+/* ★ goal ③：★ 自机弹的**离场宽限**（px ✓）—— ★ 让弹**飞出游戏区**再消失 ✓（owner：
+ *   「撞到边界就消失，看上去不太美观」✓）⇒ ★ 不再贴边即收 ✗。★ ❓数值待一手确认 ✓。*/
+#define POFV_C1_OFF_MARGIN   64.0f
 #define POFV_C1_HIT_LIFE   2
 /* ★★ C1 的**两段运动**（一手 plNN.sht tick = `0x54b380`，灵梦 set10 的 `+0x4c = 8` ⇒ 表 `0x5a0400[8]`）：
  *   `cmp [ecx+0x1c], 0x78`（= **120** 帧）⇒
@@ -3023,8 +3026,12 @@ static void pofv_c1_tick(void)
         ++s_c1_age[t];
         /* ★★ 2026-10-11 照一手删掉**撞墙反弹** ✗ —— 一手没有这条 ✓（见上面常量区的说明 ✓）*/
         pofv_stage_set(25);   /* ★ 出界检查前 */
-        if (s_c1_x[t] < -POFV_FIELD_HALF_W || s_c1_x[t] > POFV_FIELD_HALF_W ||
-            s_c1_y[t] < 0.0f || s_c1_y[t] > POFV_FIELD_H || s_c1_age[t] >= POFV_C1_BULLET_LIFE) {
+        /* ★★ goal ③（owner：「自机弹撞到边界就消失，不美观」✗）：★ 加**离场宽限** ✓ ⇒
+         *   弹**飞出去**再消失 ✓，不再贴边即收 ✗。★ ❓数值待一手确认（登记 TUNING ✓，一行可调 ✓）。*/
+        if (s_c1_x[t] < -(POFV_FIELD_HALF_W + POFV_C1_OFF_MARGIN) ||
+            s_c1_x[t] >  (POFV_FIELD_HALF_W + POFV_C1_OFF_MARGIN) ||
+            s_c1_y[t] < -POFV_C1_OFF_MARGIN ||
+            s_c1_y[t] >  (POFV_FIELD_H + POFV_C1_OFF_MARGIN) || s_c1_age[t] >= POFV_C1_BULLET_LIFE) {
             if (s_c1_vm[t]) {
                 /* ★★★ 2026-10-11 卡死根因 ✓：★ 这里的删除**原先没判活** ✗ —— 脚本自己会
                  *   `+8: delete()`（427）/`+20: delete()`（444）⇒ ★ 句柄早已**悬空** ✗ ⇒
@@ -3640,8 +3647,9 @@ static void pofv_c4_tick(void)
         b->x += s_c2_dir36[di][0] * b->spd;
         b->y += s_c2_dir36[di][1] * b->spd;
         ++b->age;
-        if (b->x < -POFV_FIELD_HALF_W || b->x > POFV_FIELD_HALF_W ||
-            b->y < 0.0f || b->y > POFV_FIELD_H || b->age >= POFV_C4_BULLET_LIFE) {
+        if (b->x < -(POFV_FIELD_HALF_W + POFV_C1_OFF_MARGIN) ||
+            b->x >  (POFV_FIELD_HALF_W + POFV_C1_OFF_MARGIN) ||
+            b->y < -POFV_C1_OFF_MARGIN || b->y > (POFV_FIELD_H + POFV_C1_OFF_MARGIN) || b->age >= POFV_C4_BULLET_LIFE) {
             if (b->vm) { ce_anm_delete((uint32_t)b->vm); b->vm = 0; }
             b->live = 0;
             continue;
@@ -3995,7 +4003,8 @@ static void pofv_c4m_tick(void)
         di = (int)(b->ang * (36.0f / 6.2831853f)) % 36; if (di < 0) di += 36;
         b->x += s_c2_dir36[di][0] * b->spd;
         b->y += s_c2_dir36[di][1] * b->spd;
-        if (b->x < -POFV_FIELD_HALF_W || b->x > POFV_FIELD_HALF_W ||
+        if (b->x < -(POFV_FIELD_HALF_W + POFV_C1_OFF_MARGIN) ||
+            b->x >  (POFV_FIELD_HALF_W + POFV_C1_OFF_MARGIN) ||
             b->y < 0.0f || b->y > POFV_FIELD_H) {
             if (b->vm) { ce_anm_delete((uint32_t)b->vm); b->vm = 0; }
             b->live = 0; continue;
@@ -4096,8 +4105,9 @@ static void pofv_c2s_tick(void)
         if (!b->live) continue;
         b->x += b->vx; b->y += b->vy;
         ++b->age;
-        if (b->x < -POFV_FIELD_HALF_W || b->x > POFV_FIELD_HALF_W ||
-            b->y < 0.0f || b->y > POFV_FIELD_H || b->age > b->life) {
+        if (b->x < -(POFV_FIELD_HALF_W + POFV_C1_OFF_MARGIN) ||
+            b->x >  (POFV_FIELD_HALF_W + POFV_C1_OFF_MARGIN) ||
+            b->y < -POFV_C1_OFF_MARGIN || b->y > (POFV_FIELD_H + POFV_C1_OFF_MARGIN) || b->age > b->life) {
             if (b->vm) { ce_anm_delete((uint32_t)b->vm); b->vm = 0; }
             b->live = 0; continue;
         }
