@@ -1325,6 +1325,7 @@
 #define CE_ANM_ABILITY_SPRITE_POFV109_C1S_F2        783   /* entry166 */
 #define CE_ANM_ABILITY_SPRITE_POFV109_C1S_F3        784   /* entry167 */
 #define CE_ANM_ABILITY_SPRITE_POFV109_C1S_HIT       785   /* entry168 */
+#define CE_ANM_ABILITY_SPRITE_POFV109_BARRIER_FULL  786   /* entry169 */
 #define CE_ANM_ABILITY_SPRITE_YOUKAI_ALICE_S11      415   /* 退役名 → RETIRED_BLANK（美术暂不进图集，见 ORDER.txt 退役段）*/
 #define CE_ANM_ABILITY_SPRITE_YOUKAI_ALICE_S12      415   /* 退役名 → RETIRED_BLANK（美术暂不进图集，见 ORDER.txt 退役段）*/
 #define CE_ANM_ABILITY_SPRITE_YOUKAI_ALICE_S13      415   /* 退役名 → RETIRED_BLANK（美术暂不进图集，见 ORDER.txt 退役段）*/

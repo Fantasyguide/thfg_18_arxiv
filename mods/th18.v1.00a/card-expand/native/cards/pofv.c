@@ -3199,7 +3199,7 @@ static void pofv_barrier_vm_sync(void)
                              CE_ANM_ABILITY_SCRIPT_POFV109_BARRIER_RING, POFV_BARRIER_VM_LAYER_GLOW);   /* ★ owner 口径：黄环 = `drawRing(28,8,24)` ✓ */
     if (!s_barrier_vm_disc)
         s_barrier_vm_disc = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
-                             CE_ANM_ABILITY_SCRIPT_POFV109_BARRIER_DISC, POFV_BARRIER_VM_LAYER_DISC);
+                            CE_ANM_ABILITY_SCRIPT_POFV109_BARRIER_DISC, POFV_BARRIER_VM_LAYER_DISC);   /* 2026-10-11：整罩已烤进 446，这里留着同位置再平涂一次（无害）*/
     if (s_barrier_vm_glow) {
         vm_set_world_pos((uint32_t)s_barrier_vm_glow, p[0], p[1]);
         ce_anm_set_scale((uint32_t)s_barrier_vm_glow, k_glow, k_glow);

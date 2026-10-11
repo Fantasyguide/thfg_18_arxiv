@@ -1306,3 +1306,4 @@ POFV109_C1S_F1               ability/POFV109_C1S_F1.png          62x14
 POFV109_C1S_F2               ability/POFV109_C1S_F2.png          62x14
 POFV109_C1S_F3               ability/POFV109_C1S_F3.png          62x14
 POFV109_C1S_HIT              ability/POFV109_C1S_HIT.png          14x14
+POFV109_BARRIER_FULL        ability/POFV109_BARRIER_FULL.png        72x72
