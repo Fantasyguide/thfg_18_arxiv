@@ -534,7 +534,7 @@ static int   s_boss_prev;   /* ★ owner 2026-10-05：boss 表 0→1 的**边沿
 #define POFV_HUD_PLAY_CX          320.0f   /* ★ 640×480 ×2 ✓（owner：「摆在屏幕的正中」✓）*/
 #define POFV_HUD_CHG_FILL_H      (POFV_HUD_CHG_BLOCK_H * POFV_HUD_CHG_X2)   /*   8 表面 px：填充区高（= 一手 4 ×2 ✓）*/
 /* ★ 底槽 = **比填充区每边大一圈**（`POFV_HUD_CHG_BORDER` 表面 px）—— 观感 = 深灰/暗的外沿 ✓。
- *   ❓ 自定（一手 script2 是 `drawRectBorder(224,4)` **白描边**；TH18 的 anm **没有** `drawRectBorder`
+ *   ❓ 自定（一手 script2 是 `drawRectBorder(224,4)` **白描边**；【★ 2026-10-11 订正 ✗】此前这里写「TH18 的 anm **没有** `drawRectBorder`」是**错的** ✓ —— `local/vendor/eclmap/anmmap/v8.anmm` 里 **`612 drawRectBorder # TH16+` 有名字** ✓；★ 另注：★ 没名字的更高 opcode（614+）也能用 **`ins_<数字>`** 形式汇编 ✓（掉名字 ≠ 编不了 ✓）
  *     （opcode 612 一用就崩，见 `123_season_gauge_frame.anm.txt` 头注）⇒ 本仓标准画法是「一块比底大的
  *     实心矩形 ⇒ 露出这一圈」；颜色取一手 script1 的**暗色**，**不再**用会每 8 帧闪的高亮色 ✗
  *     —— 那个「亮色实心大矩形」正是 owner 看到「很粗的条」的成因之一 ✓。已登记 `TUNING.md`）。*/
