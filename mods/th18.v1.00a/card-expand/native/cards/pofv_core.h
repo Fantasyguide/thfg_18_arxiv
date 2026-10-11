@@ -546,6 +546,11 @@ typedef struct {
      *     · 卡侧每帧同步（`pofv.c` 的 `power_vm_sync()`）负责**建 / 跟随 / 删** ✓；
      *     · `pofv_power_clear()` 也是 `memset` ⇒ **看不见 VM** ⇒ 卡侧必须先遍历删掉再调 ✓。*/
     int32_t vm;
+    /* ★★★ 2026-10-11 owner 口径（「灵力道具只有一种 = 那个透明小蓝点」✓）：
+     *   ★ 卡侧道具的**类别** ✓ —— ★ `0 = 普通 P 点` ✓、★ `1 = 灵力道具（蓝点）` ✓。
+     *   ★ 只有 `1` 被拾到时才进灵力 ✓（一手那 5 条来源都产出这一种 ✓）。
+     *   ★ 出生默认 0 ✓（池子 `memset` 过 ✓）⇒ 不改任何现有行为 ✓。*/
+    int32_t kind;
 } pofv_power_t;
 
 typedef struct {
@@ -566,6 +571,9 @@ void pofv_power_pool_init(pofv_power_pool_t *p);
 int32_t pofv_power_value_cancel(int32_t n_white, int32_t chain);
 
 /* 撒一颗（`value` = 面值；方向 = 随机 ±π、初速 = `rand×1.9+0.2`）。返回槽号，−1 = 池满。*/
+/* ★ 2026-10-11：卡侧生成道具前设它 ⇒ 打上类别（0 = 普通 P 点 ✓ / 1 = 灵力蓝点 ✓）*/
+extern int pofv_power_spawn_kind;
+
 int  pofv_power_spawn(pofv_power_pool_t *p, float x, float y, int32_t value, int32_t src);
 
 /* ★ 撒一颗**指定角/速**的（一手 `FUN_00521d60` 的实参；`ang` 单位弧度 ——

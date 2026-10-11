@@ -4,6 +4,10 @@
 #include "pofv_core.h"
 #include "broken_core_core.h"   /* ★ bc_atan2f：纯 SSE 确定性 atan2 ✓（`sdk.h:577` 说的 pofv_atan2 已不存在 ✗）*/
 
+/* ★★★ 2026-10-11：★ 「当前生成的道具类别」✓（卡侧在生成前设一下 ✓；默认 0 = 普通 P 点 ✓）。
+ *   ★ 为什么要这个：一手只有**一种**灵力道具（透明小蓝点 ✓），而卡侧道具原先**没有类别** ✗。*/
+int pofv_power_spawn_kind = 0;
+
 static int32_t clamp_i32(int32_t v, int32_t lo, int32_t hi)
 {
     if (v < lo) return lo;
@@ -922,6 +926,7 @@ static int power_take_slot(pofv_power_pool_t *p, float x, float y, int32_t value
         pofv_power_t *it = &p->s[i];
         if (it->active) continue;
         memset(it, 0, sizeof *it);
+        it->kind = pofv_power_spawn_kind;   /* ★ 2026-10-11 卡侧类别（默认 0）✓ */
         it->active = 1;
         it->x = x;
         it->y = y;
@@ -958,6 +963,7 @@ int pofv_power_spawn(pofv_power_pool_t *p, float x, float y, int32_t value, int3
 int pofv_power_spawn_dir(pofv_power_pool_t *p, float x, float y, int32_t value, int32_t src,
                          float ang, float spd)
 {
+    /* ★ 同 spawn：类别也带上 ✓ */
     int i;
     if (!p) return -1;
     i = power_take_slot(p, x, y, value, src);
