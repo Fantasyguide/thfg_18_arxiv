@@ -6425,12 +6425,19 @@ static void yk_gauge_hud_update(yk_card_t *s)
      *   所以**单开时 `s->hud` 恒等于 (68,928) ⇒ 画的位置一个像素不变**；
      *   只有**撞上别人/原生卡面**、分配器把它回退到货架时，整块才跟着让开。
      *   （空槽兜底也在认领处：拿不到时 `s->hud` = 声明锚点。）*/
+    /* ★★★ 2026-10-03z54（owner：「**确实 108 那还是往上来吧**」）——
+     *   108 的墨迹底部溢 8px（子智能体审计：数字画到 900、块底 892）⇒ **整体上移 8px**。
+     *   ⚠ 为什么不用 pin 的 y：本卡 pin 块（68..324）与**原生卡面**（68..116 × 864..924）
+     *     在 y 上重叠 ⇒ **pin 永远被拒、回退货架**（台账长期是 `(124,924)`）⇒ 改 pin 的 y
+     *     **不生效** ✗。这里改成**画面锚点偏移**：pin 路径与货架路径都上移 ✓。
+     *   微调口径：**−1 = 上移 1px**（就下面这一个数）。旧值留档：0（贴那条底线）。*/
+#define YK_HUD_ART_DY  (-8.0f)
     if (s->hud_ready && s->hud.w > 0.0f) {
         anchor[0] = s->hud.x;
-        anchor[1] = s->hud.y;
+        anchor[1] = s->hud.y + YK_HUD_ART_DY;      /* ★ z54：画面专用上移 */
     } else {
         anchor[0] = YK_GAUGE_BASE_X;
-        anchor[1] = YK_GAUGE_BASE_Y;
+        anchor[1] = YK_GAUGE_BASE_Y + YK_HUD_ART_DY;
     }
     yk_gauge_hud(s->gauge, anchor, CE_HUD_SURFACE_TO_640, &h);
     col = yk_gauge_color(s->gauge);
