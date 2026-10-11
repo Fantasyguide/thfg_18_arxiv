@@ -1178,7 +1178,8 @@ static int pofv_aura_key(void)
  *   ⚠ 我先前那两个 `0x2c`/`0x31` ✗ ★ 是**从 TH19 的反编译猜的** ✓，★ 而 TH19 的 id 与 TH18 **不同** ✗
  *     （★ 连 `animal.c` 里的 id 也标着是 **TH17** 的 ✓，★ 三个游戏各一张表 ✓）⇒ ★ 已作废 ✓。*/
 #define POFV_SE_CHARGE  0x1eu    /* ★ = `se_ch00.wav` ✓（owner 给的件 ✓，序号 30 ✓）*/
-#define POFV_SE_TIERUP  0x1fu    /* ★ = `se_ch01.wav` ✓（升到 C2 ✓；C3/C4 见下 ✓）*/
+/* ⚠ 曾经的 `POFV_SE_TIERUP`（`se_ch01` = `0x1f`）**已删** —— owner 订正：`se_ch0N` 这一族
+ *   的**使用处与 C1–C4 无关**，不能按档位铺 ⇒ 升档音音源未定，先不放（登记 TUNING 待查）。*/
 #define POFV_CHG_RATE_SRC_MAX  200.0f   /* ★ 一手 ✓ `clamp(S+0x88, 0, 200)` 的上界 */
 /* ★★ 2026-10-10 **一手实测定案**（owner 转来的核实 ✓，`FUN_004e79e0` 蓄力支 `0x4e7cec`–`0x4e7d29`）：
  *     `delta = 2 × ((v × 10) / 100) = v × 0.2`（每帧 ✓），`v = clamp(obj[+0x88], 0, 200)` ✓
@@ -4788,8 +4789,11 @@ static int on_tick_2(ce_card_t *c)
         {   static int s_tier_prev;
             const int t_now = ((s_aura_charge >= c1_at) ? 1 : 0) + ((s_aura_charge >= c2_at) ? 1 : 0)
                             + ((s_aura_charge >= c3_at) ? 1 : 0) + ((s_aura_charge >= c4_at) ? 1 : 0);
-            if (t_now > s_tier_prev)   /* ★ 一手：升档音**按档位递进** ✓（`se_ch01/02/03` = `0x1f/0x2a/0x2b` ✓）*/
-                ce_play_sound((t_now >= 4) ? 0x2bu : (t_now == 3) ? 0x2au : POFV_SE_TIERUP, ce_player_x());
+            /* ★★ 2026-10-11 owner 订正：「那些可能是一族蓄力音，但是**用到的地方和什么 C1 C4 一点关系没有**」
+             *   ⇒ 我先前把 `se_ch01/02/03`（`0x1f/0x2a/0x2b`）按 C2/C3/C4 **铺上去是自作主张**，已撤。
+             *   ⇒ 现在**只放 `se_ch00`（`0x1e`）那一支蓄力音**（owner 确认的件）。
+             *   ❓"一手升档另有音"这条（本仓早先记的）**音源未定** ⇒ 先不放，登记 TUNING 待查。*/
+            (void)t_now;
             /* ★ LV 计数（一手 ✓ `clamp(+1, 0, 7)`）：★ 新跨到 3 档 ⇒ C3 的 LV +1 ✓；★ 4 档 ⇒ C4 ✓ */
             if (t_now >= 3 && s_tier_prev < 3 && s_c3_lv_n < 7) ++s_c3_lv_n;
             if (t_now >= 4 && s_tier_prev < 4 && s_c4_lv_n < 7) ++s_c4_lv_n;
