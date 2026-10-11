@@ -1,0 +1,16 @@
+script script445 {
+    // 109 · 早苗 C1 的**命中爆闪** = 一手 `pl02.anm` **script8** ✓（逐条）
+    //   layer(13); type(1); sprite(sprite25); blendMode(1);
+    //   scale(0,0); scaleTime(4, 0, 3.0, 3.0); +8: scaleTime(4, 0, 0.0, 0.0); +4: delete();
+    //   ★ 贴图 = `pl02s.png` 的 sprite25 = `{17,1,14,14}` ✓（已原生切 ✓）。
+    sprite(@POFV109_C1S_HIT);
+    layer(6);                       // ❓一手 layer(13) ⇒ 本卡世界层 6
+    type(1);
+    blendMode(1);
+    scale(0.0f, 0.0f);
+    scaleTime(4, 0, 3.0f, 3.0f);
++8: // 8
+    scaleTime(4, 0, 0.0f, 0.0f);
++4: // 12
+    delete();
+}

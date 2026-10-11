@@ -1301,3 +1301,8 @@ POFV109_C_RING_STRIP         ability/cring/C_RING_STRIP.png           16x128
 POFV109_C2_ORB               ability/POFV109_C2_ORB.png           126x126
 POFV109_C1M_BEAM            ability/POFV109_C1M_BEAM.png          256x30
 POFV109_C1M_PART            ability/POFV109_C1M_PART.png           30x30
+POFV109_C1S_F0               ability/POFV109_C1S_F0.png          62x14
+POFV109_C1S_F1               ability/POFV109_C1S_F1.png          62x14
+POFV109_C1S_F2               ability/POFV109_C1S_F2.png          62x14
+POFV109_C1S_F3               ability/POFV109_C1S_F3.png          62x14
+POFV109_C1S_HIT              ability/POFV109_C1S_HIT.png          14x14

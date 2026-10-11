@@ -2473,13 +2473,16 @@ static void pofv_c1_fire(void)
         s_c1_grp[t] = grp;                              /* ★ 记组别（一手三人表不同 ✓）*/
         s_c1_kind[t] = (grp == POFV_C1_GROUP_MARISA) ? 1 : 0;
         s_c1_len[t] = 0.0f;
+        /* ★★ 三人各用**自己**的一手脚本 ✓（子 agent 核实 ✓）：灵梦 427（`pl00 script10` ✓）、
+         *   魔理沙 442（`pl01 script8` ✓）、早苗 **444**（`pl02 script7` ✓，四帧 62×14 龙条 ✓）。*/
         s_c1_vm[t] = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
                         (s_c1_kind[t] == 1) ? CE_ANM_ABILITY_SCRIPT_POFV109_C1M_BEAM
+                      : (s_c1_grp[t] == POFV_C1_GROUP_SANA) ? CE_ANM_ABILITY_SCRIPT_POFV109_C1S_SHOT
                                             : CE_ANM_ABILITY_SCRIPT_POFV109_C1_BULLET,
                         POFV_C1_VM_LAYER);
         if (s_c1_vm[t]) {
             ce_anm_set_pos((uint32_t)s_c1_vm[t], s_c1_x[t], s_c1_y[t], 0.0f);
-            ce_anm_set_scale((uint32_t)s_c1_vm[t], 1.0f, 1.0f);   /* ★ 贴图 = 一手 30x30 ⇒ 1:1 ✓ */
+            ce_anm_set_scale((uint32_t)s_c1_vm[t], 1.0f, 1.0f);   /* ★ 一手贴图原尺寸 ⇒ 1:1 ✓（灵梦 30×30 / 早苗 62×14 ✓）*/
             /* ★ C1 放出的是**弹**、不是消弹的火花 ⇒ 不染色 ✓。
              *   ★ 注：★ 各档的"消弹圈"**已改为一手原生的 `etbreak` 8 帧火花** ✓（脚本 431，
              *   在 `cancel_white_in_circle` 里**逐颗**放 ✓）—— ★ 早先那个自烤红环已废 ✗。*/

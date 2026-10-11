@@ -1,0 +1,46 @@
+script script444 {
+    // 109 · **早苗 C1 的弹** = 复刻 TH19 一手 `pl02.anm` **script7** ✓（逐条）
+    //   一手正文（`local/th19.v1.10c/_ext/pl02.txt`）：
+    //     layer(13); type(1); blendMode(1); zWriteDisable(1); rotateAuto(1); anchor(2, 0);
+    //     scale(0.0, 1.0); scaleTime(4, 0, 1.0, 1.0);
+    //     offset112: sprite(sprite30); +4: sprite31; +4: sprite32; +4: sprite33; +4: jmp(offset112, 0);
+    //     interruptLabel(2): +4: scaleTime(6, 0, 1.0, 1.0); +6: caseReturn();
+    //     interruptLabel(1): layer(15); anchor(2,0); blendMode(1); type(1); sprite(sprite30);
+    //                        scaleTime(20, 0, 0.0, 1.0); +20: delete();
+    //   ★ 贴图 = 一手 `player/pl02/pl02s.png` 的**四帧 62×14**：sprite30/31/32/33 ✓
+    //     （`{1,17}` / `{65,17}` / `{129,17}` / `{193,17}` ✓，已原生切成 4 张 ✓）。
+    //   ★ 这是"龙条"观感：四帧每 4 帧循环 + `anchor(2,0)` 左锚 ✓。
+    //   ★ `layer(13)` ⇒ 本卡世界层 6 ❓（TH19 层号与 TH18 不同 ✓）。
+    layer(6);
+    type(1);
+    blendMode(1);
+    zWriteDisable(1);
+    rotateAuto(1);
+    anchor(2, 0);
+    scale(0.0f, 1.0f);
+    scaleTime(4, 0, 1.0f, 1.0f);
+offset112:
+    sprite(@POFV109_C1S_F0);
++4: // 4
+    sprite(@POFV109_C1S_F1);
++4: // 8
+    sprite(@POFV109_C1S_F2);
++4: // 12
+    sprite(@POFV109_C1S_F3);
++4: // 16
+    jmp(offset112, 0);
+    interruptLabel(2);
++4: // 20
+    scaleTime(6, 0, 1.0f, 1.0f);
++6: // 26
+    caseReturn();
+    interruptLabel(1);
+    layer(6);
+    anchor(2, 0);
+    blendMode(1);
+    type(1);
+    sprite(@POFV109_C1S_F0);
+    scaleTime(20, 0, 0.0f, 1.0f);
++20: // 46
+    delete();
+}
