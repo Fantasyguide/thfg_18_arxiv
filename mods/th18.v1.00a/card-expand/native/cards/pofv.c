@@ -2568,7 +2568,9 @@ static int   s_c1_dmg_ov[POFV_C1_SHOTS_PER_GROUP];
 #define POFV_C1S_STOP_FRAMES   4
 #define POFV_C1S_RESUME_SPD  14.0f
 static int   s_c1_stop[POFV_C1_SHOTS_PER_GROUP];
-static float s_c1_py[POFV_C1_SHOTS_PER_GROUP];   /* ★ 上一帧的 y（判「越过」用 ✓，一手 ✓）*/
+static float s_c1_py[POFV_C1_SHOTS_PER_GROUP];
+static float s_c1_tx[POFV_C1_SHOTS_PER_GROUP], s_c1_ty[POFV_C1_SHOTS_PER_GROUP];   /* ★ 锁定的目标（一手 +0x100 ✓）*/
+static int   s_c1_turn[POFV_C1_SHOTS_PER_GROUP];   /* ★ 转向剩几步（一手 `+0x30` 累加器 ✓）*/   /* ★ 上一帧的 y（判「越过」用 ✓，一手 ✓）*/
 /* ★★★ 2026-10-11：★ C1 的**自转**改由卡侧每帧写 ✓（脚本里的 `jmp` 循环已撤 ✗ ——
  *   属于"TH18 anmm 语义与 TH19 不同"那一族 ✓）。★ 一手：27°/帧 = `0.4712389 rad` ✓。*/
 #define POFV_C1_SPIN_STEP 0.4712389f
@@ -2675,6 +2677,7 @@ static void pofv_c1_fire_range(int grp, int from, int cnt)
         s_c1_spd[t] = r->spd;                 /* ★ 一手：初始速度来自弹表（灵梦 14 ✓）*/
         s_c1_rot[t] = 0.0f;                   /* ★ 自转从 0 起 ✓ */
         s_c1_py[t] = s_c1_y[t];               /* ★ 越过判据的上一帧 y ✓ */
+        s_c1_turn[t] = 0; s_c1_tx[t] = 0.0f; s_c1_ty[t] = 0.0f;   /* ★ 转向状态 ✓ */
         s_c1_age[t] = 0;
         s_c1_bounce[t] = 0;
         s_c1_live[t] = 1;
@@ -2800,6 +2803,41 @@ static void pofv_c1_tick(void)
         if (s_c1_grp[t] == POFV_C1_GROUP_SANA && s_c1_kind[t] == 0) {
             if (s_c1_stop[t] > 0) {
                 --s_c1_stop[t];
+                /* ★★★ 一手 ✓「**水平转向**」：停住这几帧里，把方向**一档一档**转目标 ✓
+                 *   （一手：方向档位 `+0x34 += 步长(1.0)` ✓、共 4 帧到 `+0x30 == 4` ✓）。
+                 *   ★ 用卡里现成的 36 向表做档位步进 ✓（避免 `atan2` ✓；一手也是查表 ✓）。*/
+                if (s_c1_turn[t] > 0) {
+                    int cur = -1, tgt = -1, k2;
+                    for (k2 = 0; k2 < 36; ++k2) {
+                        if (cur < 0 && s_c1_vx[t] * s_c2_dir36[k2][0] + s_c1_vy[t] * s_c2_dir36[k2][1] > 0.9f) cur = k2;
+                    }
+                    {
+                        const float ddx = s_c1_tx[t] - s_c1_x[t], ddy = s_c1_ty[t] - s_c1_y[t];
+                        const float L = (ddx * ddx + ddy * ddy) > 0.0001f ? (ddx * ddx + ddy * ddy) : 1.0f;
+                        float bx = ddx / L * L, by = ddy / L * L;      /* 归一化前先避开开方 ✗ */
+                        float nx = ddx, ny = ddy;
+                        float mag = (nx * nx + ny * ny) > 0.0001f ? (nx * nx + ny * ny) : 1.0f;
+                        (void)bx; (void)by; (void)mag;
+                        /* ★ 用**符号**定档：先算目标落在哪个 10° 档（靠比较正负 + 表扫最近）✓ */
+                        {   int best = 0; float bestd = -2.0f;
+                            const float il = 1.0f / (mag > 0.0001f ? (mag > 0.0f ? 1.0f : 1.0f) : 1.0f);
+                            (void)il;
+                            for (k2 = 0; k2 < 36; ++k2) {
+                                const float d2 = (nx * s_c2_dir36[k2][0] + ny * s_c2_dir36[k2][1]);
+                                if (d2 > bestd) { bestd = d2; best = k2; }
+                            }
+                            tgt = best;
+                        }
+                    }
+                    if (cur < 0) cur = tgt;
+                    if (cur >= 0 && tgt >= 0 && cur != tgt) {
+                        int step2 = (s_c1_turn[t] >= 2) ? 2 : 1;
+                        int d2 = ((tgt - cur + 36) % 36);
+                        if (d2 > 18) { cur = (cur - step2 + 36) % 36; } else { cur = (cur + step2) % 36; }
+                        s_c1_vx[t] = s_c2_dir36[cur][0]; s_c1_vy[t] = s_c2_dir36[cur][1];
+                        --s_c1_turn[t];                    /* ★ 一手 ✓ 共 4 步 */
+                    }
+                }
                 if (s_c1_stop[t] == 0) s_c1_spd[t] = POFV_C1S_RESUME_SPD;   /* ★ 一手 ✓ 14.0 */
                 pofv_stage_set(22);   /* ★ 移动后/年龄前 */
         ++s_c1_age[t];
@@ -2811,7 +2849,7 @@ static void pofv_c1_tick(void)
                 continue;
             }
             pofv_stage_set(19);   /* ★ 早苗命中遍历（最可疑 ✓）*/
-            {   uint8_t *em2 = CE_ENEMY_MGR(), *e2; int hit2 = 0;
+            {   uint8_t *em2 = CE_ENEMY_MGR(), *e2; int hit2 = 0; float ep_tx = 0.0f, ep_ty = 0.0f;
                 CE_ENEMY_FOREACH(em2, e2) {
                     const float *ep = ce_enemy_pos(e2);
                     /* ★★★★ 2026-10-11 **照 TH19 一手订正** ✓（`FUN_0054c080` 反编译 ✓，
@@ -2827,12 +2865,16 @@ static void pofv_c1_tick(void)
                     const float ey = ep[1] - s_c1_y[t];
                     if (ey > -POFV_C1S_BAND && ey < POFV_C1S_BAND          /* ★ 同一水平线 ✓ */
                         && (ex <= -POFV_C1S_BAND || ex >= POFV_C1S_BAND))  /* ★ 横向有距离 ✓ */
-                    { hit2 = 1; break; }
+                    { hit2 = 1; ep_tx = ep[0]; ep_ty = ep[1]; break; }
                 }
                 if (hit2) {
                     s_c1_stop[t] = POFV_C1S_STOP_FRAMES;      /* ★ 一手 ✓ 停 4 帧 */
                     s_c1_spd[t] = 0.0f;                        /* ★ 一手 ✓ 速度清零 */
                     if (s_c1_vm[t]) ce_anm_interrupt((uint32_t)s_c1_vm[t], 2);   /* ★ 一手 ✓ 中断 2 */
+                    /* ★★ 一手 ✓：锁住时把**敌机坐标**抄进 `+0x100`（= 目标 ✓）—— 我先前漏了这一步 ✗。
+                     *   ★ 转向步数 = 4（= 一手的累加器到 4 恢复 ✓，与 STOP_FRAMES 同值 ✓）。*/
+                    s_c1_tx[t] = ep_tx; s_c1_ty[t] = ep_ty;
+                    s_c1_turn[t] = POFV_C1S_STOP_FRAMES;
                 }
             }
         }
