@@ -2679,7 +2679,15 @@ static void pofv_c1_fire(void)
         /* ★★ 2026-10-11 owner 实跑「**没在转**」✗ ⇒ ★ 自转**改回脚本里的 `angleVel`** ✓
          *   （一手就写在循环外 ⇒ 撤掉循环后正好是它的可达状态 ✓）；★ 卡侧这句撤掉 ✗
          *   （两套同时上会**双倍转速** ✓）。`s_c1_rot` 保留但不再写（留作将来用）。*/
-        s_c1_rot[t] += POFV_C1_SPIN_STEP;   /* ★★ owner 实跑两次「没在转」⇒ 只能用卡侧 ✓ */
+        s_c1_rot[t] += POFV_C1_SPIN_STEP;
+        if (t == 0 && s_c1_vm[0] && (s_c1_age[0] % 60) == 0) {
+            /* 旋转仪表：值 / 写入返回值 / 写完之后再读回来（看是不是被引擎抹掉）*/
+            int wr = ce_anm_set_rotation((uint32_t)s_c1_vm[0], 0.0f, 0.0f, s_c1_rot[0]);
+            uint8_t *vmr = ce_anm_get_vm((uint32_t)s_c1_vm[0]);
+            float back = vmr ? *(float *)(vmr + CE_ANM_VM_ROTATION + 8) : -999.0f;
+            ce_log("pofv: [SPIN] rot=%.3f wr=%d back=%.3f vm=%d", (double)s_c1_rot[0], wr,
+                   (double)back, (int)s_c1_vm[0]);
+        }
         if (s_c1_vm[t]) ce_anm_set_rotation((uint32_t)s_c1_vm[t], 0.0f, 0.0f, s_c1_rot[t]);
         if (s_c1_vm[t]) ce_anm_set_pos((uint32_t)s_c1_vm[t], s_c1_x[t], s_c1_y[t], 0.0f);
             }
@@ -5080,6 +5088,20 @@ static int on_tick_2(ce_card_t *c)
             if (tier_rel == 2) pofv_c2_fire();
             else if (tier_rel == 3) pofv_c3_fire();
             else if (tier_rel >= 4) pofv_c4_fire();
+            /* 2026-10-11：等级/计数/扣灵力全部跟着"真正放出去的那一档"走（不再在蓄力途中动）。
+             * 扣的量 = 该档阈值 - C1 阈值：C2 500 / C3 1200 / C4 2000（owner 问的那个数）。*/
+            if (tier_rel >= 2) {
+                const float cost = (tier_rel == 2) ? (POFV_C2_THRESH - POFV_C1_THRESH)
+                                 : (tier_rel == 3) ? (POFV_C3_THRESH - POFV_C1_THRESH)
+                                                   : (POFV_C4_THRESH - POFV_C1_THRESH);
+                s_reiryoku -= cost;
+                if (s_reiryoku < 0.0f) s_reiryoku = 0.0f;
+                if (tier_rel == 2) { if (s_c3_lv_n < 0) s_c3_lv_n = 0; }
+                if (tier_rel >= 3 && s_c3_lv_n < 7) ++s_c3_lv_n;
+                if (tier_rel >= 4 && s_c4_lv_n < 7) ++s_c4_lv_n;
+                if (tier_rel >= 3 && s_c3_uses < 999) ++s_c3_uses;
+                if (tier_rel >= 4 && s_c4_uses < 999) ++s_c4_uses;
+            }
         }
         s_chg_prev = chg_held;   /* 记录本帧状态，下一帧判沿 */
         s_c1_rel_latch = 1;
@@ -5200,20 +5222,20 @@ static int on_tick_2(ce_card_t *c)
              *   ❓"一手升档另有音"这条（本仓早先记的）**音源未定** ⇒ 先不放，登记 TUNING 待查。*/
             (void)t_now;
             /* ★ LV 计数（一手 ✓ `clamp(+1, 0, 7)`）：★ 新跨到 3 档 ⇒ C3 的 LV +1 ✓；★ 4 档 ⇒ C4 ✓ */
-            if (t_now >= 3 && s_tier_prev < 3 && s_c3_lv_n < 7) ++s_c3_lv_n;
-            if (t_now >= 4 && s_tier_prev < 4 && s_c4_lv_n < 7) ++s_c4_lv_n;
+            /* 2026-10-11 owner：蓄力途中灵力就掉了 => 这几项全部挪到松手那一下。*/
+            /* 2026-10-11 owner：蓄力途中灵力就掉了 => 这几项全部挪到松手那一下。*/
             /* ★ 一手 ✓ 使用计数（`S+0x4c` / `S+0x50`，clamp 0..999 ✓）*/
             /* ★★★ 2026-10-11 owner：「**扣的是灵力**」✓ + 问「能放 C4 但放了个 C2 扣多少」
              *   ⇒ ★ 一手规则（子 agent 复述）：★ 阶段 1 **不耗** ✓；★ 阶段 2/3/4 各扣
              *     **`该档阈值 − 上限`** ✓ —— ★ 按 owner 的模型"上限" = **C1 阈值 500** ✓
              *     ⇒ ★ **C2 扣 500 / C3 扣 1200 / C4 扣 2000** ✓（★ 只与**你放的那一档**有关 ✓，
              *     与灵力攒了多少无关 ✓ —— 这正是他问的那点 ✓）。*/
-            if (t_now >= 2 && s_tier_prev < 2) { s_reiryoku -= (POFV_C2_THRESH - POFV_C1_THRESH); }
-            if (t_now >= 3 && s_tier_prev < 3) { s_reiryoku -= (POFV_C3_THRESH - POFV_C1_THRESH); }
-            if (t_now >= 4 && s_tier_prev < 4) { s_reiryoku -= (POFV_C4_THRESH - POFV_C1_THRESH); }
-            if (s_reiryoku < 0.0f) s_reiryoku = 0.0f;   /* ★ 夹到 0 ✓ */
-            if (t_now >= 3 && s_tier_prev < 3 && s_c3_uses < 999) ++s_c3_uses;
-            if (t_now >= 4 && s_tier_prev < 4 && s_c4_uses < 999) ++s_c4_uses;
+            /* 2026-10-11 owner：蓄力途中灵力就掉了 => 这几项全部挪到松手那一下。*/
+            /* 2026-10-11 owner：蓄力途中灵力就掉了 => 这几项全部挪到松手那一下。*/
+            /* 2026-10-11 owner：蓄力途中灵力就掉了 => 这几项全部挪到松手那一下。*/
+            /* 2026-10-11 owner：蓄力途中灵力就掉了 => 这几项全部挪到松手那一下。*/
+            /* 2026-10-11 owner：蓄力途中灵力就掉了 => 这几项全部挪到松手那一下。*/
+            /* 2026-10-11 owner：蓄力途中灵力就掉了 => 这几项全部挪到松手那一下。*/
             s_tier_prev = t_now;
         }
         /* ★★ 2026-10-10：一手**三人**的 C2 完全不同（灵梦 = `EXReigekiInf` ✓ / 魔理沙 = 6 条
