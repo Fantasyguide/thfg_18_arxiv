@@ -1985,6 +1985,15 @@ static pofv_c2_t s_c2;
 static int s_aura_rise_prev;
 static int     s_chg_se_prev;    /* ★ 蓄力音（`0x2c`）的按下沿闩锁 ✓ */
 
+/* ★★ ② 三行字 + LV（owner：「蓄力到 C2、C3、C4 时上面会有 Skill / Ex Attack Lv n / Boss Lv n」✓）
+ * ★ 一手：阶段 3 的串 = "Ex.Attack Lv%d" ✓（05-four-mechanics.md）；阶段 4 = "Boss Lv%d" ✓
+ *   （★ exe 原文 0x596de8 = Boss Lv%d ✓，我读到了）。
+ * ★★ LV = 运行时计数（修正我先前"每局按难度常数" ✗）：S+0x38 = clamp(+1,0,7) ✓（阶段 3，0x4e8283）、
+ *   S+0x3c = clamp(+1,0,7) ✓（阶段 4，0x4e7b d4，独立）⇒ 卡侧每放一次 +1、clamp 0..7 ✓。
+ * ★ 画法：ce_hud_vm_text_set_font ✓（sdk.h:811）；坐标 = 640 空间 ✓；align_h 0 = 居中 ✓（sdk.h:774）。*/
+static ce_hud_vm_text_t s_hud_chg_lv_text;
+static int s_c3_lv_n, s_c4_lv_n;      /* ★ 阶段 3/4 等级（0..7 ✓，一手 +0x38/+0x3c ✓）*/
+
 /* 结界张开的上升沿（0→1 的那一帧返回 1；电平无变化返回 0）。C1 / C2 共用 ✓。*/
 static int pofv_aura_rise_edge(int held)
 {
@@ -3629,6 +3638,7 @@ static void clear_card(ce_card_t *c)
      *   `on_delete` / `on_run_reset` / `on_ctor` 三路都走本函数 ✓，不依赖 tick ✓）。
      *   句柄清 0 + 认领标记复位（活着的帧下一帧会重新认领/重建 ✓；`on_delete` 那条路 tick 已停也无妨 ✓）。*/
     if (s_hud_chg_track_vm) { ce_anm_delete((uint32_t)s_hud_chg_track_vm); s_hud_chg_track_vm = 0; }
+    ce_hud_vm_text_clear(&s_hud_chg_lv_text);   /* ★ 铁律：文本 VM 也要收 ✓ */
     if (s_hud_chg_fill_vm)  { ce_anm_delete((uint32_t)s_hud_chg_fill_vm);  s_hud_chg_fill_vm  = 0; }
     if (s_hud_chg_white_vm) { ce_anm_delete((uint32_t)s_hud_chg_white_vm); s_hud_chg_white_vm = 0; }
     { int i9; for (i9 = 0; i9 < POFV_HUD_CHG_TICKS; ++i9)
@@ -4724,6 +4734,9 @@ static int on_tick_2(ce_card_t *c)
             const int t_now = ((s_aura_charge >= c1_at) ? 1 : 0) + ((s_aura_charge >= c2_at) ? 1 : 0)
                             + ((s_aura_charge >= c3_at) ? 1 : 0) + ((s_aura_charge >= c4_at) ? 1 : 0);
             if (t_now > s_tier_prev) ce_play_sound(POFV_SE_TIERUP, ce_player_x());
+            /* ★ LV 计数（一手 ✓ `clamp(+1, 0, 7)`）：★ 新跨到 3 档 ⇒ C3 的 LV +1 ✓；★ 4 档 ⇒ C4 ✓ */
+            if (t_now >= 3 && s_tier_prev < 3 && s_c3_lv_n < 7) ++s_c3_lv_n;
+            if (t_now >= 4 && s_tier_prev < 4 && s_c4_lv_n < 7) ++s_c4_lv_n;
             s_tier_prev = t_now;
         }
         /* ★★ 2026-10-10：一手**三人**的 C2 完全不同（灵梦 = `EXReigekiInf` ✓ / 魔理沙 = 6 条
@@ -5202,6 +5215,28 @@ static int on_tick_2(ce_card_t *c)
                 s_hud_chg_slash_vm = (int32_t)hud_vm_spawn(CE_ANM_ABILITY_SCRIPT_HUD_GLYPH, bx, by - 56.0f);
             if (!s_hud_chg_max_vm)     /* 上限档 (+12,−28) → 表面 (+24,−56) ✓ ×2 */
                 s_hud_chg_max_vm   = (int32_t)hud_vm_spawn(CE_ANM_ABILITY_SCRIPT_HUD_GLYPH, bx + 24.0f, by - 56.0f);
+
+            /* ★★ ② 三行字（一手 ✓）：tier 2 ⇒ Skill ✓、tier 3 ⇒ Ex.Attack Lv n ✓、
+             *   tier 4 ⇒ Boss Lv n ✓；tier <= 1 ⇒ 清空（一手 C1 没有这行 ✓）。
+             *   坐标 = 原标签位（表面值 ÷2 ⇒ 640 空间 ✓）；颜色沿用既有 flash 闪 ✓。*/
+            {   const uint32_t col = flash ? 0xFF80FF80u : 0xFFFFFFFFu;
+                const int lv = (tier >= 4) ? s_c4_lv_n : s_c3_lv_n;
+                if (tier == 2)
+                    ce_hud_vm_text_set_font(&s_hud_chg_lv_text, bx * 0.5f, (by - 80.0f) * 0.5f,
+                                            col, 0, 1.0f, "Skill", "pofv109lv", 0);
+                else if (tier >= 3) {
+                    /* ★ 不引 `<stdio.h>` ✗：★ 手拼（★ `lv` = 0..7 ⇒ 一位数 ✓；★ 也免掉任何浮点格式化 ✓）*/
+                    char out[32];
+                    {   const char *pre = (tier >= 4) ? "Boss Lv" : "Ex.Attack Lv";
+                        int o = 0, k;
+                        for (k = 0; pre[k]; ++k) out[o++] = pre[k];
+                        out[o++] = (char)('0' + (lv % 10));
+                        out[o] = 0;
+                    }
+                    ce_hud_vm_text_set_font(&s_hud_chg_lv_text, bx * 0.5f, (by - 80.0f) * 0.5f,
+                                            col, 0, 1.0f, out, "pofv109lv", 0);
+                } else ce_hud_vm_text_clear(&s_hud_chg_lv_text);
+            }
             if (s_hud_chg_label_vm) {
                 ce_anm_set_pos((uint32_t)s_hud_chg_label_vm, bx, by - 80.0f, 0.0f);
                 ce_anm_set_scale((uint32_t)s_hud_chg_label_vm, 2.0f, 2.0f);   /* ★ 一手 640 空间 1:1 → 表面 ×2 ✓ */
