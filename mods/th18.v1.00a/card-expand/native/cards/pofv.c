@@ -2157,6 +2157,7 @@ static void pofv_c2_tick(uint32_t id)
             (void)c2_cancel_drop(pos, POFV_C2_POINT_CANCEL_R);      /* 半径 64 的消弹圈 ✓ */
             /* ★★ 可见物（一手 ✓）：★ 每点一台 `pl00.anm` script20 的复刻（脚本 434 ✓）——
              *   一手 tick 里这 3 台就是**跟着三个环绕点跑** ✓（`+10°/帧` ✓、半径见下 ✓）。*/
+            const int di_ang = di;
             if (i == 0) { s_c2_pt0x = pos[0]; s_c2_pt0y = pos[1]; }   /* ★ 环心用它 ✓ */
             if (!s_c2.orb_vm[i])
                 s_c2.orb_vm[i] = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
@@ -2164,6 +2165,10 @@ static void pofv_c2_tick(uint32_t id)
             if (s_c2.orb_vm[i]) {
                 ce_anm_set_pos((uint32_t)s_c2.orb_vm[i], pos[0], pos[1], 0.0f);
                 ce_anm_set_scale((uint32_t)s_c2.orb_vm[i], 1.0f, 1.0f);   /* ★ 一手 126×126 原尺寸 ✓ */
+                /* ★★ 2026-10-11 owner 实跑：「它**得转**」✗ ⇒ ★ 这 3 台要**跟着环绕角自转** ✓
+                 *   （一手 tick 里那 3 点的角就是 θ / θ+120 / θ+240 ✓，整体 +10°/帧 ✓）。*/
+                ce_anm_set_rotation((uint32_t)s_c2.orb_vm[i], 0.0f, 0.0f,
+                                    (float)di_ang * (6.2831853f / 36.0f));
             }
             if (s_c2.age % POFV_C2_POINT_HIT_EVERY == 0)            /* 每 5 帧一个伤害源 ✓ */
                 (void)storm_hit_clipped(pos[0], pos[1], POFV_C2_POINT_HIT_R, POFV_C2_POINT_HIT_DMG);
@@ -2174,6 +2179,14 @@ static void pofv_c2_tick(uint32_t id)
         const float r = POFV_C2_RING_R0
                       + (POFV_C2_RING_R1 - POFV_C2_RING_R0)
                         * (float)(s_c2.age - POFV_C2_POINT_END) / POFV_C2_RING_FRAMES;
+        /* ★★ 一手 ✓：★ **age == 45**（= `POFV_C2_POINT_END`）时把 3 台可见物 `anm 中断 1` ✓
+         *   ⇒ ★ 触发 434 的 `interruptLabel(1)` 分支：**喷 24/26/28 各 2 台 + 白色爆发 22** ✓
+         *   = owner 说的「**然后"炸"**，还得有光效」✓（原来我**从没打断过**它们 ✗）。*/
+        if (s_c2.age == POFV_C2_POINT_END) {
+            int k4;
+            for (k4 = 0; k4 < POFV_C2_POINTS; ++k4)
+                if (s_c2.orb_vm[k4]) ce_anm_interrupt((uint32_t)s_c2.orb_vm[k4], 1);
+        }
         c2_ring_vm_sync(r);   /* ★ 圆心 = 第 1 个环绕点 ✓（一手 ✓）*/   /* ★★ 范围圈：每帧按**真实消弹半径**写 `scale.y`（判定=绘制 ✓）*/
         float pos[3];
         pos[0] = s_c2_pt0x; pos[1] = s_c2_pt0y; pos[2] = 0.0f;   /* ★ 一手：环心 = 第 1 个环绕点 ✓（原为自机 ✗）*/
