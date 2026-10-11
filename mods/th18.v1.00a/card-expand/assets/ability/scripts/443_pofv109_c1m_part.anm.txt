@@ -1,0 +1,23 @@
+script script443 {
+    // 109 · 魔理沙 C1 光束的**子粒子** = 一手 `pl01.anm` **script9** ✓（逐条）
+    //   layer(13); type(1); alpha(224); blendMode(1); angleVel(0,0,0.5067085);
+    //   sprite(sprite30 = `pl01s.png {49,49,30,30}` ✓);
+    //   offset80: scaleTime(4,9,1,1); +4: scaleTime(4,9,0.5,0.5); +4: jmp(offset80,0);
+    //   interruptLabel(1): scaleTime(8,1,0,0); +8: delete();
+    sprite(@POFV109_C1M_PART);
+    layer(6);                       // ❓一手 layer(13) ⇒ 本卡世界层 6
+    type(1);
+    alpha(224);
+    blendMode(1);
+    angleVel(0.0f, 0.0f, 0.5067085f);
+offset80:
+    scaleTime(4, 9, 1.0f, 1.0f);
++4: // 4
+    scaleTime(4, 9, 0.5f, 0.5f);
++4: // 8
+    jmp(offset80, 0);
+    interruptLabel(1);
+    scaleTime(8, 1, 0.0f, 0.0f);
++8: // 16
+    delete();
+}

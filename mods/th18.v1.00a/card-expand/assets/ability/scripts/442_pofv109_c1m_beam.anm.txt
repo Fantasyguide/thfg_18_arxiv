@@ -1,0 +1,39 @@
+script script442 {
+    // 109 · **魔理沙 C1 的光束** = 复刻 TH19 一手 `pl01.anm` **script8** ✓（逐条）
+    //   一手正文（`local/th19.v1.10c/_ext/pl01.txt`）：
+    //     scriptNew(script9); layer(15); sprite(sprite29); type(1); anchor(1, 0);
+    //     scale(1.0, 0.0); scaleTime(4, 1, 1.0, 1.0); alpha(220); blendMode(1); rotateAuto(1);
+    //     fset(%F0, %RANDF); scrollX(%F0); +1: scrollX(-0.04761905f); stop();
+    //     interruptLabel(2): colorTime(8,0,160,160,255); caseReturn();
+    //     interruptLabel(3): colorTime(2,0,255,255,255); caseReturn();
+    //     interruptLabel(1): scaleTime(8, 1, 1.0, 0.0); +8: delete();
+    //   ★ 贴图 = `player/pl01/pl01s.png` 的 sprite29（声明 `{1,145,510,30}`，**贴图只有 256 宽**
+    //     ⇒ 引擎**横向回绕** ✓，正对上 `scrollX` ✓）⇒ ★ 原生切 **256×30 那一片** ✓。
+    //   ★ 长度由**卡侧**给（一手 = `shot+0xb0` 每帧 +12 伸到 512 ✓，见卡里注释 ✓）。
+    //   ★ `layer(15)` ⇒ 本卡世界层 6 ❓（TH19 层号与 TH18 不同 ✓）。
+    scriptNew(script443);
+    layer(6);
+    sprite(@POFV109_C1M_BEAM);
+    type(1);
+    anchor(1, 0);
+    scale(1.0f, 0.0f);
+    scaleTime(4, 1, 1.0f, 1.0f);
+    alpha(220);
+    blendMode(1);
+    rotateAuto(1);
+    fset(%F0, %RANDF);
+    scrollX(%F0);
++1: // 1
+    scrollX(-0.04761905f);
+    stop();
+    interruptLabel(2);
+    colorTime(8, 0, 160, 160, 255);
+    caseReturn();
+    interruptLabel(3);
+    colorTime(2, 0, 255, 255, 255);
+    caseReturn();
+    interruptLabel(1);
+    scaleTime(8, 1, 1.0f, 0.0f);
++8: // 9
+    delete();
+}

@@ -2422,7 +2422,15 @@ static void power_vm_sync(void)
 static int s_c1_live[POFV_C1_SHOTS_PER_GROUP];      /* 每行一发：-1 = 空 */
 static float s_c1_x[POFV_C1_SHOTS_PER_GROUP], s_c1_y[POFV_C1_SHOTS_PER_GROUP];
 static float s_c1_vx[POFV_C1_SHOTS_PER_GROUP], s_c1_vy[POFV_C1_SHOTS_PER_GROUP];
-static float s_c1_spd[POFV_C1_SHOTS_PER_GROUP];   /* ★ 标量速度（一手 `shot+0x6c` ✓，两段运动改它 ✓）*/
+static float s_c1_spd[POFV_C1_SHOTS_PER_GROUP];
+/* ★★ 魔理沙 C1 = **原地伸长的光束**（一手 tick `0x54c830` ✓：`shot+0xb0` 每帧 **+12** 伸到 **512**，
+ *   `age > 119` 收 ✓）⇒ 卡侧按弹记「类型」与「长度」✓（长度 → `scale.x`，贴图是 256 宽的一片 ✓）。*/
+#define POFV_C1_LEN_STEP   12.0f
+#define POFV_C1_LEN_MAX   512.0f
+#define POFV_C1_M_END_AGE   120
+static int   s_c1_kind[POFV_C1_SHOTS_PER_GROUP];   /* 0 = 灵梦那种弹 ✓；1 = 魔理沙的光束 ✓ */
+static float s_c1_len[POFV_C1_SHOTS_PER_GROUP];
+static int   s_c1_grp[POFV_C1_SHOTS_PER_GROUP];   /* ★ 每颗弹的**组别** ✓（伤害要取对表的行 ✓）*/   /* ★ 标量速度（一手 `shot+0x6c` ✓，两段运动改它 ✓）*/
 static int s_c1_age[POFV_C1_SHOTS_PER_GROUP];
 static int s_c1_bounce[POFV_C1_SHOTS_PER_GROUP];   /* ★ 一手 `EX_BOUNCE`：已撞墙次数 ✓ */
 static int32_t s_c1_vm[POFV_C1_SHOTS_PER_GROUP];
@@ -2462,7 +2470,13 @@ static void pofv_c1_fire(void)
         s_c1_age[t] = 0;
         s_c1_bounce[t] = 0;
         s_c1_live[t] = 1;
-        s_c1_vm[t] = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_POFV109_C1_BULLET, POFV_C1_VM_LAYER);
+        s_c1_grp[t] = grp;                              /* ★ 记组别（一手三人表不同 ✓）*/
+        s_c1_kind[t] = (grp == POFV_C1_GROUP_MARISA) ? 1 : 0;
+        s_c1_len[t] = 0.0f;
+        s_c1_vm[t] = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
+                        (s_c1_kind[t] == 1) ? CE_ANM_ABILITY_SCRIPT_POFV109_C1M_BEAM
+                                            : CE_ANM_ABILITY_SCRIPT_POFV109_C1_BULLET,
+                        POFV_C1_VM_LAYER);
         if (s_c1_vm[t]) {
             ce_anm_set_pos((uint32_t)s_c1_vm[t], s_c1_x[t], s_c1_y[t], 0.0f);
             ce_anm_set_scale((uint32_t)s_c1_vm[t], 1.0f, 1.0f);   /* ★ 贴图 = 一手 30x30 ⇒ 1:1 ✓ */
@@ -2480,6 +2494,25 @@ static void pofv_c1_tick(void)
     for (t = 0; t < POFV_C1_SHOTS_PER_GROUP; ++t) {
         float pos[3];
         if (!s_c1_live[t]) continue;
+        if (s_c1_kind[t] == 1) {
+            /* ★★ 一手 `0x54c830`（魔理沙 ✓）：★ **原地不动**，长度每帧 **+12**、封顶 **512**，
+             *   ★ `age > 119` 收 ✓（贴图 256 宽 ⇒ `scale.x = 长度 / 256` ✓）。*/
+            s_c1_len[t] += POFV_C1_LEN_STEP;
+            if (s_c1_len[t] > POFV_C1_LEN_MAX) s_c1_len[t] = POFV_C1_LEN_MAX;
+            if (s_c1_vm[t]) {
+                ce_anm_set_pos((uint32_t)s_c1_vm[t], s_c1_x[t], s_c1_y[t], 0.0f);
+                ce_anm_set_scale((uint32_t)s_c1_vm[t], s_c1_len[t] / 256.0f, 1.0f);
+            }
+            ++s_c1_age[t];
+            if (s_c1_age[t] > POFV_C1_M_END_AGE) {
+                if (s_c1_vm[t]) { ce_anm_interrupt((uint32_t)s_c1_vm[t], 1); s_c1_vm[t] = 0; }
+                s_c1_live[t] = 0;
+            }
+            pos[0] = s_c1_x[t]; pos[1] = s_c1_y[t]; pos[2] = 0.0f;
+            ce_damage_rect(pos, 0.0f, POFV_C1_HIT_LIFE, (float)s_c1_table[s_c1_grp[t]][t].dmg,
+                           POFV_C1_HIT_W, POFV_C1_HIT_H);
+            continue;
+        }
         /* ★★ 一手 `0x54b380` 两段运动 ✓：age < 120 ⇒ 减速（下限 0.2）；age ≥ 120 ⇒ 重新加速 ✓ */
         if (s_c1_age[t] < POFV_C1_HOLD_AT) {
             s_c1_spd[t] -= POFV_C1_DECEL;
@@ -2499,7 +2532,7 @@ static void pofv_c1_tick(void)
         }
         if (s_c1_vm[t]) ce_anm_set_pos((uint32_t)s_c1_vm[t], s_c1_x[t], s_c1_y[t], 0.0f);
         pos[0] = s_c1_x[t]; pos[1] = s_c1_y[t]; pos[2] = 0.0f;
-        ce_damage_rect(pos, 0.0f, POFV_C1_HIT_LIFE, (float)s_c1_table[POFV_C1_GROUP_REI][t].dmg,
+        ce_damage_rect(pos, 0.0f, POFV_C1_HIT_LIFE, (float)s_c1_table[s_c1_grp[t]][t].dmg,
                        POFV_C1_HIT_W, POFV_C1_HIT_H);
     }
 }
