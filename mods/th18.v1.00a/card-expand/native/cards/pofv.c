@@ -2576,6 +2576,11 @@ static int   s_c1_dmg_ov[POFV_C1_SHOTS_PER_GROUP];
 #define POFV_C1S_STOP_FRAMES   4
 #define POFV_C1S_RESUME_SPD  14.0f
 static int   s_c1_stop[POFV_C1_SHOTS_PER_GROUP];
+/* ★★ 2026-10-11 owner：「早苗 C1 很怪…**速度几帧后就停住不动了**」✗ + 审计 ab662708 ✓：
+ *   ★ 一手有**相位机**（`+0x40`：0 = 搜索 / 4 = 锁定 / 8 = 释放 ✓），★ 且**释放后永不回搜索**
+ *     ⇒ ★ 每颗弹**只锁一次** ✓；★ 我原来没有相位闸 ✗ ⇒ ★ 判据每帧都成立 ⇒ 反复重锁/反复清零速度
+ *     ⇒ ★ 弹"几帧后停住不动" ✓ = owner 的症状 ✓。*/
+static int   s_c1_phase[POFV_C1_SHOTS_PER_GROUP];   /* 0 搜索 / 4 锁定 / 8 已释放 ✓ */
 static float s_c1_py[POFV_C1_SHOTS_PER_GROUP];
 static float s_c1_tx[POFV_C1_SHOTS_PER_GROUP], s_c1_ty[POFV_C1_SHOTS_PER_GROUP];   /* ★ 锁定的目标（一手 +0x100 ✓）*/
 static int   s_c1_turn[POFV_C1_SHOTS_PER_GROUP];   /* ★ 转向剩几步（一手 `+0x30` 累加器 ✓）*/   /* ★ 上一帧的 y（判「越过」用 ✓，一手 ✓）*/
@@ -2692,6 +2697,7 @@ static void pofv_c1_fire_range(int grp, int from, int cnt)
         s_c1_rot[t] = 0.0f;                   /* ★ 自转从 0 起 ✓ */
         s_c1_py[t] = s_c1_y[t];               /* ★ 越过判据的上一帧 y ✓ */
         s_c1_turn[t] = 0; s_c1_tx[t] = 0.0f; s_c1_ty[t] = 0.0f;   /* ★ 转向状态 ✓ */
+        s_c1_phase[t] = 0;                     /* ★ 相位机：0 = 搜索 ✓ */
         s_c1_age[t] = 0;
         s_c1_bounce[t] = 0;
         s_c1_live[t] = 1;
@@ -2814,7 +2820,8 @@ static void pofv_c1_tick(void)
         float pos[3];
         if (!s_c1_live[t]) continue;
         /* ★★ 早苗 C1：命中停 4 帧（一手 ✓）—— 停住时不动、之后以 14.0 继续 ✓ */
-        if (s_c1_grp[t] == POFV_C1_GROUP_SANA && s_c1_kind[t] == 0) {
+        if (s_c1_grp[t] == POFV_C1_GROUP_SANA && s_c1_kind[t] == 0
+            && s_c1_phase[t] == 0) {   /* ★ 只有"搜索"相位才判 ✓（一手相位机 ✓）*/
             if (s_c1_stop[t] > 0) {
                 --s_c1_stop[t];
                 /* ★★★ 一手 ✓「**水平转向**」：停住这几帧里，把方向**一档一档**转目标 ✓
@@ -2840,7 +2847,10 @@ static void pofv_c1_tick(void)
                         s_c1_vx[t] = (s_c1_x[t] > s_c1_tx[t]) ? -1.0f : 1.0f;
                         s_c1_vy[t] = 0.0f;
                     }
-                }                if (s_c1_stop[t] == 0) s_c1_spd[t] = POFV_C1S_RESUME_SPD;   /* ★ 一手 ✓ 14.0 */
+                }                if (s_c1_stop[t] == 0) {
+                    s_c1_spd[t] = POFV_C1S_RESUME_SPD;   /* ★ 一手 ✓ 14.0 */
+                    s_c1_phase[t] = 8;                   /* ★ 一手 ✓ 释放相位（**永不回搜索** ✓）*/
+                }
                 pofv_stage_set(22);   /* ★ 移动后/年龄前 */
         ++s_c1_age[t];
                 if (s_c1_vm[t]) ce_anm_set_pos((uint32_t)s_c1_vm[t], s_c1_x[t], s_c1_y[t], 0.0f);
@@ -2877,6 +2887,7 @@ static void pofv_c1_tick(void)
                      *   ★ 转向步数 = 4（= 一手的累加器到 4 恢复 ✓，与 STOP_FRAMES 同值 ✓）。*/
                     s_c1_tx[t] = ep_tx; s_c1_ty[t] = ep_ty;
                     s_c1_turn[t] = POFV_C1S_STOP_FRAMES;
+                    s_c1_phase[t] = 4;      /* ★ 一手 ✓ 锁定相位 */
                 }
             }
         }
@@ -2899,6 +2910,11 @@ static void pofv_c1_tick(void)
             if (s_c1_vm[t]) {
                 ce_anm_set_pos((uint32_t)s_c1_vm[t], s_c1_x[t], s_c1_y[t], 0.0f);
                 ce_anm_set_scale((uint32_t)s_c1_vm[t], s_c1_len[t] / 256.0f, 1.0f);
+                /* ★★★ 2026-10-11 owner：「魔理沙 C1 怎么是**向右**发的」✗ ⇒ ★ 因为脚本 442
+                 *   的 sprite 是 **`anchor(1,0)` 左端锚**、默认沿本地 **+x = 向右** ✓，
+                 *   而**卡侧从没写过朝向** ✗ ⇒ ★ 补上：一手 Marisa C1 的角度 = **−90°** ✓
+                 *   ⇒ ★ `rz = −π/2` ✓（光束从自机**向上**伸出 ✓）。*/
+                ce_anm_set_rotation((uint32_t)s_c1_vm[t], 0.0f, 0.0f, -1.5707964f);
             }
             ++s_c1_age[t];
             if (s_c1_age[t] > POFV_C1_M_END_AGE) {
