@@ -2445,18 +2445,19 @@ static void pofv_c1_clear(void)
 }
 
 /* ★ 一轮 C1：一次放完一手那 4 行（★ 只发一次，不是逐帧 ✗）*/
-static void pofv_c1_fire(void)
+/* ★★ 一手（子 agent 核实 ✓）：★ C1 是"**发射窗口**"而不是一击 —— 槽 11 的窗口三人不同
+ *   （灵梦 **21** 帧 / 魔理沙 **1** 帧 / 早苗 **30** 帧 ✓）。
+ *   ★ 早苗尤其关键：★ 26 行 = **行 0–12 phase0、行 13–25 phase8** ✓、`rate16` ✓
+ *   ⇒ ★ **`t=0/8/16/24` 各放 13 发（半圈一放）** ✓ —— 而不是一轮把 26 发全放 ✗。
+ *   ⇒ 本函数按**行区间**发射 ✓（早苗分两次），窗口由卡侧计时 ✓。*/
+static void pofv_c1_fire_range(int grp, int from, int cnt)
 {
     const float *pp = ce_player_pos();
-    /* ★ 按角色选组 ✓（`s_aura_kind`：0=灵梦 1=魔理沙 2=咲夜 3=早苗 ✓；★ 咲夜走 TH09 一手 ✗、
-     *   没有 C1 表 ⇒ 用灵梦那组兜底 + 标 ❓）。发数取自一手（4 / 1 / 26 ✓）。*/
-    const int grp = (s_aura_kind == 1) ? POFV_C1_GROUP_MARISA
-                  : (s_aura_kind == 3) ? POFV_C1_GROUP_SANA
-                  : POFV_C1_GROUP_REI;
     const int nrows = s_c1_rows[grp];
-    int t;
+    int t, end;
     if (!pp) return;
-    for (t = 0; t < nrows && t < POFV_C1_SHOTS_PER_GROUP; ++t) {
+    end = from + cnt; if (end > nrows) end = nrows;
+    for (t = from; t < end && t < POFV_C1_SHOTS_PER_GROUP; ++t) {
         const pofv_c1_shot_t *r = &s_c1_table[grp][t];
         int di;                                   /* ★ 角度 → 36 向表下标（一手 -pi/2 = 正上）*/
         if (s_c1_vm[t]) { ce_anm_delete((uint32_t)s_c1_vm[t]); s_c1_vm[t] = 0; }
@@ -2490,9 +2491,43 @@ static void pofv_c1_fire(void)
     }
 }
 
+/* ★ C1 入口 ✓：★ 按角色选组，并**按一手开窗口** ✓（早苗分半圈放 ✓，见上）。*/
+static int s_c1_win_left;      /* ★ 窗口剩余帧（0 = 没开 ✓）*/
+static int s_c1_win_age;       /* ★ 窗口已过帧 ✓ */
+static int s_c1_sanae_half;    /* ★ 早苗当前放的是哪半圈（0 = 行 0–12 ✓ / 1 = 行 13–25 ✓）*/
+static void pofv_c1_fire(void)
+{
+    const int grp = (s_aura_kind == 1) ? POFV_C1_GROUP_MARISA
+                  : (s_aura_kind == 3) ? POFV_C1_GROUP_SANA
+                  : POFV_C1_GROUP_REI;
+    s_c1_win_left = 0; s_c1_win_age = 0; s_c1_sanae_half = 0;
+    if (grp == POFV_C1_GROUP_SANA) {
+        pofv_c1_fire_range(grp, 0, 13);          /* ★ t=0：行 0–12 ✓ */
+        s_c1_win_left = 30;                       /* ★ 一手 ✓ 早苗窗口 30 帧 */
+    } else {
+        pofv_c1_fire_range(grp, 0, s_c1_rows[grp]);   /* ★ 灵梦 4 行一次 / 魔理沙 1 行一次 ✓ */
+        s_c1_win_left = (grp == POFV_C1_GROUP_MARISA) ? 1 : 21;   /* ★ 一手 ✓ 1 / 21 帧 */
+    }
+}
+
+/* ★ 每帧：窗口计时（早苗每 8 帧换半圈 ⇒ t=0/8/16/24 各 13 发 ✓，一手 ✓）。*/
+static void pofv_c1_window_tick(void)
+{
+    if (s_c1_win_left <= 0) return;
+    --s_c1_win_left;
+    ++s_c1_win_age;
+    if (s_aura_kind != 3) return;
+    if (s_c1_win_age % 8 == 0 && s_c1_win_age < 30) {
+        s_c1_sanae_half ^= 1;
+        pofv_c1_fire_range(POFV_C1_GROUP_SANA, s_c1_sanae_half ? 13 : 0, 13);
+    }
+}
+
+
 /* ★ 每帧：前进 + 伤害源 + 到期/出屏收尾 */
 static void pofv_c1_tick(void)
 {
+    pofv_c1_window_tick();   /* ★ 一手：发射窗口（早苗的半圈切换 ✓）*/
     int t;
     for (t = 0; t < POFV_C1_SHOTS_PER_GROUP; ++t) {
         float pos[3];
