@@ -1443,6 +1443,18 @@ int main(void)
     CHECK(yk_emit_gap_is_new_wave(30, 30) == 0);     /* ★ 缓发敌人：30 帧节奏 ⇒ 30 不放行 */
     CHECK(yk_emit_gap_is_new_wave(200, 30) == 1);    /* 缓发敌人的真波间 */
     CHECK(yk_emit_gap_is_new_wave(300, 0) == 1);     /* 还没观测到节奏 ⇒ 只用绝对阈值 */
+    /* ★★★★★ 2026-10-11（owner：「5 面中 boss **没有随波次重建**」）——**倍率 4 → 3** 的回归闸。
+     *   一手算术（`st05/06/07mbs` 的 `MBoss1`/`MBossCard1` 外层循环）：
+     *     波内 = `wait(12)`（每槽每 12 帧一发）；波间 = 波内最后一轮的 `wait(12)` + 外层 `wait(30)`
+     *     ⇒ **42 帧 = 3.5 倍**。旧实现写死 `4×` ⇒ 42 < 48 ⇒ **波次边沿永不触发**（= owner 报的那条）。
+     *   `st07mbs` 是 `wait(10)` + `wait(30)` = 40 = 4.0 倍（旧版刚好卡在边界上）。*/
+    CHECK(YK_EMIT_WAVE_RATIO == 3);                  /* ❓ 自定：3.5 的分界下取整（`TUNING §2.1ccc-89`）*/
+    CHECK(yk_emit_gap_is_new_wave(42, 12) == 1);     /* ★ st05/06mbs MBoss1：波间 42 / 波内 12 */
+    CHECK(yk_emit_gap_is_new_wave(40, 10) == 1);     /* ★ st07mbs：40 / 10 */
+    CHECK(yk_emit_gap_is_new_wave(36, 12) == 1);     /* 3.0× 边界（含）*/
+    CHECK(yk_emit_gap_is_new_wave(35, 12) == 0);     /* 紧随其下 ⇒ 仍算波内（不早放行）*/
+    CHECK(yk_emit_gap_is_new_wave(12, 12) == 0);     /* 常规波内 */
+    CHECK(yk_emit_gap_is_new_wave(24, 12) == 0);     /* 2× 抖动 ⇒ 不认新波 */
     yk_map_reset(&m);
     yk_frame_begin(&m);
     yk_map_set_fired(&m, 850, 0, 1);   /* ★ phantom 修复：只有开过火的槽才建壳 */

@@ -651,6 +651,120 @@ static unsigned yk_emit_fired_age(uint32_t enemy_id, int slot)
     return 0xffffu;
 }
 
+/* ★★★★★ 2026-10-11（owner：「血量太多」+「没有随波次重建」两条共用）——
+ *   **该真实槽最近一次 `etOn` 的出点数**（本帧最大 `ord` + 1）。
+ *   站点每次 `etOn` 都写它（同一帧内按 `%B-90` → `%B+90` 的顺序写，最后写 = 最大 ord）；
+ *   带帧号 ⇒ 过期（`YK_EMIT_FIRED_WINDOW`）回落 1 ⇒ **单出点场景除数恒 1**。
+ *   用途：① `YK_EMIT_HP_SPLIT_MODE` 的血量均分除数；② 诊断。*/
+#define YK_ORGN_N 32
+typedef struct { uint32_t enemy; uint8_t real; uint8_t n; uint32_t frame; } yk_orgn_t;
+static yk_orgn_t s_orgn[YK_ORGN_N];
+/* 表满 ⇒ 抢「最久没更新」的那一行（**LRU**：保证正在开火的敌人一定拿得到行 ——
+ * 否则本局早先那些敌人的陈旧行会把表占死、5 面中 boss 永远读不到自己的出点数）。*/
+static unsigned yk_orgn_lru(void)
+{
+    unsigned i, best = 0;
+    for (i = 1; i < (unsigned)YK_ORGN_N; ++i)
+        if (s_orgn[i].frame < s_orgn[best].frame) best = i;
+    return best;
+}
+static void yk_origin_count_note(uint32_t enemy_id, int real, int ord)
+{
+    unsigned i;
+    uint32_t fr = ce_sdk_frame();
+    uint8_t n = (uint8_t)(ord + 1);
+    for (i = 0; i < (unsigned)YK_ORGN_N; ++i)
+        if (s_orgn[i].enemy == enemy_id && s_orgn[i].real == (uint8_t)real) {
+            s_orgn[i].n = n; s_orgn[i].frame = fr; return;
+        }
+    for (i = 0; i < (unsigned)YK_ORGN_N; ++i)
+        if (!s_orgn[i].enemy) {
+            s_orgn[i].enemy = enemy_id; s_orgn[i].real = (uint8_t)real;
+            s_orgn[i].n = n; s_orgn[i].frame = fr; return;
+        }
+    i = yk_orgn_lru();
+    s_orgn[i].enemy = enemy_id; s_orgn[i].real = (uint8_t)real;
+    s_orgn[i].n = n; s_orgn[i].frame = fr;
+}
+static int yk_slot_origin_count(uint32_t enemy_id, int key)
+{
+    unsigned i;
+    int real = YK_EMIT_REAL_SLOT(key);
+    uint32_t now = ce_sdk_frame();
+    for (i = 0; i < (unsigned)YK_ORGN_N; ++i)
+        if (s_orgn[i].enemy == enemy_id && s_orgn[i].real == (uint8_t)real)
+            return ((uint32_t)(now - s_orgn[i].frame) <= (uint32_t)YK_EMIT_FIRED_WINDOW && s_orgn[i].n > 0u)
+                   ? (int)s_orgn[i].n : 1;
+    return 1;
+}
+
+/* ★★★★ 2026-10-11（owner：中 boss「**没有随波次重建**」；第五个放行口的**调参数据**）——
+ *   每个 `(敌人,键)` 最近 8 次 `etOn` 的**间隔序列**。用于从间隙模式里找「波」的边界
+ *   （`MBoss1` 系列：波内 12、波间 42；`st07mbs` 10 / 40）⇒ 决定 `YK_EMIT_WAVE_RATIO`。
+ *   日志：每个键**前 8 次**必打（看得见 12,12,12,…），之后只在「本次间隔 ≥ `YK_EMIT_WAVE_GAP`」
+ *   时打（= 疑似波边界，一局几十行、有上限）。*/
+#define YK_GAPS_N 24
+#define YK_GAPS_RING 8
+typedef struct { uint32_t enemy; int16_t key; uint32_t last_frame; uint8_t n; uint8_t g[YK_GAPS_RING]; } yk_gaps_t;
+static yk_gaps_t s_gaps[YK_GAPS_N];
+static unsigned s_gaps_logged;
+static void yk_gap_note(uint32_t enemy_id, int key, uint32_t fr)
+{
+    unsigned i;
+    yk_gaps_t *e = 0;
+    for (i = 0; i < (unsigned)YK_GAPS_N; ++i)
+        if (s_gaps[i].enemy == enemy_id && s_gaps[i].key == (int16_t)key) { e = &s_gaps[i]; break; }
+    if (!e)
+        for (i = 0; i < (unsigned)YK_GAPS_N; ++i)
+            if (!s_gaps[i].enemy) {
+                e = &s_gaps[i]; e->enemy = enemy_id; e->key = (int16_t)key;
+                e->n = 0; e->last_frame = 0; break;
+            }
+    if (!e) {
+        /* 表满 ⇒ **LRU** 抢最久没更新的那一行（否则 boss 拿不到行、这一局的 GAPS 数据就没了）。*/
+        unsigned best = 0;
+        for (i = 1; i < (unsigned)YK_GAPS_N; ++i)
+            if (s_gaps[i].last_frame < s_gaps[best].last_frame) best = i;
+        e = &s_gaps[best];
+        e->enemy = enemy_id; e->key = (int16_t)key; e->n = 0; e->last_frame = 0;
+    }
+    if (e->last_frame && fr > e->last_frame) {
+        uint32_t g = fr - e->last_frame;
+        uint8_t idx = (uint8_t)(e->n % YK_GAPS_RING);
+        e->g[idx] = (uint8_t)(g > 255u ? 255u : g);
+        if (e->n < 255u) ++e->n;
+    }
+    e->last_frame = fr;
+}
+static void yk_gap_log(uint32_t enemy_id, int key, int real, int ord, uint32_t fr)
+{
+    unsigned i;
+    const yk_gaps_t *e = 0;
+    unsigned n, base;
+    uint8_t last;
+    if (s_gaps_logged >= 64u) return;
+    for (i = 0; i < (unsigned)YK_GAPS_N; ++i)
+        if (s_gaps[i].enemy == enemy_id && s_gaps[i].key == (int16_t)key) { e = &s_gaps[i]; break; }
+    if (!e || !e->n) return;
+    n = (e->n > YK_GAPS_RING) ? (unsigned)YK_GAPS_RING : (unsigned)e->n;
+    base = (unsigned)e->n - n;
+    last = e->g[(unsigned)(e->n - 1u) % YK_GAPS_RING];
+    /* 只打「前 8 次」或「疑似波边界」，避免刷屏 */
+    if (!(e->n <= (uint8_t)YK_GAPS_RING || last >= (uint8_t)YK_EMIT_WAVE_GAP)) return;
+    ++s_gaps_logged;
+    /* ⚠ 不用 snprintf（本 TU 没链 stdio）⇒ 固定 8 个字段，未用的补 0 */
+    {
+        unsigned g[YK_GAPS_RING];
+        for (i = 0; i < (unsigned)YK_GAPS_RING; ++i)
+            g[i] = (i < n) ? (unsigned)e->g[(base + i) % YK_GAPS_RING] : 0u;
+        ce_log("youkai/emit GAPS: enemy %u slot %d key %d ord %d gaps(last %u of %u)=%u,%u,%u,%u,%u,%u,%u,%u "
+               "wave_thresh=%d (new wave = gap >= max(%d, %dx this key's own min gap)) frame=%u",
+               enemy_id, real, key, ord, n, (unsigned)e->n,
+               g[0], g[1], g[2], g[3], g[4], g[5], g[6], g[7],
+               (int)YK_EMIT_WAVE_GAP, (int)YK_EMIT_WAVE_GAP, (int)YK_EMIT_WAVE_RATIO, (unsigned)fr);
+    }
+}
+
 static unsigned s_coord_logged;    /* ★ 坐标审计已打几行 */
 #define YK_COORD_LOG_N 8
 static uint32_t s_coord_enemy[YK_COORD_LOG_N];
@@ -745,6 +859,20 @@ static void yk_prod_clear(uint32_t enemy_id, int slot)
  *   ⇒ 语义 = 「**一个出点 = 一只使魔**」；共壳的几条键由 `yk_fam_broken` 的**全表扫**一起关掉
  *     （打死那个出点的使魔 ⇒ 落在这个点上的**每一条** `etOn` 都停）。*/
 #define YK_EMIT_SHARE_SAME_POS 1   /* ★ 2026-10-11：0 → 1（多原点；见上）*/
+/* ★★★★★ 2026-10-11（owner 实跑：5 面中 boss「**使魔的血量有点太多了**」）——**血量预算按出点数均分**。
+ *
+ *   现象：每只壳都拿「母机 HP ÷3 × 机体系数」（5 面中 boss = 13000/3 ≈ 4333）；多原点之后
+ *   同一槽有 2 个出点 ⇒ **2 只 × 4333** ⇒ 该槽的总血量**翻倍**。
+ *   口径（owner 拍板）：**每槽的总血量预算不变**，按**该槽本帧的活跃出点数**均分
+ *   （2 个出点 ⇒ 每只 4333/2；`st03 GirlD01_at` 5 个出点 ⇒ 每只 4333/5）。
+ *   实现：除数 = 站点最近一次 `etOn` 写下的「该真实槽本帧最大 `ord` + 1」（`yk_origin_count_note`），
+ *   带 3 帧时效（`YK_EMIT_FIRED_WINDOW`）⇒ **单出点场景除数恒 1、数值逐位不变**；
+ *   每次重建 / 新波重新算（因为除数由**最近一次**发射事实给出）。
+ *   ⚠ 同点共壳（`YK_EMIT_SHARE_SAME_POS`）下只有**第一只**真的 spawn，所以「一个出点一只」的
+ *     总预算正好落在那一只上，不会重复扣。
+ *   `0` = 旧口径（每只都拿满血）；`1` = 均分（默认）。两口径的数值见 `TUNING.md` §2.1ccc-89。*/
+#define YK_EMIT_HP_SPLIT_MODE 1
+static unsigned s_hpsplit_logged;       /* 均分日志行数 */
 static uint32_t s_dbg_prev_input;       /* 仅用于排障日志 */
 static unsigned s_dbg_mask_logged;
 
@@ -2794,6 +2922,26 @@ static void yk_run_action(yk_card_t *s, const yk_action_t *act)   /* s 可为 NU
          *   `YK_EMIT_FAM_HP_OVERRIDE > 0` ⇒ **覆盖**上面的正式口径（`yk_map_fam_hp()` 原逻辑**保留**）；
          *   `0` = 关闭覆盖（恢复正式口径）。**这是临时调试值，测完改回 0**（登记 `TUNING §2.1ccc-72`）。*/
         if (YK_EMIT_FAM_HP_OVERRIDE > 0) life = (int32_t)YK_EMIT_FAM_HP_OVERRIDE;
+        /* ★★★★★ 2026-10-11（owner：「5 面中 boss **使魔的血量有点太多了**」）——
+         *   **每槽的总血量预算不变，按该槽本帧的活跃出点数均分**（多原点 ⇒ 2 只 × 满血 = 双倍）。
+         *   除数 = 站点最近一次 `etOn` 写下的「该真实槽本帧最大 ord + 1」（`yk_slot_origin_count`），
+         *   带 3 帧时效 ⇒ **单出点场景除数 = 1、`life` 逐位不变**；每次重建/新波重新算。
+         *   ⚠ 同点共壳时只有第一只真 spawn ⇒ 总预算正好落在那一只上（不重复扣）。*/
+        if (YK_EMIT_HP_SPLIT_MODE) {
+            int norg = yk_slot_origin_count(act->enemy_id, act->slot);
+            if (norg > 1) {
+                int32_t before = life;
+                life = life / (int32_t)norg;
+                if (life < 1) life = 1;
+                if (s_hpsplit_logged < 8u) {
+                    ++s_hpsplit_logged;
+                    ce_log("youkai/emit HP-SPLIT: enemy_id %u slot %d key %d has %d active origins "
+                           "=> life %d / %d = %d (per-slot budget unchanged; single-origin scenes are "
+                           "bit-identical)", act->enemy_id, YK_EMIT_REAL_SLOT(act->slot), act->slot,
+                           norg, (int)before, norg, (int)life);
+                }
+            }
+        }
         if (s_hp_logged < 8u) {
             ++s_hp_logged;
             ce_log("youkai/emit: CREATE hp=%d%s (enemy_id %u slot %d) - one shot must kill it; then the "
@@ -7320,6 +7468,10 @@ static int yk_on_shot_slot(ce_card_t *c, const ce_enemy_shot_t *ev)
         ord = yk_emit_fire_ordinal(ev->enemy_id, real);
         if (ord >= YK_EMIT_ORIGIN_MAX) ord = YK_EMIT_ORIGIN_MAX - 1;   /* 溢出并进最后一档（不丢壳）*/
         key = YK_EMIT_ORIGIN_KEY(real, ord);
+        /* ★ 2026-10-11：① 记「该真实槽本帧几个出点」（血量均分的除数）；② 记该键的 `etOn` 间隔序列。*/
+        yk_origin_count_note(ev->enemy_id, real, ord);
+        yk_gap_note(ev->enemy_id, key, ce_sdk_frame());
+        yk_gap_log(ev->enemy_id, key, real, ord, ce_sdk_frame());
     }
     /* ★★★ 普查 ①（0 新站点）：`etOn` 已经把发弹点写进 `props[i]+0x08/+0x0c/+0x10`
      *   （就在本断点之前那几步）⇒ 立刻抄回卡侧缓存，供壳的**目标位置**使用。
@@ -9432,8 +9584,9 @@ static int on_tick_2(ce_card_t *c)
         uint32_t gap = yk_map_gap_releases(&s_map);
         if (gap != s->gap_releases_seen) {
             ce_log("youkai: emitter gate released %u slot(s) on an etOn GAP (adaptive: >= %d frames "
-                   "AND >= 4x this slot's own in-wave gap; total %u) - those slots fire again and "
-                   "rebuild next tick", gap - s->gap_releases_seen, (int)YK_EMIT_WAVE_GAP, gap);
+                   "AND >= %dx this slot's own in-wave gap; total %u) - those slots fire again and "
+                   "rebuild next tick", gap - s->gap_releases_seen, (int)YK_EMIT_WAVE_GAP,
+                   (int)YK_EMIT_WAVE_RATIO, gap);
             ce_log("youkai/emit: slot %d of enemy_id %u released by WAVE-GAP(adaptive) after vetoing "
                    "%u etOn(s)", (int)yk_map_last_release_slot(&s_map),
                    yk_map_last_release_enemy(&s_map), (unsigned)yk_map_last_release_vetoed(&s_map));

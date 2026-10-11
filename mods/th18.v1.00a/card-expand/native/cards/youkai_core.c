@@ -972,11 +972,14 @@ int yk_is_real_bomb(int bomb_active, int started_in_deathbomb)
 /* ★★★★ 2026-10-01（D2 插值跟随）：纯函数，详见 `youkai_core.h` 的同名小节。
  * ⚠ 不返回 float（i686 上 float 返回值必过 x87）；就地写 `xy[0]/xy[1]`。*/
 /* ★★★ 2026-10-01（owner：「瞬移不会重建血量吧」）：**重建判据与位置无关**（纯函数，见头文件）。*/
-/* ★★★ 2026-10-01（#209）：「间隔算不算新一波」的**自适应**判据（纯函数，见头文件）。*/
+/* ★★★ 2026-10-01（#209）：「间隔算不算新一波」的**自适应**判据（纯函数，见头文件）。
+ * ★★★★★ 2026-10-11（owner：中 boss「没有随波次重建」）：倍率 4 → `YK_EMIT_WAVE_RATIO`(3)。
+ *   一手算术：`st05/06mbs MBoss1` 波内 12 帧 / 波间 42 帧（12+30）= 3.5 倍；`st07mbs` 10 / 40 = 4.0 倍。
+ *   旧的写死 4 让 5/6 面中 boss 的波间间隔**恰好落在阈值下面**（42 < 48）⇒ 波次边沿永不触发。*/
 int yk_emit_gap_is_new_wave(int eton_gap, int gap_ref)
 {
     if (eton_gap < YK_EMIT_WAVE_GAP) return 0;
-    if (gap_ref > 0 && eton_gap < 4 * gap_ref) return 0;    /* 缓发敌人的常规间隔 ⇒ 不认新波 */
+    if (gap_ref > 0 && eton_gap < YK_EMIT_WAVE_RATIO * gap_ref) return 0;   /* 缓发敌人 ⇒ 不认新波 */
     return 1;
 }
 

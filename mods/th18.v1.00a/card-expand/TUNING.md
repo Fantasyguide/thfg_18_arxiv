@@ -16604,3 +16604,17 @@ else if (s_aura_charge > 0.0f)                 { ★ 收束（含 interrupt / �
 | 关火 | `yk_fam_broken` / `yk_fam_gone` / `yk_fam_wave_clear` 改**扫全表**（同点共壳时一只壳被多条键引用 ⇒ 打死它让**所有**落在该出点的 `etOn` 一起停）|
 | 口径回退 | `yk_map_enemy_slots` 改数**真实槽** ⇒ 死亡撒点颗数不变（单测钉住）；`ord == 0` 时键逐值等于旧键 ⇒ 单次发弹场景零变化 |
 | 判据 | 5/6/7 面中 boss 同屏 **2 只**（左右镜像、随 `%B` 转）；打死一侧 ⇒ 那一侧 `gate check … veto=1`、另一侧 `veto=0`；3 面 `GirlD01/D02` **5 只**；`st07 GirlC01_at_360` **0 只**（本体口）；`st06bs Boss1_984` **1 只** |
+
+#### 2.1ccc-89 2026-10-11：多原点的**血量均分** + **波次边沿倍率 4 → 3**（5 面中 boss owner 报的两条）
+
+| 项 | 说明 |
+| --- | --- |
+| owner 报 | ①「五面道中 boss **使魔的血量有点太多了**」②「**没有随弹幕的波次重建**」 |
+| ① 现象 | 每只壳都拿「母机 HP÷3 × 机体系数」（5 面中 boss = 13000/3 ≈ **4333**）⇒ 同槽 2 个出点 = 2 只 ⇒ 该槽总血量**翻倍** |
+| ① 口径 | **每槽总预算不变、按该槽本帧活跃出点数均分**：2 个出点 ⇒ 每只 **2166**；`st03 GirlD01_at` 5 个出点 ⇒ 每只 **866**。除数 = 站点最近一次 `etOn` 的「本帧最大 ord + 1」、带 3 帧时效 ⇒ **单出点场景逐位不变** |
+| ① 旋钮 | `YK_EMIT_HP_SPLIT_MODE`（`youkai.c`）：**`1` = 均分（默认）** / `0` = 旧口径（每只满血）。另 `YK_EMIT_FAM_HP_OVERRIDE > 0` 仍**优先覆盖**（调试用，现 0） |
+| ② 根因 | 波次边沿判据写死 `eton_gap >= 4 × gap_ref`；`st05/06mbs MBoss1` 波内 12 / 波间 42 = **3.5×** ⇒ 42 < 48 **永不触发** ⇒ 打死一侧只能干等 TTL 600 帧（≈10 s） |
+| ② 修法 | 倍率改成常量 `YK_EMIT_WAVE_RATIO` = **3**（3.5 的下取整）；判据仍是 `gap >= max(24, 3 × 该键自己的最小间隔)`。`st05/06mbs` 42/12 ✓、`st07mbs` 40/10 ✓ 都放行；缓发敌人（波内 30 帧）要 90 帧才算新波 ⇒ 不误放 |
+| ② 数据 | 新增 `youkai/emit GAPS: enemy N slot i key k ord o gaps(last n of m)=12,12,12,42,0,… wave_thresh=24`（每键前 8 次必打，之后只在疑似波边界打，上限 64 行）⇒ owner 一局即可核「波内 12 / 波间 42」 |
+| ② 日志 | 放行 = `gate released … on an etOn GAP (adaptive: >= 24 frames AND >= 3x …)` + `… released by WAVE-GAP(adaptive) after vetoing K etOn(s)`；重建 = `SPAWN: slot i key k …` |
+| TTL | `YK_EMIT_REBUILD_TTL` **保持 600**（owner 2026-10-01 拍板的「相对长」兜底；现在它只在波次边沿也认不出时才用得上）。**若 owner 要更短的兜底**：改成 **240**（≈4 s）是一行 `youkai_core.h:1046` 的事，单测 `CHECK(YK_EMIT_REBUILD_TTL == 600u)` 要同步 |

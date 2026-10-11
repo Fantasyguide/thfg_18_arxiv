@@ -177,8 +177,46 @@
 
 ---
 
+## 9. 追加（owner 实测两条：血量 / 波次重建）
+
+> 本节的 log/行号均为**本轮追加改动**（`TUNING §2.1ccc-89`）；§1–§8 的结论不变。
+
+### 9.1 ①「使魔的血量有点太多了」⇒ 每槽预算按出点数均分
+
+| 项 | 内容 |
+| --- | --- |
+| 现象 | 每只壳都拿 `yk_map_fam_hp()`（母机 HP ÷3 × 机体系数；5 面中 boss 13000/3 ≈ **4333**）⇒ 多原点之后同槽 2 只 ⇒ 该槽总血量**翻倍** |
+| 口径（owner） | **每槽总预算不变**，按该槽**本帧活跃出点数**均分：2 个 ⇒ 每只 **2166**；`st03 GirlD01_at` 5 个 ⇒ 每只 **866** |
+| 实现 | 站点每次 `etOn` 写 `yk_origin_count_note(enemy, real, ord)`（`youkai.c:654-700`，本帧最大 `ord`+1、带 3 帧时效、表满 LRU）⇒ `yk_run_action` 建壳时 `yk_slot_origin_count()` 当除数（`youkai.c:2925-2943`） |
+| 旋钮 | `YK_EMIT_HP_SPLIT_MODE`（`youkai.c:748-762`）：**1 = 均分（默认）** / 0 = 旧口径（每只满血） |
+| 不回归 | 单出点场景除数恒 1 ⇒ `life` **逐位不变**（判据：`HP-SPLIT` 行**只**在多原点时出现） |
+| 日志 | `youkai/emit HP-SPLIT: enemy_id N slot i key k has 2 active origins => life 4333 / 2 = 2166`（前 8 次） |
+
+### 9.2 ②「没有随弹幕的波次重建」⇒ 波次边沿倍率 4 → 3
+
+| 项 | 内容 |
+| --- | --- |
+| 根因 | 第五个放行口（`yk_shot_slot_gate` 的自适应 `etOn` 间隔）**早就存在**，但倍率写死 `4×`：`st05/06mbs MBoss1` 波内 12 / 波间 **42**（= 波内最后一轮 `wait(12)` + 外层 `wait(30)`）= **3.5 倍** ⇒ `42 < 48` **永不触发** ⇒ 打死一侧只能等 TTL 600 帧（≈10 s） |
+| 修法 | 倍率改成常量 `YK_EMIT_WAVE_RATIO = 3`（`youkai_core.h:1074-1087`，3.5 的下取整）；判据不变：`gap >= max(24, 3 × 该键自己的最小间隔)`。`st05/06mbs` 42/12 ✓、`st07mbs` 40/10 ✓ 都放行；缓发敌人（波内 30）要 90 才算新波 ⇒ 不误放 |
+| 数据 | 新增 `youkai/emit GAPS: enemy N slot i key k ord o gaps(last n of m)=12,12,12,42,0,… wave_thresh=24 (new wave = gap >= max(24, 3x this key's own min gap))`（每键前 8 次必打、之后只打疑似波边界，上限 64 行） |
+| 判据（owner） | 打死左侧 ⇒ `gate check … key 0 … veto=1`；下一波 ⇒ `released by WAVE-GAP(adaptive) after vetoing K etOn(s)` + 次帧 `SPAWN: slot 0 key 0` |
+| TTL | **保持 600**（owner 2026-10-01 拍板的「相对长」兜底）。改成 240（≈4 s）是一行（`youkai_core.h:1046`）+ 一条单测同步；**此决定待 owner 拍** |
+
+### 9.3 本节闸
+
+`make -s test-host` → `youkai_core: 12777 checks, 0 failed`（+7 条倍率断言）·
+`make -s dllx87` → `x87 in our objects: 0` · `capcheck` 全绿 · `check-docs` 全部通过。
+
+⚠ **并发写者**：本轮期间 `native/cards/youkai.c` 被**另一个写者**覆写过一次（§9 的改动一度消失，
+已按同一份补回 + 重建 + 重跑闸）。发布前请核对 `youkai.c` 里这三个标记都在：
+`YK_EMIT_HP_SPLIT_MODE` / `yk_origin_count_note` / `youkai/emit GAPS:`
+（本节收尾时 `youkai.c` 的 md5 = `280bc6740473cbfbb3c7c44952b35914`，仅作对账参考）。
+
+---
+
 **改动授权声明**：本次只改 `native/cards/youkai.c`、`native/cards/youkai_core.c`、
 `native/cards/youkai_core.h`、`native/tests/test_youkai_core.c`（均为卡 108 自己的文件）；
-增/改的旋钮（`YK_EMIT_ORIGIN_MAX`、`YK_EMIT_SHARE_SAME_POS`）已在代码注释里写明理由，
-数值口径变化登记待办：`TUNING.md`（`YK_EMIT_SHARE_SAME_POS` 0→1、`YK_EMIT_LATCH_N` 32→64）。
+增/改的旋钮（`YK_EMIT_ORIGIN_MAX`、`YK_EMIT_SHARE_SAME_POS`、`YK_EMIT_HP_SPLIT_MODE`、
+`YK_EMIT_WAVE_RATIO`、`YK_EMIT_LATCH_N`）已在代码注释里写明理由，数值口径全部登记在
+[`TUNING.md`](TUNING.md) §2.1ccc-88 / §2.1ccc-89。
 未 `make release`、未 commit（由上层的发布流程处理）。
