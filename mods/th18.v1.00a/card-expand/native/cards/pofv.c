@@ -3504,6 +3504,11 @@ static void pofv_c4_tick(void)
  *     = 2048 / 768 = **2.6666667** ✓；★ 展开帧数 = `YK_M_LASER_BEAM_GROW_FRAMES` = **8** ✓。*/
 #define POFV_C2M_LEN_OVER_SPRITE  (2048.0f / 768.0f)
 #define POFV_C2M_GROW_FRAMES      8
+/* ★★ 审计 A ✓（108 `youkai.c:8163-8164`）：y 也用 `w_px / SPRITE_H` ✓ —— 108 的 `w_px`
+ *   = `W_PX100[档] / 100` = 1600/100 = **16** ✓、`SPRITE_H` = **32** ✓ ⇒ 商 = **0.5** ✓；
+ *   ★ 且**两轴都乘 grow** ✓。*/
+#define POFV_C2M_W_OVER_SPRITE     (16.0f / 32.0f)
+#define POFV_C2M_SETTLE           2      /* ★ 108 `YK_M_LASER_BEAM_SETTLE` = 2 ✓（伤害每 2 帧一次）*/
 
 typedef struct {
     int     live, age, life;
@@ -3576,12 +3581,19 @@ static void pofv_c2m_tick(void)
             const float grow = (L->age >= POFV_C2M_GROW_FRAMES)
                              ? 1.0f : (float)L->age / (float)POFV_C2M_GROW_FRAMES;
             ce_anm_set_pos((uint32_t)L->vm, L->x, L->y, 0.0f);
-            ce_anm_set_scale((uint32_t)L->vm, POFV_C2M_LEN_OVER_SPRITE * grow, 0.5f);
+            /* ★★ 审计 A 订正 ✓（108 `youkai.c:8163-8164` 原文两轴都乘 grow ✓）：
+             *   `set_scale(id, LEN/SPRITE_W × grow, w_px/SPRITE_H × grow)` ✓
+             *   ⇒ ★ 我原来 y 写常数 0.5 ✗（少了 grow ✓）。`w_px = 1600/100 = 16` ✓、
+             *     `SPRITE_H = 32` ✓ ⇒ **y = 0.5 × grow** ✓。*/
+            ce_anm_set_scale((uint32_t)L->vm, POFV_C2M_LEN_OVER_SPRITE * grow,
+                             POFV_C2M_W_OVER_SPRITE * grow);
             ce_anm_set_rotation((uint32_t)L->vm, 0.0f, 0.0f, L->ang + 1.5707964f);
         }
         /* ★ 伤害源：绕自机、沿该角度铺一条长盒（`ce_damage_rect` 不转 ⇒ 用等分角度近似 ❓）*/
         pos[0] = L->x; pos[1] = L->y; pos[2] = 0.0f;
-        (void)ce_damage_rect(pos, L->ang, 2, 14.0f, POFV_C2M_HIT_LEW, POFV_C2M_HIT_LEN);
+        /* ★ 审计 A ✓：108 是**每 `SETTLE`=2 帧**建一次源（`youkai.c:8399` ✓）⇒ 照做 ✓。*/
+        if ((L->age % POFV_C2M_SETTLE) == 0)
+            (void)ce_damage_rect(pos, L->ang, POFV_C2M_SETTLE, 14.0f, POFV_C2M_HIT_LEW, POFV_C2M_HIT_LEN);
     }
 }
 

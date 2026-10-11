@@ -17804,4 +17804,30 @@ typedef struct { float x, y; int age, delay; int active; /* … */ } pofv_power_
 
 ★ **仍未并入对抗审计的结论** ✗：★ `scrollX` 的**量纲**、以及"**无限穿透**"的**确切机制** ✓
 —— ★ 审计员 A（`2b9974e6`）仍在跑 ✓；它回来我会**先记账"被证伪/被修正"**，再按修正后的口径落 ✓。
+### ★★★★ 对抗审计 A 的结论（108 激光，2026-10-11）—— **证实 3 条、抓出我 2 处偏差** ✓
+
+★ 审计员（子智能体 ✓，只读 ✓）独立取证结果 ✓：
+
+#### ✅ 被**证实**的（我照抄对了 ✓）
+1. ★ **`YK_M_LASER_BEAM_SPRITE_W = 768` = 整条 entry 行宽** ✓（`youkai_core.h:438` ✓），
+   ★ 理由 = **`scrollX` 的 UV 绕回按 entry 宽取模** ✓ ⇒ ★ **束图必须塞满整行** ✓，
+   否则会把邻居像素扫进来 ✓（★ 我那张 768×32 整幅照搬 **满足** 这条 ✓）。
+   ★ 血统 ✓：TH08 `player01.anm` sprite32 `{0,224,448,32}` ⇒ 只取 `(0,0,256,32)` ⇒ **重复 ×3 = 768×32** ✓
+   （`make_youkai_bullet_art.py:81` + `fill_row` ✓）。
+2. ★ **流动来自脚本** ✓：`375…beam0.anm.txt:64-66` 的 `+1: scrollX(-0.02083333f); stop();` ✓
+   （v8 opcode 425 = uVel、每帧积分 ✓）；★ 卡侧**没有任何 UV 写入** ✓（grep 只命中注释 ✓）⇒ 我照抄对了 ✓。
+3. ★ **"无限穿透"= 不因命中消失** ✓：★ 束 VM 的删除点只有**射击状态/换档/子机撤走/删卡** ✓
+   （`youkai.c:8254-8267`、`:4314`、`:6692` ✓），★ **没有一处由命中触发** ✓；
+   ★ 伤害源 `life` = `YK_M_LASER_BEAM_SETTLE` = **2** ✓（`youkai_core.h:461` ✓）⇒
+   ★ `life` 是**自走寿命**、不是命中计数 ✓（`engine/player/th18/02-damage-sources.md:27/:44-45` ✓）。
+4. ★ **展开由卡侧驱动** ✓（脚本里**没有**展开指令 ✓）：`youkai.c:8272` `grow = grow_permille(s_beam_age) × 0.001` ✓、
+   `s_beam_age` 在 `:8417` 自增 ✓；★ 脚本那条 `scaleTime(8,1,1.0,0.0)` 是**收束（收缩）** ✓
+   —— ★ 与 `GROW_FRAMES = 8` **同值、反向** ✓。
+
+#### ✗ **抓出我两处偏差**（已改 ✓）
+| 我的错 | 108 的原文 | 已改成 |
+| --- | --- | --- |
+| ★ `set_scale(x, y)` 里 **y 写常数 0.5** ✗（少乘 grow ✓）| ★ `youkai.c:8163-8164`：`set_scale(id, YK_LASER_LEN/SPRITE_W × grow, **w_px/SPRITE_H × grow**)` ✓ ⇒ `w_px = 1600/100 =
+16` ✓、`SPRITE_H = 32` ✓ ⇒ **y = 0.5 × grow** ✓ | ★ `POFV_C2M_W_OVER_SPRITE = 16/32` ✓ 且**乘 grow** ✓ |
+| ★ 伤害**每帧**一次 ✗ | ★ **每 `SETTLE = 2` 帧**一次 ✓（`youkai.c:8399` ✓）| ★ `if ((L->age % POFV_C2M_SETTLE) == 0)` ✓（`SETTLE = 2` ✓）|
 
