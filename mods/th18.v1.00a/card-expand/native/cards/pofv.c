@@ -2510,6 +2510,7 @@ static void power_flash_fire(int slot, float x, float y)
  *     这里统一按「`active == 0` 而句柄还在 ⇒ 删 + 清 0」收干净（铁律：不许留幽灵 VM）。
  *   ⚠ 道具脚本（423）也**不自己 `delete()`**（一手 script123 是 `static()` 常驻）⇒ 收/出界一律由我们删；
  *     闪光脚本（424）则**自己 delete**（一手如此）⇒ 它的句柄只探活、不在这里删。*/
+static int32_t s_item_spawn_ok, s_item_spawn_fail;   /* ★ 自证计数（诊断用 ✓）*/
 static void power_vm_sync(void)
 {
     int i;
@@ -2518,7 +2519,8 @@ static void power_vm_sync(void)
         if (!it->active) { power_vm_drop(it); continue; }
         if (!it->vm && it->delay <= 0) {
             uint32_t id = ce_anm_spawn(CE_ABILITY_ANM(), POFV_POWER_VM_SCRIPT, POFV_POWER_VM_LAYER);
-            if (!id) continue;          /* 建失败 ⇒ 逻辑照走（下一帧再试），不丢道具 */
+            if (!id) { ++s_item_spawn_fail; continue; }   /* ★ 自证计数 ✓ */
+            ++s_item_spawn_ok;
             ce_anm_set_pos(id, it->x, it->y, 0.0f);
             ce_anm_set_sprite(CE_ABILITY_ANM(), id, POFV_POWER_VM_SPRITE);
             /* ★★★★ 2026-10-09 **修 bug**（owner：「alpha 上限是 255=不透明；我看着咱们的可**不是 alpha 96**
@@ -2532,6 +2534,19 @@ static void power_vm_sync(void)
             power_flash_fire(i, it->x, it->y);   /* ★ 同一刻点一台几何闪光（一手 effect.anm script94）*/
         }
         if (it->vm) ce_anm_set_pos((uint32_t)it->vm, it->x, it->y, 0.0f);
+    }
+    /* ★★★ 2026-10-11 自证日志（owner：「灵力道具全没了，一个没掉」✗，而日志显示**逻辑在跑**
+     *   —— `[REI] got=1..3` ✓ + `power +N (N items …)` ✓ ⇒ ★ 那就是**看不见** ✗）：
+     *   ★ 每 120 帧打一行：活跃颗数 / 有 VM 的颗数 / 本帧 spawn 成败各几次 ✓
+     *   ⇒ ★ 下一局正常打就能分辨："逻辑在跑但没有 VM" ✗ vs "VM 建了却没画出来" ✗ ✓。*/
+    if ((s_card_frames % 120) == 0) {
+        int act = 0, has_vm = 0, k9;
+        for (k9 = 0; k9 < POFV_POWER_MAX; ++k9) {
+            if (s_power.s[k9].active) ++act;
+            if (s_power.s[k9].vm) ++has_vm;
+        }
+        ce_log("pofv: [ITEM] active=%d vm=%d spawn_ok=%d spawn_fail=%d", act, has_vm,
+               (int)s_item_spawn_ok, (int)s_item_spawn_fail);
     }
 }
 
