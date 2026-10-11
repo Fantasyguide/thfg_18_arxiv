@@ -2618,6 +2618,11 @@ static void pofv_c1_fire_range(int grp, int from, int cnt)
         /* ★★ 三人各用**自己**的一手脚本 ✓（子 agent 核实 ✓）：灵梦 427（`pl00 script10` ✓）、
          *   魔理沙 442（`pl01 script8` ✓）、早苗 **444**（`pl02 script7` ✓，四帧 62×14 龙条 ✓）。*/
         s_c1_vm[t] = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
+        /* 2026-10-11 仪表：★ 出生现场（SPIN 日志三次全 0 行 ⇒ 怀疑这些弹"一出生就在场外"
+         *   或"速度方向反了"⇒ 你看到的 4 发是另一批 ✓）。*/
+        ce_log("pofv: [C1FIRE] grp=%d t=%d x=%.1f y=%.1f ang=%.3f spd=%.1f kind=%d vm=%d",
+               grp, t, (double)s_c1_x[t], (double)s_c1_y[t], (double)r->ang, (double)s_c1_spd[t],
+               s_c1_kind[t], (int)s_c1_vm[t]);
                         (s_c1_kind[t] == 1) ? CE_ANM_ABILITY_SCRIPT_POFV109_C1M_BEAM
                       : (s_c1_grp[t] == POFV_C1_GROUP_SANA) ? CE_ANM_ABILITY_SCRIPT_POFV109_C1S_SHOT
                                             : CE_ANM_ABILITY_SCRIPT_POFV109_C1_BULLET,
@@ -2819,6 +2824,8 @@ static void pofv_c1_tick(void)
             }
             s_c1_live[t] = 0;
             continue;
+            ce_log("pofv: [C1OFF] t=%d age=%d x=%.1f y=%.1f spd=%.1f", t, s_c1_age[t],
+                   (double)s_c1_x[t], (double)s_c1_y[t], (double)s_c1_spd[t]);
         }
         if (s_c1_vm[t]) ce_anm_set_pos((uint32_t)s_c1_vm[t], s_c1_x[t], s_c1_y[t], 0.0f);
         pos[0] = s_c1_x[t]; pos[1] = s_c1_y[t]; pos[2] = 0.0f;
@@ -6607,6 +6614,10 @@ static int on_tick_2(ce_card_t *c)
              *   ⚠ 我上一版按 owner 的"太快"砍成 **7.5** ✗ —— ★ 那是**手感猜测** ✓，★ 现已被代码推翻 ✓
              *     ⇒ ★ **恢复 15** ✓。（"太快"的真因：★ 本卡**吃到的颗数**多 ✗ —— 见 TUNING ✓。）*/
             s_reiryoku += POFV_REI_GAIN_PER_ITEM * (float)got_n;
+            /* 2026-10-11 仪表：★ owner「一波 20 hit 就从 C2 吸满到 C4」✗ ⇒ 打出每次进账
+             *   的件数与总量 ✓（看是"件数判据错"还是"单个给太多"✓）。*/
+            ce_log("pofv: [REI] got=%d gain=%.1f total=%.1f", got_n,
+                   (double)(POFV_REI_GAIN_PER_ITEM * (float)got_n), (double)s_reiryoku);
             if (s_reiryoku > POFV_REI_MAX) s_reiryoku = POFV_REI_MAX;   /* ★ 一手夹到 2500 ✓ */
             /* ★ 一手：**升档**另有音（TH16 季节道具升档播 `0x3f`）—— 本卡的对照事件 = **EX 就绪**
              *   （`s_ex_gauge` 首次到 `POFV_EX_FIRE_AT`）；❓ 这只是「本卡哪个事件算升档」的适配，
