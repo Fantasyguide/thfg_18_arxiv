@@ -2503,6 +2503,7 @@ static int   s_c1_stop[POFV_C1_SHOTS_PER_GROUP];
  *   ⇒ ★ 池降到 **32** ✓、★ 改成**每 2 帧补一台** ✓（一手是每帧 ✓，这里保守 —— ❓自定 ✓）。*/
 #define POFV_C1_TRAIL_MAX 32
 #define POFV_C1_TRAIL_EVERY 2
+static int s_c1_trail_burst;   /* ★ 本帧已补几台 ✓（安全阀 ✓）*/
 static int32_t s_c1_trail[POFV_C1_TRAIL_MAX];
 static int     s_c1_trail_ttl[POFV_C1_TRAIL_MAX];
 static void pofv_c1_trail_spawn(float x, float y)
@@ -2510,6 +2511,8 @@ static void pofv_c1_trail_spawn(float x, float y)
     int k;
     for (k = 0; k < POFV_C1_TRAIL_MAX; ++k) if (s_c1_trail_ttl[k] <= 0) break;
     if (k >= POFV_C1_TRAIL_MAX) return;                 /* ★ 池满 ⇒ 这一帧不放 ✓ */
+    if (s_c1_trail_burst >= 4) return;                  /* ★ 每帧上限 4 台 ✓（安全阀 ✓）*/
+    ++s_c1_trail_burst;
     s_c1_trail[k] = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
                         CE_ANM_ABILITY_SCRIPT_POFV109_C1_TRAIL, POFV_C1_VM_LAYER);
     if (!s_c1_trail[k]) return;
@@ -2519,6 +2522,7 @@ static void pofv_c1_trail_spawn(float x, float y)
 static void pofv_c1_trail_tick(void)
 {
     int k;
+    s_c1_trail_burst = 0;
     for (k = 0; k < POFV_C1_TRAIL_MAX; ++k) {
         if (s_c1_trail_ttl[k] <= 0) continue;
         if (--s_c1_trail_ttl[k] > 0) continue;
@@ -2654,6 +2658,16 @@ static void pofv_c1_window_tick(void)
 /* ★ 每帧：前进 + 伤害源 + 到期/出屏收尾 */
 static void pofv_c1_tick(void)
 {
+    /* ★★ 仪表（跑卡死时用 ✓）：★ 每 60 帧一行，报告 C1 的现场 ✓ ——
+     *   `live` = 活着的弹 ✓、`trail` = 残影池占用 ✓、`win` = 窗口剩余 ✓、`sel` = 用的哪张表 ✓。*/
+    if ((s_card_frames % 60) == 0) {
+        int lv = 0, tr = 0, kk;
+        for (kk = 0; kk < POFV_C1_SHOTS_PER_GROUP; ++kk) if (s_c1_live[kk]) ++lv;
+        for (kk = 0; kk < POFV_C1_TRAIL_MAX; ++kk) if (s_c1_trail_ttl[kk] > 0) ++tr;
+        ce_log("pofv: C1 tick live=%d trail=%d/%d win=%d sel=%d stop=%d",
+               lv, tr, (int)POFV_C1_TRAIL_MAX, s_c1_win_left, s_c1_set_sel,
+               (POFV_C1_SHOTS_PER_GROUP > 0) ? s_c1_stop[0] : 0);
+    }
     pofv_c1_window_tick();   /* ★ 一手：发射窗口（早苗的半圈切换 ✓）*/
     pofv_c1_trail_tick();    /* ★ 残影池（灵梦 C1 ✓）*/
     int t;
