@@ -5709,10 +5709,18 @@ static int on_tick_2(ce_card_t *c)
                 ce_anm_set_color((uint32_t)s_hud_chg_slash_vm, 0xFFC0C0C0u);   /* 灰静态 ✓ */
             }
             if (s_hud_chg_max_vm) {
+                /* ★★ 2026-10-11 owner 实跑：「**m 还是 4**」✗ ⇒ ★ 一手口径：
+                 *   ★ `m` = **当前灵力能蓄到的最大等级** ✓（灵力 500 ⇒ 1 / 1000 ⇒ 2 / 1700 ⇒ 3 / 2500 ⇒ 4 ✓），
+                 *   ★ 不是恒为 `POFV_HUD_CHG_MAX_TIER`（= 4）✗。★ 算法 = 数"阈值 ≤ 灵力"的个数 ✓。*/
+                int mreach = 0;
+                if (s_reiryoku >= POFV_C1_THRESH) ++mreach;
+                if (s_reiryoku >= POFV_C2_THRESH) ++mreach;
+                if (s_reiryoku >= POFV_C3_THRESH) ++mreach;
+                if (s_reiryoku >= POFV_C4_THRESH) ++mreach;
                 ce_anm_set_pos((uint32_t)s_hud_chg_max_vm, bx + 24.0f, by - 56.0f, 0.0f);
                 ce_anm_set_scale((uint32_t)s_hud_chg_max_vm, 2.0f, 2.0f);     /* ★ 同上 ×2 ✓ */
                 ce_anm_set_sprite(CE_ABILITY_ANM(), (uint32_t)s_hud_chg_max_vm,
-                                  CE_ANM_ABILITY_SPRITE_POFV109_TH09_UI_DIGIT_0 + POFV_HUD_CHG_MAX_TIER);
+                                  CE_ANM_ABILITY_SPRITE_POFV109_TH09_UI_DIGIT_0 + (uint32_t)mreach);
                 ce_anm_set_color((uint32_t)s_hud_chg_max_vm, 0xFFC0C0C0u);     /* 灰静态 ✓ */
             }
         } else {
