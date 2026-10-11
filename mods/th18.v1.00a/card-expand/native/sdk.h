@@ -1233,6 +1233,17 @@ void ce_hud_debug_blocks_tick(void);
  * 只写已验证的 `color_1` 的 A（保留 RGB ⇒ 乘性 ⇒ 与引擎自己的闸只叠加）。*/
 void ce_hud_native_face_dim_tick(void);
 
+/* ★★★ 2026-10-03z55（owner：「**单 109 的时候，蓄力槽被弄到主动卡上面了**」）——
+ *   卡侧**自己算声明宽度**时必须先刷这个：`ce_hud_row_remaining_w()`（"底边剩余宽度"）读的是
+ *   `s_hud_card_present`，而那个标志原本只在**认领包装器**里更新 ⇒ 109 先算宽度、后调包装器
+ *   ⇒ 用的是**上一手的旧标志**（新关卡里是 false ✗）⇒ 宽度算成 756（68..824，**没扣卡面**）⇒
+ *   底边那行放不下（右沿 880 > 软上限 824）⇒ 排布器把它顶到**卡面上方** ✗（owner 看到的现象）。
+ *   ⇒ 卡侧"先算宽度"的标准写法：**先 `ce_hud_card_refresh()`，再算** ✓。*/
+static inline void ce_hud_card_refresh(void)
+{
+    ce_hud_card_set(hud_card_present(*(void *const *)(CE_ABILITY_MGR() + CE_MGR_SELECTED_ACTIVE)));
+}
+
 static inline int ce_hud_slot_claim_card_ex(uint32_t card_id, const ce_hud_block_t *blk,
                                             int priority, int own_row, ce_hud_slot_t *out)
 {

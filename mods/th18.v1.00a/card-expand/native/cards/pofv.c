@@ -813,6 +813,7 @@ static void pofv_hud_chg_claim(void)
      *     等美术/脚本跟上时**只改画法**，这里的占位不用再动。
      *   旧值留档：`POFV_HUD_CHG_BLOCK_W_SURF` = 452（= 448 + 2×2）。*/
     {   float rw = 0.0f;
+        ce_hud_card_refresh();          /* ★ z55：先刷"原生卡面在不在"⇒ 宽度才是**扣过卡面**的 ✓ */
         ce_hud_row_remaining_w(&rw);
         blk.w = rw;
     }
