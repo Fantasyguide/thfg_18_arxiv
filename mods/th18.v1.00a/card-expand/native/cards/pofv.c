@@ -2064,6 +2064,9 @@ static int     s_c1_rel_latch;   /* ★ 「每次释放放一份 C1」的闩锁 
  * ★ 画法：ce_hud_vm_text_set_font ✓（sdk.h:811）；坐标 = 640 空间 ✓；align_h 0 = 居中 ✓（sdk.h:774）。*/
 static ce_hud_vm_text_t s_hud_chg_lv_text;
 static int s_c3_lv_n, s_c4_lv_n;
+/* ★★ 2026-10-11 补一手（子 agent 核实 ✓）：★ C3/C4 各有一个**使用计数** ✓
+ *   （一手 `S+0x4c`（C3）/ `S+0x50`（C4），**clamp 0..999** ✓）—— 与 LV（0..7）**不是同一个量** ✗。*/
+static int s_c3_uses, s_c4_uses;
 /* ★★ 一手（子 agent 核实 ✓）：★ C2 的**扩张环圆心 = 第 1 个环绕点** ✗（不是自机 ✗）。
  *   ⇒ 卡侧把第 1 个点的坐标记下来，环 VM / 环的消弹都用它 ✓。*/
 static float s_c2_pt0x, s_c2_pt0y;      /* ★ 阶段 3/4 等级（0..7 ✓，一手 +0x38/+0x3c ✓）*/
@@ -3912,6 +3915,7 @@ static void clear_card(ce_card_t *c)
     {   int k3; for (k3 = 0; k3 < POFV_C2_POINTS; ++k3)      /* ★ 铁律：C2 的 3 台可见物也收 ✓ */
             if (s_c2.orb_vm[k3]) { ce_anm_delete((uint32_t)s_c2.orb_vm[k3]); s_c2.orb_vm[k3] = 0; } }
     s_barrier_grant_pending = 1;                /* ★ #5：重新拿到卡 ⇒ 再给一个罩 ✓ */
+    s_c3_uses = 0; s_c4_uses = 0;               /* ★ 铁律：C3/C4 使用计数随卡清零 ✓ */
     if (s_hud_chg_fill_vm)  { ce_anm_delete((uint32_t)s_hud_chg_fill_vm);  s_hud_chg_fill_vm  = 0; }
     if (s_hud_chg_white_vm) { ce_anm_delete((uint32_t)s_hud_chg_white_vm); s_hud_chg_white_vm = 0; }
     { int i9; for (i9 = 0; i9 < POFV_HUD_CHG_TICKS; ++i9)
@@ -5032,6 +5036,9 @@ static int on_tick_2(ce_card_t *c)
             /* ★ LV 计数（一手 ✓ `clamp(+1, 0, 7)`）：★ 新跨到 3 档 ⇒ C3 的 LV +1 ✓；★ 4 档 ⇒ C4 ✓ */
             if (t_now >= 3 && s_tier_prev < 3 && s_c3_lv_n < 7) ++s_c3_lv_n;
             if (t_now >= 4 && s_tier_prev < 4 && s_c4_lv_n < 7) ++s_c4_lv_n;
+            /* ★ 一手 ✓ 使用计数（`S+0x4c` / `S+0x50`，clamp 0..999 ✓）*/
+            if (t_now >= 3 && s_tier_prev < 3 && s_c3_uses < 999) ++s_c3_uses;
+            if (t_now >= 4 && s_tier_prev < 4 && s_c4_uses < 999) ++s_c4_uses;
             s_tier_prev = t_now;
         }
         /* ★★ 2026-10-10：一手**三人**的 C2 完全不同（灵梦 = `EXReigekiInf` ✓ / 魔理沙 = 6 条
