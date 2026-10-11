@@ -2547,6 +2547,7 @@ static int   s_c1_dmg_ov[POFV_C1_SHOTS_PER_GROUP];
 #define POFV_C1S_STOP_FRAMES   4
 #define POFV_C1S_RESUME_SPD  14.0f
 static int   s_c1_stop[POFV_C1_SHOTS_PER_GROUP];
+static float s_c1_py[POFV_C1_SHOTS_PER_GROUP];   /* ★ 上一帧的 y（判「越过」用 ✓，一手 ✓）*/
 /* ★★★ 2026-10-11：★ C1 的**自转**改由卡侧每帧写 ✓（脚本里的 `jmp` 循环已撤 ✗ ——
  *   属于"TH18 anmm 语义与 TH19 不同"那一族 ✓）。★ 一手：27°/帧 = `0.4712389 rad` ✓。*/
 #define POFV_C1_SPIN_STEP 0.4712389f
@@ -2652,6 +2653,7 @@ static void pofv_c1_fire_range(int grp, int from, int cnt)
         s_c1_vy[t] = s_c2_dir36[di][1];
         s_c1_spd[t] = r->spd;                 /* ★ 一手：初始速度来自弹表（灵梦 14 ✓）*/
         s_c1_rot[t] = 0.0f;                   /* ★ 自转从 0 起 ✓ */
+        s_c1_py[t] = s_c1_y[t];               /* ★ 越过判据的上一帧 y ✓ */
         s_c1_age[t] = 0;
         s_c1_bounce[t] = 0;
         s_c1_live[t] = 1;
@@ -2810,8 +2812,14 @@ static void pofv_c1_tick(void)
             {   uint8_t *em2 = CE_ENEMY_MGR(), *e2; int hit2 = 0;
                 CE_ENEMY_FOREACH(em2, e2) {
                     const float *ep = ce_enemy_pos(e2);
-                    const float ex = ep[0] - s_c1_x[t], ey = ep[1] - s_c1_y[t];
-                    if (ex > -16.0f && ex < 16.0f && ey > -16.0f && ey < 16.0f) { hit2 = 1; break; }
+                    /* ★★★ 2026-10-11 照一手补全 ✓（子 agent 原文：「±16 内 + y 越过」✓）：
+                     *   ★ 原来我只做了「x、y 都在 ±16 内」✗（少了「越过」那一半 ✓）。
+                     *   ★ 越过 = 这一帧子弹的 y **跨过了**敌机的 y ⇒ `(prev_y - ey) * (y - ey) <= 0` ✓
+                     *     （带符号相乘 ⇒ 变号即穿过 ✓；贴边恰好相等也算 ✓）。*/
+                    const float ex = ep[0] - s_c1_x[t];
+                    const float ey_now = ep[1] - s_c1_y[t];
+                    const float ey_prev = ep[1] - s_c1_py[t];
+                    if (ex > -16.0f && ex < 16.0f && (ey_prev * ey_now) <= 0.0f) { hit2 = 1; break; }
                 }
                 if (hit2) {
                     s_c1_stop[t] = POFV_C1S_STOP_FRAMES;      /* ★ 一手 ✓ 停 4 帧 */
@@ -2857,6 +2865,7 @@ static void pofv_c1_tick(void)
         } else {
             s_c1_spd[t] += POFV_C1_REACCEL;
         }
+        s_c1_py[t] = s_c1_y[t];      /* ★ 记上一帧 y（判越过 ✓）*/
         pofv_stage_set(21);   /* ★ 移动前 */
         s_c1_x[t] += s_c1_vx[t] * s_c1_spd[t];
         s_c1_y[t] += s_c1_vy[t] * s_c1_spd[t];
