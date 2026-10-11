@@ -2502,6 +2502,10 @@ static int   s_c1_dmg_ov[POFV_C1_SHOTS_PER_GROUP];
 #define POFV_C1S_STOP_FRAMES   4
 #define POFV_C1S_RESUME_SPD  14.0f
 static int   s_c1_stop[POFV_C1_SHOTS_PER_GROUP];
+/* ★★★ 2026-10-11：★ C1 的**自转**改由卡侧每帧写 ✓（脚本里的 `jmp` 循环已撤 ✗ ——
+ *   属于"TH18 anmm 语义与 TH19 不同"那一族 ✓）。★ 一手：27°/帧 = `0.4712389 rad` ✓。*/
+#define POFV_C1_SPIN_STEP 0.4712389f
+static float s_c1_rot[POFV_C1_SHOTS_PER_GROUP];
 /* ★★ 2026-10-11 owner 实跑：「灵梦的 **C1 还有残影**」✗ ⇒ ★ 一手是靠 script10 里的
  *   `scriptNewRoot(script12)` ✓；★ 但 TH18 的 anmm 语义与 TH19 不同 ✗（旋转那条已经证明 ✓）
  *   ⇒ ★ **改卡侧自己补** ✓：每帧在弹的位置起一台 **433**（= 一手 script12 的复刻 ✓，20 帧自删 ✓）。
@@ -2602,6 +2606,7 @@ static void pofv_c1_fire_range(int grp, int from, int cnt)
         s_c1_vx[t] = s_c2_dir36[di][0];      /* ★ 单位方向（速度另存 ⇒ 两段运动只改标量 ✓）*/
         s_c1_vy[t] = s_c2_dir36[di][1];
         s_c1_spd[t] = r->spd;                 /* ★ 一手：初始速度来自弹表（灵梦 14 ✓）*/
+        s_c1_rot[t] = 0.0f;                   /* ★ 自转从 0 起 ✓ */
         s_c1_age[t] = 0;
         s_c1_bounce[t] = 0;
         s_c1_live[t] = 1;
@@ -2670,6 +2675,8 @@ static void pofv_c1_fire(void)
                 s_c1_vm[t] = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
                                 CE_ANM_ABILITY_SCRIPT_POFV109_C1M_BEAM, POFV_C1_VM_LAYER);
                 pofv_stage_set(23);   /* ★ 写位置前 */
+        s_c1_rot[t] += POFV_C1_SPIN_STEP;      /* ★ 卡侧自转（一手 27°/帧 ✓）*/
+        if (s_c1_vm[t]) ce_anm_set_rotation((uint32_t)s_c1_vm[t], 0.0f, 0.0f, s_c1_rot[t]);
         if (s_c1_vm[t]) ce_anm_set_pos((uint32_t)s_c1_vm[t], s_c1_x[t], s_c1_y[t], 0.0f);
             }
         }
