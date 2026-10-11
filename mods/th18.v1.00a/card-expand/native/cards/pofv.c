@@ -2067,6 +2067,7 @@ static int s_c3_lv_n, s_c4_lv_n;
 /* ★★ 2026-10-11 补一手（子 agent 核实 ✓）：★ C3/C4 各有一个**使用计数** ✓
  *   （一手 `S+0x4c`（C3）/ `S+0x50`（C4），**clamp 0..999** ✓）—— 与 LV（0..7）**不是同一个量** ✗。*/
 static int s_c3_uses, s_c4_uses;
+static int s_chg_prev;   /* 2026-10-11：蓄力键的上一帧状态（用来判真正的松手沿）*/
 /* ★★★ 2026-10-11 卡死定位**阶段仪表** ✓：★ 每段危险调用前 `pofv_stage_set(n)` 记一个号 ✓，
  *   ★ 只有**号变了**才打一行 ✓（不刷屏 ✓）。★ 卡死时**最后一个阶段号 = 凶手** ✓。*/
 static int s_dbg_stage;
@@ -5069,9 +5070,10 @@ static int on_tick_2(ce_card_t *c)
                                                        && s_aura_charge < POFV_C3_THRESH)) {
             pofv_c1_fire();
         }
-        /* 2026-10-11 owner：蓄力到 C2 自动放 C2 肯定不对 => 松手才放。
-         * 按松手那一刻的蓄力定档（一手：放炮块要求释放计时器）；只发最高那一档。*/
-        {
+        /* 2026-10-11 owner：「依旧有奇怪的提前释放」=> 根因是我把这个块放在了一个
+         * 蓄力途中就成立的支里（条件含「领域 VM 还在」）。改成真正的松手沿：
+         * 上一帧按着、这一帧没按，才放。按松手那一刻的蓄力定档，只发最高那一档。*/
+        if (s_chg_prev && !chg_held) {
             const int tier_rel = (s_aura_charge >= POFV_C4_THRESH) ? 4
                                : (s_aura_charge >= POFV_C3_THRESH) ? 3
                                : (s_aura_charge >= POFV_C2_THRESH) ? 2 : 1;
@@ -5079,6 +5081,7 @@ static int on_tick_2(ce_card_t *c)
             else if (tier_rel == 3) pofv_c3_fire();
             else if (tier_rel >= 4) pofv_c4_fire();
         }
+        s_chg_prev = chg_held;   /* 记录本帧状态，下一帧判沿 */
         s_c1_rel_latch = 1;
         /* ★★ 2026-10-10 owner 实跑回归：「我领域**不再有消失过程**」✗ —— 根因 = **这一支的门** ✗：
          *   原来门 = `s_aura_charge > 0.0f` ✓，而 ★ `s_aura_charge` **只在按 C 时增长** ✓
