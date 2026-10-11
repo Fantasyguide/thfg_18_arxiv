@@ -2740,6 +2740,13 @@ static void pofv_c1_tick(void)
     int t;
     for (t = 0; t < POFV_C1_SHOTS_PER_GROUP; ++t) {
         float pos[3];
+        /* 2026-10-11 仪表：★ 循环顶部 —— C1FIRE 有 4 行、C1OFF/SPIN 全 0 行
+         *   ⇒ 循环里一定有个更早的 `continue` 把它们跳过了 ✓ ⇒ 先在这里看循环
+         *   到底见没见到这些弹（live/vm/age/kind/grp ✓）。*/
+        if (s_c1_age[t] <= 4 || (s_c1_age[t] % 120) == 0)
+            ce_log("pofv: [C1LOOP] t=%d live=%d vm=%d age=%d kind=%d grp=%d x=%.1f y=%.1f",
+                   t, s_c1_live[t], (int)s_c1_vm[t], s_c1_age[t], s_c1_kind[t], s_c1_grp[t],
+                   (double)s_c1_x[t], (double)s_c1_y[t]);
         if (!s_c1_live[t]) continue;
         /* ★★ 早苗 C1：命中停 4 帧（一手 ✓）—— 停住时不动、之后以 14.0 继续 ✓ */
         if (s_c1_grp[t] == POFV_C1_GROUP_SANA && s_c1_kind[t] == 0) {
