@@ -5483,7 +5483,12 @@ static int on_tick_2(ce_card_t *c)
              * ⇒ 条左上角 = 块底 − 12 = **原先单根条时的同一个位置** ✓（**本卡位置不变** ✓）；
              *    4 枚标 = **居中在块心**（4×24 的贴图、`DIA_CY` = 0 ⇒ [fy−12, fy+12] 正好 = 24 高的认领块 ✓）；
              *    ⚠ 块高 +8 只抬**左列上面那一行**的块（见 `POFV_HUD_CHG_TICK_UP` 的货架影响注释 ✓）。*/
-            const float fx = s_hud_chg_slot.x;
+            /* ★★❓自定（owner 2026-10-11：「**把整个槽摆在屏幕的正中**」✓）：
+             *   ★ 整个槽（**底槽 452 + 蓝填充 + 白段 + 4 标 + `level n/m` 标签** ✓）**全部由 `fx` 派生**
+             *   （`bx = fx + BORDER` ✓，见 `pofv_hud_charge_bar` ✓）
+             *   ⇒ ★ **居中只需改这一个数** ✓ —— ★ 底槽/条/刻度/标签**一起居中** ✓（★ 不会互相错位 ✓）。
+             *   ★ 原值 = `s_hud_chg_slot.x`（申领槽左沿 = 跟随货架 ✗）；★ 一手是跟随自机 ✗ ⇒ 两者都**偏离一手** ✓。*/
+            const float fx = (POFV_HUD_SCREEN_W_SURF - POFV_HUD_CHG_BLOCK_W_SURF) * 0.5f;
             const float fy = s_hud_chg_slot.y - POFV_HUD_CHG_BLOCK_H_SURF;   /* 块底对齐 ✓ */
             pofv_hud_charge_bar(fx, fy, ratio_rei, ratio_chg);
         }
