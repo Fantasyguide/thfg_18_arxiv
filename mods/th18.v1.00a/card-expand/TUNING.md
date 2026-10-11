@@ -18045,4 +18045,18 @@ if (s_opt_sanae.ptr) { ce_option_drop(c, &s_opt_sanae); s_opt_sanae.ptr = 0; }
 ★ **本轮已落**：★ Step A 按上述改法贴进 `pofv.c` ✓（状态 `s_opt_sanae` ✓ + 每帧 `ce_option_get`（早苗才要 ✓、
 非早苗当帧收 ✓）+ `clear_card` 里 drop ✓）；★ 脚本用 109 自己的 **448** ✓；★ `make check` 全绿 ✓。
 ★ **仍待做**：★ **出膛点**（早苗 C1/C2 的生成坐标改读 `ce_option_x/y` ✓ —— 审计给的"最小步骤"的另一半 ✓）。
+### ★★★★ ② 完成：早苗的弹改从**子机坐标出膛** ✅（goal 第 14 轮，2026-10-11）
+
+★ 落地（4 处，全部 `make check` 全绿才提交 ✓）：
+| # | 件 | 内容 |
+| --- | --- | --- |
+| 1 | 状态 | `static ce_option_t s_opt_sanae;` ✓ |
+| 2 | 认领 | ★ `on_tick_2` 每帧：**早苗才** `ce_option_get(c, &s_opt_sanae, 0, 448, retry 8, "pofv109")` ✓；非早苗 ⇒ ★ **当帧收干净** ✓ |
+| 3 | 收尾 | ★ `clear_card()` 里 `ce_option_drop` ✓ ⇒ `on_ctor`/`on_run_reset`/`on_delete` **三路覆盖** ✓（审计 D ✓：漏收 = 商店删卡漏一格池槽 ✓）|
+| 4 | ★ **出膛点** | ★ `pofv_c1_fire_range` 里：早苗（`POFV_C1_GROUP_SANA`）且子机在手 ⇒ ★ 弹从 **`ce_option_x/y`** 出膛 ✓（C1 蛇 / C2 青蛙**共用这一支** ✓）|
+
+★ **口径如实**（审计 D 的并账 ✓）：★ 这是「**用某个子机槽的坐标当出膛点**」✓ = **同功能类比** ✓，
+★ **不是**逐字段复刻一手 `class 5` ✗（一手读的是 TH19 自己固定下标 5 槽 ✓，与本卡先到先得的 12 格池不同源 ✓）。
+★ ❓自定旋钮（登记 ✓）：子机**视觉** = 109 自己的 **448（青蛙）**①；认领 **offset = 0**；retry = 8 帧；
+门 = `s_aura_kind == 3`（早苗）②。
 

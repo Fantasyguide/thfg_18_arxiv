@@ -2658,6 +2658,18 @@ static void pofv_c1_fire_range(int grp, int from, int cnt)
     pofv_stage_set(12);   /* ★ fire_range 入口 ✓ */
     const float *pp = ce_player_pos();
     const int nrows = s_c1_rows[grp];
+    /* ★★★★ 2026-10-11 owner（「你可以用子机槽来做到这件事」✓）+ ② 的**出膛点** ✓：
+     *   ★ **早苗**（`POFV_C1_GROUP_SANA`）且子机在手 ⇒ ★ 弹从 **`ce_option_x/y`** 出膛 ✓
+     *   （C1 的蛇 / set10 与 C2 的青蛙 / set11 都走这一支 ✓）⇒ ★ 一并解决一手 `class 5`「子机槽出膛」
+     *   与 owner「早苗原生低速子机打的就是这个弹幕」✓。
+     *   ⚠ ★ **审计 D 的并账**：★ 一手 `class 5` 读的是 TH19 自己固定下标 5 槽 ✓，与本卡这个
+     *   "先到先得的 12 格公共池"**不同源** ✗ ⇒ ★ 这是**同功能类比** ✓，**不是逐字段复刻** ✓
+     *   （TUNING 已登记 ✓）。*/
+    float ox = pp[0], oy = pp[1];
+    if (grp == POFV_C1_GROUP_SANA && s_opt_sanae.ptr) {
+        ox = ce_option_x(s_opt_sanae.ptr);
+        oy = ce_option_y(s_opt_sanae.ptr);
+    }
     int t, end;
     if (!pp) return;
     end = from + cnt; if (end > nrows) end = nrows;
@@ -2679,8 +2691,8 @@ static void pofv_c1_fire_range(int grp, int from, int cnt)
          *     ★ 左侧那几发**整体偏一格** ⇒ 图案歪掉 ✓。
          *   ⇒ ★ 改成**四舍五入到最近的 10° 档** ✓（先 `+36.5` 再 `% 36` ⇒ 负数也安全 ✓）。*/
         di = (int)(r->ang * (36.0f / 6.2831853f) + 36.5f) % 36;
-        s_c1_x[t] = pp[0] + r->x;
-        s_c1_y[t] = pp[1] + r->y;
+        s_c1_x[t] = ox + r->x;
+        s_c1_y[t] = oy + r->y;
         s_c1_vx[t] = s_c2_dir36[di][0];      /* ★ 单位方向（速度另存 ⇒ 两段运动只改标量 ✓）*/
         s_c1_vy[t] = s_c2_dir36[di][1];
         s_c1_spd[t] = r->spd;                 /* ★ 一手：初始速度来自弹表（灵梦 14 ✓）*/
