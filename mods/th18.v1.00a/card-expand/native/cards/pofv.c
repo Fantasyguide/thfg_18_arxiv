@@ -528,7 +528,7 @@ static int   s_boss_prev;   /* ★ owner 2026-10-05：boss 表 0→1 的**边沿
  *     ⇒ ★ 所以「避让卡槽」**不用另做** ✓，★ 只要把**画**的宽度接上申领结果 ✓。
  *   ★ 于是：`bx` = 槽左沿 + 边框 ✓（★ **不再跟随自机** ✗）、可用宽 = `槽宽 − 2×边框` ✓
  *     （★ 不再写死 448 ✗）。★ 一手是 224（640 空间）= 448 表面 ✓ —— ★ 本卡此处**刻意偏离** ✗。*/
-static float s_hud_chg_w_cur = POFV_HUD_CHG_FILL_W;   /* ★ 本帧画多宽（表面 px ✓，来自申领槽 ✓）*/
+#define POFV_HUD_SCREEN_W_SURF   1280.0f   /* ★ 640×480 ×2 ✓（owner：「摆在屏幕的正中」✓）*/
 #define POFV_HUD_CHG_FILL_H      (POFV_HUD_CHG_BLOCK_H * POFV_HUD_CHG_X2)   /*   8 表面 px：填充区高（= 一手 4 ×2 ✓）*/
 /* ★ 底槽 = **比填充区每边大一圈**（`POFV_HUD_CHG_BORDER` 表面 px）—— 观感 = 深灰/暗的外沿 ✓。
  *   ❓ 自定（一手 script2 是 `drawRectBorder(224,4)` **白描边**；TH18 的 anm **没有** `drawRectBorder`
@@ -893,7 +893,7 @@ static void pofv_hud_charge_bar(float fx, float fy, float ratio_rei, float ratio
         if (!s_hud_chg_tick_vm[i]) {
             s_hud_chg_tick_vm[i] = (int32_t)hud_vm_spawn(
                 CE_ANM_ABILITY_SCRIPT_POFV109_CHG_MARK,
-                bx + s_hud_chg_w_cur * POFV_HUD_CHG_TICK_AT(kind, i),
+                bx + POFV_HUD_CHG_FILL_W * POFV_HUD_CHG_TICK_AT(kind, i),
                 fy + POFV_HUD_CHG_DIA_CY);   /* ★ 菱形**居中在认领块的块心**（精灵默认锚 = 锚心 ✓）*/
             /* ★ 4 色 4 张贴图 ⇒ 出生时按段位色选一次 sprite（下面每帧还会再写一遍，见 ④ ✓）*/
             if (s_hud_chg_tick_vm[i])
@@ -919,14 +919,14 @@ static void pofv_hud_charge_bar(float fx, float fy, float ratio_rei, float ratio
     /* ② **蓝填充 = 灵力比例**（规格 ① ✓）：左端起、长 `fr × 448` ✓ */
     if (s_hud_chg_fill_vm) {
         ce_anm_set_pos((uint32_t)s_hud_chg_fill_vm, bx, by, 0.0f);
-        ce_anm_set_scale((uint32_t)s_hud_chg_fill_vm, fr * s_hud_chg_w_cur, POFV_HUD_CHG_FILL_H);
+        ce_anm_set_scale((uint32_t)s_hud_chg_fill_vm, fr * POFV_HUD_CHG_FILL_W, POFV_HUD_CHG_FILL_H);
         ce_anm_set_color((uint32_t)s_hud_chg_fill_vm, tdim | (POFV_HUD_CHG_FILL_COL & 0xffffffu));
         ce_anm_set_color2((uint32_t)s_hud_chg_fill_vm, tdim | (POFV_HUD_CHG_FILL_COL & 0xffffffu));
     }
     /* ③ **白段 = 蓄力比例**（规格 ② ✓）：同一左端、**叠在蓝上** ✓ */
     if (s_hud_chg_white_vm) {
         ce_anm_set_pos((uint32_t)s_hud_chg_white_vm, bx, by, 0.0f);
-        ce_anm_set_scale((uint32_t)s_hud_chg_white_vm, fc * s_hud_chg_w_cur, POFV_HUD_CHG_FILL_H);
+        ce_anm_set_scale((uint32_t)s_hud_chg_white_vm, fc * POFV_HUD_CHG_FILL_W, POFV_HUD_CHG_FILL_H);
         ce_anm_set_color((uint32_t)s_hud_chg_white_vm, tdim | (POFV_HUD_CHG_WHITE_COL & 0xffffffu));
         ce_anm_set_color2((uint32_t)s_hud_chg_white_vm, tdim | (POFV_HUD_CHG_WHITE_COL & 0xffffffu));
     }
@@ -952,7 +952,7 @@ static void pofv_hud_charge_bar(float fx, float fy, float ratio_rei, float ratio
      *    ★ `fc < 标位`（松手/归零）⇒ **真删** + 句柄清 0 ⇒ 下次再越会从头弹一次 ✓。*/
     for (i = 0; i < POFV_HUD_CHG_TICKS; ++i) {
         const float ti = POFV_HUD_CHG_TICK_AT(kind, i);   /* ★ 标位分数：**位置**与**电平判据**同一个数 ✓ */
-        const float tx = bx + s_hud_chg_w_cur * ti;
+        const float tx = bx + POFV_HUD_CHG_FILL_W * ti;
         const float ty = fy + POFV_HUD_CHG_DIA_CY;
         const int reached = (fc >= ti);                   /* ★ 电平：蓄力 ≥ 标位（owner 裁决 ✓）*/
         uint32_t vm = (uint32_t)s_hud_chg_tick_vm[i];
@@ -5150,12 +5150,15 @@ static int on_tick_2(ce_card_t *c)
                   by = POFV_HUD_SURF_Y(pp ? pp[1] : 0.0f);
             /* ★★ 量纲改一手后，四档**间距不等**（500/1000/1700/2500 ✓）⇒ 档位改成
              *   「**逐阈值计数**」✓ —— ★ 正是**一手**的判据（`charge ≥ 阈ᵢ` ✓，§17 ✓）。*/
-            if (s_hud_chg_slot_ok) {          /* ★ 申领成功 ⇒ 用槽的几何（整屏宽、避卡槽 ✓）*/
-                bx = s_hud_chg_slot.x + POFV_HUD_CHG_BORDER;
-                s_hud_chg_w_cur = s_hud_chg_slot.w - POFV_HUD_CHG_BORDER * 2.0f;
-                if (s_hud_chg_w_cur < POFV_HUD_CHG_FILL_W)   /* 兜底：不比一手那 448 窄 ✓ */
-                    s_hud_chg_w_cur = POFV_HUD_CHG_FILL_W;
-            }
+            /* ★★❓自定（owner 2026-10-11 **二次修正**）：★ 先前"拉伸成全屏宽"**退回** ✗ ——
+             *   owner 实跑：「不蓄力时跟以前一样、按了蓄力**突然整体拉伸**」✗、
+             *   「**黑衬底（`s_hud_chg_track_vm` = 452×12 ✓）没拉伸**」✗（★ 我上一版确实没碰它 ✓ = 那正是病根 ✓）
+             *   并定：「**还是退回原来的条的长度**，但是有一条：**把整个槽摆在屏幕的正中**」✓。
+             *   ⇒ ★ 宽度回**一手值** 448 ✓（`POFV_HUD_CHG_FILL_W` ✓，底槽 452 本来就是它 ✓ ⇒ 两者重新对齐 ✓）；
+             *   ⇒ ★ `bx` 改**水平居中** ✓（★ 不再跟随自机 ✗、★ 不再拉伸 ✗）。★ 底槽也吃同一个 `bx` ✓。
+             *   ★ 表面屏宽 = 640×480 × 2 = **1280** ✓（`POFV_HUD_CHG_X2` / `HUD-LAYOUT.md` §1.1 ✓）。*/
+            bx = (POFV_HUD_SCREEN_W_SURF - POFV_HUD_CHG_BLOCK_W_SURF) * 0.5f
+               + POFV_HUD_CHG_BORDER;
             int32_t tier = 0;
             if (s_aura_charge >= POFV_C1_THRESH) ++tier;
             if (s_aura_charge >= POFV_C2_THRESH) ++tier;
