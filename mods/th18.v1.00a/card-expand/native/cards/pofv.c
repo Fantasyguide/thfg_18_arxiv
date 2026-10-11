@@ -5325,9 +5325,24 @@ static int on_tick_2(ce_card_t *c)
             ce_log("pofv: [REL] tier=%d charge=%.0f chg=%d prev=%d aura=%d f=%d",
                    tier_rel, (double)s_aura_charge, (int)chg_held, (int)s_chg_prev,
                    (int)aura_held, (int)s_card_frames);
-            if (tier_rel == 2) pofv_c2_fire();
-            else if (tier_rel == 3) pofv_c3_fire();
-            else if (tier_rel >= 4) pofv_c4_fire();
+            /* ★★★★ 2026-10-11 **修一个明显的 bug**（owner：「早苗 C2 也不是发灵梦的那三颗大球啊，
+             *   就是青蛙」✗ + 上一轮「意外释放 C2 C3 …**其他人也应该都有**」✓）：
+             *   ★ 这里原来**写死了灵梦那三支**（`pofv_c2_fire/c3_fire/c4_fire` ✗）⇒
+             *   ★ **早苗/魔理沙松手放出的都是"灵梦的档位"** ✓ = owner 报的"早苗 C2 发灵梦大球" ✓。
+             *   ⇒ ★ **按角色分派** ✓：魔理沙 `c2m/c3m/c4m` ✓、早苗 `c2s/c3s` ✓（★ 她**没有 c4s** ✗
+             *     ⇒ C4 仍走通用的 `pofv_c4_fire()` ✓，❓若一手她 C4 另有其物，再补 ✓）、其余（灵梦/咲夜）走通用 ✓。*/
+            if (tier_rel == 2) {
+                if (s_aura_kind == 1) pofv_c2m_fire();
+                else if (s_aura_kind == 3) pofv_c2s_fire();
+                else pofv_c2_fire();
+            } else if (tier_rel == 3) {
+                if (s_aura_kind == 1) pofv_c3m_fire();
+                else if (s_aura_kind == 3) pofv_c3s_fire();
+                else pofv_c3_fire();
+            } else if (tier_rel >= 4) {
+                if (s_aura_kind == 1) pofv_c4m_fire();
+                else pofv_c4_fire();
+            }
             /* ★★ 一手 ✓ 同帧：★ 档位发完**紧接着**发这份 C1 ✓
              *   （⇒ 魔理沙 C2 设的 `EX+0xd4` 由**这一份** C1 消耗 ✓，不再拖到下一份 ✓）。*/
             if (!s_c1_rel_latch && s_aura_charge > 0.0f
