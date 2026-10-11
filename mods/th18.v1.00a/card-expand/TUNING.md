@@ -16790,3 +16790,38 @@ FUN_004bb8d0(*(int *)(param_1 + 200) + 0x56, 音量);
 ★ ❓**这两个 id 是唯一没钉死的** ✗ —— ★ 一手那条**持续**蓄力音挂在它的 SE **状态对象**（`+0x54`）上 ✗，
 ★ 卡侧拿不到那种"循环/停止"接口 ✓ ⇒ ★ 只能"按下起一次 + 升档补一次" ✓。
 ★ **请 owner 听一遍** ✓：★ 放错就改这两行数 ✓（★ 或者告诉我 TH19 蓄力音的正确 id ✓）。
+
+### ★★ ② 三行字 + LV：料已全部核实、方案已定（2026-10-11，代码待落）
+
+★ owner：「蓄力到 **C2、C3、C4** 时，对应的**上面会有 `Skill` / `Ex Attack Lv n` / `Boss Lv n`**」✓（一手行为 ✓）
+
+**① 接口（全部读到原文 ✓）**
+| 件 | 出处 | 要点 |
+| --- | --- | --- |
+| `ce_hud_vm_text_t` | `sdk.h:786` | 10 个字形 VM 的池 ✓（`id[]` / `shown[]` / `n` ✓）|
+| `ce_hud_vm_text_set_font(&t, x, y, bgra, align_h, scale, s, tag, font)` | `sdk.h:811` | ★ `font` 0 = TH18 font2 ✓ |
+| `ce_hud_vm_text_clear(&t)` | `sdk.h:814` | ★ 铁律：`clear_card` 里必须收 ✓ |
+| ★ **坐标空间** | `sdk.h:1210` | ★★ 收的是 **640×480 空间**的点 ✓（★ 与槽的位置同一空间 ✓）|
+| ★ **`align_h`** | `sdk.h:774` | ★★ **0 = 居中** ✓ / 1 = 左 / 2 = 右 ✓（★ 我一度想用 1 ✗）|
+
+**② 一手文案与 LV（★ 修正我先前的错 ✗）**
+- ★ 阶段 3 的 HUD 串 = **`"Ex.Attack Lv%d"`** ✓（`engine/versus/th19/05-four-mechanics.md` §1.9 ✓，引用点 `0x4e8f38` ✓）；
+- ★ 阶段 4 = **`"Boss Lv%d"`** ✓ —— ★ 我在 exe 里**读到了原文**：`0x596de8` = `Boss Lv%d` ✓
+  （★ 另有 `"Boss Attack Level %d"` @ `0x5980d4` ✓ 作旁证 ✓）；
+- ★★ **LV 不是我先前记的"每局按难度常数"** ✗ —— ★ 是**运行时计数**：★ `S+0x38 = clamp(S+0x38 + 1, 0, 7)` ✓
+  （`0x4e8283`，阶段 3 ✓）；★ `S+0x3c = clamp(S+0x3c + 1, 0, 7)` ✓（`0x4e7bd4`，阶段 4 ✓，**与 3 独立** ✓）
+  ⇒ ★ 卡里 `POFV_C3_LEVEL_DEFAULT = 1` ❓① **要改成计数器** ✓（★ 每放一次 +1、clamp 0..7 ✓）。
+
+**③ 卡侧落地方案（已定 ✓，下一轮照此一次落）**
+1. ★ 加 ★ `static ce_hud_vm_text_t s_hud_chg_lv_text;` ✓ + ★ `static int s_c3_lv_n, s_c4_lv_n;` ✓；
+2. ★ 在**档位那一段**（`if (s_hud_chg_label_vm)` **之前** ✓）按 `tier` 写文本 ✓：
+   ★ `tier == 2` ⇒ `"Skill"` ✓；★ `tier == 3` ⇒ `snprintf(…, "Ex.Attack Lv%d", s_c3_lv_n)` ✓；
+   ★ `tier >= 4` ⇒ `snprintf(…, "Boss Lv%d", s_c4_lv_n)` ✓；★ `tier <= 1` ⇒ `ce_hud_vm_text_clear` ✓；
+   ★ 坐标 = 原标签位**表面值 ÷2**（`bx*0.5f`, `(by-80)*0.5f` ✓）；★ `align_h = 0`（居中 ✓）、`scale = 1.0f` ✓；
+   ★ 颜色沿用既有 `flash`（`0xFF80FF80` / `0xFFFFFFFF` ✓）；
+3. ★ **LV 计数**：★ 档位**新跨到 3 / 4** 时各自 `+1`、`clamp 0..7` ✓（★ 接在**升档音**那块（`s_tier_prev` ✓）旁边 ✓）；
+4. ★ **收尾**：★ `clear_card` 里 `ce_hud_vm_text_clear(&s_hud_chg_lv_text);` ✓（★ 与 `s_hud_chg_track_vm` 的删除同一行附近 ✓，
+   ★ 实测那是 **`:3631`** ✓）。
+
+★ ⚠ 本轮**没落代码** ✗：★ 锚点连续对不上（★ 我用的 `if (s_hud_chg_label_vm) {` / track 删除行都差一点 ✗）
+⇒ ★ 每次都在 `write` 前被断言拦住 ✓ ⇒ **文件未被写坏、树仍全绿** ✓；★ 下一轮**先 grep 出行号再改** ✓（★ 别用长锚点 ✗）。
