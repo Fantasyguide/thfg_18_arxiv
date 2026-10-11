@@ -2458,7 +2458,15 @@ static int   s_c1_grp[POFV_C1_SHOTS_PER_GROUP];
  *   ★ **那一份 C1 追加 `set11` 的两发** ✓（`0x417c49` 置 1、`0x53cbe0` 消耗 ✓）。
  *   ★ set11 = **2 行**：dmg **6** / 偏移 **∓32** / **spd 0**（定点）/ anm8（= 同一支光束 ✓）。*/
 static int   s_c1_m_set11;
-static int   s_c1_dmg_ov[POFV_C1_SHOTS_PER_GROUP];   /* ★ 逐弹伤害（默认取表 ✓，追加两发覆盖为 6 ✓）*/   /* ★ 每颗弹的**组别** ✓（伤害要取对表的行 ✓）*/   /* ★ 标量速度（一手 `shot+0x6c` ✓，两段运动改它 ✓）*/
+static int   s_c1_dmg_ov[POFV_C1_SHOTS_PER_GROUP];
+/* ★★ 2026-10-11 照一手（子 agent 核实）：★ 早苗 C1 的 tick `0x54c080` —— **命中敌机时**
+ *   ★ `shot+0x6c = 0`（速度清零 ✓）+ **anm 中断 2**（= 脚本 444 的 `interruptLabel(2)` ✓），
+ *   ★ **停 4 帧**，★ 然后以 **14.0** 继续 ✓。
+ *   ★ 判据（子 agent 只读到这儿）：★ **±16 内 + y 越过** ✓ ⇒ 本卡自己遍历敌机判 ✓
+ *     （`CE_ENEMY_FOREACH` ✓；不用 `fabs` ⇒ 免 libm/x87 ✓）。*/
+#define POFV_C1S_STOP_FRAMES   4
+#define POFV_C1S_RESUME_SPD  14.0f
+static int   s_c1_stop[POFV_C1_SHOTS_PER_GROUP];   /* ★ 逐弹伤害（默认取表 ✓，追加两发覆盖为 6 ✓）*/   /* ★ 每颗弹的**组别** ✓（伤害要取对表的行 ✓）*/   /* ★ 标量速度（一手 `shot+0x6c` ✓，两段运动改它 ✓）*/
 static int s_c1_age[POFV_C1_SHOTS_PER_GROUP];
 static int s_c1_bounce[POFV_C1_SHOTS_PER_GROUP];   /* ★ 一手 `EX_BOUNCE`：已撞墙次数 ✓ */
 static int32_t s_c1_vm[POFV_C1_SHOTS_PER_GROUP];
@@ -2587,6 +2595,31 @@ static void pofv_c1_tick(void)
     for (t = 0; t < POFV_C1_SHOTS_PER_GROUP; ++t) {
         float pos[3];
         if (!s_c1_live[t]) continue;
+        /* ★★ 早苗 C1：命中停 4 帧（一手 ✓）—— 停住时不动、之后以 14.0 继续 ✓ */
+        if (s_c1_grp[t] == POFV_C1_GROUP_SANA && s_c1_kind[t] == 0) {
+            if (s_c1_stop[t] > 0) {
+                --s_c1_stop[t];
+                if (s_c1_stop[t] == 0) s_c1_spd[t] = POFV_C1S_RESUME_SPD;   /* ★ 一手 ✓ 14.0 */
+                ++s_c1_age[t];
+                if (s_c1_vm[t]) ce_anm_set_pos((uint32_t)s_c1_vm[t], s_c1_x[t], s_c1_y[t], 0.0f);
+                pos[0] = s_c1_x[t]; pos[1] = s_c1_y[t]; pos[2] = 0.0f;
+                ce_damage_rect(pos, 0.0f, POFV_C1_HIT_LIFE, (float)s_c1_dmg_ov[t],
+                               POFV_C1_HIT_W, POFV_C1_HIT_H);
+                continue;
+            }
+            {   uint8_t *em2 = CE_ENEMY_MGR(), *e2; int hit2 = 0;
+                CE_ENEMY_FOREACH(em2, e2) {
+                    const float *ep = ce_enemy_pos(e2);
+                    const float ex = ep[0] - s_c1_x[t], ey = ep[1] - s_c1_y[t];
+                    if (ex > -16.0f && ex < 16.0f && ey > -16.0f && ey < 16.0f) { hit2 = 1; break; }
+                }
+                if (hit2) {
+                    s_c1_stop[t] = POFV_C1S_STOP_FRAMES;      /* ★ 一手 ✓ 停 4 帧 */
+                    s_c1_spd[t] = 0.0f;                        /* ★ 一手 ✓ 速度清零 */
+                    if (s_c1_vm[t]) ce_anm_interrupt((uint32_t)s_c1_vm[t], 2);   /* ★ 一手 ✓ 中断 2 */
+                }
+            }
+        }
         if (s_c1_kind[t] == 1) {
             /* ★★ 一手 `0x54c830`（魔理沙 ✓）：★ **原地不动**，长度每帧 **+12**、封顶 **512**，
              *   ★ `age > 119` 收 ✓（贴图 256 宽 ⇒ `scale.x = 长度 / 256` ✓）。*/
