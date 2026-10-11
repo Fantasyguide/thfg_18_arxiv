@@ -3490,6 +3490,11 @@ static void pofv_c4_tick(void)
  *   ★ 寿命 = **60 + rand()%100** ✓（60..159）；★ **无 anm**（一手是引擎原生激光 ✗，
  *     本卡没有那种原语 ⇒ 仍用脚本 403 画，观感属 ❓自定 ✓）。*/
 #define POFV_C2M_HIT_LEN   600.0f
+/* ★★ 2026-10-11 照抄 108 的两个常量（owner：完全参考 108 ✓）：
+ *   ★ 108 `youkai.c:8163` = `scale.x = YK_LASER_LEN / YK_M_LASER_BEAM_SPRITE_W × grow`
+ *     = 2048 / 768 = **2.6666667** ✓；★ 展开帧数 = `YK_M_LASER_BEAM_GROW_FRAMES` = **8** ✓。*/
+#define POFV_C2M_LEN_OVER_SPRITE  (2048.0f / 768.0f)
+#define POFV_C2M_GROW_FRAMES      8
 
 typedef struct {
     int     live, age, life;
@@ -3528,7 +3533,7 @@ static void pofv_c2m_fire(void)
         di = (int)(L->ang * (36.0f / 6.2831853f)) % 36;
         if (di < 0) di += 36;
         (void)di;
-        L->vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_POFV109_AURA_MARISA,
+        L->vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_POFV109_C2M_BEAM,
                                       POFV_C2M_VM_LAYER);
         if (L->vm) {
             ce_anm_set_pos((uint32_t)L->vm, L->x, L->y, 0.0f);
@@ -3550,7 +3555,21 @@ static void pofv_c2m_tick(void)
             L->live = 0;
             continue;
         }
-        if (L->vm) ce_anm_set_pos((uint32_t)L->vm, L->x, L->y, 0.0f);
+        if (L->vm) {
+            /* ★★★ 2026-10-11 照抄 108（owner：「完全参考 108…」✓）：
+             *   · ★ 长度 = `YK_LASER_LEN / SPRITE_W × grow`（108 `youkai.c:8163` ✓）
+             *     = **2048 / 768 × grow = 2.6667 × grow** ✓；grow 在 **8 帧**内 0→1 ✓
+             *     （108 `YK_M_LASER_BEAM_GROW_FRAMES = 8` ✓）；
+             *   · ★ 宽度用脚本给的 `scale(1.0, 0.5)` ✓ ⇒ 卡侧只写 x… ✗ 不行
+             *     （`set_scale` 两轴一起写 ✓）⇒ y 也照 0.5 写 ✓；
+             *   · ★ 角度：脚本初始 `rotate(-π/2)` = 朝上 ✓，`anchor(1,0)` 左端锚 ✓
+             *     ⇒ 要指向 `L->ang`（一手：-90° = 朝上 ✓）取 **`rz = L->ang + π/2`** ✓。*/
+            const float grow = (L->age >= POFV_C2M_GROW_FRAMES)
+                             ? 1.0f : (float)L->age / (float)POFV_C2M_GROW_FRAMES;
+            ce_anm_set_pos((uint32_t)L->vm, L->x, L->y, 0.0f);
+            ce_anm_set_scale((uint32_t)L->vm, POFV_C2M_LEN_OVER_SPRITE * grow, 0.5f);
+            ce_anm_set_rotation((uint32_t)L->vm, 0.0f, 0.0f, L->ang + 1.5707964f);
+        }
         /* ★ 伤害源：绕自机、沿该角度铺一条长盒（`ce_damage_rect` 不转 ⇒ 用等分角度近似 ❓）*/
         pos[0] = L->x; pos[1] = L->y; pos[2] = 0.0f;
         (void)ce_damage_rect(pos, L->ang, 2, 14.0f, POFV_C2M_HIT_LEW, POFV_C2M_HIT_LEN);
