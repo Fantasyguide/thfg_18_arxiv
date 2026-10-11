@@ -2453,7 +2453,12 @@ static float s_c1_spd[POFV_C1_SHOTS_PER_GROUP];
 #define POFV_C1_M_END_AGE   120
 static int   s_c1_kind[POFV_C1_SHOTS_PER_GROUP];   /* 0 = 灵梦那种弹 ✓；1 = 魔理沙的光束 ✓ */
 static float s_c1_len[POFV_C1_SHOTS_PER_GROUP];
-static int   s_c1_grp[POFV_C1_SHOTS_PER_GROUP];   /* ★ 每颗弹的**组别** ✓（伤害要取对表的行 ✓）*/   /* ★ 标量速度（一手 `shot+0x6c` ✓，两段运动改它 ✓）*/
+static int   s_c1_grp[POFV_C1_SHOTS_PER_GROUP];
+/* ★★ 2026-10-11 照一手（子 agent 核实 ✓）：★ 魔理沙 **`EX+0xd4`** —— 她放过 C2 后，
+ *   ★ **那一份 C1 追加 `set11` 的两发** ✓（`0x417c49` 置 1、`0x53cbe0` 消耗 ✓）。
+ *   ★ set11 = **2 行**：dmg **6** / 偏移 **∓32** / **spd 0**（定点）/ anm8（= 同一支光束 ✓）。*/
+static int   s_c1_m_set11;
+static int   s_c1_dmg_ov[POFV_C1_SHOTS_PER_GROUP];   /* ★ 逐弹伤害（默认取表 ✓，追加两发覆盖为 6 ✓）*/   /* ★ 每颗弹的**组别** ✓（伤害要取对表的行 ✓）*/   /* ★ 标量速度（一手 `shot+0x6c` ✓，两段运动改它 ✓）*/
 static int s_c1_age[POFV_C1_SHOTS_PER_GROUP];
 static int s_c1_bounce[POFV_C1_SHOTS_PER_GROUP];   /* ★ 一手 `EX_BOUNCE`：已撞墙次数 ✓ */
 static int32_t s_c1_vm[POFV_C1_SHOTS_PER_GROUP];
@@ -2496,6 +2501,7 @@ static void pofv_c1_fire_range(int grp, int from, int cnt)
         s_c1_bounce[t] = 0;
         s_c1_live[t] = 1;
         s_c1_grp[t] = grp;                              /* ★ 记组别（一手三人表不同 ✓）*/
+        s_c1_dmg_ov[t] = (int)r->dmg;                    /* ★ 默认伤害 = 表 ✓（追加两发会覆盖 ✓）*/
         s_c1_kind[t] = (grp == POFV_C1_GROUP_MARISA) ? 1 : 0;
         s_c1_len[t] = 0.0f;
         /* ★★ 三人各用**自己**的一手脚本 ✓（子 agent 核实 ✓）：灵梦 427（`pl00 script10` ✓）、
@@ -2531,6 +2537,28 @@ static void pofv_c1_fire(void)
     } else {
         pofv_c1_fire_range(grp, 0, s_c1_rows[grp]);   /* ★ 灵梦 4 行一次 / 魔理沙 1 行一次 ✓ */
         s_c1_win_left = (grp == POFV_C1_GROUP_MARISA) ? 1 : 21;   /* ★ 一手 ✓ 1 / 21 帧 */
+    }
+    /* ★★ 一手 ✓ `EX+0xd4`：★ 魔理沙放过 C2 后，**这份 C1 追加两发**（dmg6 / ∓32 / spd0 ✓）。
+     *   ★ 用 1、2 号槽（魔理沙自己只占 0 号 ✓）；★ 贴图/脚本同光束 ✓（一手 anm8 ✓）。*/
+    if (s_c1_m_set11 && grp == POFV_C1_GROUP_MARISA) {
+        const float *pp2 = ce_player_pos();
+        s_c1_m_set11 = 0;                                  /* ★ 一次消耗 ✓（一手 ✓）*/
+        if (pp2) {
+            int e;
+            for (e = 0; e < 2; ++e) {
+                const int t = 1 + e;
+                if (s_c1_vm[t]) { ce_anm_delete((uint32_t)s_c1_vm[t]); s_c1_vm[t] = 0; }
+                s_c1_grp[t] = POFV_C1_GROUP_MARISA; s_c1_kind[t] = 1; s_c1_dmg_ov[t] = 6;
+                s_c1_len[t] = 0.0f;
+                s_c1_x[t] = pp2[0] + (e ? 32.0f : -32.0f);      /* ★ 偏移 ∓32 ✓ */
+                s_c1_y[t] = pp2[1];
+                s_c1_vx[t] = 0.0f; s_c1_vy[t] = -1.0f; s_c1_spd[t] = 0.0f;   /* ★ spd 0（定点）✓ */
+                s_c1_age[t] = 0; s_c1_bounce[t] = 0; s_c1_live[t] = 1;
+                s_c1_vm[t] = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
+                                CE_ANM_ABILITY_SCRIPT_POFV109_C1M_BEAM, POFV_C1_VM_LAYER);
+                if (s_c1_vm[t]) ce_anm_set_pos((uint32_t)s_c1_vm[t], s_c1_x[t], s_c1_y[t], 0.0f);
+            }
+        }
     }
 }
 
@@ -2574,7 +2602,7 @@ static void pofv_c1_tick(void)
                 s_c1_live[t] = 0;
             }
             pos[0] = s_c1_x[t]; pos[1] = s_c1_y[t]; pos[2] = 0.0f;
-            ce_damage_rect(pos, 0.0f, POFV_C1_HIT_LIFE, (float)s_c1_table[s_c1_grp[t]][t].dmg,
+            ce_damage_rect(pos, 0.0f, POFV_C1_HIT_LIFE, (float)s_c1_dmg_ov[t],
                            POFV_C1_HIT_W, POFV_C1_HIT_H);
             continue;
         }
@@ -2597,7 +2625,7 @@ static void pofv_c1_tick(void)
         }
         if (s_c1_vm[t]) ce_anm_set_pos((uint32_t)s_c1_vm[t], s_c1_x[t], s_c1_y[t], 0.0f);
         pos[0] = s_c1_x[t]; pos[1] = s_c1_y[t]; pos[2] = 0.0f;
-        ce_damage_rect(pos, 0.0f, POFV_C1_HIT_LIFE, (float)s_c1_table[s_c1_grp[t]][t].dmg,
+        ce_damage_rect(pos, 0.0f, POFV_C1_HIT_LIFE, (float)s_c1_dmg_ov[t],
                        POFV_C1_HIT_W, POFV_C1_HIT_H);
     }
 }
@@ -3224,6 +3252,7 @@ static void pofv_c2m_clear(void)
 
 static void pofv_c2m_fire(void)
 {
+    s_c1_m_set11 = 1;   /* ★ 一手 ✓ `EX+0xd4 = 1`：下一份 C1 追加 set11 两发 ✓ */
 
     const float *pp = ce_player_pos();
     int k;
