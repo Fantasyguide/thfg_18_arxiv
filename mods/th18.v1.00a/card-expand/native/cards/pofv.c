@@ -2607,6 +2607,11 @@ static int   s_c1_turn[POFV_C1_SHOTS_PER_GROUP];   /* ★ 转向剩几步（一�
  *   属于"TH18 anmm 语义与 TH19 不同"那一族 ✓）。★ 一手：27°/帧 = `0.4712389 rad` ✓。*/
 #define POFV_C1_SPIN_STEP 0.4712389f
 static float s_c1_rot[POFV_C1_SHOTS_PER_GROUP];
+/* ★★★ 2026-10-11 owner 提示 ✓：「一手子机的追踪弹**朝运动方向 rotate**」⇒ ★ 本卡弹是**卡侧写坐标**的 ✗
+ *   ⇒ ★ 引擎拿不到速度 ⇒ 脚本里的 `rotateAuto(1)` **没有向量可依** ✗ ⇒ 看不到朝向旋转 ✓ = 「没转」✓。
+ *   ⇒ ★ 卡侧自己按速度写朝向 ✓：`s_c1_ang[t]` = 运动方向角 ✓（发射时取弹表角 ✓、
+ *     伪追踪那次"拍水平"时改成 `−π / 0` ✓ = 一手 ✓），★ 最终朝向 = `运动方向 + 自转累积` ✓。*/
+static float s_c1_ang[POFV_C1_SHOTS_PER_GROUP];
 /* ★★ 2026-10-11 owner 实跑：「灵梦的 **C1 还有残影**」✗ ⇒ ★ 一手是靠 script10 里的
  *   `scriptNewRoot(script12)` ✓；★ 但 TH18 的 anmm 语义与 TH19 不同 ✗（旋转那条已经证明 ✓）
  *   ⇒ ★ **改卡侧自己补** ✓：每帧在弹的位置起一台 **433**（= 一手 script12 的复刻 ✓，20 帧自删 ✓）。
@@ -2714,6 +2719,7 @@ static void pofv_c1_fire_range(int grp, int from, int cnt)
         s_c1_vy[t] = s_c2_dir36[di][1];
         s_c1_spd[t] = r->spd;                 /* ★ 一手：初始速度来自弹表（灵梦 14 ✓）*/
         s_c1_rot[t] = 0.0f;                   /* ★ 自转从 0 起 ✓ */
+        s_c1_ang[t] = r->ang;                /* ★ 运动方向（一手朝运动方向 rotate ✓）*/
         s_c1_py[t] = s_c1_y[t];               /* ★ 越过判据的上一帧 y ✓ */
         s_c1_turn[t] = 0; s_c1_tx[t] = 0.0f; s_c1_ty[t] = 0.0f;   /* ★ 转向状态 ✓ */
         s_c1_phase[t] = 0;                     /* ★ 相位机：0 = 搜索 ✓ */
@@ -2804,7 +2810,8 @@ static void pofv_c1_fire(void)
          * ⇒ 改成头几帧就打（2/6/10/14 + 之后每 60）。*/
         /* 2026-10-11：前两版日志都 0 行（`t==0` + 每 60 帧 / 头几帧都对不上）
          * ⇒ 改成**前 4 个槽、头 16 帧、每 2 帧**都打 —— 这次不可能再是空的。*/
-        if (s_c1_vm[t]) ce_anm_set_rotation((uint32_t)s_c1_vm[t], 0.0f, 0.0f, s_c1_rot[t]);
+        /* ★ 朝向 = **运动方向 + 自转累积** ✓（一手：朝运动方向 rotate ✓ + 脚本10 的 angleVel 27°/帧 ✓）*/
+        if (s_c1_vm[t]) ce_anm_set_rotation((uint32_t)s_c1_vm[t], 0.0f, 0.0f, s_c1_ang[t] + s_c1_rot[t]);
         if (s_c1_vm[t]) ce_anm_set_pos((uint32_t)s_c1_vm[t], s_c1_x[t], s_c1_y[t], 0.0f);
             }
         }
@@ -2865,6 +2872,7 @@ static void pofv_c1_tick(void)
                         /* ★ 一拍定音：朝目标所在那一侧，纯水平 ✓（一手 −π / 0 ✓）*/
                         s_c1_vx[t] = (s_c1_x[t] > s_c1_tx[t]) ? -1.0f : 1.0f;
                         s_c1_vy[t] = 0.0f;
+                        s_c1_ang[t] = (s_c1_x[t] > s_c1_tx[t]) ? -3.1415927f : 0.0f;   /* ★ 一手 ✓ */
                     }
                 }                if (s_c1_stop[t] == 0) {
                     s_c1_spd[t] = POFV_C1S_RESUME_SPD;   /* ★ 一手 ✓ 14.0 */
