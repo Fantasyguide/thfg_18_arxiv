@@ -528,7 +528,10 @@ static int   s_boss_prev;   /* ★ owner 2026-10-05：boss 表 0→1 的**边沿
  *     ⇒ ★ 所以「避让卡槽」**不用另做** ✓，★ 只要把**画**的宽度接上申领结果 ✓。
  *   ★ 于是：`bx` = 槽左沿 + 边框 ✓（★ **不再跟随自机** ✗）、可用宽 = `槽宽 − 2×边框` ✓
  *     （★ 不再写死 448 ✗）。★ 一手是 224（640 空间）= 448 表面 ✓ —— ★ 本卡此处**刻意偏离** ✗。*/
-#define POFV_HUD_SCREEN_W_SURF   1280.0f   /* ★ 640×480 ×2 ✓（owner：「摆在屏幕的正中」✓）*/
+#define POFV_HUD_SCREEN_W_SURF   1280.0f   /* ★ 表面宽 ✓（= 640×2 ✓）；⚠ **VM 位置用的是 640 空间** ✗ */
+/* ★★ **游玩区中心**（`640×480` 空间 ✓）—— ★ owner：「**一手是游玩区居中**」✓（`x = 640/2` ✓）。
+ *   ⚠ 与"表面 px"差一个 ×2 ⇒ ★ 宽度类（`*_SURF`）要 ÷2 才是这个空间的长度 ✓。*/
+#define POFV_HUD_PLAY_CX          320.0f   /* ★ 640×480 ×2 ✓（owner：「摆在屏幕的正中」✓）*/
 #define POFV_HUD_CHG_FILL_H      (POFV_HUD_CHG_BLOCK_H * POFV_HUD_CHG_X2)   /*   8 表面 px：填充区高（= 一手 4 ×2 ✓）*/
 /* ★ 底槽 = **比填充区每边大一圈**（`POFV_HUD_CHG_BORDER` 表面 px）—— 观感 = 深灰/暗的外沿 ✓。
  *   ❓ 自定（一手 script2 是 `drawRectBorder(224,4)` **白描边**；TH18 的 anm **没有** `drawRectBorder`
@@ -5494,8 +5497,12 @@ static int on_tick_2(ce_card_t *c)
             /* ⚠ 2026-10-11 owner 实跑：「**它现在很靠右，画出去了**」✗ ⇒ ★ "整屏 1280 居中"这个理解**不对** ✗
              *   （★ 坐标空间不是 1280 宽 ✓）⇒ ★ 改成 **在申领到的槽内居中** ✓ —— ★ 槽本身就是"安全可画区" ✓
              *   ⇒ ★ 居中且**一定在屏内** ✓。★ 仍是 ❓自定（一手跟随自机 ✗）。*/
-            const float fx = s_hud_chg_slot.x
-                           + (s_hud_chg_slot.w - POFV_HUD_CHG_BLOCK_W_SURF) * 0.5f;
+            /* ★★ 2026-10-11 owner 第三次修正：「**不是申领到的槽的居中，一手是游玩区居中**」✓
+             *   ★ 而且这次把**空间**弄对了 ✓：★ **VM 的位置是 640×480 空间** ✓、★ 而**宽度是表面 px**
+             *   （`BLOCK_W_SURF` = 452 ✓）⇒ ★ 半宽要**折半**（÷2 ✓）才是同一空间 ✓。
+             *   先前用 1280/申领槽算 ⇒ 位置落在 640 空间里偏到 ~828 ⇒ ★ 就是你看到的"**画出去了**" ✓。
+             *   ⇒ ★ `fx = 游玩区中心(640 空间 = 320) − 半宽(452 ÷ 2 ÷ 2 = 113)` = **207** ✓。*/
+            const float fx = POFV_HUD_PLAY_CX - POFV_HUD_CHG_BLOCK_W_SURF * 0.25f;
             const float fy = s_hud_chg_slot.y - POFV_HUD_CHG_BLOCK_H_SURF;   /* 块底对齐 ✓ */
             pofv_hud_charge_bar(fx, fy, ratio_rei, ratio_chg);
         }
