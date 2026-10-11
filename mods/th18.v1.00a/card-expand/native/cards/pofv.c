@@ -2348,7 +2348,16 @@ static void combo_th19_add(int32_t n, int32_t win_add)
                 if (!pp9) break;
                 bp[0] = pp9[0]; bp[1] = pp9[1]; bp[2] = 0.0f;
             }
-            if (ce_spawn_item(9u, bp, 0.0f, 0.0f)) pofv_rei_credit(1);   /* ★ 一手 ✓ 只有 kind 9 才给灵力 */            /* ★ 一手 ✓ kind = 9 = 加槽灵力道具 */
+            /* ★★★ 2026-10-11 owner 订正 ✓：★ 不要再走引擎的 `kind 9` ✗（那是 TH19 引擎内部的编号 ✓），
+             *   ★ 咱们这边灵力道具是**卡侧实现的人物道具** ✓ ⇒ ★ 掉**卡侧那一类蓝点** ✓
+             *   （`pofv_power_spawn_kind = 1` 后调 `pofv_power_spawn` ✓；入账由上面的
+             *    `absorbed_rei` 增量统一负责 ✓，这里**不再**直接进灵力 ✓）。*/
+            {
+                const int32_t k_save = pofv_power_spawn_kind;
+                pofv_power_spawn_kind = 1;                      /* ★ 灵力道具（蓝点）✓ */
+                (void)pofv_power_spawn(&s_power, bp[0], bp[1], 0, 0);
+                pofv_power_spawn_kind = k_save;
+            }            /* ★ 一手 ✓ kind = 9 = 加槽灵力道具 */
             ce_log("pofv: [COMBO100] 满 100 掉 kind9（剩余 acc=%d）", (int)s_combo_acc);
         }
     }
@@ -6661,6 +6670,16 @@ static int on_tick_2(ce_card_t *c)
     {
         int32_t got_pts = 0;
         int got_n = pofv_power_tick(&s_power, ce_player_pos(), ce_poc_height_semantic(), &got_pts);
+        /* ★★★ 2026-10-11 owner 口径（「灵力道具只有一种 = 那个透明小蓝点」✓）：
+         *   ★ 灵力只认**卡侧那一类道具（kind == 1）**被拾到的颗数 ✓ ——
+         *   core 已经把 `absorbed_rei` 记好了（`pofv_core.c` 的收取支 ✓）⇒ 这里取**增量** ✓。
+         *   ★ 公式仍是一手：`15 × clamp(当前蓄力,0,100)/100`（每颗 ✓、cap 2500 ✓）。*/
+        {
+            static int32_t s_rei_prev;
+            int32_t rei_now = s_power.absorbed_rei;
+            if (rei_now > s_rei_prev) pofv_rei_credit(rei_now - s_rei_prev);
+            s_rei_prev = rei_now;
+        }
         if (got_n > 0 && got_pts > 0) {
             const int32_t gauge0 = s_ex_gauge;
             ce_play_sound(POFV_POWER_SE_GET, ce_player_x());   /* ★ 一手：收取音 */
