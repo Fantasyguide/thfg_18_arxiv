@@ -2853,7 +2853,14 @@ static void pofv_barrier_tick(void)
     if (!pp) return;
     if (s_barrier_on) {
         /* ★ 挡弹 = 在半径内提前消掉（★ 只消 1 颗 ⇒ 挡 1 发 ✓）*/
-        int n = cancel_white_in_circle(pp, POFV_BARRIER_R, 1, POFV_BULLET_CANCEL_MODE);
+        /* ★★★ 2026-10-11 owner 口径（#3）：「罩子**没有碰撞箱**，它只是一个**标识"我有罩子保护"的 VM**」✓
+         *   ⇒ ★ **撤掉这个消弹圈** ✗ —— ★ 它正是**唯一"像碰撞箱"的东西** ✓，
+         *     而且 ★ `POFV_BARRIER_R = 40` 这个数**是我当初凑的** ❓自定 ✗（一手没读到 ✓）。
+         *   ★ 保留的（★ 都是**一手常数** ✓）：★ **无敌 `POFV_BARRIER_INVULN_N` = 100 帧** ✓、
+         *     ★ **禁主动移动 40 帧** ✓、★ **位移 128 / 初速 2.0 线性衰减** ✓、★ 以及那个**标识 VM** ✓。
+         *   ★ 下面那个 `pofv_barrier_nearest_bullet(...)` 只为**给位移定方向** ✓（★ 它**不消弹** ✗）⇒ 保留 ✓。
+         *   ❓若你的意思是"**连无敌也不给**"（纯标识 ✓），★ 说一声我把 `ce_invuln_request` 那行也收了 ✓。*/
+        int n = 0;
         pofv_barrier_vm_sync();   /* ★ 视觉：白圆 + 黄外发光（每帧跟随自机 ✓）*/
         if (n > 0) {
             s_barrier_on = 0;
