@@ -2964,12 +2964,21 @@ static void pofv_c1_tick(void)
             continue;
         }
         /* ★★ 一手 `0x54b380` 两段运动 ✓：age < 120 ⇒ 减速（下限 0.2）；age ≥ 120 ⇒ 重新加速 ✓ */
-        if (s_c1_age[t] < POFV_C1_HOLD_AT) {
-            s_c1_spd[t] -= POFV_C1_DECEL;
-            if (s_c1_spd[t] < POFV_C1_HOLD_SPD) s_c1_spd[t] = POFV_C1_HOLD_SPD;
-        } else {
-            s_c1_spd[t] += POFV_C1_REACCEL;
+        /* ★★★★ 2026-10-11 owner：「**蛇的动态跟灵梦的 C1 一样**（先发出来、停止、再加速）✗
+         *   —— ★ 她 c1c2 **都是匀速**」✓ ⇒ ★ 这段"两段运动"是**灵梦专属**的 ✓
+         *   （一手 `0x54b380`：减速 → 钉 0.2 → 120 帧后重新加速 ✓），★ 只有她是那样 ✗。
+         *   ⇒ ★ 加**角色闸**：只有灵梦走两段运动 ✓；★ 早苗（蛇/青蛙）与魔理沙（光束）**匀速** ✓。*/
+        if (s_c1_grp[t] == POFV_C1_GROUP_REI) {
+            /* ★ 只有**灵梦**走两段运动 ✓（一手 `0x54b380`：减速 → 钉 0.2 → 120 帧后重新加速 ✓）。*/
+            if (s_c1_age[t] < POFV_C1_HOLD_AT) {
+                s_c1_spd[t] -= POFV_C1_DECEL;
+                if (s_c1_spd[t] < POFV_C1_HOLD_SPD) s_c1_spd[t] = POFV_C1_HOLD_SPD;
+            } else {
+                s_c1_spd[t] += POFV_C1_REACCEL;
+            }
         }
+        /* ★ 早苗（蛇/青蛙 ✓）与魔理沙（光束 ✓）：★ **匀速** ✓ ⇒ 这里**什么都不做** ✓
+         *   （owner：「她 c1c2 **都是匀速**」✓；★ 魔理沙那支是"原地光束" ✓，本来也不靠这段 ✓）。*/
         s_c1_py[t] = s_c1_y[t];      /* ★ 记上一帧 y（判越过 ✓）*/
         pofv_stage_set(21);   /* ★ 移动前 */
         s_c1_x[t] += s_c1_vx[t] * s_c1_spd[t];
