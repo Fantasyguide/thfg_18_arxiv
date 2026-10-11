@@ -1850,6 +1850,29 @@ typedef struct { float x, y; int dmg; float ang, spd; } pofv_c1_shot_t;
 #define POFV_C1_GROUP_SANA      2        /* 早苗 */
 /* ★ 每组**实际发几发**（一手：灵梦 4 ✓ / 魔理沙 1 ✓ / 早苗 26 ✓）*/
 static const int s_c1_rows[POFV_C1_GROUPS] = { 4, 1, 26 };
+/* ★★ 2026-10-11 照一手（子 agent 核实 ✓）：★ **早苗 C2 不建对象** ✓ —— 她做的是
+ *   「把弹表**切到 `set11`** ✓ + 开 **60 帧**窗口 ✓」（`EX+0xd8 = 11`、`EX+0xdc = 1` ✓）。
+ *   ★ set11 = 26 行、**dmg 22 / 速度 3 / `class 5`（子机槽）/ anm 9** ✓、角度与 set10 相同
+ *     （`−π + k·π/6` ✓）、`rate16` + 行 0–12 phase0 / 行 13–25 phase8 ✓。
+ *   ❓`class 5` = 从**子机槽**出膛（一手 ✓）—— 本卡暂时仍从**自机坐标**出膛（❓自定，已登记 ✓）。*/
+static const pofv_c1_shot_t s_c1s_set11[POFV_C1_SHOTS_PER_GROUP] = {
+    { 0.0f, 0.0f, 22, -3.1416f, 3.0f }, { 0.0f, 0.0f, 22, -2.6180f, 3.0f },
+    { 0.0f, 0.0f, 22, -2.0944f, 3.0f }, { 0.0f, 0.0f, 22, -1.5708f, 3.0f },
+    { 0.0f, 0.0f, 22, -1.0472f, 3.0f }, { 0.0f, 0.0f, 22, -0.5236f, 3.0f },
+    { 0.0f, 0.0f, 22,  0.0000f, 3.0f }, { 0.0f, 0.0f, 22,  0.5236f, 3.0f },
+    { 0.0f, 0.0f, 22,  1.0472f, 3.0f }, { 0.0f, 0.0f, 22,  1.5708f, 3.0f },
+    { 0.0f, 0.0f, 22,  2.0944f, 3.0f }, { 0.0f, 0.0f, 22,  2.6180f, 3.0f },
+    { 0.0f, 0.0f, 22,  3.1416f, 3.0f }, { 0.0f, 0.0f, 22, -2.8798f, 3.0f },
+    { 0.0f, 0.0f, 22, -2.3562f, 3.0f }, { 0.0f, 0.0f, 22, -1.8326f, 3.0f },
+    { 0.0f, 0.0f, 22, -1.3090f, 3.0f }, { 0.0f, 0.0f, 22, -0.7854f, 3.0f },
+    { 0.0f, 0.0f, 22, -0.2618f, 3.0f }, { 0.0f, 0.0f, 22,  0.2618f, 3.0f },
+    { 0.0f, 0.0f, 22,  0.7854f, 3.0f }, { 0.0f, 0.0f, 22,  1.3090f, 3.0f },
+    { 0.0f, 0.0f, 22,  1.8326f, 3.0f }, { 0.0f, 0.0f, 22,  2.3562f, 3.0f },
+    { 0.0f, 0.0f, 22,  2.8798f, 3.0f }, { 0.0f, 0.0f, 22,  3.4034f, 3.0f }
+};
+/* ★ 当前用哪张表（0 = 各角色的 set10 ✓ / 1 = 早苗的 set11 ✓）＋ C2 早苗的 60 帧窗口 ✓ */
+static int s_c1_set_sel;
+static int s_c2s_win;
 
 static const pofv_c1_shot_t s_c1_table[POFV_C1_GROUPS][POFV_C1_SHOTS_PER_GROUP] = {
     /* ---------------- 第 0 组：灵梦（一手 `pl00.sht` 第 10 项：**4 行** ✓）----------------
@@ -2458,7 +2481,8 @@ static void pofv_c1_fire_range(int grp, int from, int cnt)
     if (!pp) return;
     end = from + cnt; if (end > nrows) end = nrows;
     for (t = from; t < end && t < POFV_C1_SHOTS_PER_GROUP; ++t) {
-        const pofv_c1_shot_t *r = &s_c1_table[grp][t];
+        const pofv_c1_shot_t *r = (s_c1_set_sel && grp == POFV_C1_GROUP_SANA)
+                                  ? &s_c1s_set11[t] : &s_c1_table[grp][t];
         int di;                                   /* ★ 角度 → 36 向表下标（一手 -pi/2 = 正上）*/
         if (s_c1_vm[t]) { ce_anm_delete((uint32_t)s_c1_vm[t]); s_c1_vm[t] = 0; }
         di = (int)(r->ang * (36.0f / 6.2831853f)) % 36;
@@ -2516,6 +2540,9 @@ static void pofv_c1_window_tick(void)
     if (s_c1_win_left <= 0) return;
     --s_c1_win_left;
     ++s_c1_win_age;
+    if (s_c2s_win > 0) {                       /* ★ 早苗 C2 的 60 帧窗口 ✓（一手 ✓）*/
+        if (--s_c2s_win == 0) s_c1_set_sel = 0;   /* ★ 窗口尽 ⇒ 切回 set10 ✓ */
+    }
     if (s_aura_kind != 3) return;
     if (s_c1_win_age % 8 == 0 && s_c1_win_age < 30) {
         s_c1_sanae_half ^= 1;
@@ -3507,11 +3534,23 @@ static void pofv_c2s_clear(void)
 
 static void pofv_c2s_fire(void)
 {
+    /* ★★ 一手 ✓（子 agent 核实）：★ 早苗 C2 **不建任何对象** ✗ —— 只做两件事：
+     *   · ★ 把弹表**切到 `set11`** ✓（`EX+0xd8 = 11` ✓；= 上表 `s_c1s_set11`，spd 3 / class5 / anm9 ✓）
+     *   · ★ 开 **60 帧**窗口 ✓（`EX+0xdc = 1` ✓）
+     *   ⇒ ★ 之后 C1 那条窗口链按 set11 的 26 行发射 ✓（分半圈 ✓）。
+     *   ❓`class 5` 的子机槽出膛本卡暂用自机坐标 ✓（已登记 ✓）。*/
     s_c2s_st.active = 1; s_c2s_st.ring = 0; s_c2s_st.timer = 0;
+    s_c1_set_sel = 1;
+    s_c2s_win = 60;                 /* ★ 一手 ✓ 60 帧窗口 */
+    pofv_c1_fire();                 /* ★ 立刻按 set11 放一份 ✓（一手同帧 ✓）*/
 }
 
 static void pofv_c2s_ring(void)
 {
+    /* ★★ 2026-10-11 照一手**停用**（子 agent 核实 ✓）：★ 一手早苗 C2 **不建任何对象** ✗ ——
+     *   ★ 它只是"切弹表 set11 + 开 60 帧窗口" ✓（见 `pofv_c2s_fire` ✓）。
+     *   ⇒ ★ 这个自实现的"转圈 26 发"**不再放** ✓（函数留壳：仍是引用点 ⇒ 不产生 unused 警告 ✓）。*/
+    return;
     const float *pp = ce_player_pos();
     int i;
     if (!pp) return;
