@@ -5163,7 +5163,10 @@ static int on_tick_2(ce_card_t *c)
          *   ★ 早苗例外：★ 她 C2 帧里槽 3 被 `+0xdc` 守卫吃掉 ✓ ⇒ 这里同样跳过 ✓。*/
         if (!s_c1_rel_latch && s_aura_charge > 0.0f && !(s_aura_kind == 3 && s_aura_charge >= POFV_C2_THRESH
                                                        && s_aura_charge < POFV_C3_THRESH)) {
-            pofv_c1_fire();
+            /* ★★ 2026-10-11 照一手"同帧"订正 ✓：★ C1 的发射**挪到档位发射之后** ✓ ——
+             *   一手是"这份 C1 与 C2 在**同一帧**" ✓（`EX+0xd4`: `0x417c49` 置 1、`0x53cbe0` 消耗 ✓）；
+             *   ★ 原来 C1 在档位**之前**发 ✗ ⇒ 魔理沙那两发追加落在**下一份** C1 上 ✗。*/
+            /* (C1 的发射见下面档位发射之后 ✓) */
         }
         /* 2026-10-11 owner：「依旧有奇怪的提前释放」=> 根因是我把这个块放在了一个
          * 蓄力途中就成立的支里（条件含「领域 VM 还在」）。改成真正的松手沿：
@@ -5175,6 +5178,12 @@ static int on_tick_2(ce_card_t *c)
             if (tier_rel == 2) pofv_c2_fire();
             else if (tier_rel == 3) pofv_c3_fire();
             else if (tier_rel >= 4) pofv_c4_fire();
+            /* ★★ 一手 ✓ 同帧：★ 档位发完**紧接着**发这份 C1 ✓
+             *   （⇒ 魔理沙 C2 设的 `EX+0xd4` 由**这一份** C1 消耗 ✓，不再拖到下一份 ✓）。*/
+            if (!s_c1_rel_latch && s_aura_charge > 0.0f
+                && !(s_aura_kind == 3 && s_aura_charge >= POFV_C2_THRESH
+                     && s_aura_charge < POFV_C3_THRESH))
+                pofv_c1_fire();
             /* 2026-10-11：等级/计数/扣灵力全部跟着"真正放出去的那一档"走（不再在蓄力途中动）。
              * 扣的量 = 该档阈值 - C1 阈值：C2 500 / C3 1200 / C4 2000（owner 问的那个数）。*/
             if (tier_rel >= 2) {
