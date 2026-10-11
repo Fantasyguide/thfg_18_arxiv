@@ -263,6 +263,15 @@ static float s_reiryoku;
  *   ⇒ ★ 提到文件级 ✓ 并在 `clear_card()` 里归 0 ✓。*/
 static int32_t s_rei_prev;
 
+/* ★★★★ 2026-10-11 owner 授权（「你可以用子机槽来做到这件事」✓）：
+ *   ★ 用 SDK 的「**低速子机声明层**」✓（`sdk.h` spec §3.3.1 ✓）给**早苗**一个子机 ✓，
+ *   ★ 用途 = 让她的 C1（蛇 / set10）与 C2（青蛙 / set11）**从子机坐标出膛** ✓
+ *     （= 一手弹表的 `class 5`「子机槽」✓ + owner：「早苗原生低速子机打的就是这个弹幕」✓）。
+ *   ★ 纪律（SDK 原文 ✓）：① **每帧声明**（不声明 = 退出 ✓）；② **落笔只在 `on_option_pose_apply`** ✓、
+ *     退位（`ce_option_pose_winner() != 本卡`）⇒ **只收不写** ✓；③ 偏移单位 = **像素** ✓
+ *     （`fx/fy` 聚焦 ✓、`ux/uy` 非聚焦 ✓ —— 两套都给 ⇒ Shift 切换无延迟 ✓）。*/
+static ce_option_t      s_opt_sanae;      /* 早苗的子机槽 ✓ */
+
 static int pofv_spirit_spill_stop(void)
 {
     /* ★★★ 2026-10-06 owner 裁定（两侧语义 ✓）：
@@ -4125,6 +4134,10 @@ static void clear_card(ce_card_t *c)
             s_power_flash[z6] = 0;
         } }
     pofv_power_clear(&s_power);
+    /* ★★ ② 铁律（审计 D ✓）：删卡/换关 ⇒ **收子机槽** —— 放进 `clear_card()` 就覆盖
+     *   `on_ctor` / `on_run_reset` / `on_delete` **三条路** ✓；★ 漏收 = 商店删卡时**漏一格池槽**
+     *   （12 格用完就再也申请不到 ✓）+ 留幽灵 VM ✓。*/
+    if (s_opt_sanae.ptr) { ce_option_drop(c, &s_opt_sanae); s_opt_sanae.ptr = 0; }
     s_rei_prev = 0;   /* ★ 审计 B ✓：与 core 的 absorbed_rei 同步归零 ✓ */
     s_power_got = 0; s_power_logged = 0; s_aura_bullets = 0;
     {   int z9; for (z9 = 0; z9 < CE_BM_BULLET_COUNT; ++z9) s_aura_bullet_done[z9] = 0; }
@@ -5475,6 +5488,24 @@ static int on_tick_2(ce_card_t *c)
          *   C3/C4 做好后在这里按 C3/C4 阈值给盾 ✓，或直接调 `pofv_barrier_fire()` ✓。*/
         pofv_c2_tick(POFV_CARD_ID);
         pofv_barrier_tick();
+
+    /* ★★★★ 2026-10-11 **对抗审计 D 的结论已并账** ✓（它证伪/纠正了我三处 ✗）：
+     *   ① ★ 「从 `ce_option_x/y` 出膛 = 一手 `class 5`」**证据不足** ✗ —— 一手 `class 5` 读的是
+     *      TH19 自己 `PlayerInf+0x5d8+5*0x128` 的**固定下标 5 槽** ✓，而 `ce_option_x/y` 读的是
+     *      **TH18 卡池** `zPlayer+0xa30`（stride 0xf0 ✓、**先到先得** ✗）⇒ ★ 二者**不同源** ✓
+     *      ⇒ ★ 只能算"**同功能类比**"✓（= 用"某个子机槽的坐标"做出膛点 ✓，不是逐字段复刻 ✓）。
+     *   ② ★ 我原打算走**声明层**（`ce_option_pose_declare`）✗ ⇒ ★ 审计指出 **109 < 111**
+     *      ⇒ ★ 会**抢走 111 的落笔权** ✗、且 12 格池与 71/77/108/116 相争 ⇒ 属**跨卡影响** ✓
+     *      ⇒ ★ **改用审计给的简单路**：**直接 `ce_option_get`** ✓（不碰声明层 ⇒ 不碰 111 ✓）。
+     *   ③ ★ 子机脚本**不能借 108 的 224–227** ✗（会串到 108 的贴图 ✓）⇒ ★ 用**109 自己的 448** ✓
+     *      （= 早苗的青蛙 ✓，本会话刚切好 ✓）。
+     *   ★ 时机照 SDK 注释 ✓：`on_tick_2 → ce_option_get`（没有就按 retry 补申请 ✓）。*/
+    if (s_aura_kind == 3) {
+        (void)ce_option_get(c, &s_opt_sanae, 0, (int)CE_ANM_ABILITY_SCRIPT_POFV109_C2S_FROG,
+                            8u, "pofv109");   /* ❓offset 取 0 / retry 8 帧（照 SDK 注释的节奏 ✓）*/
+    } else if (s_opt_sanae.ptr) {
+        ce_option_drop(c, &s_opt_sanae); s_opt_sanae.ptr = 0;   /* ★ 非早苗 ⇒ 当帧收干净 ✓ */
+    }
         pofv_c1_tick();                     /* ★ C1：前进 + 伤害源 + 收尾 ✓ */
         pofv_c3_tick();                     /* ★ C3：波次机 + 每颗弹（加速/反弹/伤害源）+ 收尾 ✓ */
         pofv_c4_tick();                     /* ★ C4：扫描弧（两条反向 + 加速 + 伤害源）✓ */
