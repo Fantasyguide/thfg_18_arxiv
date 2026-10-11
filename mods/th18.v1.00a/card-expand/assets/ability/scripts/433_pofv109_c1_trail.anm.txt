@@ -19,6 +19,9 @@ script script433 {
     color(255, 64, 64);
     zWriteDisable(1);
     alphaTime(20, 0, 0);
+    /* ★★ 2026-10-11 卡死那一族（TH18 anmm 语义与 TH19 不同 ✓）⇒ ★ 给脚本**加 `stop()`** ✓：
+     *   ★ 不让它"跑到末尾"（不确定那在 TH18 是停还是重头 ✓）。*/
+    stop();
 +20: // 20
     delete();
 }
