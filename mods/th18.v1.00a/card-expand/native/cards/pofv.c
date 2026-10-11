@@ -401,6 +401,7 @@ static pofv_th19_combo_t s_combo_th19;
  *   ★ 一手规则挂在这**后者**上：★ **每满 100 ⇒ `while(≥100)` 掉 1 个 `kind 9`（加槽灵力道具）** ✓
  *     ⇒ ★ 涨 300 就一口气掉 3 个 ✓（`0x521d3c: -=100` + `0x521d43: cmp 100; jge` ✓）。*/
 static int32_t s_combo_acc;
+static float s_combo_last_x, s_combo_last_y;   /* 连击事件的落点（击破点 ✓，掉落用 ✓）*/
 /* ★★★ MODEL-109-SPIRIT-MIRROR.md §4.5 / §4.6（owner 2026-10-05 追加）—— 这两个是**独立事件源** ✓：
  *  §4.5 **周期生成**：除 boss 外，每 **30 s**（=1800 帧）尝试在**两侧各**生成 1 只（幽灵/纯净灵，种类**各自随机** ✓）
  *        ⇒ 这是**本侧的首个生成入口** ✓（解开「本侧恒 0 只」的 bootstrap 死锁 ✓）
@@ -2318,10 +2319,17 @@ static void combo_th19_add(int32_t n, int32_t win_add)
     while (s_combo_acc >= 100) {
         s_combo_acc -= 100;                                    /* 一手 `0x521d3c: sub 100` ✓ */
         {
-            const float *bp = ce_player_pos();                  /* ❓自定：落在自机处
-                                                                 * （一手落在"该次破坏的位置"✓；
-                                                                 *  本卡那条账我下一轮接 ✓）*/
-            if (bp) (void)ce_spawn_item(9u, bp, 0.0f, 0.0f);    /* ★ 一手 ✓ kind = 9 = 加槽灵力道具 */
+            float bp[3];
+            /* ★ 一手 ✓：落在**该次破坏的位置**（卡里 `s_combo_last_x/y` 由击破回调记 ✓）；
+             *   ★ 没有记录（例如开局就满 100）时退回自机位置 ✓。*/
+            if (s_combo_last_x != 0.0f || s_combo_last_y != 0.0f) {
+                bp[0] = s_combo_last_x; bp[1] = s_combo_last_y; bp[2] = 0.0f;
+            } else {
+                const float *pp9 = ce_player_pos();
+                if (!pp9) break;
+                bp[0] = pp9[0]; bp[1] = pp9[1]; bp[2] = 0.0f;
+            }
+            (void)ce_spawn_item(9u, bp, 0.0f, 0.0f);            /* ★ 一手 ✓ kind = 9 = 加槽灵力道具 */
             ce_log("pofv: [COMBO100] 满 100 掉 kind9（剩余 acc=%d）", (int)s_combo_acc);
         }
     }
@@ -4212,6 +4220,8 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
      *     （上一版把喂食放在回调后段 ⇒ 读到的是"少 1"的值 ✗，现在与一手同序 ✓）。
      *   ★ 窗口加量 = `Enemy+0x6350`（ECL `ins_1032`）：一手**默认 20**、`wave*.ecl` 也全写 20 ✓
      *     ⇒ `POFV_TH19_COMBO_KILL_WIN = 20` ✓（TH18 无同类字段 ⇒ 取一手常数，登记 `TUNING.md` ❓）。*/
+    /* 2026-10-11：把**击破点**记下来 ⇒ 供"满 100 掉 kind 9"的落点用 ✓（一手落破坏位置 ✓）。*/
+    if (ev) { s_combo_last_x = ev->x; s_combo_last_y = ev->y; }
     combo_th19_add(1, POFV_TH19_COMBO_KILL_WIN);
     /* ★★★ owner 2026-10-08 定案（生成口 ①）：**击破敌人 ⇒ 撒 1 颗灵力道具** ——
      *   位置 = **敌机位置**（`ev->x/ev->y`）、角度 **−π/2**、速度 **2.2**（= 一手 `FUN_00521d60`
