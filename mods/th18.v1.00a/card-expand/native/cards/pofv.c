@@ -1169,8 +1169,16 @@ static int pofv_aura_key(void)
  * ❓**待你听一遍确认**（放错就改这两行数 ✓）—— ★ 这是一手里**唯一没钉死**的地方 ✗：
  *   ★ 一手那条持续蓄力音挂在 SE **状态对象** `+0x54` 上 ✗，而卡侧只有**一次性**接口 ✓
  *   ⇒ ★ 本卡做法 = **按住起一次 `0x2c`** ✓ + **每升一档补一次 `0x31`** ✓。*/
-#define POFV_SE_CHARGE  0x2cu
-#define POFV_SE_TIERUP  0x31u
+/* ★★★ 2026-10-11 owner **给出文件**：「蓄力音效是这个：`…/th19/data/se_ch00.wav`」✓✓
+ *   ⇒ ★ TH18 **自己也有同名件** ✓（★ `se_ch00` 串在 `th18.exe` VA `0x4b76e0` ✓，★ 属于那张
+ *     **`se_*.wav` 名单**（自 `0x4b7504` 起、共 **71** 项 ✓））
+ *   ⇒ ★★ **名单的序号就是 id** ✓（★ 我核过：★ `se_ch00.wav` = 序号 **30 = `0x1e`** ✓✓）。
+ *   ★★ 而且这一族正好是 **4 档蓄力音** ✓：★ `se_ch00`=`0x1e` ✓ / `se_ch01`=`0x1f` ✓ /
+ *     `se_ch02`=`0x2a` ✓ / `se_ch03`=`0x2b` ✓ ⇒ ★ 升档正好按档位递进 ✓✓（★ 一手手感的来处 ✓）。
+ *   ⚠ 我先前那两个 `0x2c`/`0x31` ✗ ★ 是**从 TH19 的反编译猜的** ✓，★ 而 TH19 的 id 与 TH18 **不同** ✗
+ *     （★ 连 `animal.c` 里的 id 也标着是 **TH17** 的 ✓，★ 三个游戏各一张表 ✓）⇒ ★ 已作废 ✓。*/
+#define POFV_SE_CHARGE  0x1eu    /* ★ = `se_ch00.wav` ✓（owner 给的件 ✓，序号 30 ✓）*/
+#define POFV_SE_TIERUP  0x1fu    /* ★ = `se_ch01.wav` ✓（升到 C2 ✓；C3/C4 见下 ✓）*/
 #define POFV_CHG_RATE_SRC_MAX  200.0f   /* ★ 一手 ✓ `clamp(S+0x88, 0, 200)` 的上界 */
 /* ★★ 2026-10-10 **一手实测定案**（owner 转来的核实 ✓，`FUN_004e79e0` 蓄力支 `0x4e7cec`–`0x4e7d29`）：
  *     `delta = 2 × ((v × 10) / 100) = v × 0.2`（每帧 ✓），`v = clamp(obj[+0x88], 0, 200)` ✓
@@ -4780,7 +4788,8 @@ static int on_tick_2(ce_card_t *c)
         {   static int s_tier_prev;
             const int t_now = ((s_aura_charge >= c1_at) ? 1 : 0) + ((s_aura_charge >= c2_at) ? 1 : 0)
                             + ((s_aura_charge >= c3_at) ? 1 : 0) + ((s_aura_charge >= c4_at) ? 1 : 0);
-            if (t_now > s_tier_prev) ce_play_sound(POFV_SE_TIERUP, ce_player_x());
+            if (t_now > s_tier_prev)   /* ★ 一手：升档音**按档位递进** ✓（`se_ch01/02/03` = `0x1f/0x2a/0x2b` ✓）*/
+                ce_play_sound((t_now >= 4) ? 0x2bu : (t_now == 3) ? 0x2au : POFV_SE_TIERUP, ce_player_x());
             /* ★ LV 计数（一手 ✓ `clamp(+1, 0, 7)`）：★ 新跨到 3 档 ⇒ C3 的 LV +1 ✓；★ 4 档 ⇒ C4 ✓ */
             if (t_now >= 3 && s_tier_prev < 3 && s_c3_lv_n < 7) ++s_c3_lv_n;
             if (t_now >= 4 && s_tier_prev < 4 && s_c4_lv_n < 7) ++s_c4_lv_n;
