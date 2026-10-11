@@ -17913,4 +17913,29 @@ typedef struct { float x, y; int age, delay; int active; /* … */ } pofv_power_
 ★ **下一步（等审计 `fc4afd8a`）**：★ 它被问的正是"从 `ce_option_x/y` 出膛是否等价于一手 `class 5`"+
 "加槽的最小步骤与风险面"✓ ⇒ ★ 它的结论会直接回答"认领 option 到底要不要占 packed set"✓
 —— ★ 要的话我就把这个**硬约束**摆给你拍板 ✓，不要的话 ② 照 108 pattern 落 ✓。
+### ★★★★ ② 的定案：走「低速子机**声明层**」，且 **packed set 那条硬约束不适用** ✓（goal 第 9 轮，2026-10-11）
+
+★ 读全 `sdk.h` 的「低速子机声明层」文档（`spec §3.3.1` ✓）+ `sdk.c` 的 `ce_option_alloc` ✓ 后定案 ✓：
+
+#### ★ 卡侧三条纪律（SDK 原文 ✓）
+1. ★ **每帧声明** ✓（`ce_option_pose_declare(c, &pose)` ✓ —— 层在 `BP_ce_item_frame` **每帧清集合** ✓，
+   ★ 不声明 = 本帧退出声明 ✓；★ 门由卡自己把 ✓ —— 108 就是"**低速才声明、高速声明 0**"✓）；
+2. ★ **落笔只在 `on_option_pose_apply` 里做** ✓ —— 申请（`ce_option_get` ✓）、逐格写偏移、贴图 ✓；
+   ★ 多张卡会落**同一批** `zPlayerOption` 字段 ⇒ **SDK 选举 id 最小者落笔** ✓、**只调它** ✓
+   ⇒ ★ 回调里若发现 `ce_option_pose_winner() != ce_card_id(c)`（**退位通知** ✓）⇒ ★ **只收子机、不写字段** ✓；
+3. ★ **偏移单位 = 像素** ✓（引擎自己 ×128 变原生定点 ✓）；★ `cell[i].fx/fy` = **聚焦（低速）**用 ✓、
+   `ux/uy` = **非聚焦**用 ✓ —— ★ 两套都给 ⇒ Shift 切换**没有延迟** ✓。
+
+#### ★ `ce_option_alloc` 与"池满"（`sdk.c:550` ✓）
+```c
+uint8_t *ce_option_alloc(...) { o->ptr = ce_allocate_option(c, offset, anm_script);
+    ce_log("... option %s (ptr %08x, anm id %08x)", card, o->ptr ? "allocated" : "FAILED (pool full)", ...); }
+```
+⇒ ★ 池**可能满** ✓（日志里直接写 FAILED (pool full) ✓）⇒ ★ 所以 `ce_option_get` = `claim` 失败就 `retry` ✓（带 `retry` 倒计时 ✓）。
+
+#### ★★ 订正上轮那条"硬约束"✗
+★ 我上轮登记「packed set 40/40 满 ⇒ 子机路可能被挡」✓ —— ★ **对本用途不成立** ✓：
+★ 声明层写的是 **`zPlayerOption` 的字段** ✓（偏移/贴图/聚焦形 ✓），★ **与引擎 shooter 的 packed set 无关** ✓
+（packed set 是**发射弹表**的事 ✓；而我们要的只是一个**出膛点** ✓，109 的弹是卡侧自己发射的 ✓）
+⇒ ★ **那条约束不挡 ②** ✓（仍保留在 TUNING 里作为"若将来要让子机**自己开火**"的提醒 ✓）。
 
