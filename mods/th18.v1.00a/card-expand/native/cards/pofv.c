@@ -270,7 +270,6 @@ static int32_t s_rei_prev;
  *   ★ 纪律（SDK 原文 ✓）：① **每帧声明**（不声明 = 退出 ✓）；② **落笔只在 `on_option_pose_apply`** ✓、
  *     退位（`ce_option_pose_winner() != 本卡`）⇒ **只收不写** ✓；③ 偏移单位 = **像素** ✓
  *     （`fx/fy` 聚焦 ✓、`ux/uy` 非聚焦 ✓ —— 两套都给 ⇒ Shift 切换无延迟 ✓）。*/
-static ce_option_t      s_opt_sanae;      /* 早苗的子机槽 ✓ */
 
 static int pofv_spirit_spill_stop(void)
 {
@@ -2658,18 +2657,11 @@ static void pofv_c1_fire_range(int grp, int from, int cnt)
     pofv_stage_set(12);   /* ★ fire_range 入口 ✓ */
     const float *pp = ce_player_pos();
     const int nrows = s_c1_rows[grp];
-    /* ★★★★ 2026-10-11 owner（「你可以用子机槽来做到这件事」✓）+ ② 的**出膛点** ✓：
-     *   ★ **早苗**（`POFV_C1_GROUP_SANA`）且子机在手 ⇒ ★ 弹从 **`ce_option_x/y`** 出膛 ✓
-     *   （C1 的蛇 / set10 与 C2 的青蛙 / set11 都走这一支 ✓）⇒ ★ 一并解决一手 `class 5`「子机槽出膛」
-     *   与 owner「早苗原生低速子机打的就是这个弹幕」✓。
-     *   ⚠ ★ **审计 D 的并账**：★ 一手 `class 5` 读的是 TH19 自己固定下标 5 槽 ✓，与本卡这个
-     *   "先到先得的 12 格公共池"**不同源** ✗ ⇒ ★ 这是**同功能类比** ✓，**不是逐字段复刻** ✓
-     *   （TUNING 已登记 ✓）。*/
-    float ox = pp[0], oy = pp[1];
-    if (grp == POFV_C1_GROUP_SANA && s_opt_sanae.ptr) {
-        ox = ce_option_x(s_opt_sanae.ptr);
-        oy = ce_option_y(s_opt_sanae.ptr);
-    }
+    /* ★★★★ 2026-10-11 owner 订正 ✓：「观感上是**早苗本体**打的这些蛇和青蛙，**不是子机**」
+     *   —— ★ 我把"可以用子机槽来做这件事"误读成"把出膛点搬到子机" ✗；
+     *   ★ owner 本意：「说的只是**弹幕的具体样式和代码**」✓（= 那套**行为**的出处 ✓）
+     *   ⇒ ★ 撤掉子机出膛 ✗，蛇/青蛙**从早苗本体出膛** ✓（= 加 ② 之前的行为 ✓）。*/
+    const float ox = pp[0], oy = pp[1];
     int t, end;
     if (!pp) return;
     end = from + cnt; if (end > nrows) end = nrows;
@@ -2827,36 +2819,27 @@ static void pofv_c1_tick(void)
                 /* ★★★ 一手 ✓「**水平转向**」：停住这几帧里，把方向**一档一档**转目标 ✓
                  *   （一手：方向档位 `+0x34 += 步长(1.0)` ✓、共 4 帧到 `+0x30 == 4` ✓）。
                  *   ★ 用卡里现成的 36 向表做档位步进 ✓（避免 `atan2` ✓；一手也是查表 ✓）。*/
+                /* ★★★★ 2026-10-11 **对抗审计 ab662708 的证伪已并账** ✓（它按**汇编**读的，
+                 *   并指出 Ghidra 对 `FUN_0054c080` **漏了一整段** ✗ —— 反编译里只有
+                 *   `FUN_0040fdf0();` ✓，而 `0x54c223–0x54c241` 还有 `comiss xmm0,[esi+0x100]`
+                 *   与两个分支（−π / 0.0）当**参数** ✓）：
+                 *   ★ 一手**没有"逐帧转向"** ✗ —— ★ 锁定期**从不碰角度**（`+0x70`）✓；
+                 *   ★ 整个函数**只在释放那一帧**写一次角度 ✓，而且是一次性**拍成完全水平** ✓：
+                 *     ★ `angle = (own.x > tgt.x) ? **−π** : **0**` ✓（★ 只按目标在**哪一侧** ✓，
+                 *     ★ **不用 y 差** ✗ —— 那个 ±16 的 y 窗只是**锁定过滤器** ✓）。
+                 *   ★ `+0x2c/+0x30/+0x34` 是**计时器三件套** ✓（`+0x34` 浮点累加、`+0x30` = 其整数、
+                 *     `+0x2c` = 自增前快照 ✓），★ 而 **`+0x2c` 全程序没有读方** ✗
+                 *     （审计用 capstone 扫全 `.text` ✓）⇒ ★ 我先前"36 向表逐档步进"**无原版对应物** ✗，已删 ✓。
+                 *   ★ 单位为**帧**（缩放时间 ✓；`+0x38` 索引的时间倍率表槽 0 = 全局倍率 `0x5c6418` ✓）。
+                 *   ★ 我保留"累加到 4 帧"这个**计数** ✓（一手 `+0x30 == 4` ✓），但改成**一次性水平** ✓。*/
                 if (s_c1_turn[t] > 0) {
-                    int cur = -1, tgt = -1, k2;
-                    {   /* ★ 当前方向档 = 与 (vx,vy) 点积最大者 ✓（同样不必归一化 ✓，阈值写法换成取最大 ✓）*/
-                        float cd = -1e30f;
-                        for (k2 = 0; k2 < 36; ++k2) {
-                            const float d2 = s_c1_vx[t] * s_c2_dir36[k2][0] + s_c1_vy[t] * s_c2_dir36[k2][1];
-                            if (d2 > cd) { cd = d2; cur = k2; }
-                        }
+                    --s_c1_turn[t];
+                    if (s_c1_turn[t] == 0) {
+                        /* ★ 一拍定音：朝目标所在那一侧，纯水平 ✓（一手 −π / 0 ✓）*/
+                        s_c1_vx[t] = (s_c1_x[t] > s_c1_tx[t]) ? -1.0f : 1.0f;
+                        s_c1_vy[t] = 0.0f;
                     }
-                    {
-                        /* ★ 目标方向档 = 36 向表里**点积最大**的那档 ✓
-                         *   （点积最大即夹角最小 ✓ ⇒ **不需要归一化** ✓ —— 我上一版写了归一化纯属多余 ✗）。*/
-                        const float ddx = s_c1_tx[t] - s_c1_x[t], ddy = s_c1_ty[t] - s_c1_y[t];
-                        int best = 0; float bestd = -1e30f;
-                        for (k2 = 0; k2 < 36; ++k2) {
-                            const float d2 = ddx * s_c2_dir36[k2][0] + ddy * s_c2_dir36[k2][1];
-                            if (d2 > bestd) { bestd = d2; best = k2; }
-                        }
-                        tgt = best;
-                    }
-                    if (cur < 0) cur = tgt;
-                    if (cur >= 0 && tgt >= 0 && cur != tgt) {
-                        int step2 = (s_c1_turn[t] >= 2) ? 2 : 1;
-                        int d2 = ((tgt - cur + 36) % 36);
-                        if (d2 > 18) { cur = (cur - step2 + 36) % 36; } else { cur = (cur + step2) % 36; }
-                        s_c1_vx[t] = s_c2_dir36[cur][0]; s_c1_vy[t] = s_c2_dir36[cur][1];
-                        --s_c1_turn[t];                    /* ★ 一手 ✓ 共 4 步 */
-                    }
-                }
-                if (s_c1_stop[t] == 0) s_c1_spd[t] = POFV_C1S_RESUME_SPD;   /* ★ 一手 ✓ 14.0 */
+                }                if (s_c1_stop[t] == 0) s_c1_spd[t] = POFV_C1S_RESUME_SPD;   /* ★ 一手 ✓ 14.0 */
                 pofv_stage_set(22);   /* ★ 移动后/年龄前 */
         ++s_c1_age[t];
                 if (s_c1_vm[t]) ce_anm_set_pos((uint32_t)s_c1_vm[t], s_c1_x[t], s_c1_y[t], 0.0f);
@@ -4146,10 +4129,6 @@ static void clear_card(ce_card_t *c)
             s_power_flash[z6] = 0;
         } }
     pofv_power_clear(&s_power);
-    /* ★★ ② 铁律（审计 D ✓）：删卡/换关 ⇒ **收子机槽** —— 放进 `clear_card()` 就覆盖
-     *   `on_ctor` / `on_run_reset` / `on_delete` **三条路** ✓；★ 漏收 = 商店删卡时**漏一格池槽**
-     *   （12 格用完就再也申请不到 ✓）+ 留幽灵 VM ✓。*/
-    if (s_opt_sanae.ptr) { ce_option_drop(c, &s_opt_sanae); s_opt_sanae.ptr = 0; }
     s_rei_prev = 0;   /* ★ 审计 B ✓：与 core 的 absorbed_rei 同步归零 ✓ */
     s_power_got = 0; s_power_logged = 0; s_aura_bullets = 0;
     {   int z9; for (z9 = 0; z9 < CE_BM_BULLET_COUNT; ++z9) s_aura_bullet_done[z9] = 0; }
@@ -5512,12 +5491,6 @@ static int on_tick_2(ce_card_t *c)
      *   ③ ★ 子机脚本**不能借 108 的 224–227** ✗（会串到 108 的贴图 ✓）⇒ ★ 用**109 自己的 448** ✓
      *      （= 早苗的青蛙 ✓，本会话刚切好 ✓）。
      *   ★ 时机照 SDK 注释 ✓：`on_tick_2 → ce_option_get`（没有就按 retry 补申请 ✓）。*/
-    if (s_aura_kind == 3) {
-        (void)ce_option_get(c, &s_opt_sanae, 0, (int)CE_ANM_ABILITY_SCRIPT_POFV109_C2S_FROG,
-                            8u, "pofv109");   /* ❓offset 取 0 / retry 8 帧（照 SDK 注释的节奏 ✓）*/
-    } else if (s_opt_sanae.ptr) {
-        ce_option_drop(c, &s_opt_sanae); s_opt_sanae.ptr = 0;   /* ★ 非早苗 ⇒ 当帧收干净 ✓ */
-    }
         pofv_c1_tick();                     /* ★ C1：前进 + 伤害源 + 收尾 ✓ */
         pofv_c3_tick();                     /* ★ C3：波次机 + 每颗弹（加速/反弹/伤害源）+ 收尾 ✓ */
         pofv_c4_tick();                     /* ★ C4：扫描弧（两条反向 + 加速 + 伤害源）✓ */
