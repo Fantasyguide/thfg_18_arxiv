@@ -1146,6 +1146,16 @@ static int pofv_aura_key(void)
  *     （★ 灵力 < 200 时按 `灵力 × 10/100` 变慢 ✓）。★ 旧值 `0.4/帧` 是**量纲错**（= 一手 ÷25 的 10 ✓）✗。
  * ⚠ ★ **结界一个字不动** ✗：`POFV_AURA_TARGET_CHARGE`（100 ✓）**继续**是"结界动画量"的满值 ✓
  *   （`:4732` 那行保持原样 ✓），★ 蓄力另用 `POFV_REI_MAX`（2500 ✓）当满刻度 ✓。*/
+/* ★★ 2026-10-11 owner：「**蓄力是有蓄力音效的**」✓ ⇒ 接一手 SE ✓（卡侧 `ce_play_sound(id,x)` ✓ `sdk.h:49`）。
+ * ★ 一手实证：★ 蓄力段（`all.c:186330` 一带 ✓）在 **`FUN_004bb8d0`** 上起 SE ✓（打在子对象 `+200` 的
+ *   `+0x54/+0x56`，按音量/位置 ✓）；同族 `FUN_00417f10`/`FUN_00418190`/`FUN_00418e60`/`FUN_00419000`
+ *   里是「★ 先 **`0x31`** 再 **`0x2c`**」的**绝对 id** 调用 ✓ ⇒ ★ 取 **`0x2c` = 蓄力/维持音** ✓、
+ *   ★ **`0x31` = 升档音** ✓（对上本仓已记的"一手**升档另有音**" ✓）。
+ * ❓**待你听一遍确认**（放错就改这两行数 ✓）—— ★ 这是一手里**唯一没钉死**的地方 ✗：
+ *   ★ 一手那条持续蓄力音挂在 SE **状态对象** `+0x54` 上 ✗，而卡侧只有**一次性**接口 ✓
+ *   ⇒ ★ 本卡做法 = **按住起一次 `0x2c`** ✓ + **每升一档补一次 `0x31`** ✓。*/
+#define POFV_SE_CHARGE  0x2cu
+#define POFV_SE_TIERUP  0x31u
 #define POFV_CHG_RATE_SRC_MAX  200.0f   /* ★ 一手 ✓ `clamp(S+0x88, 0, 200)` 的上界 */
 /* ★★ 2026-10-10 **一手实测定案**（owner 转来的核实 ✓，`FUN_004e79e0` 蓄力支 `0x4e7cec`–`0x4e7d29`）：
  *     `delta = 2 × ((v × 10) / 100) = v × 0.2`（每帧 ✓），`v = clamp(obj[+0x88], 0, 200)` ✓
@@ -1973,6 +1983,7 @@ static pofv_c2_t s_c2;
  * ⚠ C1 的 `s_c1_prev`（上面）是上一版留下的**未使用**声明 —— 本函数落地后应改用它或删掉；
  *   本轮**不动**它 ✗（避免与 owner 正在写的 C1 撞车）。*/
 static int s_aura_rise_prev;
+static int     s_chg_se_prev;    /* ★ 蓄力音（`0x2c`）的按下沿闩锁 ✓ */
 
 /* 结界张开的上升沿（0→1 的那一帧返回 1；电平无变化返回 0）。C1 / C2 共用 ✓。*/
 static int pofv_aura_rise_edge(int held)
@@ -4548,6 +4559,9 @@ static int on_tick_2(ce_card_t *c)
     {
     const int chg_held  = pofv_charge_key();   /* ★ 蓄力 = C only ✓ */
     const int aura_held = pofv_aura_key();     /* ★ 结界 = C ∨ Shift ✓ */
+    /* ★ 蓄力音（一手 ✓）：★ 按下 C 的**上升沿**起一次 `0x2c` ✓（卡侧无循环接口 ✗ ⇒ 不循环 ✓）*/
+    if (chg_held && !s_chg_se_prev) ce_play_sound(POFV_SE_CHARGE, ce_player_x());
+    s_chg_se_prev = chg_held;
     if (chg_held) {
         if (!s_aura_role_logged) {                             /* ★ 一次性：把角色全局的真实取值打出来 ✓ */
             s_aura_role_logged = 1;                            /*   （核实：`0x4cccf4` 确是角色下标 ✓，但「1=魔理沙」未逐值核 🟡
@@ -4705,6 +4719,13 @@ static int on_tick_2(ce_card_t *c)
         const float c3_at = POFV_C3_THRESH;
         const float c4_at = POFV_C4_THRESH;
         if (s_aura_charge >= c1_at) { if (!s_c1_lv) { pofv_c1_fire(); s_c1_lv = 1; } } else s_c1_lv = 0;
+        /* ★ 升档音（一手 ✓「**升档另有音**」，id `0x31` ✓）：★ 档位**新跨过**时补一次 ✓ */
+        {   static int s_tier_prev;
+            const int t_now = ((s_aura_charge >= c1_at) ? 1 : 0) + ((s_aura_charge >= c2_at) ? 1 : 0)
+                            + ((s_aura_charge >= c3_at) ? 1 : 0) + ((s_aura_charge >= c4_at) ? 1 : 0);
+            if (t_now > s_tier_prev) ce_play_sound(POFV_SE_TIERUP, ce_player_x());
+            s_tier_prev = t_now;
+        }
         /* ★★ 2026-10-10：一手**三人**的 C2 完全不同（灵梦 = `EXReigekiInf` ✓ / 魔理沙 = 6 条
          *   `EXLaserInf` ✓ / 早苗 = 不建对象、改走 shot 行 11 ✓，见 §5.2）⇒ ★ **本卡的 C2 只对灵梦** ✓，
          *   其余角色**先不放**（❓待补，见 TUNING）。★ 不这样做的话，魔理沙会放出**灵梦的**弹幕 ✗。*/
