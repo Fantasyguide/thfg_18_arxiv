@@ -17938,4 +17938,56 @@ uint8_t *ce_option_alloc(...) { o->ptr = ce_allocate_option(c, offset, anm_scrip
 ★ 声明层写的是 **`zPlayerOption` 的字段** ✓（偏移/贴图/聚焦形 ✓），★ **与引擎 shooter 的 packed set 无关** ✓
 （packed set 是**发射弹表**的事 ✓；而我们要的只是一个**出膛点** ✓，109 的弹是卡侧自己发射的 ✓）
 ⇒ ★ **那条约束不挡 ②** ✓（仍保留在 TUNING 里作为"若将来要让子机**自己开火**"的提醒 ✓）。
+### ★★★★ ② 待贴代码（字段名已核实 ✓，下一轮机械粘贴即可）（goal 第 12 轮，2026-10-11）
+
+★ 字段名来源 ✓：113 `signal.c:2443–2447` 的**填格原文** ✓：
+```c
+pose.cell[i].fx = pose.cell[i].ux = (float)cell.x10 / 10.0f;   // fx/fy = 聚焦（低速）用
+pose.cell[i].fy = pose.cell[i].uy = (float)cell.y10 / 10.0f;   // ux/uy = 非聚焦用
+pose.count = i;
+(void)ce_option_pose_declare(c, (pose.count > 0) ? &pose : NULL);   // ★ 每帧声明；0 格 = 退出
+```
+★ 落笔守卫（113 `signal.c:2582` 起 ✓）：`ce_option_pose_winner() != ce_card_id(c) ⇒ 只收不写` ✓。
+
+★ **109 要贴的（早苗 1 格版）：**
+```c
+/* ── 状态 ── */
+static ce_option_t    s_opt_sanae;         /* 早苗的子机槽 */
+static ce_option_pose_t s_pose_sanae;      /* 声明用的 pose（每帧重填 ✓） */
+
+/* ── on_tick_2 里（早苗才声明；门 ❓ 先取"早苗且在蓄力/领域态"）── */
+if (s_aura_kind == 3) {
+    memset(&s_pose_sanae, 0, sizeof s_pose_sanae);
+    s_pose_sanae.anm_script = <子机脚本号 ❓>;          /* 视觉先在库里挑 ✓ */
+    s_pose_sanae.count = 1;
+    s_pose_sanae.cell[0].fx = s_pose_sanae.cell[0].ux = 16.0f;   /* ❓ 像素偏移（一手 0x45d902 单位=px ✓）*/
+    s_pose_sanae.cell[0].fy = s_pose_sanae.cell[0].uy = 0.0f;
+    (void)ce_option_pose_declare(c, &s_pose_sanae);
+} else {
+    (void)ce_option_pose_declare(c, NULL);      /* ★ 退出声明（档 0/非早苗）*/
+}
+
+/* ── 落笔钩子（挂进 pofv.c:6906 那张表：`.on_option_pose_apply = pofv_option_apply,`）── */
+static int pofv_option_apply(ce_card_t *c)
+{
+    const ce_option_pose_t *pose = ce_option_pose_pose();
+    if (ce_option_pose_winner() != (int)ce_card_id(c) || !pose || pose->count <= 0) {
+        if (s_opt_sanae.ptr) ce_option_drop(c, &s_opt_sanae);   /* ★ 退位/不当选 ⇒ 只收不写 ✓ */
+        return 0;
+    }
+    if (!ce_option_get(c, &s_opt_sanae, <offset ❓>, (int)pose->anm_script,
+                       8u, "pofv109")) return 0;                /* 认领（池满 ⇒ retry ✓）*/
+    return 0;                                                   /* 偏移由声明层落笔 ✓ */
+}
+
+/* ── 出膛点（早苗的 C1/C2 生成处）── */
+if (s_opt_sanae.ptr) { px = ce_option_x(s_opt_sanae.ptr); py = ce_option_y(s_opt_sanae.ptr); }
+else { px = pp[0]; py = pp[1]; }
+
+/* ── clear_card()（on_ctor / on_run_reset / on_delete 三路共用 ✓）── */
+(void)ce_option_pose_declare(c, NULL);
+if (s_opt_sanae.ptr) { ce_option_drop(c, &s_opt_sanae); s_opt_sanae.ptr = 0; }
+```
+★ 待定的三个 ❓（都在上面）：**子机脚本号**（库里挑现成件 ✓）、**offset**（`ce_option_get` 的第二个参数 ✓，照 108 的 `YK_OPTION_OFFSET_ALLOC` 取值 ✓）、**门**（先取"早苗 ∧ 蓄力/领域态"✓）。
+★ **纪律**：★ 只加在早苗分支 ✓；★ `clear_card` 三路共用 ⇒ 一处写就够 ✓（铁律 ✓）；★ 每步 `make check` 全绿才提交 ✓。
 
