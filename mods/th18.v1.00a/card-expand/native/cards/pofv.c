@@ -2805,23 +2805,21 @@ static void pofv_c1_fire(void)
         /* ★★ 2026-10-11 owner 实跑「**没在转**」✗ ⇒ ★ 自转**改回脚本里的 `angleVel`** ✓
          *   （一手就写在循环外 ⇒ 撤掉循环后正好是它的可达状态 ✓）；★ 卡侧这句撤掉 ✗
          *   （两套同时上会**双倍转速** ✓）。`s_c1_rot` 保留但不再写（留作将来用）。*/
-        s_c1_rot[t] += POFV_C1_SPIN_STEP;
         /* 2026-10-11：原来每 60 帧才打 ⇒ C1 的弹十几帧就出界了 ⇒ 日志 0 行 ✗
          * ⇒ 改成头几帧就打（2/6/10/14 + 之后每 60）。*/
         /* 2026-10-11：前两版日志都 0 行（`t==0` + 每 60 帧 / 头几帧都对不上）
          * ⇒ 改成**前 4 个槽、头 16 帧、每 2 帧**都打 —— 这次不可能再是空的。*/
-        /* ★ 朝向 = **运动方向 + 自转累积** ✓（一手：朝运动方向 rotate ✓ + 脚本10 的 angleVel 27°/帧 ✓）*/
-        if (s_c1_vm[t]) {
-            const int wr = ce_anm_set_rotation((uint32_t)s_c1_vm[t], 0.0f, 0.0f, s_c1_ang[t] + s_c1_rot[t]);
-            /* ★ 自证（owner：「**没转**」✗）：每 30 帧打一行 —— 值、写入返回值、以及**写回读** ✓
-             *   ⇒ 能一次分辨："值没涨"✗ / "写入失败"✗ / "写进去但引擎每帧抹掉"✗ ✓。*/
-            if (t == 0 && (s_c1_age[0] % 30) == 0) {
-                uint8_t *vmr = ce_anm_get_vm((uint32_t)s_c1_vm[t]);
-                const float back = vmr ? *(float *)(vmr + CE_ANM_VM_ROTATION + 8) : -999.0f;
-                ce_log("pofv: [ROT] t=%d ang=%.3f spin=%.3f wr=%d back=%.3f", t,
-                       (double)s_c1_ang[t], (double)s_c1_rot[t], wr, (double)back);
-            }
-        }
+        /* ★★★★ 2026-10-11 owner 的一手定位 ✓（**这才是真根因** ✗，我先前三次误诊 ✗）：
+         *   ★ 引擎的 `AnmManager__draw_vm` **按 renderMode 分派** ✓ —— mode **0/2 的绘制函数
+         *   `th18:0x47e8f0` 里 `fsincos` 条数 = 0 ⇒ **不做 2D 旋转** ✗；mode **1/3** 的
+         *   `th18:0x47ed50` 才有（`0x47ed8c` ✓）。
+         *   ★ 我转写 427 时**漏抄了一手本来就有的 `type(1)`** ✗ ⇒ ★ 引擎**根本不会读这台 VM 的 rotation**
+         *   ⇒ ★ 无论卡侧怎么 `set_rotation`、脚本怎么写 `rotate(...)`，**画面永远不转** ✗
+         *   = 我几次"以为修好了"却死活不转的真因 ✓。
+         *   ⇒ ★ **修法（已由 owner 落在 427 ✓，是复刻不是自定 ✓）**：补回 `type(1)` +
+         *     `angleVel(0.4712389f, 0.0f, 0.4712389f)` ✓（一手 `pl00.anm` script10 逐字同值 = 27°/帧 ✓）；
+         *     ★ 先例 `149_otter_orb` 证明「`type(1)` + `angleVel` + `stop()`」共存时**引擎自己积分角速度** ✓。
+         *   ⇒ ★ **卡侧不要再写 rotation** ✗（写了就是**双倍转速** ✗）—— 故此处**删掉**我先前那句 ✓。*/
         if (s_c1_vm[t]) ce_anm_set_pos((uint32_t)s_c1_vm[t], s_c1_x[t], s_c1_y[t], 0.0f);
             }
         }
