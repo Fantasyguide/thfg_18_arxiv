@@ -2682,14 +2682,15 @@ static void pofv_c1_fire(void)
         s_c1_rot[t] += POFV_C1_SPIN_STEP;
         /* 2026-10-11：原来每 60 帧才打 ⇒ C1 的弹十几帧就出界了 ⇒ 日志 0 行 ✗
          * ⇒ 改成头几帧就打（2/6/10/14 + 之后每 60）。*/
-        if (t == 0 && s_c1_vm[0] && (s_c1_age[0] == 2 || s_c1_age[0] == 6 || s_c1_age[0] == 10
-                                     || s_c1_age[0] == 14 || (s_c1_age[0] % 60) == 0)) {
-            /* 旋转仪表：值 / 写入返回值 / 写完之后再读回来（看是不是被引擎抹掉）*/
-            int wr = ce_anm_set_rotation((uint32_t)s_c1_vm[0], 0.0f, 0.0f, s_c1_rot[0]);
-            uint8_t *vmr = ce_anm_get_vm((uint32_t)s_c1_vm[0]);
+        /* 2026-10-11：前两版日志都 0 行（`t==0` + 每 60 帧 / 头几帧都对不上）
+         * ⇒ 改成**前 4 个槽、头 16 帧、每 2 帧**都打 —— 这次不可能再是空的。*/
+        if (t < 4 && s_c1_age[t] <= 16 && (s_c1_age[t] % 2) == 0) {
+            int wr = ce_anm_set_rotation((uint32_t)s_c1_vm[t], 0.0f, 0.0f, s_c1_rot[t]);
+            uint8_t *vmr = ce_anm_get_vm((uint32_t)s_c1_vm[t]);
             float back = vmr ? *(float *)(vmr + CE_ANM_VM_ROTATION + 8) : -999.0f;
-            ce_log("pofv: [SPIN] rot=%.3f wr=%d back=%.3f vm=%d", (double)s_c1_rot[0], wr,
-                   (double)back, (int)s_c1_vm[0]);
+            ce_log("pofv: [SPIN] t=%d age=%d rot=%.3f wr=%d back=%.3f vm=%d live=%d",
+                   t, s_c1_age[t], (double)s_c1_rot[t], wr, (double)back,
+                   (int)s_c1_vm[t], s_c1_live[t]);
         }
         if (s_c1_vm[t]) ce_anm_set_rotation((uint32_t)s_c1_vm[t], 0.0f, 0.0f, s_c1_rot[t]);
         if (s_c1_vm[t]) ce_anm_set_pos((uint32_t)s_c1_vm[t], s_c1_x[t], s_c1_y[t], 0.0f);
