@@ -1084,6 +1084,7 @@ int pofv_power_tick(pofv_power_pool_t *p, const float *player, float poc_y, int3
                 it->active = 0;
                 --p->live;
                 ++p->absorbed;
+                if (it->kind == 1) ++p->absorbed_rei;   /* ★ 灵力道具（蓝点）单独记 ✓ */
                 ++got;
                 continue;
             }

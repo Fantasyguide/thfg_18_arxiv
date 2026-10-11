@@ -560,6 +560,10 @@ typedef struct {
     int32_t live;
     int32_t spawned;     /* 累计撒出颗数（诊断）*/
     int32_t absorbed;    /* 累计收取颗数（诊断）*/
+    /* ★★★ 2026-10-11 owner 口径（「灵力道具只有一种 = 那个透明小蓝点」✓）：
+     *   ★ 累计**拾到的灵力道具（`kind == 1`）颗数** ✓ —— ★ 卡侧用它来进灵力 ✓
+     *     （比"拾每一件 P 点都进灵力"准 ✗，也比"只认引擎 kind 9"对 ✓）。*/
+    int32_t absorbed_rei;
     int32_t expired;     /* 累计出界 / 寿命到期消失颗数（诊断）*/
     int32_t dropped;     /* 因池满 / 每帧上限被**打包吞掉**的颗数（诊断；面值不丢）*/
 } pofv_power_pool_t;
