@@ -23,15 +23,24 @@ for y in range(SIZE):
     for x in range(SIZE):
         dx, dy = x + 0.5 - CTR, y + 0.5 - CTR
         r = (dx * dx + dy * dy) ** 0.5
-        if r <= R_DISC:                       # 白心：平涂 alpha 64（一手 ins_405(64) ✓）
-            px[x, y] = (255, 255, 255, 64)
+        # ★★★ 2026-10-11 owner：★ 一手那条"渐弱"是 **`alpha`/`alpha2` 端点插值**（脚本用
+        #   `ins_300(-1)` = 素色系统贴图 ⇒ 渐变**不是**贴图给的 ✓）；★ 而 **TH18 环的渐变 α 不生效** ✗
+        #   ⇒ ★ **把 α 按一手的端点剖面烤进贴图** ✓（owner 口径 ✓）。
+        #   一手配方（`effect.anm` ✓）：白心 `alpha(0)` → `alpha2(64)`（中心透 → 边缘 ≈0.25 ✓）；
+        #   黄环 `alpha(128)` → `alpha2(0)`（内缘"突然黄" → 向外渐弱 ✓）。
+        if r <= R_DISC:                       # 白心：中心 α=0 → 边缘 α=64（线性 ✓）
+            u = r / R_DISC                     # 0 = 中心, 1 = 边缘
+            a = int(round(64.0 * u))
+            # 颜色也从 (255,255,255) 走到 (224,224,255)（一手 rgb → rgb2 ✓）
+            b = int(round(255.0 - (255.0 - 255.0) * u))
+            g = int(round(255.0 - (255.0 - 224.0) * u))
+            px[x, y] = (255, g, b, a)
             continue
         if r < R_IN or r > R_OUT:
             continue
-        t = (r - R_IN) / (R_OUT - R_IN)          # 0 = 内缘, 1 = 外缘
-        a = int(40 + (200 - 40) * (t * t))       # 外实内虚
-        g = int(200 + 55 * t)                    # 外缘偏纯黄、内缘略白
-        px[x, y] = (255, min(255, g), int(40 + 60 * (1 - t)), a)
+        u = (r - R_IN) / (R_OUT - R_IN)        # 0 = 环内缘, 1 = 环外缘
+        a = int(round(128.0 * (1.0 - u)))      # ★ 内缘 128（"突然黄"）→ 外缘 0（渐弱 ✓）
+        px[x, y] = (255, 255, 0, a)
 out = pathlib.Path(__file__).with_name("POFV109_BARRIER_FULL.png")
 im.save(out)
 print("已烤:", out.name, im.size, "非透明", sum(1 for p in im.getdata() if p[3] > 0))
