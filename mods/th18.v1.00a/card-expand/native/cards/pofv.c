@@ -2811,7 +2811,17 @@ static void pofv_c1_fire(void)
         /* 2026-10-11：前两版日志都 0 行（`t==0` + 每 60 帧 / 头几帧都对不上）
          * ⇒ 改成**前 4 个槽、头 16 帧、每 2 帧**都打 —— 这次不可能再是空的。*/
         /* ★ 朝向 = **运动方向 + 自转累积** ✓（一手：朝运动方向 rotate ✓ + 脚本10 的 angleVel 27°/帧 ✓）*/
-        if (s_c1_vm[t]) ce_anm_set_rotation((uint32_t)s_c1_vm[t], 0.0f, 0.0f, s_c1_ang[t] + s_c1_rot[t]);
+        if (s_c1_vm[t]) {
+            const int wr = ce_anm_set_rotation((uint32_t)s_c1_vm[t], 0.0f, 0.0f, s_c1_ang[t] + s_c1_rot[t]);
+            /* ★ 自证（owner：「**没转**」✗）：每 30 帧打一行 —— 值、写入返回值、以及**写回读** ✓
+             *   ⇒ 能一次分辨："值没涨"✗ / "写入失败"✗ / "写进去但引擎每帧抹掉"✗ ✓。*/
+            if (t == 0 && (s_c1_age[0] % 30) == 0) {
+                uint8_t *vmr = ce_anm_get_vm((uint32_t)s_c1_vm[t]);
+                const float back = vmr ? *(float *)(vmr + CE_ANM_VM_ROTATION + 8) : -999.0f;
+                ce_log("pofv: [ROT] t=%d ang=%.3f spin=%.3f wr=%d back=%.3f", t,
+                       (double)s_c1_ang[t], (double)s_c1_rot[t], wr, (double)back);
+            }
+        }
         if (s_c1_vm[t]) ce_anm_set_pos((uint32_t)s_c1_vm[t], s_c1_x[t], s_c1_y[t], 0.0f);
             }
         }
@@ -5309,6 +5319,12 @@ static int on_tick_2(ce_card_t *c)
             const int tier_rel = (s_aura_charge >= POFV_C4_THRESH) ? 4
                                : (s_aura_charge >= POFV_C3_THRESH) ? 3
                                : (s_aura_charge >= POFV_C2_THRESH) ? 2 : 1;
+            /* ★★★ 2026-10-11 自证日志（owner：「还是有**意外释放 C2 C3** 的问题」✗ ⇒
+             *   ★ 光读代码定不了 ✗ ⇒ 把每次释放的**现场**记下来 ✓：蓄力值 / 本帧键 / 前帧键 /
+             *   领域态 / 帧号 ✓ ⇒ ★ 若是"抖动触发"，日志里会看到连续的释放行 ✓。）*/
+            ce_log("pofv: [REL] tier=%d charge=%.0f chg=%d prev=%d aura=%d f=%d",
+                   tier_rel, (double)s_aura_charge, (int)chg_held, (int)s_chg_prev,
+                   (int)aura_held, (int)s_card_frames);
             if (tier_rel == 2) pofv_c2_fire();
             else if (tier_rel == 3) pofv_c3_fire();
             else if (tier_rel >= 4) pofv_c4_fire();
