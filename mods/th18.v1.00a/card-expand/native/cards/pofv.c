@@ -1223,8 +1223,25 @@ static int pofv_aura_key(void)
  *     **最高档** ⇒ `tier != last` **永不成立** ⇒ "level n/m" 文字**永不弹** ✗；改 500 ⇒ 起步档 0 ✓。*/
 #define POFV_REI_C1   500.0f
 #define POFV_REI_MAX  2500.0f
+
 /* ★ 一手实测 ✓：`(道具值 0..100 × 15)/100` ⇒ ★ 满档一颗 = **+15** ✓（`FUN_00520d40` ✓）。*/
 #define POFV_REI_GAIN_PER_ITEM     15.0f  /* ★ 一手量纲 ✓（`0x9c4` = 2500；此前拿 100 当上限是错的 ✗）*/
+
+/* ★★★ 2026-10-11 owner 定案（「额外掉的通路」）✓：★ 一手只对 **`kind 9`（加槽的灵力道具）** 入账 ✓，
+ *   ★ 而本卡的 P 点模型（`pofv_core.c` 的 `pofv_power_t`）**没有类型** ✗ ⇒ 原来"拾每一件 P 点都入账" ✗
+ *   = 那条额外通路 ✓。★ 修法（最小且贴一手 ✓）：★ **把入账挪到"kind 9 掉落的那一刻"** ✓
+ *   —— 一手那 5 条来源本来就都是**掉落/生成**触发 ✓ —— 并**停掉拾 P 点那条** ✗。
+ *   ★ 公式照一手 ✓：`+= 15 × clamp(当前蓄力, 0, 100) / 100`（每颗 ✓、cap 2500 ✓）。*/
+static void pofv_rei_credit(int32_t items)
+{
+    float ratio;
+    if (items <= 0) return;
+    ratio = s_aura_charge / 100.0f;
+    if (ratio < 0.0f) ratio = 0.0f;
+    if (ratio > 1.0f) ratio = 1.0f;
+    s_reiryoku += POFV_REI_GAIN_PER_ITEM * ratio * (float)items;
+    if (s_reiryoku > POFV_REI_MAX) s_reiryoku = POFV_REI_MAX;      /* 一手夹到 2500 ✓ */
+}
 /* ⚠ 2026-10-06 核实订正（我上一版把两处出处标错 ✗）：
  *   · 一手**蓄力槽**是 `AuraCtrlInf+0x94`（**另一个结构体的同偏移** ✗），速率 = `clamp(S+0x88,0,200) × 10 / 100`
  *     （`06-aura.md:37` ✓；满 `S+0x88=200` ⇒ **20/帧**）⇒ 本卡取 `5.0f`（等价 `S+0x88=50`，≈40 帧蓄满）
@@ -2329,7 +2346,7 @@ static void combo_th19_add(int32_t n, int32_t win_add)
                 if (!pp9) break;
                 bp[0] = pp9[0]; bp[1] = pp9[1]; bp[2] = 0.0f;
             }
-            (void)ce_spawn_item(9u, bp, 0.0f, 0.0f);            /* ★ 一手 ✓ kind = 9 = 加槽灵力道具 */
+            if (ce_spawn_item(9u, bp, 0.0f, 0.0f)) pofv_rei_credit(1);   /* ★ 一手 ✓ 只有 kind 9 才给灵力 */            /* ★ 一手 ✓ kind = 9 = 加槽灵力道具 */
             ce_log("pofv: [COMBO100] 满 100 掉 kind9（剩余 acc=%d）", (int)s_combo_acc);
         }
     }
@@ -6671,7 +6688,10 @@ static int on_tick_2(ce_card_t *c)
                 float ratio = s_aura_charge / 100.0f;
                 if (ratio < 0.0f) ratio = 0.0f;
                 if (ratio > 1.0f) ratio = 1.0f;
-                s_reiryoku += POFV_REI_GAIN_PER_ITEM * ratio * (float)got_n;
+            /* 2026-10-11 owner「额外掉的通路」=> ★ 这里**不再**按 P 点件数入账 ✗
+             *   （P 点没有类型 ⇒ 会把普通 P 点也当灵力 ✓，那正是"一波 20 hit 涨满"的来源 ✓）。
+             *   ★ 灵力改在 **kind 9 掉落那一刻**入账 ✓（`pofv_rei_credit(1)` ✓，一手 5 条来源同性质 ✓）。*/
+            (void)got_n; (void)got_pts;
             }
             /* 2026-10-11 仪表：★ owner「一波 20 hit 就从 C2 吸满到 C4」✗ ⇒ 打出每次进账
              *   的件数与总量 ✓（看是"件数判据错"还是"单个给太多"✓）。*/
