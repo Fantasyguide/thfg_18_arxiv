@@ -262,6 +262,7 @@ static float s_reiryoku;
  *   ★ 头"旧值"颗蓝点**不入账** ✗（守卫只跳过、不回退 ✓）。
  *   ⇒ ★ 提到文件级 ✓ 并在 `clear_card()` 里归 0 ✓。*/
 static int32_t s_rei_prev;
+static float   s_rei_log_prev;   /* [REI] 日志的基准（打真账用 ✓）*/
 
 /* ★★★★ 2026-10-11 owner 授权（「你可以用子机槽来做到这件事」✓）：
  *   ★ 用 SDK 的「**低速子机声明层**」✓（`sdk.h` spec §3.3.1 ✓）给**早苗**一个子机 ✓，
@@ -1249,10 +1250,13 @@ static void pofv_rei_credit(int32_t items)
 {
     float ratio;
     if (items <= 0) return;
-    ratio = s_aura_charge / 100.0f;
-    if (ratio < 0.0f) ratio = 0.0f;
-    if (ratio > 1.0f) ratio = 1.0f;
-    s_reiryoku += POFV_REI_GAIN_PER_ITEM * ratio * (float)items;
+    /* ★★★★ 2026-10-11 **回归根因**（owner：「灵力道具在收？！我看灵力**一点没涨**」✗）：
+     *   ★ 我按"一手 `S+0x24 += 15 × clamp(S+0x9c, 0, 100)/100`"这句**加了蓄力比例** ✗，
+     *   ★ 但 ★ 本卡的 `s_aura_charge` **平时就是 0**（不蓄力时 ✓）⇒ ★ `ratio = 0` ⇒ **入账恒为 0** ✗
+     *     ⇒ ★ 道具在收、数字一点不涨 ✓ = owner 的症状 ✓。
+     *   ★ 说明那个 `S+0x9c` **不是本卡的 `s_aura_charge`** ✗（一手显然不蓄力也能靠道具涨灵力 ✓）
+     *     ⇒ ★ **去掉这个乘子** ✓（= 每颗固定 `15` ✓），★ 并把 `S+0x9c` 到底是什么**登记为待查 ❓** ✓。*/
+    ratio = 1.0f;    s_reiryoku += POFV_REI_GAIN_PER_ITEM * ratio * (float)items;
     if (s_reiryoku > POFV_REI_MAX) s_reiryoku = POFV_REI_MAX;      /* 一手夹到 2500 ✓ */
 }
 /* ⚠ 2026-10-06 核实订正（我上一版把两处出处标错 ✗）：
@@ -6855,8 +6859,11 @@ static int on_tick_2(ce_card_t *c)
             }
             /* 2026-10-11 仪表：★ owner「一波 20 hit 就从 C2 吸满到 C4」✗ ⇒ 打出每次进账
              *   的件数与总量 ✓（看是"件数判据错"还是"单个给太多"✓）。*/
-            ce_log("pofv: [REI] got=%d gain=%.1f total=%.1f", got_n,
-                   (double)(POFV_REI_GAIN_PER_ITEM * (float)got_n), (double)s_reiryoku);
+            /* ★ 2026-10-11：这行原来打的是**旧公式**（`15 × got_n`）✗ ⇒ ★ 印出 45 而
+             *   实际入账 0 ✓，把我自己也骗了一轮 ✗ ⇒ ★ 改成打**真账**（前后差 ✓）。*/
+            ce_log("pofv: [REI] got=%d total=%.1f (delta=%.1f)", got_n, (double)s_reiryoku,
+                   (double)(s_reiryoku - s_rei_log_prev));
+            s_rei_log_prev = s_reiryoku;
             if (s_reiryoku > POFV_REI_MAX) s_reiryoku = POFV_REI_MAX;   /* ★ 一手夹到 2500 ✓ */
             /* ★ 一手：**升档**另有音（TH16 季节道具升档播 `0x3f`）—— 本卡的对照事件 = **EX 就绪**
              *   （`s_ex_gauge` 首次到 `POFV_EX_FIRE_AT`）；❓ 这只是「本卡哪个事件算升档」的适配，
