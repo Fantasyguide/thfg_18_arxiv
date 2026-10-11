@@ -812,10 +812,19 @@ static void pofv_hud_chg_claim(void)
      *   ⚠ 条本身的**贴图**现在仍是 448 宽（一手 224×2）；owner 的规划是"最终占满" ⇒
      *     等美术/脚本跟上时**只改画法**，这里的占位不用再动。
      *   旧值留档：`POFV_HUD_CHG_BLOCK_W_SURF` = 452（= 448 + 2×2）。*/
-    {   float rw = 0.0f;
+    {   float rw = 0.0f, rw_face = 0.0f;
         ce_hud_card_refresh();          /* ★ z55：先刷"原生卡面在不在"⇒ 宽度才是**扣过卡面**的 ✓ */
         ce_hud_row_remaining_w(&rw);
-        blk.w = rw;
+        /* ★★★ 2026-10-03z56（owner：「**109 自身是主动卡，可以断言一定有主动卡**」）——
+         *   ⇒ 声明宽度**一律按"卡面在场"算**（取两者更保守的那个）✓：
+         *     去掉对"标志是否已刷新 / 换关瞬间状态"的依赖，防御性更强 ✓。
+         *     · 卡面在场 ⇒ 底边起点 124 ⇒ 宽 **700**（124..824）；
+         *     · 卡面缺席 ⇒ 起点 68 ⇒ 宽 756（68..824）—— 按 owner 的断言这条路**不该发生**，
+         *       真发生了也取 700（只少声明 56px，不会压到卡面）✓。*/
+        ce_hud_card_set(1);
+        ce_hud_row_remaining_w(&rw_face);
+        ce_hud_card_refresh();          /* 立刻恢复真实状态（别人还要读这个标志）*/
+        blk.w = (rw_face > 0.0f && rw_face < rw) ? rw_face : rw;
     }
     if (blk.w < POFV_HUD_CHG_BLOCK_W_SURF) blk.w = POFV_HUD_CHG_BLOCK_W_SURF;   /* 兜底：不小于条本身 */
     /* ★ 2026-10-11 第二轮：块高 = 条 **12** + 刻度出头 `TICK_UP`(**12**) = **24** ✓

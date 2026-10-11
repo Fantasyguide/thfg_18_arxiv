@@ -6562,6 +6562,14 @@ static void yk_gauge_hud_update(yk_card_t *s)
                                          *   ⚠ 本卡**定位不吃货架值**（`(void)s->hud`）⇒ 改锚点不动认领；
                                          *     但可见范围会横跨 112/117/113 三块（owner：「别管」）——
                                          *     重叠明细登记在 `AUDIT.md` §BE #150 第九轮。*/
+/* ★★★★ 2026-10-03z56（owner：「我所谓的 108 往上是**都往上，包括声明块**」）——
+ *   上一版我只抬了**画面** ✗，因为块归分配器管。根因：本卡 pin = (68, 928) 的块
+ *   （68..324 × 875..928）与**原生卡面**（68..116 × 864..924）**y 上重叠** ⇒ pin 恒被拒 ⇒
+ *   块走货架（924）。⇒ 现在把 **pin 挪到卡面右沿之外**（x = **124** = 卡面右沿 116 + 间隙 8 ✓）
+ *   并把 y 取 **920**（= 下沿 928 − 8 ✓）⇒ **pin 被接受** ⇒ **块与画面一起上移 8px** ✓✓。
+ *   （间隙 8 = `CE_HUD_GAP`；x 取 124 也与"货架在卡面在场时的起点"一致 ✓ ⇒ 观感不变、只是抬高。）*/
+#define YK_HUD_PIN_X      124.0f        /* ★ z56：卡面右沿(116) + 间隙(8) ⇒ pin 不再压卡面 ✓ */
+#define YK_HUD_PIN_Y      920.0f        /* ★ z56：owner 的"整体上移 8px"（旧货架位 924）*/
 #define YK_GAUGE_BASE_Y   928.0f        /* = **游玩区下沿**（= TH08 640 空间的 464）。
                                          * ★ 第九轮 **y 不动**：它已经与 **112**（`UFO_HUD_PIN_Y = 928`）
                                          *   和 **113**（`TRANCE_HUD_BASE_Y = 928`）**同一条底线**；
@@ -6579,7 +6587,9 @@ static void yk_gauge_hud_update(yk_card_t *s)
      *     在 y 上重叠 ⇒ **pin 永远被拒、回退货架**（台账长期是 `(124,924)`）⇒ 改 pin 的 y
      *     **不生效** ✗。这里改成**画面锚点偏移**：pin 路径与货架路径都上移 ✓。
      *   微调口径：**−1 = 上移 1px**（就下面这一个数）。旧值留档：0（贴那条底线）。*/
-#define YK_HUD_ART_DY  (-8.0f)
+#define YK_HUD_ART_DY  (0.0f)          /* ★ z56：**归零** —— owner 要的是"**连声明块一起上移**"，
+                                        *   而块归分配器管 ⇒ 改成让 **pin 本身被接受**（见 `YK_HUD_PIN_X/Y`），
+                                        *   这样块与画面一起动 ✓；这里就不需要"只抬画面"的临时手段了。*/
     if (s->hud_ready && s->hud.w > 0.0f) {
         anchor[0] = s->hud.x;
         anchor[1] = s->hud.y + YK_HUD_ART_DY;      /* ★ z54：画面专用上移 */
@@ -6825,7 +6835,7 @@ static void yk_hud_claim(ce_card_t *c, yk_card_t *s)
     blk.h = YK_HUD_BLOCK_H;
     blk.side = CE_HUD_SIDE_PINNED;                 /* 非 pinned 会被 pinned 入口拒掉 */
     s->hud_ready = (uint8_t)(ce_hud_slot_claim_pinned_card(
-        ce_card_id(c), &blk, YK_GAUGE_BASE_X, YK_GAUGE_BASE_Y, &s->hud) ? 1 : 0);
+        ce_card_id(c), &blk, YK_HUD_PIN_X, YK_HUD_PIN_Y, &s->hud) ? 1 : 0);
 }
 
 /* ============ ★★★ 2026-09-22（owner #26 · **风味选项**）决死窗口里全屏**敌弹**变红 =============
