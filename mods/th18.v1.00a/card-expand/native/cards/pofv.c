@@ -394,6 +394,13 @@ static pofv_hits_t s_hits;
  *     TH19 那个数字元素已被 owner 2026-10-08 明确撤下 ✓，而现有 `hits`/TH09 SP 显示层另有 `s_hits` 一套
  *     （owner 已调过多次）⇒ 接上去会把两本账串起来 ✗；恢复方案写在 `TUNING.md` 的登记里 ✓。*/
 static pofv_th19_combo_t s_combo_th19;
+/* ★★★ 2026-10-11 owner + 一手（`th19:0x521c60` 反汇编 ✓）：★ 连击有**两个数** ——
+ *   · **显示用的窗口连击** = `s_combo_th19.combo` ✓（窗口漏空归零 ✓，本卡已有一手依据 ✓）；
+ *   · ★ **`mgr+0xff8ec` 的单调计数器** ✓ =「**一直累加、只有关卡重置才清零**」✓（owner 口径 ✓；
+ *     一手在 `0x413639`/`0x5219e2` 两处清零 ✓）。
+ *   ★ 一手规则挂在这**后者**上：★ **每满 100 ⇒ `while(≥100)` 掉 1 个 `kind 9`（加槽灵力道具）** ✓
+ *     ⇒ ★ 涨 300 就一口气掉 3 个 ✓（`0x521d3c: -=100` + `0x521d43: cmp 100; jge` ✓）。*/
+static int32_t s_combo_acc;
 /* ★★★ MODEL-109-SPIRIT-MIRROR.md §4.5 / §4.6（owner 2026-10-05 追加）—— 这两个是**独立事件源** ✓：
  *  §4.5 **周期生成**：除 boss 外，每 **30 s**（=1800 帧）尝试在**两侧各**生成 1 只（幽灵/纯净灵，种类**各自随机** ✓）
  *        ⇒ 这是**本侧的首个生成入口** ✓（解开「本侧恒 0 只」的 bootstrap 死锁 ✓）
@@ -2306,6 +2313,18 @@ static void combo_th19_add(int32_t n, int32_t win_add)
 {
     if (n <= 0) return;
     s_combo_th19.combo += n;                                   /* 一手：`0x54980f` 每事件 +1 → 这里按事件颗数一次加 ✓ */
+    /* 一手 ✓（`0x521c6a`–`0x521c7c`）：单调计数器累加，然后 `while(>=100)` 消耗并掉道具 ✓ */
+    s_combo_acc += n;
+    while (s_combo_acc >= 100) {
+        s_combo_acc -= 100;                                    /* 一手 `0x521d3c: sub 100` ✓ */
+        {
+            const float *bp = ce_player_pos();                  /* ❓自定：落在自机处
+                                                                 * （一手落在"该次破坏的位置"✓；
+                                                                 *  本卡那条账我下一轮接 ✓）*/
+            if (bp) (void)ce_spawn_item(9u, bp, 0.0f, 0.0f);    /* ★ 一手 ✓ kind = 9 = 加槽灵力道具 */
+            ce_log("pofv: [COMBO100] 满 100 掉 kind9（剩余 acc=%d）", (int)s_combo_acc);
+        }
+    }
     if (win_add > 0) {
         s_combo_th19.win += win_add;                           /* 一手：`0x5497ca: addss [ecx+8], xmm1` ✓ */
         if (s_combo_th19.win > POFV_TH19_COMBO_WINDOW_MAX)     /* 一手：`0x5497db: cmp eax,0x3c` + `0x5497fb` ✓ */
@@ -4003,6 +4022,7 @@ static void clear_card(ce_card_t *c)
     pofv_acc_init(&s_acc); s_acc_last_x = 0.0f; s_acc_last_y = 0.0f;
     s_combo_blasts = 0; s_sp_life = 0;   /* ★ 一手的連爆数/SP 寿命 ✓ */
     s_combo_th19.combo = 0; s_combo_th19.win = 0;   /* ★ TH19 連撃真账（一手初值：`0x42fac4`/`0x5482b9` 都是 0 ✓）*/
+    s_combo_acc = 0;   /* ★ 与一手同：只在开局/重置清 ✓（窗口漏空**不**清 ✓）*/
     pofv_hits_init(&s_hits);
     /* ★ MODEL `:104-107`（owner 新增「跨面 ⇒ **全清**」）：清单含「各类**冷却**·队列·**待生成项**」✓
      *   ⇒ 下面 5 个原先**漏复位** ✗（核实复核指出）：冷却 `s_ghost_cool`、击破计数 `s_pure_kill_n`、
