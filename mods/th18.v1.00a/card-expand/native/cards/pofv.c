@@ -3160,13 +3160,13 @@ static void pofv_barrier_vm_sync(void)
     float k_disc, k_glow;
     if (!p) return;
     /* ★ 判定=绘制 ✓：两张贴图各自按"圆/带的外缘"换算（见上面那组常量的推导 ✓）*/
-    k_disc = 2.0f;   /* ★ 一手 ✓ 2×（白心半径 28 ⇒ 屏上 56 ✓）*/
+    k_disc = 1.0f;   /* 2026-10-11 owner 实跑：观感大了一倍 => 2.0 -> 1.0 */
     /* ★★ 2026-10-11 owner 口径落地 ✓：★ 外发光改用图元 `drawRing(28,8,24)` ✓
      *   ⇒ ★ **图元的 `scale` 就是半径** ✓（391 的头注 ✓）⇒ 这里除的是**图元声明的半径 28** ✓
      *   （不再是贴图半径 64 ✗）。*/
     /* ★★ 2026-10-11 owner 实跑 + 一手订正 ✓：★ 一手 `effect.anm` 里环半径写死 **28**、
      *   ★ 罩子侧给 **2× 缩放** ⇒ 屏上 **56 px** ✓（owner 量的就是 56 ✓）⇒ ★ 这里不再按 R 换算 ✗。*/
-    k_glow = 2.0f;
+    k_glow = 1.0f;   /* 2026-10-11 owner 实跑：观感大了一倍 => 2.0 -> 1.0 */
     if (!s_barrier_vm_glow)
         s_barrier_vm_glow = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
                              CE_ANM_ABILITY_SCRIPT_POFV109_BARRIER_RING, POFV_BARRIER_VM_LAYER_GLOW);   /* ★ owner 口径：黄环 = `drawRing(28,8,24)` ✓ */
@@ -5069,6 +5069,16 @@ static int on_tick_2(ce_card_t *c)
                                                        && s_aura_charge < POFV_C3_THRESH)) {
             pofv_c1_fire();
         }
+        /* 2026-10-11 owner：蓄力到 C2 自动放 C2 肯定不对 => 松手才放。
+         * 按松手那一刻的蓄力定档（一手：放炮块要求释放计时器）；只发最高那一档。*/
+        {
+            const int tier_rel = (s_aura_charge >= POFV_C4_THRESH) ? 4
+                               : (s_aura_charge >= POFV_C3_THRESH) ? 3
+                               : (s_aura_charge >= POFV_C2_THRESH) ? 2 : 1;
+            if (tier_rel == 2) pofv_c2_fire();
+            else if (tier_rel == 3) pofv_c3_fire();
+            else if (tier_rel >= 4) pofv_c4_fire();
+        }
         s_c1_rel_latch = 1;
         /* ★★ 2026-10-10 owner 实跑回归：「我领域**不再有消失过程**」✗ —— 根因 = **这一支的门** ✗：
          *   原来门 = `s_aura_charge > 0.0f` ✓，而 ★ `s_aura_charge` **只在按 C 时增长** ✓
@@ -5207,7 +5217,7 @@ static int on_tick_2(ce_card_t *c)
          *   `EXLaserInf` ✓ / 早苗 = 不建对象、改走 shot 行 11 ✓，见 §5.2）⇒ ★ **本卡的 C2 只对灵梦** ✓，
          *   其余角色**先不放**（❓待补，见 TUNING）。★ 不这样做的话，魔理沙会放出**灵梦的**弹幕 ✗。*/
         if (s_aura_charge >= c2_at && s_aura_kind == 0) {
-            if (!s_c2_lv) { pofv_c2_fire(); s_c2_lv = 1; }
+            /* 2026-10-11 owner：蓄力到 C2 自动放肯定不对 => 途中一律不发（C2）；改到释放支按松手时的档发。*/
         } else s_c2_lv = 0;
         /* ★ ② C2 —— **早苗**分支（一手 = shot 行 11 = 更慢的 26 发整圈 ✓，见上）*/
         if (s_aura_charge >= c2_at && s_aura_kind == 3) {
@@ -5226,7 +5236,7 @@ static int on_tick_2(ce_card_t *c)
         } else s_c4m_lv = 0;
         /* ★ 同上：一手三人的 C4 也不同 ⇒ ★ **只对灵梦** ✓（❓待补）。*/
             if (s_aura_charge >= c4_at && s_aura_kind == 0) {
-                if (!s_c4_lv) { pofv_c4_fire(); s_c4_lv = 1; }
+            /* 2026-10-11 owner：蓄力到 C2 自动放肯定不对 => 途中一律不发（C4）；改到释放支按松手时的档发。*/
             } else s_c4_lv = 0;
         }
         /* ★★ ④ 罩子：一手 `FUN_0040b420`（回罩）全 .text **只有两个调用点** = `0x4e8176`(阶段 3 EX) /
@@ -5257,7 +5267,7 @@ static int on_tick_2(ce_card_t *c)
         /* ★ 同上：一手三人的 C3 也不同（§10.1）⇒ ★ **只对灵梦** ✓（❓待补）。*/
         if (s_aura_charge >= c3_at && s_aura_kind == 0) {
             if (!s_c3_lv) {
-                pofv_c3_fire(); s_c3_lv = 1;
+            /* 2026-10-11 owner：蓄力到 C2 自动放肯定不对 => 途中一律不发（C3）；改到释放支按松手时的档发。*/
             }
         } else s_c3_lv = 0;
         /* ★ ④ 罩子：一手是「**C3/C4 才给盾**」✗（C3/C4 尚未实现）⇒ ★ **本轮先不给盾** ✓
