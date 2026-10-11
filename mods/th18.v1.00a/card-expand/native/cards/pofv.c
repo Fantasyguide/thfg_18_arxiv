@@ -1991,7 +1991,13 @@ static const pofv_c1_shot_t s_c1_table[POFV_C1_GROUPS][POFV_C1_SHOTS_PER_GROUP] 
 #define POFV_C2_POINTS              3   /* 一手 ✓ 3 个环绕点（0°/120°/240°）*/
 #define POFV_C2_SPIN_STEP           1   /* 一手 ✓ 整体 +10°/帧 = 36 向表每帧 +1 档 */
 #define POFV_C2_POINT_BASE_STEP    12   /* 0°/120°/240° = 表中相隔 12 档（12×10°）*/
-#define POFV_C2_ORBIT_MAX        64.0f  /* 一手 ✓ 环绕半径终点（0 → 64）*/
+/* ★★ 2026-10-11 定案（我反汇编 `0x53b3a0` 的每帧算式 + 读常量 ✓）：
+ *   那段用的是 **`×1000 ÷192`** 换算（常量 `0x5aa478 = 1000.0` ✓、`0x5aa3dc = 192.0` ✓，
+ *   另有 π / −π / 2.0 / 3.0 ✓）⇒ ★ 子 agent 报的「**±100 × 1000/192 = 520.833**」**有出处** ✓
+ *   —— ★ 即：★ 一手那边**真正的半径 = `100`** ✓（520.833 是**换算后的内部值** ✗）。
+ *   ★ 我先前那个 `64.0f` 是 `+0x788` 的**另一个字段** ✗（不是环绕半径 ✗）。
+ *   ★ 且一手是**恒定半径** ✓（不是从 0 缓动到满 ✗）⇒ 卡里改成常数 ✓。*/
+#define POFV_C2_ORBIT_MAX       100.0f
 #define POFV_C2_ORBIT_FRAMES     22.0f  /* 一手 ✓ 22 帧到终点（缓动曲线 ❓自定，见下）*/
 #define POFV_C2_POINT_CANCEL_R   64.0f  /* 一手 ✓ 每点的消弹圈半径（`FUN_004ee770(…, 64.0f, …)`）*/
 #define POFV_C2_RING_R0         128.0f  /* 一手 ✓ 扩张环起点 */
@@ -2137,7 +2143,8 @@ static void pofv_c2_tick(uint32_t id)
         float orbit;
         if (f > 1.0f) f = 1.0f;
         /* ❓缓动曲线：一手未给 ⇒ 取本卡结界同款的 ease-out 二次（模式 4 同族 ✓）*/
-        orbit = POFV_C2_ORBIT_MAX * (1.0f - (1.0f - f) * (1.0f - f));
+        (void)f;
+        orbit = POFV_C2_ORBIT_MAX;   /* ★ 一手 ✓ **恒定**半径（原来是 0→满 缓动 ✗）*/
         for (i = 0; i < POFV_C2_POINTS; ++i) {
             const int di = (POFV_C2_POINT_BASE_STEP * i + POFV_C2_SPIN_STEP * s_c2.age) % 36;
             float pos[3];
