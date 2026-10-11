@@ -6620,7 +6620,16 @@ static int on_tick_2(ce_card_t *c)
              *   `v = min(道具值, 100); add = (v × 15) / 100` ⇒ ★ **满档一颗 = +15** ✓、上限 **2500** ✓。
              *   ⚠ 我上一版按 owner 的"太快"砍成 **7.5** ✗ —— ★ 那是**手感猜测** ✓，★ 现已被代码推翻 ✓
              *     ⇒ ★ **恢复 15** ✓。（"太快"的真因：★ 本卡**吃到的颗数**多 ✗ —— 见 TUNING ✓。）*/
-            s_reiryoku += POFV_REI_GAIN_PER_ITEM * (float)got_n;
+            /* ★★★ 2026-10-11 照一手订正（本卡注释里本来就写着这条 ✓，我实现时漏了）：
+             *   一手 = **`S+0x24 += 15 × clamp(当前蓄力, 0, 100) / 100`**（每颗 ✓、cap 2500 ✓）
+             *   ⇒ ★ 我之前写成**平铺 15 × 件数** ✗（少了"按当前蓄力比例"这一乘 ✓）
+             *   ⇒ ★ 蓄力低时我给的速度比一手**快数倍** ✓ = owner 报的"涨太快"的一部分 ✓。*/
+            {
+                float ratio = s_aura_charge / 100.0f;
+                if (ratio < 0.0f) ratio = 0.0f;
+                if (ratio > 1.0f) ratio = 1.0f;
+                s_reiryoku += POFV_REI_GAIN_PER_ITEM * ratio * (float)got_n;
+            }
             /* 2026-10-11 仪表：★ owner「一波 20 hit 就从 C2 吸满到 C4」✗ ⇒ 打出每次进账
              *   的件数与总量 ✓（看是"件数判据错"还是"单个给太多"✓）。*/
             ce_log("pofv: [REI] got=%d gain=%.1f total=%.1f", got_n,
