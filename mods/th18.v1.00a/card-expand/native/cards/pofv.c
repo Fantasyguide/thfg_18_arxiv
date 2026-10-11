@@ -2678,7 +2678,8 @@ static void pofv_c1_fire(void)
         /* ★★ 2026-10-11 owner 实跑「**没在转**」✗ ⇒ ★ 自转**改回脚本里的 `angleVel`** ✓
          *   （一手就写在循环外 ⇒ 撤掉循环后正好是它的可达状态 ✓）；★ 卡侧这句撤掉 ✗
          *   （两套同时上会**双倍转速** ✓）。`s_c1_rot` 保留但不再写（留作将来用）。*/
-        (void)s_c1_rot[t];
+        s_c1_rot[t] += POFV_C1_SPIN_STEP;   /* ★★ owner 实跑两次「没在转」⇒ 只能用卡侧 ✓ */
+        if (s_c1_vm[t]) ce_anm_set_rotation((uint32_t)s_c1_vm[t], 0.0f, 0.0f, s_c1_rot[t]);
         if (s_c1_vm[t]) ce_anm_set_pos((uint32_t)s_c1_vm[t], s_c1_x[t], s_c1_y[t], 0.0f);
             }
         }
@@ -3159,11 +3160,13 @@ static void pofv_barrier_vm_sync(void)
     float k_disc, k_glow;
     if (!p) return;
     /* ★ 判定=绘制 ✓：两张贴图各自按"圆/带的外缘"换算（见上面那组常量的推导 ✓）*/
-    k_disc = POFV_BARRIER_R / POFV_BARRIER_DISC_TEX_R;
+    k_disc = 2.0f;   /* ★ 一手 ✓ 2×（白心半径 28 ⇒ 屏上 56 ✓）*/
     /* ★★ 2026-10-11 owner 口径落地 ✓：★ 外发光改用图元 `drawRing(28,8,24)` ✓
      *   ⇒ ★ **图元的 `scale` 就是半径** ✓（391 的头注 ✓）⇒ 这里除的是**图元声明的半径 28** ✓
      *   （不再是贴图半径 64 ✗）。*/
-    k_glow = (POFV_BARRIER_R * POFV_BARRIER_GLOW_OUT) / 28.0f;
+    /* ★★ 2026-10-11 owner 实跑 + 一手订正 ✓：★ 一手 `effect.anm` 里环半径写死 **28**、
+     *   ★ 罩子侧给 **2× 缩放** ⇒ 屏上 **56 px** ✓（owner 量的就是 56 ✓）⇒ ★ 这里不再按 R 换算 ✗。*/
+    k_glow = 2.0f;
     if (!s_barrier_vm_glow)
         s_barrier_vm_glow = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
                              CE_ANM_ABILITY_SCRIPT_POFV109_BARRIER_RING, POFV_BARRIER_VM_LAYER_GLOW);   /* ★ owner 口径：黄环 = `drawRing(28,8,24)` ✓ */
