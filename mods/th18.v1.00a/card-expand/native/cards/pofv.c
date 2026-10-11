@@ -2034,7 +2034,10 @@ static int     s_c1_rel_latch;   /* ★ 「每次释放放一份 C1」的闩锁 
  *   S+0x3c = clamp(+1,0,7) ✓（阶段 4，0x4e7b d4，独立）⇒ 卡侧每放一次 +1、clamp 0..7 ✓。
  * ★ 画法：ce_hud_vm_text_set_font ✓（sdk.h:811）；坐标 = 640 空间 ✓；align_h 0 = 居中 ✓（sdk.h:774）。*/
 static ce_hud_vm_text_t s_hud_chg_lv_text;
-static int s_c3_lv_n, s_c4_lv_n;      /* ★ 阶段 3/4 等级（0..7 ✓，一手 +0x38/+0x3c ✓）*/
+static int s_c3_lv_n, s_c4_lv_n;
+/* ★★ 一手（子 agent 核实 ✓）：★ C2 的**扩张环圆心 = 第 1 个环绕点** ✗（不是自机 ✗）。
+ *   ⇒ 卡侧把第 1 个点的坐标记下来，环 VM / 环的消弹都用它 ✓。*/
+static float s_c2_pt0x, s_c2_pt0y;      /* ★ 阶段 3/4 等级（0..7 ✓，一手 +0x38/+0x3c ✓）*/
 
 /* 结界张开的上升沿（0→1 的那一帧返回 1；电平无变化返回 0）。C1 / C2 共用 ✓。*/
 static int pofv_aura_rise_edge(int held)
@@ -2121,6 +2124,7 @@ static void pofv_c2_tick(uint32_t id)
             (void)c2_cancel_drop(pos, POFV_C2_POINT_CANCEL_R);      /* 半径 64 的消弹圈 ✓ */
             /* ★★ 可见物（一手 ✓）：★ 每点一台 `pl00.anm` script20 的复刻（脚本 434 ✓）——
              *   一手 tick 里这 3 台就是**跟着三个环绕点跑** ✓（`+10°/帧` ✓、半径见下 ✓）。*/
+            if (i == 0) { s_c2_pt0x = pos[0]; s_c2_pt0y = pos[1]; }   /* ★ 环心用它 ✓ */
             if (!s_c2.orb_vm[i])
                 s_c2.orb_vm[i] = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
                                   CE_ANM_ABILITY_SCRIPT_POFV109_C2_ORB, 6);
@@ -2137,11 +2141,11 @@ static void pofv_c2_tick(uint32_t id)
         const float r = POFV_C2_RING_R0
                       + (POFV_C2_RING_R1 - POFV_C2_RING_R0)
                         * (float)(s_c2.age - POFV_C2_POINT_END) / POFV_C2_RING_FRAMES;
-        c2_ring_vm_sync(r);   /* ★★ 范围圈：每帧按**真实消弹半径**写 `scale.y`（判定=绘制 ✓）*/
+        c2_ring_vm_sync(r);   /* ★ 圆心 = 第 1 个环绕点 ✓（一手 ✓）*/   /* ★★ 范围圈：每帧按**真实消弹半径**写 `scale.y`（判定=绘制 ✓）*/
         float pos[3];
-        pos[0] = p[0]; pos[1] = p[1]; pos[2] = 0.0f;
+        pos[0] = s_c2_pt0x; pos[1] = s_c2_pt0y; pos[2] = 0.0f;   /* ★ 一手：环心 = 第 1 个环绕点 ✓（原为自机 ✗）*/
         (void)c2_cancel_drop(pos, r);
-        (void)storm_hit_clipped(p[0], p[1], r, POFV_C2_RING_DMG);
+        (void)(void)storm_hit_clipped(s_c2_pt0x, s_c2_pt0y, r, POFV_C2_RING_DMG);   /* ★ 一手：环心 ✓ */
     }
 
     /* ④ 无敌（一手 40 帧 ✓）：**逐帧**声明剩余帧数（SDK 在帧界取最大值落笔 ✓，`sdk.h:1045`）*/
@@ -2175,6 +2179,7 @@ static void pofv_c2_tick(uint32_t id)
 static void c2_ring_vm_sync(float r)
 {
     const float *p = ce_player_pos();
+    (void)p;
     if (r <= 0.0f) return;
     if (!s_c2.ring_vm) {
         const uint32_t id = ce_anm_spawn(CE_ABILITY_ANM(),
@@ -2182,8 +2187,8 @@ static void c2_ring_vm_sync(float r)
         if (!id) return;
         s_c2.ring_vm = (int32_t)id;
     }
-    if (!p) return;
-    vm_set_world_pos((uint32_t)s_c2.ring_vm, p[0], p[1]);
+    /* ★★ 圆心 = **第 1 个环绕点** ✓（一手 ✓；`s_c2_pt0x/y` 由 tick 每帧写 ✓）*/
+    vm_set_world_pos((uint32_t)s_c2.ring_vm, s_c2_pt0x, s_c2_pt0y);
     /* ★ 判定=绘制：`scale.y` = 半径（世界单位）；`scale.x` = 环带宽度 ✓ */
     ce_anm_set_scale((uint32_t)s_c2.ring_vm, POFV_C2_RING_BAND_W, r);
 }
