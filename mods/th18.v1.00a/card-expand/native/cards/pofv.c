@@ -2553,7 +2553,14 @@ static void pofv_c1_clear(void)
 {
     int t;
     for (t = 0; t < POFV_C1_SHOTS_PER_GROUP; ++t) {
-        if (s_c1_vm[t]) { ce_anm_delete((uint32_t)s_c1_vm[t]); s_c1_vm[t] = 0; }
+        if (s_c1_vm[t]) {
+                /* ★★★ 2026-10-11 卡死根因 ✓：★ 这里的删除**原先没判活** ✗ —— 脚本自己会
+                 *   `+8: delete()`（427）/`+20: delete()`（444）⇒ ★ 句柄早已**悬空** ✗ ⇒
+                 *   再删一次 ⇒ **引擎自旋、无 dump** ✓（阶段仪表指到 `[STAGE] 25` = 出界那一支 ✓）。
+                 *   ★ 改成**先判活** ✓（本仓残影池/火花同款 ✓），★ 并用 `interrupt`（脚本自带收尾 ✓）。*/
+                if (ce_anm_get_vm((uint32_t)s_c1_vm[t])) ce_anm_interrupt((uint32_t)s_c1_vm[t], 1);
+                s_c1_vm[t] = 0;
+            }
         s_c1_live[t] = 0; s_c1_age[t] = 0;
     }
 }
@@ -2576,7 +2583,14 @@ static void pofv_c1_fire_range(int grp, int from, int cnt)
         const pofv_c1_shot_t *r = (s_c1_set_sel && grp == POFV_C1_GROUP_SANA)
                                   ? &s_c1s_set11[t] : &s_c1_table[grp][t];
         int di;                                   /* ★ 角度 → 36 向表下标（一手 -pi/2 = 正上）*/
-        if (s_c1_vm[t]) { ce_anm_delete((uint32_t)s_c1_vm[t]); s_c1_vm[t] = 0; }
+        if (s_c1_vm[t]) {
+                /* ★★★ 2026-10-11 卡死根因 ✓：★ 这里的删除**原先没判活** ✗ —— 脚本自己会
+                 *   `+8: delete()`（427）/`+20: delete()`（444）⇒ ★ 句柄早已**悬空** ✗ ⇒
+                 *   再删一次 ⇒ **引擎自旋、无 dump** ✓（阶段仪表指到 `[STAGE] 25` = 出界那一支 ✓）。
+                 *   ★ 改成**先判活** ✓（本仓残影池/火花同款 ✓），★ 并用 `interrupt`（脚本自带收尾 ✓）。*/
+                if (ce_anm_get_vm((uint32_t)s_c1_vm[t])) ce_anm_interrupt((uint32_t)s_c1_vm[t], 1);
+                s_c1_vm[t] = 0;
+            }
         /* ★★ 2026-10-11 owner 实跑：「**不是对称的 4 发，左侧第二发靠右，是歪的**」✗
          *   ⇒ ★ 根因 = **截断取整** ✗：★ C 的 `(int)` 对**负数朝 0 偏** ✗ ⇒
          *     `−120°` 算成 **−11**（应为 −12 ✓）、`−100°` 算成 −9（应为 −10 ✓）……
@@ -2639,7 +2653,14 @@ static void pofv_c1_fire(void)
             int e;
             for (e = 0; e < 2; ++e) {
                 const int t = 1 + e;
-                if (s_c1_vm[t]) { ce_anm_delete((uint32_t)s_c1_vm[t]); s_c1_vm[t] = 0; }
+                if (s_c1_vm[t]) {
+                /* ★★★ 2026-10-11 卡死根因 ✓：★ 这里的删除**原先没判活** ✗ —— 脚本自己会
+                 *   `+8: delete()`（427）/`+20: delete()`（444）⇒ ★ 句柄早已**悬空** ✗ ⇒
+                 *   再删一次 ⇒ **引擎自旋、无 dump** ✓（阶段仪表指到 `[STAGE] 25` = 出界那一支 ✓）。
+                 *   ★ 改成**先判活** ✓（本仓残影池/火花同款 ✓），★ 并用 `interrupt`（脚本自带收尾 ✓）。*/
+                if (ce_anm_get_vm((uint32_t)s_c1_vm[t])) ce_anm_interrupt((uint32_t)s_c1_vm[t], 1);
+                s_c1_vm[t] = 0;
+            }
                 s_c1_grp[t] = POFV_C1_GROUP_MARISA; s_c1_kind[t] = 1; s_c1_dmg_ov[t] = 6;
                 s_c1_len[t] = 0.0f;
                 s_c1_x[t] = pp2[0] + (e ? 32.0f : -32.0f);      /* ★ 偏移 ∓32 ✓ */
@@ -2765,7 +2786,14 @@ static void pofv_c1_tick(void)
         pofv_stage_set(25);   /* ★ 出界检查前 */
         if (s_c1_x[t] < -POFV_FIELD_HALF_W || s_c1_x[t] > POFV_FIELD_HALF_W ||
             s_c1_y[t] < 0.0f || s_c1_y[t] > POFV_FIELD_H || s_c1_age[t] >= POFV_C1_BULLET_LIFE) {
-            if (s_c1_vm[t]) { ce_anm_delete((uint32_t)s_c1_vm[t]); s_c1_vm[t] = 0; }
+            if (s_c1_vm[t]) {
+                /* ★★★ 2026-10-11 卡死根因 ✓：★ 这里的删除**原先没判活** ✗ —— 脚本自己会
+                 *   `+8: delete()`（427）/`+20: delete()`（444）⇒ ★ 句柄早已**悬空** ✗ ⇒
+                 *   再删一次 ⇒ **引擎自旋、无 dump** ✓（阶段仪表指到 `[STAGE] 25` = 出界那一支 ✓）。
+                 *   ★ 改成**先判活** ✓（本仓残影池/火花同款 ✓），★ 并用 `interrupt`（脚本自带收尾 ✓）。*/
+                if (ce_anm_get_vm((uint32_t)s_c1_vm[t])) ce_anm_interrupt((uint32_t)s_c1_vm[t], 1);
+                s_c1_vm[t] = 0;
+            }
             s_c1_live[t] = 0;
             continue;
         }
