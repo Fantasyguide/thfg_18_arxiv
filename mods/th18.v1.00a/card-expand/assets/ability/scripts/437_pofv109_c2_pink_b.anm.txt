@@ -1,0 +1,24 @@
+script script437 {
+    // 109 · C2 的**粉色落点** = 一手 `pl00.anm` **script24** ✓（逐条；`script26`/`28` 只换颜色 ✓）
+    sprite(@POFV109_C2_ORB);
+    layer(6);
+    scale(1.0f, 1.0f);
+    blendMode(1);
+    color(255, 208, 255);
+    alpha(255);
+    type(1);
+    rotate(0.0f, 0.0f, %RANDRAD);
+    fsetDiv(%F0, %RANDRAD, 64.0f);
+    angleVel(0.0f, 0.0f, %F0);
+    fset(%F0, %RANDRAD);
+    fcos(%F1, %F0);
+    fsin(%F2, %F0);
+    fsetMul(%F0, %RANDF, 32.0f);
+    fmul(%F1, %F0);
+    fmul(%F2, %F0);
+    pos(%F1, %F2, 0.0f);
+    stop();
+    interruptLabel(1);
++10: // 10
+    delete();
+}

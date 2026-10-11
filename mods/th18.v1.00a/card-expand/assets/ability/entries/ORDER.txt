@@ -1298,3 +1298,4 @@ POFV109_ETBREAK_5        ability/etbreak/ETBREAK_5.png            62x62
 POFV109_ETBREAK_6        ability/etbreak/ETBREAK_6.png            62x62
 POFV109_ETBREAK_7        ability/etbreak/ETBREAK_7.png            62x62
 POFV109_C_RING_STRIP         ability/cring/C_RING_STRIP.png           16x128
+POFV109_C2_ORB               ability/POFV109_C2_ORB.png           126x126

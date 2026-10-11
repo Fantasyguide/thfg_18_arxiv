@@ -1,0 +1,32 @@
+script script434 {
+    // 109 · **C2（灵梦）的 3 台可见物** = 复刻 TH19 一手 `pl00.anm` **script20** ✓（逐条）
+    //   一手正文（`local/th19.v1.10c/_ext/pl00.txt`）：
+    //     alpha(0); layer(20); scriptNew(script23/25/27 ×2); stop(); interruptLabel(1);
+    //     scriptNew(script24/26/28 ×2); scriptNew(script22); +60: delete();
+    //   ⇒ ★ 父脚本**自己不画**（`alpha(0)`、无 sprite ✓），只负责**喷子级** ✓：
+    //     · 常态：粉/紫/红 三种颜色的**发射器**（各 2 台 ✓）
+    //     · 被打断（= 一手 age==45 的爆开 ✓）：再喷 24/26/28 各 2 台 + 22（白色爆发 ✓）
+    //     · **第 60 帧自删** ✓（一手 ✓）
+    //   ★ 本卡把 `layer(20)` 换成**世界层 6** ❓（TH19 的层号与 TH18 不同，本卡世界特效一律走 6 ✓）。
+    //   ★ 贴图 = 一手 `player/pl00/pl00b.png` 的 **sprite42 = {1,1,126,126}** ✓
+    //     （已原生切图 → `POFV109_C2_ORB` ✓，见 `make_pofv109_c2_orb_art.py`? 本卡由一次性脚本切 ✓）。
+    alpha(0);
+    layer(6);
+    scriptNew(script436);
+    scriptNew(script438);
+    scriptNew(script440);
+    scriptNew(script436);
+    scriptNew(script438);
+    scriptNew(script440);
+    stop();
+    interruptLabel(1);
+    scriptNew(script437);
+    scriptNew(script439);
+    scriptNew(script441);
+    scriptNew(script437);
+    scriptNew(script439);
+    scriptNew(script441);
+    scriptNew(script435);
++60: // 60
+    delete();
+}

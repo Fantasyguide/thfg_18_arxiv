@@ -2017,6 +2017,7 @@ typedef struct {
     int age;         /* 0..`POFV_C2_TOTAL`−1（一手 `EXReigekiInf+0x5c` ✓）*/
     int invuln;      /* 剩余无敌帧（一手 40 ✓；逐帧声明给 SDK 的声明层 ✓）*/
     int ring_vm;     /* ★★ 消弹**范围圈**的 VM（★ 一手正解 = 一台 VM + `texArcEven(64)`，见 §15 ✓）*/
+    int32_t orb_vm[POFV_C2_POINTS];   /* ★★ C2 的 **3 台可见物** = 一手 `pl00.anm` script20 ✓（脚本 434 ✓）*/
 } pofv_c2_t;
 static pofv_c2_t s_c2;
 /* ★ C1/C2 **共用**的「结界键张开上升沿」闩锁（一手两档同一次蓄力释放 ⇒ 同一次张开都放 ✓）。
@@ -2118,6 +2119,15 @@ static void pofv_c2_tick(uint32_t id)
             pos[1] = p[1] + orbit * s_c2_dir36[di][1];
             pos[2] = 0.0f;
             (void)c2_cancel_drop(pos, POFV_C2_POINT_CANCEL_R);      /* 半径 64 的消弹圈 ✓ */
+            /* ★★ 可见物（一手 ✓）：★ 每点一台 `pl00.anm` script20 的复刻（脚本 434 ✓）——
+             *   一手 tick 里这 3 台就是**跟着三个环绕点跑** ✓（`+10°/帧` ✓、半径见下 ✓）。*/
+            if (!s_c2.orb_vm[i])
+                s_c2.orb_vm[i] = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
+                                  CE_ANM_ABILITY_SCRIPT_POFV109_C2_ORB, 6);
+            if (s_c2.orb_vm[i]) {
+                ce_anm_set_pos((uint32_t)s_c2.orb_vm[i], pos[0], pos[1], 0.0f);
+                ce_anm_set_scale((uint32_t)s_c2.orb_vm[i], 1.0f, 1.0f);   /* ★ 一手 126×126 原尺寸 ✓ */
+            }
             if (s_c2.age % POFV_C2_POINT_HIT_EVERY == 0)            /* 每 5 帧一个伤害源 ✓ */
                 (void)storm_hit_clipped(pos[0], pos[1], POFV_C2_POINT_HIT_R, POFV_C2_POINT_HIT_DMG);
         }
@@ -2141,6 +2151,10 @@ static void pofv_c2_tick(uint32_t id)
     /* ⑤ 收尾（105 帧到 ⇒ 环淡出、无敌撤声明、状态归零 ✓）*/
     if (++s_c2.age >= POFV_C2_TOTAL) {
         c2_ring_vm_release();  /* ★ 范围圈：随 C2 一起收（淡出后由 clear 兜底 ✓）*/
+        {   int k2;                                     /* ★ 3 台可见物：打断 ⇒ 一手 +60 自删 ✓ */
+            for (k2 = 0; k2 < POFV_C2_POINTS; ++k2)
+                if (s_c2.orb_vm[k2]) { ce_anm_interrupt((uint32_t)s_c2.orb_vm[k2], 1); s_c2.orb_vm[k2] = 0; }
+        }
         ce_invuln_request(id, 0);
         s_c2.active = 0;
         s_c2.age = 0;
@@ -3705,6 +3719,8 @@ static void clear_card(ce_card_t *c)
      *   句柄清 0 + 认领标记复位（活着的帧下一帧会重新认领/重建 ✓；`on_delete` 那条路 tick 已停也无妨 ✓）。*/
     if (s_hud_chg_track_vm) { ce_anm_delete((uint32_t)s_hud_chg_track_vm); s_hud_chg_track_vm = 0; }
     ce_hud_vm_text_clear(&s_hud_chg_lv_text);   /* ★ 铁律：文本 VM 也要收 ✓ */
+    {   int k3; for (k3 = 0; k3 < POFV_C2_POINTS; ++k3)      /* ★ 铁律：C2 的 3 台可见物也收 ✓ */
+            if (s_c2.orb_vm[k3]) { ce_anm_delete((uint32_t)s_c2.orb_vm[k3]); s_c2.orb_vm[k3] = 0; } }
     s_barrier_grant_pending = 1;                /* ★ #5：重新拿到卡 ⇒ 再给一个罩 ✓ */
     if (s_hud_chg_fill_vm)  { ce_anm_delete((uint32_t)s_hud_chg_fill_vm);  s_hud_chg_fill_vm  = 0; }
     if (s_hud_chg_white_vm) { ce_anm_delete((uint32_t)s_hud_chg_white_vm); s_hud_chg_white_vm = 0; }

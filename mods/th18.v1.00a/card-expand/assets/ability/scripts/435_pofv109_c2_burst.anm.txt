@@ -1,0 +1,15 @@
+script script435 {
+    // 109 · C2 的**白色爆发** = 一手 `pl00.anm` **script22** ✓（逐条）
+    sprite(@POFV109_C2_ORB);
+    layer(6);                                 // ❓一手 layer(20) ⇒ 本卡世界层 6
+    scale(0.0f, 0.0f);
+    scaleTime(20, 1, 1.0f, 1.0f);
+    type(2);
+    blendMode(1);
+    color(255, 255, 255);
+    alpha(255);
+    scaleTime(20, 4, 6.0f, 6.0f);
+    alphaTime(20, 4, 0);
++20: // 20
+    delete();
+}

@@ -1,0 +1,25 @@
+script script438 {
+    // 109 · C2 的**粉色发射器** = 一手 pl00.anm **script25** ✓（逐条；`script25`/`27` 只换颜色 ✓）
+    sprite(@POFV109_C2_ORB);
+    layer(6);
+    scale(0.0f, 0.0f);
+    scaleTime(20, 1, 1.0f, 1.0f);
+    type(1);
+    blendMode(1);
+    color(128, 0, 240);
+    alpha(128);
+    rotate(0.0f, 0.0f, %RANDRAD);
+    fsetDiv(%F0, %RANDRAD, 64.0f);
+    angleVel(0.0f, 0.0f, %F0);
+    fsetMul(%F0, %RANDF2, 96.0f);
+    fsetMul(%F1, %RANDF2, 96.0f);
+offset220:
+    fsetMul(%F2, %RANDF2, 96.0f);
+    fsetMul(%F3, %RANDF2, 96.0f);
+    moveBezier(20, %F0, %F1, 0.0f, 0.0f, 0.0f, 0.0f, %F2, %F3, 0.0f);
++20: // 20
+    jmp(offset220, 1);
+    interruptLabel(1);
++10: // 30
+    delete();
+}
