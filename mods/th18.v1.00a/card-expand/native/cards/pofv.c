@@ -3170,7 +3170,12 @@ static void pofv_c4_tick(void)
 #define POFV_C2M_LASERS      6
 #define POFV_C2M_VM_LAYER    6
 #define POFV_C2M_HIT_LEW   12.0f     /* ❓：伤害源的宽（细）*/
-#define POFV_C2M_HIT_LEN   420.0f     /* ❓：伤害源的长（≈ 一手的 448 ✓）*/
+/* ★★ 2026-10-11 照一手订正（子 agent 核实 ✓）：★ 魔理沙 C2 = **6 条 `EXLaserInf`** ✓，
+ *   ★ 每条**两端点 = 自机 + 半径 600 的偏移** ✓ ⇒ 长度取 **600**（原 420 是我猜的 ❓ ✗）。
+ *   ★ 角度 = **−90° + k·60°** ✓（原来我从 0° 起等分 ✗，差 90°）。
+ *   ★ 寿命 = **60 + rand()%100** ✓（60..159）；★ **无 anm**（一手是引擎原生激光 ✗，
+ *     本卡没有那种原语 ⇒ 仍用脚本 403 画，观感属 ❓自定 ✓）。*/
+#define POFV_C2M_HIT_LEN   600.0f
 
 typedef struct {
     int     live, age, life;
@@ -3192,7 +3197,7 @@ static void pofv_c2m_clear(void)
 
 static void pofv_c2m_fire(void)
 {
-    static const int lifes[POFV_C2M_LASERS] = { 60, 80, 100, 120, 140, 159 };  /* ❓② */
+
     const float *pp = ce_player_pos();
     int k;
     if (!pp) return;
@@ -3200,8 +3205,9 @@ static void pofv_c2m_fire(void)
         pofv_c2m_laser_t *L = &s_c2m[k];
         int di;
         if (L->vm) { ce_anm_delete((uint32_t)L->vm); L->vm = 0; }
-        L->live = 1; L->age = 0; L->life = lifes[k];
-        L->ang = 6.2831853f * (float)k / (float)POFV_C2M_LASERS;   /* ❓① 等分 */
+        /* ★★ 一手 ✓：★ 每条寿命 = **`60 + rand() % 100`** ✓（60..159）—— 原来是固定表 ❓ 已删 ✓。*/
+        L->live = 1; L->age = 0; L->life = 60 + (int)(ce_rand() % 100u);
+        L->ang = -1.5707963f + 6.2831853f * (float)k / (float)POFV_C2M_LASERS;   /* ★ 一手 ✓ −90° + k·60° */
         L->x = pp[0]; L->y = pp[1];
         di = (int)(L->ang * (36.0f / 6.2831853f)) % 36;
         if (di < 0) di += 36;
