@@ -2489,7 +2489,36 @@ static int   s_c1_dmg_ov[POFV_C1_SHOTS_PER_GROUP];
  *     （`CE_ENEMY_FOREACH` ✓；不用 `fabs` ⇒ 免 libm/x87 ✓）。*/
 #define POFV_C1S_STOP_FRAMES   4
 #define POFV_C1S_RESUME_SPD  14.0f
-static int   s_c1_stop[POFV_C1_SHOTS_PER_GROUP];   /* ★ 逐弹伤害（默认取表 ✓，追加两发覆盖为 6 ✓）*/   /* ★ 每颗弹的**组别** ✓（伤害要取对表的行 ✓）*/   /* ★ 标量速度（一手 `shot+0x6c` ✓，两段运动改它 ✓）*/
+static int   s_c1_stop[POFV_C1_SHOTS_PER_GROUP];
+/* ★★ 2026-10-11 owner 实跑：「灵梦的 **C1 还有残影**」✗ ⇒ ★ 一手是靠 script10 里的
+ *   `scriptNewRoot(script12)` ✓；★ 但 TH18 的 anmm 语义与 TH19 不同 ✗（旋转那条已经证明 ✓）
+ *   ⇒ ★ **改卡侧自己补** ✓：每帧在弹的位置起一台 **433**（= 一手 script12 的复刻 ✓，20 帧自删 ✓）。
+ *   ★ 池 64：一手是"每帧每弹一台" ⇒ 4 发 × 20 帧 ≈ 80 ⇒ 用 64 封顶（❓自定旋钮 ✓）。*/
+#define POFV_C1_TRAIL_MAX 64
+static int32_t s_c1_trail[POFV_C1_TRAIL_MAX];
+static int     s_c1_trail_ttl[POFV_C1_TRAIL_MAX];
+static void pofv_c1_trail_spawn(float x, float y)
+{
+    int k;
+    for (k = 0; k < POFV_C1_TRAIL_MAX; ++k) if (s_c1_trail_ttl[k] <= 0) break;
+    if (k >= POFV_C1_TRAIL_MAX) return;                 /* ★ 池满 ⇒ 这一帧不放 ✓ */
+    s_c1_trail[k] = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
+                        CE_ANM_ABILITY_SCRIPT_POFV109_C1_TRAIL, POFV_C1_VM_LAYER);
+    if (!s_c1_trail[k]) return;
+    ce_anm_set_pos((uint32_t)s_c1_trail[k], x, y, 0.0f);
+    s_c1_trail_ttl[k] = 22;                             /* ★ 略长于脚本的 20 帧 ✓ */
+}
+static void pofv_c1_trail_tick(void)
+{
+    int k;
+    for (k = 0; k < POFV_C1_TRAIL_MAX; ++k) {
+        if (s_c1_trail_ttl[k] <= 0) continue;
+        if (--s_c1_trail_ttl[k] > 0) continue;
+        if (s_c1_trail[k] && ce_anm_get_vm((uint32_t)s_c1_trail[k]))
+            ce_anm_delete((uint32_t)s_c1_trail[k]);
+        s_c1_trail[k] = 0;
+    }
+}   /* ★ 逐弹伤害（默认取表 ✓，追加两发覆盖为 6 ✓）*/   /* ★ 每颗弹的**组别** ✓（伤害要取对表的行 ✓）*/   /* ★ 标量速度（一手 `shot+0x6c` ✓，两段运动改它 ✓）*/
 static int s_c1_age[POFV_C1_SHOTS_PER_GROUP];
 static int s_c1_bounce[POFV_C1_SHOTS_PER_GROUP];   /* ★ 一手 `EX_BOUNCE`：已撞墙次数 ✓ */
 static int32_t s_c1_vm[POFV_C1_SHOTS_PER_GROUP];
@@ -2618,6 +2647,7 @@ static void pofv_c1_window_tick(void)
 static void pofv_c1_tick(void)
 {
     pofv_c1_window_tick();   /* ★ 一手：发射窗口（早苗的半圈切换 ✓）*/
+    pofv_c1_trail_tick();    /* ★ 残影池（灵梦 C1 ✓）*/
     int t;
     for (t = 0; t < POFV_C1_SHOTS_PER_GROUP; ++t) {
         float pos[3];
@@ -2647,6 +2677,9 @@ static void pofv_c1_tick(void)
                 }
             }
         }
+        /* ★★ 灵梦 C1 的**残影** ✓（一手 script12 ✓）：每帧在弹的位置补一台 ✓（卡侧驱动 ✓）。*/
+        if (s_c1_kind[t] == 0 && s_c1_grp[t] == POFV_C1_GROUP_REI)
+            pofv_c1_trail_spawn(s_c1_x[t], s_c1_y[t]);
         if (s_c1_kind[t] == 1) {
             /* ★★ 一手 `0x54c830`（魔理沙 ✓）：★ **原地不动**，长度每帧 **+12**、封顶 **512**，
              *   ★ `age > 119` 收 ✓（贴图 256 宽 ⇒ `scale.x = 长度 / 256` ✓）。*/
@@ -3932,7 +3965,12 @@ static void clear_card(ce_card_t *c)
     {   int k3; for (k3 = 0; k3 < POFV_C2_POINTS; ++k3)      /* ★ 铁律：C2 的 3 台可见物也收 ✓ */
             if (s_c2.orb_vm[k3]) { ce_anm_delete((uint32_t)s_c2.orb_vm[k3]); s_c2.orb_vm[k3] = 0; } }
     s_barrier_grant_pending = 1;                /* ★ #5：重新拿到卡 ⇒ 再给一个罩 ✓ */
-    s_c3_uses = 0; s_c4_uses = 0;               /* ★ 铁律：C3/C4 使用计数随卡清零 ✓ */
+    s_c3_uses = 0; s_c4_uses = 0;
+    {   int k5; for (k5 = 0; k5 < POFV_C1_TRAIL_MAX; ++k5) {          /* ★ 铁律：残影也收 ✓ */
+            if (s_c1_trail[k5] && ce_anm_get_vm((uint32_t)s_c1_trail[k5]))
+                ce_anm_delete((uint32_t)s_c1_trail[k5]);
+            s_c1_trail[k5] = 0; s_c1_trail_ttl[k5] = 0;
+    } }               /* ★ 铁律：C3/C4 使用计数随卡清零 ✓ */
     if (s_hud_chg_fill_vm)  { ce_anm_delete((uint32_t)s_hud_chg_fill_vm);  s_hud_chg_fill_vm  = 0; }
     if (s_hud_chg_white_vm) { ce_anm_delete((uint32_t)s_hud_chg_white_vm); s_hud_chg_white_vm = 0; }
     { int i9; for (i9 = 0; i9 < POFV_HUD_CHG_TICKS; ++i9)
