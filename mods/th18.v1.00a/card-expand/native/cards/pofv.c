@@ -2681,7 +2681,13 @@ static void pofv_c1_fire_range(int grp, int from, int cnt)
          *   魔理沙 442（`pl01 script8` ✓）、早苗 **444**（`pl02 script7` ✓，四帧 62×14 龙条 ✓）。*/
         s_c1_vm[t] = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
                         (s_c1_kind[t] == 1) ? CE_ANM_ABILITY_SCRIPT_POFV109_C1M_BEAM
-                      : (s_c1_grp[t] == POFV_C1_GROUP_SANA) ? CE_ANM_ABILITY_SCRIPT_POFV109_C1S_SHOT
+                      /* ★★ 2026-10-11 owner 记忆核对 ✓：「早苗 C2 是放一堆青蛙爆炸弹幕」——
+                       *   ★ 一手 set11 的 `anm9` 就是**青蛙**（`pl02.anm` script9 ✓）⇒
+                       *   ★ 而原来 set11 也走 `POFV109_C1S_SHOT`（= C1 那条龙 ✗）⇒ **这里是缺口** ✓。
+                       *   ⇒ ★ 用 `s_c1_set_sel`（1 = 早苗 C2 的 set11 ✓）来选 **448（青蛙）** ✓。*/
+                      : (s_c1_grp[t] == POFV_C1_GROUP_SANA)
+                          ? (s_c1_set_sel ? CE_ANM_ABILITY_SCRIPT_POFV109_C2S_FROG
+                                          : CE_ANM_ABILITY_SCRIPT_POFV109_C1S_SHOT)
                                             : CE_ANM_ABILITY_SCRIPT_POFV109_C1_BULLET,
                         POFV_C1_VM_LAYER);
         /* 2026-10-11 仪表：★ 出生现场（SPIN 日志三次全 0 行 ⇒ 怀疑这些弹"一出生就在场外"
