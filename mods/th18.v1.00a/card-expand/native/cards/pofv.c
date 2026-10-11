@@ -2067,6 +2067,17 @@ static int s_c3_lv_n, s_c4_lv_n;
 /* ★★ 2026-10-11 补一手（子 agent 核实 ✓）：★ C3/C4 各有一个**使用计数** ✓
  *   （一手 `S+0x4c`（C3）/ `S+0x50`（C4），**clamp 0..999** ✓）—— 与 LV（0..7）**不是同一个量** ✗。*/
 static int s_c3_uses, s_c4_uses;
+/* ★★★ 2026-10-11 卡死定位**阶段仪表** ✓：★ 每段危险调用前 `pofv_stage_set(n)` 记一个号 ✓，
+ *   ★ 只有**号变了**才打一行 ✓（不刷屏 ✓）。★ 卡死时**最后一个阶段号 = 凶手** ✓。*/
+static int s_dbg_stage;
+static int s_dbg_stage_last;
+static void pofv_stage_set(int n) { s_dbg_stage = n; }
+static void pofv_stage_flush(void)
+{
+    if (s_dbg_stage == s_dbg_stage_last) return;
+    s_dbg_stage_last = s_dbg_stage;
+    ce_log("pofv: [STAGE] %d", s_dbg_stage);
+}
 /* ★★ 一手（子 agent 核实 ✓）：★ C2 的**扩张环圆心 = 第 1 个环绕点** ✗（不是自机 ✗）。
  *   ⇒ 卡侧把第 1 个点的坐标记下来，环 VM / 环的消弹都用它 ✓。*/
 static float s_c2_pt0x, s_c2_pt0y;      /* ★ 阶段 3/4 等级（0..7 ✓，一手 +0x38/+0x3c ✓）*/
@@ -2126,6 +2137,7 @@ static void c2_ring_vm_release(void);   /* 定义在后（装回范围圈时加�
 
 static void pofv_c2_tick(uint32_t id)
 {
+    pofv_stage_set(18);   /* ★ 灵梦 C2 tick ✓ */
     const float *p;
 
     if (!s_c2.active) return;
@@ -2508,6 +2520,7 @@ static int32_t s_c1_trail[POFV_C1_TRAIL_MAX];
 static int     s_c1_trail_ttl[POFV_C1_TRAIL_MAX];
 static void pofv_c1_trail_spawn(float x, float y)
 {
+    pofv_stage_set(14);   /* ★ 残影 spawn ✓ */
     int k;
     for (k = 0; k < POFV_C1_TRAIL_MAX; ++k) if (s_c1_trail_ttl[k] <= 0) break;
     if (k >= POFV_C1_TRAIL_MAX) return;                 /* ★ 池满 ⇒ 这一帧不放 ✓ */
@@ -2521,6 +2534,7 @@ static void pofv_c1_trail_spawn(float x, float y)
 }
 static void pofv_c1_trail_tick(void)
 {
+    pofv_stage_set(15);   /* ★ 残影 tick ✓ */
     int k;
     s_c1_trail_burst = 0;
     for (k = 0; k < POFV_C1_TRAIL_MAX; ++k) {
@@ -2552,6 +2566,7 @@ static void pofv_c1_clear(void)
  *   ⇒ 本函数按**行区间**发射 ✓（早苗分两次），窗口由卡侧计时 ✓。*/
 static void pofv_c1_fire_range(int grp, int from, int cnt)
 {
+    pofv_stage_set(12);   /* ★ fire_range 入口 ✓ */
     const float *pp = ce_player_pos();
     const int nrows = s_c1_rows[grp];
     int t, end;
@@ -2617,6 +2632,7 @@ static void pofv_c1_fire(void)
     /* ★★ 一手 ✓ `EX+0xd4`：★ 魔理沙放过 C2 后，**这份 C1 追加两发**（dmg6 / ∓32 / spd0 ✓）。
      *   ★ 用 1、2 号槽（魔理沙自己只占 0 号 ✓）；★ 贴图/脚本同光束 ✓（一手 anm8 ✓）。*/
     if (s_c1_m_set11 && grp == POFV_C1_GROUP_MARISA) {
+    pofv_stage_set(11);   /* ★ C1 的 EX+0xd4 追发 ✓ */
         const float *pp2 = ce_player_pos();
         s_c1_m_set11 = 0;                                  /* ★ 一次消耗 ✓（一手 ✓）*/
         if (pp2) {
@@ -2641,6 +2657,7 @@ static void pofv_c1_fire(void)
 /* ★ 每帧：窗口计时（早苗每 8 帧换半圈 ⇒ t=0/8/16/24 各 13 发 ✓，一手 ✓）。*/
 static void pofv_c1_window_tick(void)
 {
+    pofv_stage_set(13);   /* ★ 窗口 tick ✓ */
     if (s_c1_win_left <= 0) return;
     --s_c1_win_left;
     ++s_c1_win_age;
@@ -2686,6 +2703,7 @@ static void pofv_c1_tick(void)
                                POFV_C1_HIT_W, POFV_C1_HIT_H);
                 continue;
             }
+            pofv_stage_set(19);   /* ★ 早苗命中遍历（最可疑 ✓）*/
             {   uint8_t *em2 = CE_ENEMY_MGR(), *e2; int hit2 = 0;
                 CE_ENEMY_FOREACH(em2, e2) {
                     const float *ep = ce_enemy_pos(e2);
@@ -3368,6 +3386,7 @@ static void pofv_c2m_clear(void)
 
 static void pofv_c2m_fire(void)
 {
+    pofv_stage_set(17);   /* ★ 魔理沙 C2 fire ✓ */
     s_c1_m_set11 = 1;   /* ★ 一手 ✓ `EX+0xd4 = 1`：下一份 C1 追加 set11 两发 ✓ */
 
     const float *pp = ce_player_pos();
@@ -3679,6 +3698,7 @@ static void pofv_c2s_clear(void)
 
 static void pofv_c2s_fire(void)
 {
+    pofv_stage_set(16);   /* ★ 早苗 C2 fire ✓ */
     /* ★★ 一手 ✓（子 agent 核实）：★ 早苗 C2 **不建任何对象** ✗ —— 只做两件事：
      *   · ★ 把弹表**切到 `set11`** ✓（`EX+0xd8 = 11` ✓；= 上表 `s_c1s_set11`，spd 3 / class5 / anm9 ✓）
      *   · ★ 开 **60 帧**窗口 ✓（`EX+0xdc = 1` ✓）
@@ -6404,6 +6424,7 @@ static int on_tick_2(ce_card_t *c)
     pofv_storm_tick(&s_storm);
     storm_vm_sync();
     pofv_spark_tick();   /* ★ ③ 消弹火花：占位计时器 + 到期清句柄 ✓ */
+    pofv_stage_flush();  /* ★ 阶段仪表（卡死定位用 ✓）*/
 
     /* ★★★ 生成口 ②（owner 2026-10-08 定案）：「**固灵结界碰到敌方弹幕 ⇒ 从该弹幕位置撒 1 颗**」，
      *   **必定掉** —— ★ owner 明确「必定掉一颗」⇒ **不做概率模型** ✗
