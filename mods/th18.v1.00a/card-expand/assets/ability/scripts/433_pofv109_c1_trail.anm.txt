@@ -1,0 +1,24 @@
+script script433 {
+    // 109 · **C1 的弹的拖尾** —— 复刻 TH19 一手 `pl00.anm` **script12** ✓（逐条）
+    //
+    // ★ 一手正文（`local/th19.v1.10c/_ext/pl00.txt`）：
+    //   `-1: layer(6); type(1); blendMode(1); alpha(64); color(255,64,64); zWriteDisable(1);
+    //        sprite(sprite38); alphaTime(20,0,0);
+    //    20: delete();`
+    //   ⇒ ★ 同一张 `sprite38`（= 本卡的 `POFV109_C1_BULLET` ✓）、★ **加算**、★ **红 (255,64,64)**、
+    //     ★ alpha **64** 起、★ **20 帧淡到 0** 后自删 ✓ —— ★ 观感 = 弹后拖一条红尾 ✓。
+    // ★ 由 427 **每帧** `scriptNewRoot(433)` 起一台 ✓（★ 一手就是这么做的 ✓）
+    //   ⇒ 每台的**出生位置 = 当帧弹的位置**（子 VM 不跟随父级 ✓）⇒ 连起来就是轨迹 ✓。
+    // ★ 生命周期**自带**（20 帧 ✓）⇒ 不需要卡侧收（★ 短命 ✓，本仓先例 362 同理 ✓）。
+    sprite(@POFV109_C1_BULLET);
+    layer(6);
+    type(1);
+    blendMode(1);
+    resampleMode(1);
+    alpha(64);
+    color(255, 64, 64);
+    zWriteDisable(1);
+    alphaTime(20, 0, 0);
++20: // 20
+    delete();
+}
