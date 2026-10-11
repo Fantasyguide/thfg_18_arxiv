@@ -2661,9 +2661,10 @@ static void pofv_c1_fire_range(int grp, int from, int cnt)
      *   —— ★ 我把"可以用子机槽来做这件事"误读成"把出膛点搬到子机" ✗；
      *   ★ owner 本意：「说的只是**弹幕的具体样式和代码**」✓（= 那套**行为**的出处 ✓）
      *   ⇒ ★ 撤掉子机出膛 ✗，蛇/青蛙**从早苗本体出膛** ✓（= 加 ② 之前的行为 ✓）。*/
-    const float ox = pp[0], oy = pp[1];
     int t, end;
+    float ox, oy;
     if (!pp) return;
+    ox = pp[0]; oy = pp[1];   /* ★ 2026-10-11 修：原来这行在判空之前 ⇒ 先解引用后判空 ✗ */
     end = from + cnt; if (end > nrows) end = nrows;
     for (t = from; t < end && t < POFV_C1_SHOTS_PER_GROUP; ++t) {
         const pofv_c1_shot_t *r = (s_c1_set_sel && grp == POFV_C1_GROUP_SANA)
@@ -5182,6 +5183,13 @@ static int on_tick_2(ce_card_t *c)
     if (chg_held && !s_chg_se_prev) ce_play_sound(POFV_SE_CHARGE, ce_player_x());
     s_chg_se_prev = chg_held;
     if (chg_held) { s_c1_rel_latch = 0;   /* ★ 重新按住 ⇒ 下一次释放还要放一份 C1 ✓ */
+        /* ★★★★ 2026-10-11 **回归修复**（owner：「灵梦的 C1 完全发不出去，啥也没有」✗）：
+         *   ★ 根因 = `s_chg_prev = chg_held;` 原来只写在**释放支内部**（旧行 5287 ✓）
+         *     ⇒ ★ **蓄力期间它从没被置 1** ✗ ⇒ 松手时 `s_chg_prev` 仍是 0 ✗
+         *     ⇒ ★ 那个"松手沿"条件 `(s_chg_prev && !chg_held)` **永远为假** ✗
+         *     ⇒ ★ **档位与 C1 都不发** ✓ = owner 报的症状 ✓。
+         *   ⇒ ★ 这里（按住时）也更新它 ✓ ⇒ 松手那一帧 `prev=1 ∧ !chg_held` 成立 ✓。*/
+        s_chg_prev = 1;
         if (!s_aura_role_logged) {                             /* ★ 一次性：把角色全局的真实取值打出来 ✓ */
             s_aura_role_logged = 1;                            /*   （核实：`0x4cccf4` 确是角色下标 ✓，但「1=魔理沙」未逐值核 🟡
                                                                 *    ⇒ 实跑各开一次灵梦/魔理沙，把这行日志对一下即可钉死 ✓）*/
