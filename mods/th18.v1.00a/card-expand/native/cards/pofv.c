@@ -2618,15 +2618,15 @@ static void pofv_c1_fire_range(int grp, int from, int cnt)
         /* ★★ 三人各用**自己**的一手脚本 ✓（子 agent 核实 ✓）：灵梦 427（`pl00 script10` ✓）、
          *   魔理沙 442（`pl01 script8` ✓）、早苗 **444**（`pl02 script7` ✓，四帧 62×14 龙条 ✓）。*/
         s_c1_vm[t] = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
+                        (s_c1_kind[t] == 1) ? CE_ANM_ABILITY_SCRIPT_POFV109_C1M_BEAM
+                      : (s_c1_grp[t] == POFV_C1_GROUP_SANA) ? CE_ANM_ABILITY_SCRIPT_POFV109_C1S_SHOT
+                                            : CE_ANM_ABILITY_SCRIPT_POFV109_C1_BULLET,
+                        POFV_C1_VM_LAYER);
         /* 2026-10-11 仪表：★ 出生现场（SPIN 日志三次全 0 行 ⇒ 怀疑这些弹"一出生就在场外"
          *   或"速度方向反了"⇒ 你看到的 4 发是另一批 ✓）。*/
         ce_log("pofv: [C1FIRE] grp=%d t=%d x=%.1f y=%.1f ang=%.3f spd=%.1f kind=%d vm=%d",
                grp, t, (double)s_c1_x[t], (double)s_c1_y[t], (double)r->ang, (double)s_c1_spd[t],
                s_c1_kind[t], (int)s_c1_vm[t]);
-                        (s_c1_kind[t] == 1) ? CE_ANM_ABILITY_SCRIPT_POFV109_C1M_BEAM
-                      : (s_c1_grp[t] == POFV_C1_GROUP_SANA) ? CE_ANM_ABILITY_SCRIPT_POFV109_C1S_SHOT
-                                            : CE_ANM_ABILITY_SCRIPT_POFV109_C1_BULLET,
-                        POFV_C1_VM_LAYER);
         if (s_c1_vm[t]) {
             ce_anm_set_pos((uint32_t)s_c1_vm[t], s_c1_x[t], s_c1_y[t], 0.0f);
             ce_anm_set_scale((uint32_t)s_c1_vm[t], 1.0f, 1.0f);   /* ★ 一手贴图原尺寸 ⇒ 1:1 ✓（灵梦 30×30 / 早苗 62×14 ✓）*/
