@@ -2494,7 +2494,15 @@ static int   s_c1_stop[POFV_C1_SHOTS_PER_GROUP];
  *   `scriptNewRoot(script12)` ✓；★ 但 TH18 的 anmm 语义与 TH19 不同 ✗（旋转那条已经证明 ✓）
  *   ⇒ ★ **改卡侧自己补** ✓：每帧在弹的位置起一台 **433**（= 一手 script12 的复刻 ✓，20 帧自删 ✓）。
  *   ★ 池 64：一手是"每帧每弹一台" ⇒ 4 发 × 20 帧 ≈ 80 ⇒ 用 64 封顶（❓自定旋钮 ✓）。*/
-#define POFV_C1_TRAIL_MAX 64
+/* ★★ 2026-10-11 owner 实跑：「**C1 没有崩溃 dump，但是可能 while 循环了，卡死了**」✗
+ *   ⇒ 两个嫌疑，都可能是我的 ✓：
+ *   ① ★ 上一轮我改了脚本 427（撤 `scriptNewRoot`）**但没强制重打 `ability.anm`** ✗ ——
+ *      和"换图片"同一个坑（脚本**内容**变更 builder 不认 ✗）⇒ ★ 部署里那支 427 还是旧的 ✓，
+ *      ★ DLL 又在卡侧补残影 ⇒ **双份** ⇒ VM 池被灌爆 ⇒ 引擎自旋卡死（所以没 dump ✓）；
+ *   ② ★ 就算只有卡侧那一份，"每帧每弹一台" ⇒ 4 发 × 20 帧 ≈ 80 台并发 ✓，压得太满 ✗。
+ *   ⇒ ★ 池降到 **32** ✓、★ 改成**每 2 帧补一台** ✓（一手是每帧 ✓，这里保守 —— ❓自定 ✓）。*/
+#define POFV_C1_TRAIL_MAX 32
+#define POFV_C1_TRAIL_EVERY 2
 static int32_t s_c1_trail[POFV_C1_TRAIL_MAX];
 static int     s_c1_trail_ttl[POFV_C1_TRAIL_MAX];
 static void pofv_c1_trail_spawn(float x, float y)
@@ -2678,7 +2686,8 @@ static void pofv_c1_tick(void)
             }
         }
         /* ★★ 灵梦 C1 的**残影** ✓（一手 script12 ✓）：每帧在弹的位置补一台 ✓（卡侧驱动 ✓）。*/
-        if (s_c1_kind[t] == 0 && s_c1_grp[t] == POFV_C1_GROUP_REI)
+        if (s_c1_kind[t] == 0 && s_c1_grp[t] == POFV_C1_GROUP_REI
+            && (s_c1_age[t] % POFV_C1_TRAIL_EVERY) == 0)
             pofv_c1_trail_spawn(s_c1_x[t], s_c1_y[t]);
         if (s_c1_kind[t] == 1) {
             /* ★★ 一手 `0x54c830`（魔理沙 ✓）：★ **原地不动**，长度每帧 **+12**、封顶 **512**，
