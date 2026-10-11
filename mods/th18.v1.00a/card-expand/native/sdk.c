@@ -991,8 +991,11 @@ void ce_hud_vm_probe(const char *tag, uint32_t id)
  *   ⚠ 生命周期：**固定池**（每个块 4 支，懒惰建、之后只改位置/缩放/颜色）——不 churn、
  *     块消失时把它的边**透明隐藏**（不删）⇒ 不会泄漏也不会每帧新建。
  *   ⚠ 关掉它：把下面这个宏改成 0（调试完成后一行）。*/
+/* ★★★ 2026-10-03z57（owner：「**然后你可以拆框了**」）—— 声明块调试覆盖层**关掉**。
+ *   它已完成使命（113 的 100+px 偏差、110/111 的墨迹溢出、108 的底部溢出都是靠它定位的 ✓）。
+ *   要再用就把这里改成 1（其余代码原样保留 ✓）。*/
 #ifndef CE_HUD_DEBUG_BLOCKS
-#define CE_HUD_DEBUG_BLOCKS 1
+#define CE_HUD_DEBUG_BLOCKS 0
 #endif
 
 #if CE_HUD_DEBUG_BLOCKS
@@ -1134,7 +1137,19 @@ void ce_hud_native_face_dim_tick(void)
     root = *(const int32_t *)(mgr + CE_MGR_SEL_CARD_VM);
     if (!root) return;
     vm = (uint8_t *)ce_anm_get_vm((uint32_t)root);
-    if (!vm || IsBadReadPtr(vm + CE_ANM_VM_CHILD_LIST, 12)) return;
+    if (!vm) return;
+    /* ★★★★ 2026-10-03z57（**第二次开游戏崩溃**：`th18.exe.84392.dmp` 16:31）——
+     *   日志把坑指出来了：`IsBadReadPtr()` **只证明"可读"，不能证明"这是个 VM"** ✗
+     *   （实跑：`mgr+0x3c=9764778` 被当成指针，读出 layer=283705345 / script_id=226164736 全是垃圾，
+     *     却一路"可读"⇒ 我**往只读页/随机内存写** ⇒ 访问违例 ✓）。
+     *   ⇒ 两道硬校验（缺一不可）：
+     *     ① **身份**：该 VM 的 `id`（`suffix+0x544`）必须**等于**我们要找的 `root` ✓
+     *        （实测好状态下两者相等 ✓；不等就是垃圾 ⇒ 立刻退出 ✓）；
+     *     ② **写**权限：写之前用 **`IsBadWritePtr`**（不是 ReadPtr ✗）✓。
+     *   ⚠ 只读探针那一版之所以安全，是因为它**不写**；写版本必须多这两道 ✓。*/
+    if (IsBadReadPtr(vm + CE_ANM_VM_SUFFIX_ID, 4)) return;
+    if (*(const int32_t *)(vm + CE_ANM_VM_SUFFIX_ID) != root) return;
+    if (IsBadReadPtr(vm + CE_ANM_VM_CHILD_LIST, 12)) return;
     head = vm + CE_ANM_VM_CHILD_LIST;
     node = *(uint8_t *const *)(head + 0x4);
     a = (uint32_t)ce_hud_band_dim_alpha() & 0xffu;
@@ -1142,7 +1157,10 @@ void ce_hud_native_face_dim_tick(void)
         uint8_t *ch;
         if (IsBadReadPtr(node, 12)) break;
         ch = *(uint8_t *const *)node;
-        if (ch && !IsBadReadPtr(ch, CE_ANM_VM_ALPHA2_I + CE_ANM_VM_INTERP_CURRENT + 4)) {
+        if (ch && !IsBadReadPtr(ch, CE_ANM_VM_ALPHA2_I + CE_ANM_VM_INTERP_CURRENT + 4) &&
+            !IsBadWritePtr(ch + CE_ANM_VM_COLOR1, 8) &&
+            !IsBadWritePtr(ch + CE_ANM_VM_ALPHA1_I, 0x20) &&
+            !IsBadWritePtr(ch + CE_ANM_VM_ALPHA2_I, 0x20)) {
             const uint32_t old = *(const uint32_t *)(ch + CE_ANM_VM_COLOR1);
             const uint32_t old2 = *(const uint32_t *)(ch + CE_ANM_VM_COLOR2);
             int32_t *i1, *i2;
@@ -2732,23 +2750,19 @@ int __cdecl BP_ce_item_frame(x86_reg_t *regs, void *bp_info)
             {
                 static int32_t s_nat_root_logged = -2;
                 if (s_nat_root_logged != root) {
-                    uint8_t *as_ptr = (uint8_t *)(uintptr_t)(uint32_t)root;   /* 解释一：它是指针 */
                     uint8_t *vm = 0;
                     s_nat_root_logged = root;
                     ce_log("hud: native face 只读探针 —— mgr+0x3c=%d, mgr+0x38=%d",
                            (int)root, (int)*(const int32_t *)(mgr + CE_MGR_SELECTED_ACTIVE));
-                    if (root && !IsBadReadPtr(as_ptr, 0x60)) {
-                        ce_log("hud:   解释①(指针) 可读：layer=%d script_id=%d sprite_id=%d",
-                               (int)*(const int32_t *)(as_ptr + CE_ANM_VM_LAYER),
-                               (int)*(const int32_t *)(as_ptr + CE_ANM_VM_SCRIPT_ID),
-                               (int)*(const int32_t *)(as_ptr + CE_ANM_VM_SPRITE_ID));
-                        vm = as_ptr;
-                    } else {
-                        vm = (uint8_t *)ce_anm_get_vm((uint32_t)root);        /* 解释二：它是 id */
-                        ce_log("hud:   解释①不可读 ⇒ 试解释②(get_vm)=%p%s", (void *)vm,
-                               (vm && !IsBadReadPtr(vm, 0x60)) ? "（可读 ✓）" : "");
-                        if (vm && IsBadReadPtr(vm, 0x60)) vm = 0;
-                    }
+                    /* ★ z57：**删掉"解释①（把 id 当指针）"** —— 实跑证明它会把垃圾地址
+                     *   判成"可读"（`layer=283705345` 那种）⇒ 只会误导 ✓。
+                     *   只保留正解：`get_vm(id)` + **身份校验**（id 必须相等 ✓）。*/
+                    vm = (uint8_t *)ce_anm_get_vm((uint32_t)root);
+                    if (vm && (IsBadReadPtr(vm + CE_ANM_VM_SUFFIX_ID, 4) ||
+                               *(const int32_t *)(vm + CE_ANM_VM_SUFFIX_ID) != root))
+                        vm = 0;
+                    ce_log("hud:   解释②(get_vm)=%p%s", (void *)vm,
+                           (vm && !IsBadReadPtr(vm, 0x60)) ? "（可读 ✓、id 校验通过 ✓）" : "");
                     if (vm) {
                         const int32_t sid = *(const int32_t *)(vm + CE_ANM_VM_SUFFIX_ID);
                         uint8_t *head = vm + CE_ANM_VM_CHILD_LIST;
