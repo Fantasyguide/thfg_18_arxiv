@@ -2808,26 +2808,23 @@ static void pofv_c1_tick(void)
                  *   ★ 用卡里现成的 36 向表做档位步进 ✓（避免 `atan2` ✓；一手也是查表 ✓）。*/
                 if (s_c1_turn[t] > 0) {
                     int cur = -1, tgt = -1, k2;
-                    for (k2 = 0; k2 < 36; ++k2) {
-                        if (cur < 0 && s_c1_vx[t] * s_c2_dir36[k2][0] + s_c1_vy[t] * s_c2_dir36[k2][1] > 0.9f) cur = k2;
+                    {   /* ★ 当前方向档 = 与 (vx,vy) 点积最大者 ✓（同样不必归一化 ✓，阈值写法换成取最大 ✓）*/
+                        float cd = -1e30f;
+                        for (k2 = 0; k2 < 36; ++k2) {
+                            const float d2 = s_c1_vx[t] * s_c2_dir36[k2][0] + s_c1_vy[t] * s_c2_dir36[k2][1];
+                            if (d2 > cd) { cd = d2; cur = k2; }
+                        }
                     }
                     {
+                        /* ★ 目标方向档 = 36 向表里**点积最大**的那档 ✓
+                         *   （点积最大即夹角最小 ✓ ⇒ **不需要归一化** ✓ —— 我上一版写了归一化纯属多余 ✗）。*/
                         const float ddx = s_c1_tx[t] - s_c1_x[t], ddy = s_c1_ty[t] - s_c1_y[t];
-                        const float L = (ddx * ddx + ddy * ddy) > 0.0001f ? (ddx * ddx + ddy * ddy) : 1.0f;
-                        float bx = ddx / L * L, by = ddy / L * L;      /* 归一化前先避开开方 ✗ */
-                        float nx = ddx, ny = ddy;
-                        float mag = (nx * nx + ny * ny) > 0.0001f ? (nx * nx + ny * ny) : 1.0f;
-                        (void)bx; (void)by; (void)mag;
-                        /* ★ 用**符号**定档：先算目标落在哪个 10° 档（靠比较正负 + 表扫最近）✓ */
-                        {   int best = 0; float bestd = -2.0f;
-                            const float il = 1.0f / (mag > 0.0001f ? (mag > 0.0f ? 1.0f : 1.0f) : 1.0f);
-                            (void)il;
-                            for (k2 = 0; k2 < 36; ++k2) {
-                                const float d2 = (nx * s_c2_dir36[k2][0] + ny * s_c2_dir36[k2][1]);
-                                if (d2 > bestd) { bestd = d2; best = k2; }
-                            }
-                            tgt = best;
+                        int best = 0; float bestd = -1e30f;
+                        for (k2 = 0; k2 < 36; ++k2) {
+                            const float d2 = ddx * s_c2_dir36[k2][0] + ddy * s_c2_dir36[k2][1];
+                            if (d2 > bestd) { bestd = d2; best = k2; }
                         }
+                        tgt = best;
                     }
                     if (cur < 0) cur = tgt;
                     if (cur >= 0 && tgt >= 0 && cur != tgt) {
