@@ -3160,10 +3160,13 @@ static void pofv_barrier_vm_sync(void)
     if (!p) return;
     /* ★ 判定=绘制 ✓：两张贴图各自按"圆/带的外缘"换算（见上面那组常量的推导 ✓）*/
     k_disc = POFV_BARRIER_R / POFV_BARRIER_DISC_TEX_R;
-    k_glow = (POFV_BARRIER_R * POFV_BARRIER_GLOW_OUT) / POFV_BARRIER_GLOW_TEX_R;
+    /* ★★ 2026-10-11 owner 口径落地 ✓：★ 外发光改用图元 `drawRing(28,8,24)` ✓
+     *   ⇒ ★ **图元的 `scale` 就是半径** ✓（391 的头注 ✓）⇒ 这里除的是**图元声明的半径 28** ✓
+     *   （不再是贴图半径 64 ✗）。*/
+    k_glow = (POFV_BARRIER_R * POFV_BARRIER_GLOW_OUT) / 28.0f;
     if (!s_barrier_vm_glow)
         s_barrier_vm_glow = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
-                             CE_ANM_ABILITY_SCRIPT_POFV109_BARRIER_GLOW, POFV_BARRIER_VM_LAYER_GLOW);
+                             CE_ANM_ABILITY_SCRIPT_POFV109_BARRIER_RING, POFV_BARRIER_VM_LAYER_GLOW);   /* ★ owner 口径：黄环 = `drawRing(28,8,24)` ✓ */
     if (!s_barrier_vm_disc)
         s_barrier_vm_disc = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
                              CE_ANM_ABILITY_SCRIPT_POFV109_BARRIER_DISC, POFV_BARRIER_VM_LAYER_DISC);

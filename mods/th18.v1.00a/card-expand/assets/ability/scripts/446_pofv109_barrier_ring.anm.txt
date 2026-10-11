@@ -1,0 +1,24 @@
+script script446 {
+    // 109 · 罩子的**黄色外发光环** —— 用本仓现成、有一手出处的图元 **`611 drawRing`** ✓
+    //   ★ `drawRing(半径, 厚度, 段数)` ✓（map: `611 drawRing # TH15+` ✓；TH18 原生就在用
+    //     `ins_611(96.0f, 2.0f, 64)` ✓）；★ 本仓先例：`277_flan_charge_ring` / `359_flan_ring_band` ✓。
+    //   ★ owner 口径：罩子 = **白色透明圆 + 外面黄色"外发光"** ✓ ⇒ 内层走脚本 428（白圆 ✓），
+    //     外层就是本支（黄环 ✓）—— 半径/厚度照 owner 给的 **`drawRing(28.0f, 8.0f, 24)`** ✓。
+    //   ★ 图元的语义：`drawRing` 的 **scale 就是半径** ✓（391 的头注：「图元 `drawPoly`/`drawRing`
+    //     的 scale 才是"半径" —— 两套语义别混」✓）⇒ 卡侧 `scale = 目标半径 / 28` ✓。
+    sprite(-1);
+    layer(5);                     // ★ 外层：低一层 ⇒ 画在内层白圆的下面 ✓（与旧的 429 同层 ✓）
+    zWriteDisable(1);
+    drawRing(28.0f, 8.0f, 24);    // ★ owner 口径 ✓（半径 28 / 厚度 8 / 24 段）
+    blendMode(1);                 // ★ 加算 = "外发光" ✓
+    color(255, 216, 64);          // ★ 黄 ✓
+    color2(255, 255, 160);        // ★ 内缘更亮一点 ✓
+    alpha(96);                    // ❓自定：外发光的浓淡旋钮
+    alpha2(48);
+    stop();
+    interruptLabel(1);
+    alphaTime(20, 0, 0);
+    alpha2Time(20, 0, 0);
++20: // 20
+    delete();
+}
