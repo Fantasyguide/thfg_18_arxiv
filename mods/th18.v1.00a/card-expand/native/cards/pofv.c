@@ -257,6 +257,11 @@ static int32_t s_ex_level;           /* ★ §8.24 订正 ✓：`DAT_0062b250` *
  *       ✓，每颗 ✓，cap 2500 ✓）—— 本卡在既有入账口 `got_pts`/`got_n` 处按**颗数**换算 ✓；
  *     · **当前蓄力被它封顶**（一手：`charge < clamp(S+0x24)` 才涨 ✓）⇒ 见 `s_aura_charge` 赋值处 ✓。*/
 static float s_reiryoku;
+/* ★★ 审计 B 抓到 ✓：`s_rei_prev` 原来是**函数内 static** ✗ ⇒ `clear_card()` 复位了 core 的
+ *   `absorbed_rei`（= 0 ✓）却**没复位它** ✗ ⇒ 换关/删卡重建后 `rei_now(0) < 旧值` ⇒
+ *   ★ 头"旧值"颗蓝点**不入账** ✗（守卫只跳过、不回退 ✓）。
+ *   ⇒ ★ 提到文件级 ✓ 并在 `clear_card()` 里归 0 ✓。*/
+static int32_t s_rei_prev;
 
 static int pofv_spirit_spill_stop(void)
 {
@@ -4064,6 +4069,7 @@ static void clear_card(ce_card_t *c)
             s_power_flash[z6] = 0;
         } }
     pofv_power_clear(&s_power);
+    s_rei_prev = 0;   /* ★ 审计 B ✓：与 core 的 absorbed_rei 同步归零 ✓ */
     s_power_got = 0; s_power_logged = 0; s_aura_bullets = 0;
     {   int z9; for (z9 = 0; z9 < CE_BM_BULLET_COUNT; ++z9) s_aura_bullet_done[z9] = 0; }
     /* （结界闩锁：与弹池一起清 ⇒ 删卡后不留幽灵标记；不引 `<string.h>` 的 `memset`，
@@ -6687,7 +6693,6 @@ static int on_tick_2(ce_card_t *c)
          *   core 已经把 `absorbed_rei` 记好了（`pofv_core.c` 的收取支 ✓）⇒ 这里取**增量** ✓。
          *   ★ 公式仍是一手：`15 × clamp(当前蓄力,0,100)/100`（每颗 ✓、cap 2500 ✓）。*/
         {
-            static int32_t s_rei_prev;
             int32_t rei_now = s_power.absorbed_rei;
             if (rei_now > s_rei_prev) pofv_rei_credit(rei_now - s_rei_prev);
             s_rei_prev = rei_now;
@@ -6733,10 +6738,9 @@ static int on_tick_2(ce_card_t *c)
                 float ratio = s_aura_charge / 100.0f;
                 if (ratio < 0.0f) ratio = 0.0f;
                 if (ratio > 1.0f) ratio = 1.0f;
-            /* 2026-10-11 owner「额外掉的通路」=> ★ 这里**不再**按 P 点件数入账 ✗
-             *   （P 点没有类型 ⇒ 会把普通 P 点也当灵力 ✓，那正是"一波 20 hit 涨满"的来源 ✓）。
-             *   ★ 灵力改在 **kind 9 掉落那一刻**入账 ✓（`pofv_rei_credit(1)` ✓，一手 5 条来源同性质 ✓）。*/
-            (void)got_n; (void)got_pts;
+            /* ★ 2026-10-11 owner 订正（审计 B 也指出这段注释是残留 ✗）：★ 灵力**不在这里**入账 ✓
+             *   —— ★ P 点与引擎 kind 9 都不进灵力 ✗；★ 入账统一在上面的
+             *   `absorbed_rei` 增量处 ✓（只认**卡侧 kind == 1 的蓝点** ✓）。*/
             }
             /* 2026-10-11 仪表：★ owner「一波 20 hit 就从 C2 吸满到 C4」✗ ⇒ 打出每次进账
              *   的件数与总量 ✓（看是"件数判据错"还是"单个给太多"✓）。*/

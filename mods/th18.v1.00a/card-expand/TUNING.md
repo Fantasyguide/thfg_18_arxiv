@@ -17830,4 +17830,27 @@ typedef struct { float x, y; int age, delay; int active; /* … */ } pofv_power_
 | ★ `set_scale(x, y)` 里 **y 写常数 0.5** ✗（少乘 grow ✓）| ★ `youkai.c:8163-8164`：`set_scale(id, YK_LASER_LEN/SPRITE_W × grow, **w_px/SPRITE_H × grow**)` ✓ ⇒ `w_px = 1600/100 =
 16` ✓、`SPRITE_H = 32` ✓ ⇒ **y = 0.5 × grow** ✓ | ★ `POFV_C2M_W_OVER_SPRITE = 16/32` ✓ 且**乘 grow** ✓ |
 | ★ 伤害**每帧**一次 ✗ | ★ **每 `SETTLE = 2` 帧**一次 ✓（`youkai.c:8399` ✓）| ★ `if ((L->age % POFV_C2M_SETTLE) == 0)` ✓（`SETTLE = 2` ✓）|
+### ★★★★ 对抗审计 B 的结论（灵力道具链路，2026-10-11）—— **纠正我 1 处 + 抓出真缺陷 2 处** ✓
+
+#### ✗ 纠正我的一处错判
+★ 我上一轮报告写「**还差"蓝点的视觉"**」✗ —— ★ **错了** ✓：★ 卡侧道具链路**本来就存在** ✓：
+| 环节 | 位置 |
+| --- | --- |
+| 自己生成 | `pofv_core.c:922–961`（`power_take_slot` / `pofv_power_spawn`）+ `963` `_dir` + `987/1025` `_packed*` ✓ |
+| ★ 自己绘制 | ★ `pofv.c:2458` `POFV_POWER_VM_SPRITE = **TH19_ITEM_KIND9**` ✓（= 那张透明小蓝点 ✓）+ `2500–2523` `power_vm_sync()`（脚本 **423** / 层 13 ✓）+ `2477` `power_flash_fire()`（脚本
+**424** ✓）|
+| ★ 自己判定拾取 | ★ `pofv_core.c:1053–1144` `pofv_power_tick()`（收取半径 `POFV_POWER_ABSORB_R = 12` ✓），卡侧每帧调用于 `pofv.c:6672` ✓ |
+⇒ ★ **视觉早就在了** ✓（所以①其实只差"入账口径" ✓，已由 `f6b4c768` 完成 ✓）。
+
+#### ✅ 它确认的（我的实现 = 它给的"最少改动"逐条吻合 ✓）
+★ 它也独立给出同一份三步改动清单 ✓，与 `f6b4c768` 完全一致 ✓；★ 并确认
+`pofv_power_tick()` 返回的是**不分 kind** 的"本帧收取颗数" ✓（面值走 `*out_pts` ✓）
+⇒ ★ 我改用 `absorbed_rei`（`kind == 1` 子集 ✓）增量**正确** ✓。
+
+#### ✗ 它抓出的两处真缺陷（本轮已修 ✓）
+| # | 缺陷 | 修法 |
+| --- | --- | --- |
+| **a** | ★ `s_rei_prev` 原是**函数内 static** ✗ ⇒ `clear_card()` 复位了 core 的 `absorbed_rei`（→0 ✓）却**没复位它** ✗ ⇒ 换关/删卡重建后 `rei_now(0) < 旧值` ⇒ ★ 头"旧值"颗蓝点**不入账** ✗ | ★ 提到**文件级** ✓
++ 在 `clear_card()` 里 `s_rei_prev = 0;` ✓ |
+| **b** | ★ `pofv.c` 残留注释仍写"灵力改在 **kind 9 掉落那一刻**入账 / `pofv_rei_credit(1)`" ✗，与实际实现矛盾 ✓ | ★ 改成"灵力只认**卡侧 kind == 1 蓝点**、统一在 `absorbed_rei` 增量处入账" ✓ |
 
