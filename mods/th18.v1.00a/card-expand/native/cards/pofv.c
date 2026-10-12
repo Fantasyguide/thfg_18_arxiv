@@ -2365,10 +2365,11 @@ static void pofv_c2_tick(uint32_t id)
     if (!p) return;
 
     /* ① 通用层 `Ecl_EtBreakLv2`（一手 ✓）：4 帧、半径 8/12/16/20、中心 = 自机 ✓ */
-            /* ★ C2-⑤ 后半（C2 审计 42acbab9 ✓）：★ 一手在 age≥45 之后**仍然每帧把 3 台摆在轨道点**
-             *   （一直跑到 **105 帧** ✓）；★ 卡原来在 45 就停写 ✗ ⇒ ★ 本闸**取消**（3 台继续跟着轨道走 ✓），
-             *   ★ 而"环开始扩张/VM 中断 1"那些 age≥45 的动作**照旧** ✓（它们不在这个闸里 ✓）。*/
-            if (s_c2.age < POFV_C2_GEN_FRAMES) {   /* ★ 回滚 ✓：这个闸管的是**扩张消弹环** ✗，不是 orb ✓ */
+    /* ★ 2026-10-12 清掉我两次尝试的留痕 ✓（见 TUNING 第 5 轮 ✓）：★ 这个闸管的是
+     *   **通用 4 帧消弹环** ✓（`Ecl_EtBreakLv2` ✓，半径 8/12/16/20 ✓、中心 = 自机 ✓），
+     *   ★ **不是 orb** ✗ —— ★ orb 的闸在下面**单列** ✓（`POFV_C2_ORB_END` = 105 帧 ✓）。
+     *   ⚠ ★ 两者**不要混** ✗：★ 我一度想放开这个闸 ⇒ ★ 会让环**一直长** ✗（已回滚 ✓）。*/
+    if (s_c2.age < POFV_C2_GEN_FRAMES) {
         float pos[3];
         pos[0] = p[0]; pos[1] = p[1]; pos[2] = 0.0f;
         (void)c2_cancel_drop(pos, POFV_C2_GEN_R0 + POFV_C2_GEN_STEP * (float)s_c2.age);
@@ -2392,7 +2393,6 @@ static void pofv_c2_tick(uint32_t id)
             (void)c2_cancel_drop(pos, POFV_C2_POINT_CANCEL_R);      /* 半径 64 的消弹圈 ✓ */
             /* ★★ 可见物（一手 ✓）：★ 每点一台 `pl00.anm` script20 的复刻（脚本 434 ✓）——
              *   一手 tick 里这 3 台就是**跟着三个环绕点跑** ✓（`+10°/帧` ✓、半径见下 ✓）。*/
-            const int di_ang = di;
             if (i == 0) { s_c2_pt0x = pos[0]; s_c2_pt0y = pos[1]; }   /* ★ 环心用它 ✓ */
             if (!s_c2.orb_vm[i])
                 s_c2.orb_vm[i] = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
@@ -4349,26 +4349,11 @@ static void pofv_c2s_ring(void)
      *   ★ 它只是"切弹表 set11 + 开 60 帧窗口" ✓（见 `pofv_c2s_fire` ✓）。
      *   ⇒ ★ 这个自实现的"转圈 26 发"**不再放** ✓（函数留壳：仍是引用点 ⇒ 不产生 unused 警告 ✓）。*/
     return;
-    const float *pp = ce_player_pos();
-    int i;
-    if (!pp) return;
-    for (i = 0; i < POFV_C2S_COUNT; ++i) {
-        int k, a5;
-        for (k = 0; k < POFV_C2S_MAX; ++k) if (!s_c2s[k].live) break;
-        if (k >= POFV_C2S_MAX) return;
-        a5 = (int)((-180.0f + 30.0f * (float)i) * (36.0f / 360.0f)) % 36;
-        if (a5 < 0) a5 += 36;
-        s_c2s[k].live = 1; s_c2s[k].age = 0;
-        s_c2s[k].x = pp[0]; s_c2s[k].y = pp[1];
-        s_c2s[k].vx = s_c2_dir36[a5][0] * POFV_C2S_SPEED;
-        s_c2s[k].vy = s_c2_dir36[a5][1] * POFV_C2S_SPEED;
-        s_c2s[k].life = 150;
-        s_c2s[k].vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), POFV_C_RING_SCRIPT, POFV_C4_VM_LAYER);
-        if (s_c2s[k].vm) {
-            ce_anm_set_color((uint32_t)s_c2s[k].vm, 0xffffffffu);
-            ce_anm_set_scale((uint32_t)s_c2s[k].vm, 0.45f, 0.45f);
-        }
-    }
+    /* ★★★ 2026-10-12 删掉**不可达**的旧实现 ✓（C2 审计 `42acbab9` 指出这套是死码 ✗）：
+     *   ★ 原来 `return;` 之后还留着"自实现转圈 26 发"一大段 ✗ —— ★ 永远跑不到 ✓，
+     *   ★ 且它的 `s_c2s[]` **无人填** ✗（`pofv_c2s_tick` 那个生成循环因此也是死路 ✓）。
+     *   ★ 留壳是因为它**仍被引用** ✓（`pofv_c2s_tick` ✓）⇒ 删函数会触发 unused 警告 ✗。
+     *   ★ 一手事实（已核 ✓）：★ 早苗 C2 **不建任何对象** ✗ —— ★ 只"切 set11 + 开窗口" ✓。*/
 }
 
 static void pofv_c2s_tick(void)
@@ -5813,14 +5798,9 @@ static int on_tick_2(ce_card_t *c)
          *   **取同一比例**：C1 = `cap × 500/2500`、C2 = `cap × 1000/2500` ✓（★ 灵梦的 500/1000 ✓）。
          *   ★ **每档只在上升时放一次** ✓（掉回阈下再涨才重放 ✓）。
          *   ★ ★ **Shift 从此不再触发任何攻击** ✓ —— 它只开结界 ✓（一手如此 ✓）。*/
-        static int s_c1_lv, s_c2_lv;
         static int s_c3_lv;                     /* ★ ⑤ C3：档闩锁（与 C1/C2 同形，按蓄力档 ✓）*/
-        static int s_c4_lv;                     /* ★ ⑤ C4：档闩锁 ✓ */
         static int s_barrier_lv;                /* ★ ④ 罩子：档闩锁（与角色无关 ✓）*/
-        static int s_c2m_lv;                    /* ★ ② C2 魔理沙分支：档闩锁 ✓ */
         static int s_c3m_lv;                    /* ★ ⑤ C3 魔理沙分支：档闩锁 ✓ */
-        static int s_c4m_lv;                    /* ★ ⑤ C4 魔理沙分支：档闩锁 ✓ */
-        static int s_c2s_lv;                    /* ★ ② C2 早苗分支：档闩锁 ✓ */
         static int s_c3s_lv;                    /* ★ ⑤ C3 早苗分支：档闩锁 ✓ */
         static int s_c3s4_lv;                   /* ★ ⑤ C4 早苗分支：档闩锁 ✓ */
         /* ★★ 2026-10-10 owner 实跑连带订正：阈值此前写成"**cap 的百分比**" ✗ ——
@@ -5850,53 +5830,32 @@ static int on_tick_2(ce_card_t *c)
          *     **被守卫吃掉** ✓（否则会把 `+0xd8` 从 11 覆写回 10 ✓）；C3/C4 帧照放 ✓。*/
         (void)c1_at;
         /* ★ 升档音（一手 ✓「**升档另有音**」，id `0x31` ✓）：★ 档位**新跨过**时补一次 ✓ */
-        {   static int s_tier_prev;
-            const int t_now = ((s_aura_charge >= c1_at) ? 1 : 0) + ((s_aura_charge >= c2_at) ? 1 : 0)
-                            + ((s_aura_charge >= c3_at) ? 1 : 0) + ((s_aura_charge >= c4_at) ? 1 : 0);
-            /* ★★ 2026-10-11 owner 订正：「那些可能是一族蓄力音，但是**用到的地方和什么 C1 C4 一点关系没有**」
-             *   ⇒ 我先前把 `se_ch01/02/03`（`0x1f/0x2a/0x2b`）按 C2/C3/C4 **铺上去是自作主张**，已撤。
-             *   ⇒ 现在**只放 `se_ch00`（`0x1e`）那一支蓄力音**（owner 确认的件）。
-             *   ❓"一手升档另有音"这条（本仓早先记的）**音源未定** ⇒ 先不放，登记 TUNING 待查。*/
-            (void)t_now;
-            /* ★ LV 计数（一手 ✓ `clamp(+1, 0, 7)`）：★ 新跨到 3 档 ⇒ C3 的 LV +1 ✓；★ 4 档 ⇒ C4 ✓ */
-            /* 2026-10-11 owner：蓄力途中灵力就掉了 => 这几项全部挪到松手那一下。*/
-            /* 2026-10-11 owner：蓄力途中灵力就掉了 => 这几项全部挪到松手那一下。*/
-            /* ★ 一手 ✓ 使用计数（`S+0x4c` / `S+0x50`，clamp 0..999 ✓）*/
-            /* ★★★ 2026-10-11 owner：「**扣的是灵力**」✓ + 问「能放 C4 但放了个 C2 扣多少」
-             *   ⇒ ★ 一手规则（子 agent 复述）：★ 阶段 1 **不耗** ✓；★ 阶段 2/3/4 各扣
-             *     **`该档阈值 − 上限`** ✓ —— ★ 按 owner 的模型"上限" = **C1 阈值 500** ✓
-             *     ⇒ ★ **C2 扣 500 / C3 扣 1200 / C4 扣 2000** ✓（★ 只与**你放的那一档**有关 ✓，
-             *     与灵力攒了多少无关 ✓ —— 这正是他问的那点 ✓）。*/
-            /* 2026-10-11 owner：蓄力途中灵力就掉了 => 这几项全部挪到松手那一下。*/
-            /* 2026-10-11 owner：蓄力途中灵力就掉了 => 这几项全部挪到松手那一下。*/
-            /* 2026-10-11 owner：蓄力途中灵力就掉了 => 这几项全部挪到松手那一下。*/
-            /* 2026-10-11 owner：蓄力途中灵力就掉了 => 这几项全部挪到松手那一下。*/
-            /* 2026-10-11 owner：蓄力途中灵力就掉了 => 这几项全部挪到松手那一下。*/
-            /* 2026-10-11 owner：蓄力途中灵力就掉了 => 这几项全部挪到松手那一下。*/
-            s_tier_prev = t_now;
+        {   /* ★★★ 2026-10-12 查明：★ 这一块**是空转的** ✗ —— ★ 原来算了 `t_now` 与 `s_tier_prev`，
+             *   但**两者都没被读** ✗（编译器早有 `set but not used` 警告 ✓）⇒ ★ 即
+             *   ★ **一手那个升档音（SE `0x31` ✓）我方根本没实现** ✗。
+             *   ⇒ ★ 我**不擅自"补一个感觉像的"** ✗（那是自定 ✗）⇒ ★ 登记为**功能缺口** ✓，
+             *   ★ 待核一手"升档音在**哪一刻**放"（★ 蓄力跨阈 vs 松手 ✓）后再照办 ✓。*/
+            (void)0;
         }
         /* ★★ 2026-10-10：一手**三人**的 C2 完全不同（灵梦 = `EXReigekiInf` ✓ / 魔理沙 = 6 条
          *   `EXLaserInf` ✓ / 早苗 = 不建对象、改走 shot 行 11 ✓，见 §5.2）⇒ ★ **本卡的 C2 只对灵梦** ✓，
          *   其余角色**先不放**（❓待补，见 TUNING）。★ 不这样做的话，魔理沙会放出**灵梦的**弹幕 ✗。*/
         if (s_aura_charge >= c2_at && s_aura_kind == 0) {
             /* 2026-10-11 owner：蓄力到 C2 自动放肯定不对 => 途中一律不发（C2）；改到释放支按松手时的档发。*/
-        } else s_c2_lv = 0;
+        }
         /* ★ ② C2 —— **早苗**分支（一手 = shot 行 11 = 更慢的 26 发整圈 ✓，见上）*/
         /* ★ D1（C1 审计 d40db02d ✓）：★ 一手只在释放路发射 ✓ ⇒ 这里不再途中发 ✗。*/
-        s_c2s_lv = 0;
         /* ★ ② C2 —— **魔理沙**分支（一手 = 6 条 `EXLaserInf` ✓，见上）*/
         /* ★ D1 ✓：★ 这里原来就是蓄力到 C2 就放六向激光 ✗ 的真身 ⇒ 关掉 ✓。*/
-        s_c2m_lv = 0;
         /* ★ ⑤ C3（ExtraAttack）：★ 按蓄力档（**不是**边沿 ✗ —— 旧 `pofv_aura_rise_edge()` 已被 owner 实跑否掉 ✓）*/
         /* ★ ⑤ C4：一手阈值 = 2500（= `pl00.sht +0x38` ×10 ✓，= 满 ✓）*/
         {
             /* ★ ⑤ C4 —— **魔理沙**分支（一手 = 一条激光 + 一串绕圈扫射弹 ✓，见上）*/
         /* ★ D1 ✓：同 C2 ⇒ 途中不发 ✓。*/
-        s_c4m_lv = 0;
         /* ★ 同上：一手三人的 C4 也不同 ⇒ ★ **只对灵梦** ✓（❓待补）。*/
             if (s_aura_charge >= c4_at && s_aura_kind == 0) {
             /* 2026-10-11 owner：蓄力到 C2 自动放肯定不对 => 途中一律不发（C4）；改到释放支按松手时的档发。*/
-            } else s_c4_lv = 0;
+            }
         }
         /* ★★ ④ 罩子：一手 `FUN_0040b420`（回罩）全 .text **只有两个调用点** = `0x4e8176`(阶段 3 EX) /
          *   `0x4e7b8d`(阶段 4 BOSS) ✓ —— ★ 而一手是「**发动 EX 或 BOSS 就复活自动パリア**」✓
