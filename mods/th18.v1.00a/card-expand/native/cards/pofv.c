@@ -3058,14 +3058,18 @@ static void pofv_c1_window_tick(void)
 {
     pofv_stage_set(13);   /* ★ 窗口 tick ✓ */
     if (s_c1_win_left <= 0) return;
-    /* ★ goal ① ✓：★ 认领了原生 set ⇒ **这里不再自己造弹** ✗（否则双份 ✓）。*/
-    if (pofv_native_set_active()) return;
+    /* ★★★★ 2026-10-12 **修正我上一轮的 bug** ✗：★ 我原来把"停手写"的早退放在**倒计数之前** ✗
+     *   ⇒ ★ `s_c1_win_left` / `s_c2s_win` **永不递减** ✗ ⇒ ★ 窗口永不关闭 ✗ ⇒ ★ 认领**常开** ✗
+     *   （★ 那 26 行会一直发 ✗）。★ 正确：★ **记账每帧都走** ✓、★ 只在**造弹那一步**停手 ✓，
+     *   ★ 且判据要在**记账前**取 ✓（★ 否则最后那帧会漏判 ⇒ 手写多发一次 ✗）。*/
+    const int native_on = pofv_native_set_active();
     --s_c1_win_left;
     ++s_c1_win_age;
     if (s_c2s_win > 0) {                       /* ★ 早苗 C2 的 60 帧窗口 ✓（一手 ✓）*/
         if (--s_c2s_win == 0) s_c1_set_sel = 0;   /* ★ 窗口尽 ⇒ 切回 set10 ✓ */
     }
     if (s_aura_kind != 3) return;
+    if (native_on) return;                     /* ★ goal ① ✓：认领了原生 set ⇒ 不再自己造弹 ✓ */
     if (s_c1_win_age % 8 == 0 && s_c1_win_age < 30) {
         s_c1_sanae_half ^= 1;
         pofv_c1_fire_range(POFV_C1_GROUP_SANA, s_c1_sanae_half ? 13 : 0, 13);
