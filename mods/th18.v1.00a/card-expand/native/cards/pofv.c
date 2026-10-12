@@ -4031,8 +4031,22 @@ static void pofv_c2m_tick(void)
              *       ⇒ ★ 与"h 轴竖直 ⇔ angle = 0"一致 ✓；
              *     · ★ 本卡**原来那对本来就是自洽的**（`rz = ang+90` ✓ + `angle = ang` ✓ ⇒ 轴 = `rz` ✓）
              *       ⇒ ★ 所以贴图改成 `rz` 后，盒角应取 **`rz − 90°` = `L->ang − π/2`** ✓。*/
-            (void)ce_damage_rect(pos, L->ang - 1.5707964f, POFV_C2M_SETTLE, 14.0f,
-                                 POFV_C2M_HIT_LEW, POFV_C2M_HIT_LEN);
+            {
+                /* ★★ 盒心：★ 照**卡 117 的已验证版式**（`animal.c:2714-2718` ✓）——
+                 *   ★ 它写的是 `ce_polar_to_vel(dir, a, vis)` ✓ + `center = 膛口 + dir*0.5` ✓
+                 *   + `ce_damage_rect(center, a + π/2, …, HIT_W, vis)` ✓
+                 *   ⇒ ★ 即「★ 盒心 = 膛口 + **u(θ)·len/2** ✓、★ h = 长度 ✓、★ 角度 = θ ± 90° ✓」。
+                 *   ⚠ ★ 本卡此处的 **len = 600** 仍是 **❓自定**（★ 一手那个 600 已证**无出处** ✗）
+                 *   ⇒ ★ 本改**只动盒心** ✓：★ 从"以自机为心（★ 一半在身后 ✗）"改成"**从膛口向束伸出** ✓"；
+                 *   ★ **长度问题（600 vs 绘制长 2048）留给 owner 定** ✓（见 TUNING 的 C2-② 行为半 ✓）。*/
+                float dir3[3], ctr[3];
+                ce_polar_to_vel(dir3, L->ang, POFV_C2M_HIT_LEN * 0.5f);
+                ctr[0] = pos[0] + dir3[0];
+                ctr[1] = pos[1] + dir3[1];
+                ctr[2] = 0.0f;
+                (void)ce_damage_rect(ctr, L->ang - 1.5707964f, POFV_C2M_SETTLE, 14.0f,
+                                     POFV_C2M_HIT_LEW, POFV_C2M_HIT_LEN);
+            }
     }
 }
 
