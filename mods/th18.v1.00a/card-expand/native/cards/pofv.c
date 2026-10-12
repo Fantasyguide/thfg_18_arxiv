@@ -4605,7 +4605,11 @@ static void pofv_c3m_tick(void)
 #define POFV_C4M_ACCEL       0.03f
 #define POFV_C4M_ACCEL_FRAMES  120
 
-typedef struct { int live, age, life; float x, y, ang, spd; int32_t vm; } pofv_c4m_t;
+typedef struct { int live, age, life, bounced; float x, y, ang, spd; int32_t vm; } pofv_c4m_t;
+/* ★ 2026-10-13（独立审计 `48e1d2c8` **R2** ✓）：★ 加了 `bounced` —— ★ 一手这位 boss 的弹
+ *   **本来就有反弹** ✓（`etEx(type=64 = EX_BOUNCE, 4 次, walls=13 = 上|左|右 ✓)` ✓），
+ *   ★ 而本档原来 `b->y < 0.0f` **直接删弹** ✗（★ C4 / C4S 都有反弹 ✓ ⇒ 只有这一档漏 ✓）
+ *   ⇒ ★ 按模型 ③ 补"**版顶反弹**" ✓（★ 与 C4 同款 ✓，★ 一次 = 对一手的**简化** ✗ 已登记 ✓）。*/
 static pofv_c4m_t s_c4m[POFV_C4M_MAX];
 static struct { int active, emitted, timer, laser_vm, laser_timer, level; float base; } s_c4m_st;
 
@@ -4650,6 +4654,7 @@ static void pofv_c4m_emit(float ang)
     for (k = 0; k < POFV_C4M_MAX; ++k) if (!s_c4m[k].live) break;
     if (k >= POFV_C4M_MAX) return;
     s_c4m[k].live = 1; s_c4m[k].age = 0; s_c4m[k].life = 150;
+    s_c4m[k].bounced = 0;                       /* ★ 2026-10-13（R2 ✓）：★ 新弹"已反弹"位清零 ✓ */
     s_c4m[k].ang = ang; s_c4m[k].spd = POFV_C4M_SPEED;
     {
         const float *pp = ce_player_pos();
@@ -4719,6 +4724,17 @@ static void pofv_c4m_tick(void)
         di = (int)(b->ang * (36.0f / 6.2831853f)) % 36; if (di < 0) di += 36;
         b->x += s_c2_dir36[di][0] * b->spd;
         b->y += s_c2_dir36[di][1] * b->spd;
+        /* ★★★★★ 2026-10-13（★ 独立审计 `48e1d2c8` **R2** ✓）：★ **模型 ③：版顶反弹** ✓
+         *   —— ★ 一手这位 boss 的弹**本来就有反弹** ✓（`etEx(type = 64 = EX_BOUNCE, a = 4 次,
+         *   b = 13 = BOUNCE_ULR（上|左|右，★ 不含下边 ✓）)` ✓），★ 而本档原来 `b->y < 0.0f`
+         *   **直接删弹** ✗ ⇒ ★ 与 C4 / C4S **不一致** ✗（★ 那两档都有 ✓）。
+         *   ★ 反射：★ 屏幕 y 向下 ⇒ 方向 `(cos, sin)` 的 y 翻号 ⇒ ★ **`ang = -ang`** ✓（只翻一次 ✓）。
+         *   ★ 本卡这一次版顶 = 对一手的**简化** ✗（★ 一手是 4 次 + 含左右墙 ✓，已登记 ✓）。*/
+        if (b->y < 0.0f && !b->bounced) {
+            b->y = 0.0f;
+            b->ang = -b->ang;
+            b->bounced = 1;
+        }
         if (b->x < -(POFV_FIELD_HALF_W + POFV_C1_OFF_MARGIN) ||
             b->x >  (POFV_FIELD_HALF_W + POFV_C1_OFF_MARGIN) ||
             b->y < 0.0f || b->y > POFV_FIELD_H) {
