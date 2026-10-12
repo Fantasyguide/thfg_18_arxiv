@@ -1369,6 +1369,7 @@ static int pofv_aura_hit_here(float dx, float dy, float pad);   /* ★ 前置声
 
 static void pofv_graze_scan_drop(void)
 {
+    int g_live = 0, g_br_pos = 0, g_in_r1 = 0, g_done = 0;   /* ★ 自证计数 ✓ */
     uint8_t *bm = CE_BULLET_MGR();
     const float *pp = ce_player_pos();
     uint32_t i;
@@ -1378,12 +1379,16 @@ static void pofv_graze_scan_drop(void)
         uint16_t state = *(const uint16_t *)(b + CE_BULLET_STATE);
         float br, bx, by, dx, dy;
         if (state == 0) { s_aura_bullet_done[i] = 0; continue; }   /* ★ 空槽清闩锁 ✓（与 aura 扫描同款 ✓）*/
+        ++g_live;                                   /* ★ 自证计数（见本函数末尾的分布日志 ✓）*/
+        if (*(const float *)(b + POFV_BULLET_RADIUS_OFF) > 0.0f) ++g_br_pos;
         if (s_aura_bullet_done[i]) continue;                        /* ★ 这颗弹已经掉过了 ✓ */
+        ++g_done;
         br = *(const float *)(b + POFV_BULLET_RADIUS_OFF);
         if (!(br > 0.0f)) continue;                                 /* 半径 0 的哨兵弹种：不算 ✓ */
         bx = *(const float *)(b + CE_BULLET_POS);
         by = *(const float *)(b + CE_BULLET_POS + 4);
         dx = bx - pp[0]; dy = by - pp[1];
+        if (dx * dx + dy * dy <= POFV_GRAZE_R1 * POFV_GRAZE_R1) ++g_in_r1;   /* ★ 在 R1 内计数 ✓ */
         if (!(dx * dx + dy * dy <= POFV_GRAZE_R1 * POFV_GRAZE_R1)) continue;   /* ★ 擦弹圈 R1 ✓ */
         if (pofv_aura_hit_here(dx, dy, br)) continue;                          /* ★ 在结界内 ⇒ 归结界 ✓ */
         s_aura_bullet_done[i] = 1;
@@ -1394,6 +1399,11 @@ static void pofv_graze_scan_drop(void)
                                        POFV_POWER_SRC_AURA, &gpts);
         }
     }
+    /* ★★★ 2026-10-12 goal ① 的"证据不足"项自证 ✓（审计 `89c60c46` 指出：★ 三条路都 `br <= 0` 跳过 ✗，
+     *   而一手文档说「`+0x658` 对 type1/2 普通弹为 0」✗ ⇒ ★ 若真是这样，**普通弹会被全漏** ✓）。
+     *   ★ 每 300 帧打一行分布 ⇒ ★ 一局就能判：★ `br>0` 是否为 0 ✓、`round`(在 R1 内) 是否恒 0 ✓。*/
+    if ((s_card_frames % 300) == 0)
+        ce_log("pofv: [GRAZE] live=%d br>0=%d inR1=%d done=%d", g_live, g_br_pos, g_in_r1, g_done);
 }
 
 static int pofv_aura_hit_here(float dx, float dy, float pad)
