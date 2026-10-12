@@ -3585,14 +3585,14 @@ static void pofv_c3_tick(void)
 #define POFV_BARRIER_VM_LAYER_GLOW  5    /* ★ 外层：低一层 ⇒ 画在内层下面 ✓ */    /* ❓自定：盾半径 */
 #define POFV_BARRIER_BREAK_N    40       /* ★ 一手 ✓ 禁主动移动 40 帧 */
 #define POFV_BARRIER_INVULN_N   100      /* ★ 一手 ✓ 无敌 100 帧 */
-#define POFV_BARRIER_PUSH       128.0f   /* ★ 一手 ✓ 位移单位 */
-#define POFV_BARRIER_PUSH_K     3.2f     /* ❓自定：128 px / 40 帧 / 平均 v 1.0 ⇒ 3.2（见下面位移段）*/
+#define POFV_BARRIER_PUSH       128.0f   /* ★ 记录值：总位移 128 px ✓（★ 原始出处本仓查不到 ⇒ 见位移段的 ❓ 登记）*/
+#define POFV_BARRIER_PUSH_K     3.2f     /* ★ 恒速步长 = 128 px / 40 帧 = 3.2 px/帧 ✓（owner 观感：匀速、较慢 ✓）*/
 /* ★★★★ 2026-10-12 **权威位置副本**（一手 ✓ `engine/player/th18/01-position-and-state-timers.md` §2 ②）：★
  *   `Player__sub_45b170` `0x45B170` 每帧 `+0x62c += (int)(dx*…)` → 钳位 → `+0x620 = (float)(+0x62c)/128`
  *   ⇒ ★ **位移必须加到 `+0x62c/+0x630`（int32，单位 1/128 px ✓）**，★ 写 float 位置或速度向量都会被覆盖 ✗。
  *   ★ 钳位（一手 ✓）：x ∈ [-0x5c00, 0x5c00]（±184 px）、y ∈ [0x1000, 0xd800]（32..432 px）。*/
 #define POFV_PLAYER_SUBPIXEL    0x62c
-#define POFV_BARRIER_PUSH_V     2.0f     /* ★ 一手 ✓ 初速（线性衰减到 0）*/
+#define POFV_BARRIER_PUSH_V     2.0f     /* ★ 记录值，**现已不用** ✗：曾是"初速 2.0 + 线性衰减到 0"✗ ⇒ ★ 与 owner 观感「匀速」矛盾 ⇒ 已改**恒速** ✓（见位移段）*/
 static int32_t s_barrier_vm_disc;        /* ★ 内层：白圆（脚本 428）*/
 /* ★★ #5（owner ✓）：「**获取 109 的时候会给一个罩子**（对应 TH19 **开局给你一个罩子** ✓）」✓
  *   ⇒ 卡侧：`clear_card()` 里把这个标志置 1 ✓（它同时覆盖 **构造 / 换局 / 重开** ✓，都是"重新拿到卡" ✓）
@@ -3780,19 +3780,28 @@ static void pofv_barrier_tick(void)
          *     ⇒ ★ 这就是"写坐标没用、写速度向量也没用"的原因 ✓（速度向量每帧还被 `0x5217dc` 覆盖 ✓）。
          *   ⇒ ★ **正解：把位移加到权威的定点累加上** (`+0x62c/+0x630`，int32，单位 **1/128 px** ✓)
          *     ⇒ ★ 引擎自己会把 float 位置算出来 ✓、且不会被冲掉 ✓。*/
-        float f = (float)(POFV_BARRIER_BREAK_N - s_barrier_brk);
-        float v = POFV_BARRIER_PUSH_V * (1.0f - f / (float)POFV_BARRIER_BREAK_N);
+        /* ★★★★ 2026-10-12 **动力学按 owner 观感改**（owner 原话：「★ 它在观感上应当是**比较匀速**
+         *   **比较慢**地移动」✓）：
+         *   ★ 原来用 `v = PUSH_V × (1 − f/40)`（**线性衰减** 2.0→0 ✗）= ★ **先快后慢** ✗ ——
+         *     与"匀速"矛盾 ✓。★ 去掉衰减，改成**恒速** ✓。
+         *   ★ 两个记录数都保留：★ **40 帧**（破罩演出长度 ✓）× ★ **每帧 3.2 px** ⇒ 合计 ≈ **128 px** ✓
+         *     （= 一手那两个数 128 / 40 ✓；★ 不再解释成"2.0 初速 + 衰减"✗）。
+         *   ⚠ **如实标注（一手核不到 ✗）**：★ 128 / 2.0 这两个常数的**原始出处在本仓查不到**（只写着"一手 ✓" ✗）；
+         *     TH19 decomp 里确有 `2.0f` 写进 `player+0x6360`（`all.c:206951` ✓，自机初始化/状态段 ✓），
+         *     但**全文件没有读它的地方** ✗ ⇒ ★ 只能支持"2.0 是个速度常数" ✓，**证明不了**"线性衰减" ✗。
+         *     ⇒ ★ 此处以**owner 观感**为准 ✓，并把「匀速」记为已确认 ✓、把"一手出处"记为 ❓（待反汇编补 ✓）。*/
+        float step = POFV_BARRIER_PUSH_K;      /* ★ 恒速：每帧 3.2 px ✓（40 帧 ≈ 128 px ✓）*/
         float *mult = CE_PLAYER() ? (float *)(CE_PLAYER() + CE_PLAYER_SPEED_MULT) : 0;
         int32_t *sub = CE_PLAYER() ? (int32_t *)(CE_PLAYER() + POFV_PLAYER_SUBPIXEL) : 0;
         if (mult) *mult = 0.0f;                        /* ★ 一手 ✓：禁主动移动（当帧生效）*/
         if (sub) {
-            /* ★ 每帧推 `dir * v * K` 像素 = `× 128` 定点单位 ✓（一手：位移 128 / 初速 2.0 线性衰减 ✓）*/
-            sub[0] += (int32_t)(s_barrier_dx * v * POFV_BARRIER_PUSH_K * 128.0f);
-            sub[1] += (int32_t)(s_barrier_dy * v * POFV_BARRIER_PUSH_K * 128.0f);
+            /* ★ 恒速推 `step` 像素/帧 = `× 128` 定点单位 ✓（权威副本 ✓，见上面 §2 ②）*/
+            sub[0] += (int32_t)(s_barrier_dx * step * 128.0f);
+            sub[1] += (int32_t)(s_barrier_dy * step * 128.0f);
         }
         if (s_barrier_brk % 8 == 0)
-            ce_log("pofv: [PUSH] brk=%d dir=(%.0f,%.0f) v=%.2f subpx=(%d,%d) pos=(%.0f,%.0f)",
-                   s_barrier_brk, (double)s_barrier_dx, (double)s_barrier_dy, (double)v,
+            ce_log("pofv: [PUSH] brk=%d dir=(%.0f,%.0f) step=%.2fpx subpx=(%d,%d) pos=(%.0f,%.0f)",
+                   s_barrier_brk, (double)s_barrier_dx, (double)s_barrier_dy, (double)step,
                    sub ? sub[0] : 0, sub ? sub[1] : 0,
                    (double)(ce_player_pos() ? ce_player_pos()[0] : 0.0f),
                    (double)(ce_player_pos() ? ce_player_pos()[1] : 0.0f));
