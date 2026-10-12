@@ -3741,7 +3741,25 @@ static void pofv_barrier_tick(void)
          *   （2026-10-11 原话 ✓），而"半径内有弹就破罩"那条**正是**把罩子做成碰撞体的错路 ✗
          *   （当年 `int n` 恒为 0、整段从不执行，owner 也因此强停过一次 ✓）。
          *   ⇒ ★ 破罩/免死的**唯一入口** = 撞弹回调 `pofv_on_death_before_deathbomb()`（卡虚表 `+0x10`）✓，
-         *     它由**引擎在真撞弹时**广播 ✓ ⇒ ★ 本函数只管**视觉**（短周期重发 + 跟随自机）✓。*/
+         *     它由**引擎在真撞弹时**广播 ✓ ⇒ ★ 本函数只管**视觉**（短周期重发 + 跟随自机）✓。
+         *
+         * ★★★★★ 2026-10-12 **把被我误删的视觉调用接回来** ✗✗（owner："依旧没有罩子的 VM"✓）：
+         *   ★ 我上一轮删"死掉的半径检测"时用了**非贪婪正则** ✗ ⇒ 它从 `int n = 0;` 一路吞到
+         *     `if (n > 0)` 之前 ✓ ⇒ ★ **把下面这两段（每 8 帧重发 446 + `vm_sync()`）一起删掉了** ✗
+         *   ⇒ ★ `pofv_barrier_vm_sync()` **从来没被调用** ⇒ ★ 视觉 VM 不生成 ✓（连 `[BARRIER]` 日志也不打 ✓）。
+         *   ⇒ ★ 教训（第二次同类 ✗）：★ **用正则做"删一段"时，锚必须唯一且范围必须肉眼可核** ✗
+         *     —— 删完**必须把函数读一遍** ✓（本会话已经栽在这上面两次 ✓）。*/
+        {
+            static int s_re;
+            if (--s_re <= 0) {
+                if (s_barrier_vm_glow && ce_anm_get_vm((uint32_t)s_barrier_vm_glow))
+                    ce_anm_delete((uint32_t)s_barrier_vm_glow);
+                s_barrier_vm_glow = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
+                                        CE_ANM_ABILITY_SCRIPT_POFV109_BARRIER_RING, POFV_BARRIER_VM_LAYER_GLOW);
+                s_re = 8;
+            }
+        }
+        pofv_barrier_vm_sync();   /* ★ 每帧跟随自机 + 缩放（+ 发放日志 ✓）*/
     }
     if (s_barrier_brk > 0) {
         /* ★ 一手 ✓：禁主动移动（当帧写 0；`on_tick_2` 先于 `Player::on_tick` ⇒ 当帧生效）+ 背向
