@@ -4149,6 +4149,9 @@ static void pofv_c3m_tick(void)
 #define POFV_C4M_CYCLE       60      /* ★ 一手 ✓ 每 60 帧一轮 */
 #define POFV_C4M_EVERY        2      /* ★ 一手 ✓ `ins_23(2)` */
 #define POFV_C4M_LASER_LIFE  60      /* ❓：一手 `ins_701(60,…)` 的时机参数 */
+/* ★ ⑦ 补 ✓：★ 一手这条弹有 `EX_ACCEL`（`0.03/帧` ✓、共 **120 帧** ✓）—— ★ 卡原来**没有** ✗。*/
+#define POFV_C4M_ACCEL       0.03f
+#define POFV_C4M_ACCEL_FRAMES  120
 
 typedef struct { int live, age, life; float x, y, ang, spd; int32_t vm; } pofv_c4m_t;
 static pofv_c4m_t s_c4m[POFV_C4M_MAX];
@@ -4213,8 +4216,10 @@ static void pofv_c4m_tick(void)
         const int n = cnt[s_c4m_st.level];
         if (s_c4m_st.emitted < n) {
             if (s_c4m_st.timer % POFV_C4M_EVERY == 0) {
-                /* ★ 一手：每 2 帧一发，角度 = base + π + 递增（本卡按"每发 +15°"铺开 ❓）*/
-                pofv_c4m_emit(s_c4m_st.base + 3.1415927f + 0.2617994f * (float)s_c4m_st.emitted);
+                /* ★★★ C3/C4 审计 60f3724f ⑦（中）✓：★ 一手是**逐发 `ins_604(..., 0.0f)`**
+                 *   ⇒ ★ **每一发角度完全相同** ✓（★ 只有 `base` 那一项 ✓）；★ 而卡原来给它加了
+                 *   `+ 0.2617994f × 已发数` ✗ = ★ **自造了一个 15°/发的扇形** ✗ ⇒ ★ **删掉** ✓。*/
+                pofv_c4m_emit(s_c4m_st.base + 3.1415927f);
             }
             ++s_c4m_st.emitted;
         }
@@ -4246,6 +4251,8 @@ static void pofv_c4m_tick(void)
             if (b->vm) { ce_anm_delete((uint32_t)b->vm); b->vm = 0; }
             b->live = 0; continue;
         }
+        /* ★ ⑦ 补 ✓（一手 `EX_ACCEL`）：★ 前 120 帧每帧 +0.03 ✓。*/
+        if (b->age <= POFV_C4M_ACCEL_FRAMES) b->spd += POFV_C4M_ACCEL;
         di = (int)(b->ang * (36.0f / 6.2831853f)) % 36; if (di < 0) di += 36;
         b->x += s_c2_dir36[di][0] * b->spd;
         b->y += s_c2_dir36[di][1] * b->spd;
