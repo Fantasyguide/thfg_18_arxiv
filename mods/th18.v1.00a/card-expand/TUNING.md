@@ -20411,3 +20411,23 @@ dict(macro="PL03_GLINT", src="pl03", sid=7, new_sid=31, ...)
 3. ★ 加通用块函数（★ 照 `_yk_bullet_block` 去掉妖侧特例 ✓）；
 4. ★ 重编 ⇒ ★ 新宏进 `pl_anm_ids.h` ✓ ⇒ ★ 两行 `anm` 从 **30/29** 改指**新号** ✓；
 5. ★ 回归 + 登记 + 发布 ✓。
+
+### ★★★★★★ "往里编"施工日志 ②：★ 已推到**最后一道闸**，为保绿先回退（2026-10-12）
+
+★ **已通的四关** ✓（★ 都是流水线**自己**点头的 ✓，★ 不是我以为对 ✓）：
+| ★ 关 | ★ 怎么过的 |
+| --- | --- |
+| ★ ① 图 source | ★ 6 张进 `assets/player_art_src/` ✓（★ `pofv109_snake_f0..f3` = 62×14 ✓ / `pofv109_frog_f0` = 30×30 ✓ / `pofv109_hit_f0` = 14×14 ✓）★ —— ★ **已提交** ✓（`aa4c937b` ✓）|
+| ★ ② 通用块函数 | ★ 加 `_card_script_block` ✓（★ 与妖侧那支的差别：★ 正文取 `assets/ability/scripts/<N>_*.anm.txt` ✓、★ **单 `@`** 记号 ✓、★ 不做秋黄换色 ✓）⇒ ★ 语法通过 ✓ |
+| ★ ③ entry 号 | ★ 断言先报"第 1 个应编号 13、计划写 17" ✗ ⇒ ★ 我改成 ★ **新表 `CARD_ART_ENTRIES` 挂在 `_entries_of` 最后** ✓（★ 不动任何已有 entry 的号 ✓）⇒ ★ 断言给出**正解 24 / 25** ✓ ⇒ ★ 过了 ✓ |
+| ★ ④ 图 key | ★ 断言报"未知 key `pofv109_snake_f0`" ✗ ⇒ ★ 在 `player_art_lib.SPECS` 加 6 条 ✓（★ `mode="keep"` ✓：★ 成品图**原样用、绝不套色** ✓，★ 见 `ensure()` ✓）⇒ ★ 过了 ✓ |
+★ **卡在最后一道闸** ✗：★
+「★ `pl03.anm: PL03_109_SNAKE script50 与计划不一致 —— 文件里的内容不是 `_append_spec` 生成的那一份`」✓
+⇒ ★ 也就是★ 流水线把**编出来的** anm 反解回文本 ✓、★ 与计划逐行比 ✗ ⇒ ★ 我的正文在**往返一趟后**变了 ✗。
+★ ❓ ★ **最可能的两处** ✓（★ 下一轮先看 `_verify_appended` 再定 ✓）：
+1. ★ 我们的脚本是从 **`ability.anm`** 语境写的 ✓ —— ★ 它的 **`layer(6)`** 与 opcode 写法**未过** pl0X 的往返 ★
+   （★ 妖侧那支是先过 `_th08_opcodes`/`prologue` 等翻译的 ✓，★ 而我这支**一律不翻译** ✗）；
+2. ★ `sprite(@NAME)` → `sprite(sprite161)` ✓ 的写法 ★ 是否与 pl0X 的**反解写法**一致 ✗（★ 妖侧是 `@NAME@` → `sprite97` ✓ ⇒ ★ 反解回来也是 `sprite(sprite97)` ✓ ⇒ ★ 这一条看起来对 ✓）。
+★ ⚠ ★ **为保绿，本轮已 `git checkout` 回退** ✓（★ `build_player_anm.py` 与 `player_art_lib.py` ✓）
+—— ★ **图与这份笔记留着** ✓ ⇒ ★ 下一轮重做那两处 + 对齐那道闸 ✓。★ 现状：★ `make anm`/`make check`/`check-docs` **全 rc=0** ✓、
+★ 四处同 md5 **`f643db22be5c73c2afe3a415b2613f95`** ✓。
