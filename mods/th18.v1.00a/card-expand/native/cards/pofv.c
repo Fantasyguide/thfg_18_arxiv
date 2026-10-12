@@ -3074,6 +3074,19 @@ static void pofv_c1_window_tick(void)
         }
     }
     const int native_on = pofv_native_set_active();
+    /* ★★★★★ 2026-10-12 **把被我误删的门接回来** ✗✗（owner 实跑："一进关什么都没按就在发 C1 弹幕、
+     *   弹只走几个 px、还朝右；开一次 C1 什么都没发、只是这个怪弹幕停止"）：
+     *   ★ 我上一轮用**正则整段替换**本函数头时 ✓，把原来那句
+     *       `if (s_c1_win_left <= 0) return;`
+     *   **连门一起替换掉了** ✗ ⇒ ★ 下面那个"每 8 帧发半圈"不再受窗口约束 ✗；
+     *   ★ 而 `s_c1_win_age` **只在窗口开着时才递增** ✓ ⇒ ★ 窗口一关它就**冻在上次的值**
+     *   （通常是 0 ✓，满足 `% 8 == 0 && < 30` ✓）⇒ ★ 条件**恒真** ⇒ ★ 卡侧**一直在造弹** ✓；
+     *   ★ 而且那些是**卡自己起的 VM**（没有引擎速度 ✓）⇒ 恢复 `rotateAuto(1)` 后它们被按回 +x
+     *   ⇒ ★ **弹只走几个 px 且朝右** ✓；★ 松一次 C1 会把 `s_c1_win_age` 重新从 0 推起 ✓
+     *   ⇒ 涨过 30 后条件为假 ⇒ ★ **怪弹幕停止** ✓ = owner 看到的三条症状 ✓。
+     *   ⇒ ★ 教训（记 TUNING ✓）：**用正则整段替换函数体时，替换范围里可能夹着必需的门** ✗
+     *     ⇒ 替换后必须把整段**读一遍**再编译 ✓。*/
+    if (s_c1_win_left <= 0) return;   /* ★ 窗口没开 ⇒ 卡侧一发都不造 ✓（这行就是被误删的那门 ✓）*/
     if (s_aura_kind != 3) return;
     if (native_on) return;                     /* ★ goal ① ✓：认领了原生 set ⇒ 不再自己造弹 ✓ */
     if (s_c1_win_age % 8 == 0 && s_c1_win_age < 30) {
@@ -4499,6 +4512,9 @@ static void clear_card(ce_card_t *c)
      *   初值 = 一手那个"每局按难度取常数"(= POFV_C3_LEVEL_DEFAULT)，
      *   然后 每次 C3 自增 (审计: S+0x38 每次 +1、clamp 0..7)，
      *   发弹时把 s_c3_lv_n 当 level 用 => 图案逐次升级。*/
+    /* ★ 2026-10-12：C1/C2 的窗口状态一并归零 ✓（跨局不带脏值；★ 上面那个"窗口门被误删 ⇒
+     *   `s_c1_win_age` 冻在 0 ⇒ 恒真 ⇒ 一进关就发弹"的 bug 正是这一类状态复用的问题 ✓）。*/
+    s_c1_win_left = 0; s_c1_win_age = 0; s_c1_sanae_half = 0; s_c1_set_sel = 0; s_c2s_win = 0;
     s_c3_lv_n = POFV_C3_LEVEL_DEFAULT;
     s_c4_lv_n = 0;
     int i, k;
