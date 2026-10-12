@@ -3956,7 +3956,7 @@ static void pofv_c2m_tick(void)
              *     `SPRITE_H = 32` ✓ ⇒ **y = 0.5 × grow** ✓。*/
             ce_anm_set_scale((uint32_t)L->vm, POFV_C2M_LEN_OVER_SPRITE * grow,
                              POFV_C2M_W_OVER_SPRITE * grow);
-            ce_anm_set_rotation((uint32_t)L->vm, 0.0f, 0.0f, L->ang + 1.5707964f);
+            ce_anm_set_rotation((uint32_t)L->vm, 0.0f, 0.0f, L->ang);   /* ★ 审计 42acbab9：rz=θ（原写 ang+π/2 ⇒ 视觉/判定正交 90° ✗）*/
         }
         /* ★ 伤害源：绕自机、沿该角度铺一条长盒（`ce_damage_rect` 不转 ⇒ 用等分角度近似 ❓）*/
         pos[0] = L->x; pos[1] = L->y; pos[2] = 0.0f;
