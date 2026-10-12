@@ -4038,10 +4038,17 @@ static void pofv_barrier_tick(void)
  *   ★ 而★ "扫描前的 `ins_23(60)`"（`pl00:342` ✓）也补上了 ✓（见 `POFV_C4_PRE_WAIT` ✓）。*/
 #define POFV_C4_PRE_WAIT         60       /* ★ 一手 ✓ `ins_23(60)`（扫之前先等 60 帧 ✓）*/
 static const int s_c4_d_tab[8] = { 13, 13, 13, 14, 15, 16, 17, 18 };
+/* ★★★★★ 2026-10-13（owner 口径 ✓）：★ **C4 从 lv3 起算** ✓。
+ *   ★ 一手依据（`pl00.txt` `Boss00Boss()`，21 行起 ✓，**亲读** ✓）：★ 那三行 `!01` / `!23` / `!4567`
+ *     是**难度掩码** ✓ ⇒ ★ **rank 0/1（= lv1/2）⇒ `Boss00Boss1()` = 非符** ✗、
+ *     ★ **rank 2/3（= lv3/4）⇒ `Boss00BossCard1()` = 符卡** ✓、★ rank 4-7 ⇒ `Boss00Boss1_H()` = 非符 H ✗。
+ *   ⇒ ★ owner 只做**符卡那段** ✓ ⇒ ★ 低档的**非符不做** ✗ ⇒ ★ **C4 的等级下限抬到 lv3**（0-based = 2 ✓）。
+ *   ★ 这是**有意偏离一手**（★ 一手 lv1/2 会走非符 ✓，本卡跳过 ✓），已在 `TUNING.md` 登记 ✓。*/
+#define POFV_C4_LV_MIN           2       /* ★ = lv3（0-based ✓）—— 符卡那张难度掩码的起点 ✓ */
 static int pofv_c4_rank(void)
 {
     int r = s_c4_lv_n;
-    if (r < 0) r = 0;
+    if (r < POFV_C4_LV_MIN) r = POFV_C4_LV_MIN;   /* ★ 从 lv3 起算 ✓（owner 口径 ✓）*/
     if (r > 7) r = 7;
     return r;
 }
@@ -4521,7 +4528,7 @@ static void pofv_c4m_fire(void)
     /* ★★★ 复核审计 `251ad3c6`（Q2）✓：★ 一手那张表（`ins_570($G, 25,30,15,20,30,30,30,30)` ✓，
      *   `pl01:401` ✓）是**按 rank 取**的 ✓ ⇒ ★ 与卡里三处 C3 同一套做法 ✓（`clamp(s_*_lv_n,0,7)` ✓）
      *   ⇒ ★ 原来是写死的 `0` ✗，★ 改成按 `s_c4_lv_n` ✓（★ 卡里那张 `cnt[8]` 正是这 8 个字面量 ✓）。*/
-    s_c4m_st.level = (s_c4_lv_n < 0) ? 0 : ((s_c4_lv_n > 7) ? 7 : s_c4_lv_n);
+    s_c4m_st.level = pofv_c4_rank();          /* ★ 2026-10-13：★ 与 C4 用**同一个下限**（lv3 起 ✓，owner 口径 ✓）*/
     s_c4m_st.base = 3.1415927f;               /* ❓②：一手 `%D`（`[-9989] + [-9987]×5°`），取 π ✓ */
     /* ★ 槽 0：一条**向上的激光**（用魔理沙竖带当激光 ✓），寿命 = `ins_701` 的 60 ✓ */
     if (s_c4m_st.laser_vm) { ce_anm_delete((uint32_t)s_c4m_st.laser_vm); s_c4m_st.laser_vm = 0; }
