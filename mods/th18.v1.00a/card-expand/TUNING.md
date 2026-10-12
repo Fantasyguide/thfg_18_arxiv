@@ -20448,3 +20448,13 @@ dict(macro="PL03_GLINT", src="pl03", sid=7, new_sid=31, ...)
 ⇒ 你重开游戏看到的就是 TH19 一手的蛇/青蛙。若还要「爆炸样式」也照一手：
 那支（我方 `445_pofv109_c1s_hit.anm.txt`）还没编进去 —— 原生路的爆炸由引擎 hit func 负责
 （`hit4` = 伤害源 / `hit0` = 播爆炸），要不要把 445 也编进去或换 hit0，等你实跑看一眼再定。
+
+### 青蛙的爆炸：func_on_hit 4 → 0（hit0）—— 按 owner 原话与一手正文定案（2026-10-12）
+
+owner 原话：「它应当是碰到敌人爆炸」。查我方脚本正文（448_pofv109_c2s_frog.anm.txt:20-24）：
+interruptLabel(1) = scaleTime(4, 9, 1.2f, 1.2f) → delete() —— 注释里就写着
+「一手 interruptLabel(1) = 爆开那支」。而 TH18 的 hit0 = 「interrupt(1) 播爆炸、不建伤害源」
+⇒ 它正好触发这支；行的 damage = 22 本来就照常给伤害 ⇒ 伤害没丢。
+原来用的 hit4（= 建伤害源子体）没有那下爆炸 ⇒ 与 owner 的描述不符。
+蛇行不动（hit5 = 一手那格的值，且与 117 狼行同构）。
+字节验证：产物 pl03.sht 里 蛇 anm=50 func=(4,4,0,5)；青蛙 anm=51 func=(0,0,0,0)。

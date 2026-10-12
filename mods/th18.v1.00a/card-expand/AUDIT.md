@@ -32221,6 +32221,7 @@ DLL 未重发 ⇒ 本轮的 5 处改动**尚未进入游戏** ✓（下次发版
 | `assets/build_player_anm.py` | 加 `CARD_ART_ENTRIES`（新表，挂 `_entries_of` 最后）；加 `_card_script_block`（+ `CARD_SCRIPT_DIR`、`spec_kind=="card"` 分派）；`_write_entry_textures` 认新表 | 109 要按 117 同机制把自己的两支脚本/两张图追加进 `pl03.anm`（主炮路的 `+0x22` 只认 `pl0X.anm`） |
 | `assets/player_art_src/player_art_lib.py` | `SPECS` 加 6 条（`pofv109_snake_f0..f3` / `pofv109_frog_f0` / `pofv109_hit_f0`，`mode="keep"`） | 让 `PA.ensure(key)` 认这些 key（成品图原样用、绝不套色） |
 | `assets/sht/append_shooterset.py` | 加 `PL03_109_SCRIPT_SNAKE=50` / `PL03_109_SCRIPT_FROG=51` + 登进交叉核对表；只改 109 那两行的 `anm=` | 让 109 的两行指到新脚本 |
+| （同上，第二改） | 109 青蛙行的 `func_on_hit` **4 → 0** | owner 原话「它应当是碰到敌人爆炸」；`hit0` = interrupt(1) 播爆炸、不建伤害源 ⇒ 正好触发我们脚本自己的 `interruptLabel(1)`（448 里那支 = 一手的「爆开那支」）；行的 `damage=22` 照常给伤害。蛇行不动（`hit5` = 一手那格的值）|
 | `assets/player_art_src/pofv109_*.png`（6 张） | 新增 | 109 自己的美术（源自我方 `ability` 资产） |
 
 影响面（关键）：只「加号」—— 117 的 `PL03_SCRIPT_SNAKE`(30)/`FROG`(29)/`GLINT`(31)/`TRANCE`(32/33)
