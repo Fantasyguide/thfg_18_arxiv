@@ -3765,7 +3765,22 @@ static void pofv_barrier_tick(void)
  *   ④ `$D` 先固定 **13**（一手按档位 13..18 ✓）；
  *   ⑤ 弹的寿命/盒/伤害沿用 C1 的口径（可后调 ✓）。*/
 #define POFV_C4_MAX_BULLETS      40
-#define POFV_C4_SHOTS_PER_SWEEP  13       /* ❓④：一手 `ins_570` 的档 0..2 = 13（先固定 ✓）*/
+/* ★★★ 复核审计 `251ad3c6`（Q1）✓：★ 一手 `$D` **不是常数** —— 它是
+ *   `ins_570($D, 13,13,13,14,15,16,17,18)`（`pl00:450` ✓）★ 按 **rank** 取的表 ✓
+ *   ⇒ ★ 本卡用 `s_c4_lv_n`（0..7 ✓）当索引 ✓，★ 与一手那张表**逐项同** ✓。
+ *   ★ 而★ "扫描前的 `ins_23(60)`"（`pl00:342` ✓）也补上了 ✓（见 `POFV_C4_PRE_WAIT` ✓）。*/
+#define POFV_C4_PRE_WAIT         60       /* ★ 一手 ✓ `ins_23(60)`（扫之前先等 60 帧 ✓）*/
+static const int s_c4_d_tab[8] = { 13, 13, 13, 14, 15, 16, 17, 18 };
+static int pofv_c4_rank(void)
+{
+    int r = s_c4_lv_n;
+    if (r < 0) r = 0;
+    if (r > 7) r = 7;
+    return r;
+}
+static int pofv_c4_d(void) { return s_c4_d_tab[pofv_c4_rank()]; }
+/* ★ 一手 ✓ `pl00:346–347` 的 `!234567` ⇒ ★ **rank 2..7 要再补第三条 +2π** ✓。*/
+static int pofv_c4_nsweep(void) { return (pofv_c4_rank() >= 2) ? 3 : 2; }
 #define POFV_C4_EMIT_EVERY        2       /* ★ 一手 ✓ `ins_23(2)` */
 #define POFV_C4_WAVE_PERIOD      60       /* ★ 一手 ✓ 每 60 帧一轮 */
 #define POFV_C4_SPEED           1.5f      /* ★ 一手 ✓ `1.5 + [-9888]×0.8`，❓① 取 0 ⇒ 1.5 */
@@ -3811,7 +3826,7 @@ static void pofv_c4_emit(int dir)
     for (k = 0; k < POFV_C4_MAX_BULLETS; ++k) if (!s_c4_b[k].live) break;
     if (k >= POFV_C4_MAX_BULLETS) return;
     /* ★ 角 = base + dir × 2π × (第几发 / D)（一手 `A += B/$D` 的均分 ✓）*/
-    di = (float)s_c4.emitted / (float)POFV_C4_SHOTS_PER_SWEEP;
+    di = (float)s_c4.emitted / (float)pofv_c4_d();
     if (dir >= 0) ang = s_c4.base + 6.2831853f * di;
     else          ang = s_c4.base - 6.2831853f * di;
     s_c4_b[k].live = 1; s_c4_b[k].age = 0;
@@ -3862,19 +3877,20 @@ static void pofv_c4_tick(void)
          *   合计 13 x 2 帧 x 2 = 52 帧，在一轮 60 帧之内。
          *   ❓ 循环那半（一手 if(1) goto）未做 —— 循环到什么时候 证据不足
          *   （要核一手 ECL 的总体时长）=> 先保持 一轮 60 帧就收（已登记 TUNING）。*/
-        if (s_c4.timer % POFV_C4_EMIT_EVERY == 0) {
-            if (s_c4.emitted < POFV_C4_SHOTS_PER_SWEEP)
-                pofv_c4_emit(s_c4.sweep ? -1 : +1);
+        const int d4 = pofv_c4_d();
+        const int ns4 = pofv_c4_nsweep();
+        /* ★ 一手 ✓：★ `ins_23(60)` 之后**才开始扫** ✓（★ 原来从第 0 帧就扫 ✗）。*/
+        if (s_c4.timer >= POFV_C4_PRE_WAIT && s_c4.timer % POFV_C4_EMIT_EVERY == 0) {
+            if (s_c4.emitted < d4)
+                pofv_c4_emit((s_c4.sweep == 1) ? -1 : +1);   /* ★ 第三条是 **+2π** ✓ */
             ++s_c4.emitted;
-            if (s_c4.emitted >= POFV_C4_SHOTS_PER_SWEEP) {
+            if (s_c4.emitted >= d4) {
                 s_c4.emitted = 0;
-                if (!s_c4.sweep) s_c4.sweep = 1;
+                if (s_c4.sweep + 1 < ns4) ++s_c4.sweep;      /* ★ 还有下一条 ⇒ 接着扫 ✓ */
+                else { s_c4.live = 0; s_c4.base += POFV_C4_BASE_SPIN; }   /* ★ 全扫完才收 ✓ */
             }
         }
-        if (++s_c4.timer >= POFV_C4_WAVE_PERIOD) {
-            s_c4.timer = 0; s_c4.emitted = 0; s_c4.live = 0;
-            s_c4.base += POFV_C4_BASE_SPIN;         /* ❓②：基准角缓慢自转 ✓ */
-        }
+        ++s_c4.timer;   /* ★ 收尾条件改成"三条扫描都跑完" ✓（见上面 ✓）*/
     }
     for (k = 0; k < POFV_C4_MAX_BULLETS; ++k) {
         pofv_c4_bullet_t *b = &s_c4_b[k];
