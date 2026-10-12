@@ -2602,7 +2602,14 @@ static void pofv_ca_ring_tick(void)
             if (n > 0)
                 ce_log("pofv: [CA_RING] slot=%d kind=%d r=%.1f 消掉 %d 颗（一手：逐帧点测试 ✓）",
                        i, R->kind, (double)R->r, n);
-            if (!R->vm) {
+            /* ★★★★★ 2026-10-13 **owner 一手表现**（原话：「① C1 **没有**红色消弹圈（但或许消弹）；
+             *   ② **C2-C4** 有随时间**扩张**的红色消弹圈」✓）：
+             *   ⇒ ★ **kind 1（= 卡里的 C1）不画可见环** ✗（★ 1 手那一支在 TH09 里是"CA 释放那一下"的
+             *     176 场：**会消弹**（§1.4 kind 1 ✓）但**没有对应的画环脚本** ✗ —— `etama.anm` 只有
+             *     91/92/93 三支 = L1/L2/L3 ✓）⇒ 正好对上 owner 的 ① ✓（消弹留、环不画 ✓）。
+             *   ⚠ 修掉的**真 bug**：原来这里的三元式**没有 `kind == 1` 分支** ✗ ⇒ C1 会**落到 L3**
+             *     ⇒ **画出 448 的大环** ✗✗（正是 owner 说"C1 不该有"的那个 ✗）。*/
+            if (!R->vm && R->kind >= 2) {   /* ★ kind 1 = C1 ⇒ 只消弹、不画环 ✓ */
                 /* ★ 2026-10-12：★ 按档选一手环脚本 ✓ —— 450/451/452 =
                  *   TH09 `etama.anm` **script91/92/93** 的等效 ✓（一手正文见各脚本头注释 ✓）。
                  *   ★ 半径动画**交给脚本** ✓（一手如此 ✓）⇒ ★ 卡侧**不再写 `scale`** ✗
@@ -2613,11 +2620,30 @@ static void pofv_ca_ring_tick(void)
                 const uint32_t sid = (R->kind == 2) ? CE_ANM_ABILITY_SCRIPT_POFV109_CA_RING_L1
                                    : (R->kind == 3) ? CE_ANM_ABILITY_SCRIPT_POFV109_CA_RING_L2
                                                     : CE_ANM_ABILITY_SCRIPT_POFV109_CA_RING_L3;
+                /* ★ 到这里的 kind 只可能是 2/3/4 ✓（1 已在上面被挡掉 ✓）⇒ 192 / 256 / 448 ✓*/
                 const uint32_t id = ce_anm_spawn(CE_ABILITY_ANM(), sid, 6);
-                if (id) R->vm = (int32_t)id;
+                if (id) {
+                    R->vm = (int32_t)id;
+                    ce_log("pofv: [CA_RING] 环 VM 已起 slot=%d script=%u ✓", i, (unsigned)sid);
+                } else {
+                    ce_log("pofv: [CA_RING] 环 VM **起失败** ✗ slot=%d script=%u（ce_anm_spawn 返回 0 ✓）",
+                           i, (unsigned)sid);
+                }
             }
-            if (R->vm)
+            if (R->vm) {
                 vm_set_world_pos((uint32_t)R->vm, R->x, R->y);   /* ★ 锚在圆心 ✓ */
+                /* ★★★★★ 2026-10-13（修 owner 实跑「**C2 看不见红环**」✗）：★ **卡侧每帧写 `scale`** ✓
+                 *   —— 这是本卡 432 / C2 环那条**能看见**的老写法 ✓（`(BAND_W, r)` = 带宽 / 半径 ✓）。
+                 *   ⚠ ★ 我 2026-10-12 把半径**交给脚本的 `scaleTime`** ✗（想贴一手的 `posTime` 缓动 ✓）
+                 *   ⇒ ★ owner 实跑 **C2 看不到环** ✗ —— ★ 而日志证明**场起了**（`kind=2` ✓、
+                 *     `r0=0.0 dr=4.00 寿命=48 ⇒ 终点 192` ✓）⇒ ★ 说明**脚本侧那层在 `texArcEven` 上
+                 *     没生效** ✗（`ins_412` 写的 scale 不驱动这个图元 ✓）。
+                 *   ⇒ ★ **回退成卡侧逐帧写** ✓（★ 表现 = **判定=绘制** ✓）。
+                 *   ★ 于是"一手画面 `pos(16) → posTime(终点)` 的缓动"在 **v8 里用不了** ✗（无 `posMode` ✓）
+                 *   ⇒ ★ 本卡**有意**改成"卡侧按判定半径逐帧画" ✓ —— ★ 已登记 TUNING ✓，
+                 *     ★ **不再**写成"把 432 那条偏差收掉了" ✗（那句已被这次实跑证伪 ✓）。*/
+                ce_anm_set_scale((uint32_t)R->vm, POFV_C2_RING_BAND_W, R->r);
+            }
         }
         R->r += R->dr;                 /* ★ 一手 `fadd [eax+0x8]` ✓ 线性 ✓ */
         if (--R->life <= 0) {          /* ★ 一手 `dec [eax+0x24]` ✓ 到 0 释放 ✓ */

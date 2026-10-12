@@ -15,8 +15,8 @@ script script451 {
     color(255, 255, 255);
     alpha(0);
     alphaTime(20, 0, 255);              // ★ 一手 ✓ 20 帧淡入
-    scale(1.0f, 16.0f);                 // ★ 一手起点半径 16 ✓
-    scaleTime(64, 0, 1.0f, 256.0f);     // ★ 一手 ✓ 64 帧线性长到 256
+    /* ★ 2026-10-13：★ **半径不在这里写** ✗ —— ★ 改由**卡侧每帧 `ce_anm_set_scale(vm, 1.0, r)`** ✓
+     *   （同 450 的理由：脚本侧 `scaleTime` 不驱动 `texArcEven`、且会与卡侧写打架 ✓）。*/
     rotate(0.0f, 0.0f, %RANDRAD);       // ★ 一手 ✓
     angleVel(0.0f, 0.0f, 0.07853982f);  // ★ 一手 ✓ 4.5°/帧
     stop();
