@@ -2188,7 +2188,11 @@ static const pofv_c1_shot_t s_c1_table[POFV_C1_GROUPS][POFV_C1_SHOTS_PER_GROUP] 
 #define POFV_CARD_ID             109u
 #define POFV_CARD_ID_106         106u   /* ★ 整蛊卡：有它 ⇒ 切 TH09 的 Z 手感 ✓ */   /* = `CE_CARD(109, …)`；无敌**声明层**的键 = 卡号 ✓ */
 #define POFV_C2_TOTAL             105   /* 一手 ✓ 总时长（`+0x6c`=45 + `0x3c`=60）*/
-#define POFV_C2_POINT_END          45   /* 一手 ✓ 3 点阶段结束 / 扩张环起点（= `+0x6c`）*/
+/* ★ C2-⑤ 后半（C2 审计 42acbab9 ✓）：★ 一手在 age≥45 之后**仍然每帧把 3 台摆在轨道点** ✓
+ *   （一直跑到 **105 帧** ✓）⇒ ★ 本闸原来只到 45 ✗ ⇒ 改到 **105** ✓（= 与 C2 总时长同 ✓）。
+ *   ⚠ 别去放开 `POFV_C2_GEN_FRAMES` ✗ —— ★ 那个闸管的是**扩张消弹环** ✓，放开会让环一直长 ✗。*/
+/* ★ 一手 ✓ 3 点阶段结束 / **扩张环起点**（= `+0x6c`）✓ —— ★ 环的半径公式也用它 ✓ ⇒ **不能动** ✗。*/
+#define POFV_C2_POINT_END    45   /* 一手 ✓ 3 点阶段结束 / 扩张环起点（= `+0x6c`）*/
 #define POFV_C2_POINTS              3   /* 一手 ✓ 3 个环绕点（0°/120°/240°）*/
 #define POFV_C2_SPIN_STEP           1   /* 一手 ✓ 整体 +10°/帧 = 36 向表每帧 +1 档 */
 #define POFV_C2_POINT_BASE_STEP    12   /* 0°/120°/240° = 表中相隔 12 档（12×10°）*/
@@ -2207,6 +2211,10 @@ static const pofv_c1_shot_t s_c1_table[POFV_C1_GROUPS][POFV_C1_SHOTS_PER_GROUP] 
 /* ★ C2-③ ✓：★ `FUN_005200f0(...,0x18,1)` 的 **24 是寿命** ✓，**不是伤害** ✗
  *   ⇒ ★ 原注释写的一手出处是**假的** ✗ ⇒ ★ 降级为 **❓自定** ✓。*/
 #define POFV_C2_RING_DMG     24
+/* ★ C2-⑤ 后半（审计 42acbab9 ✓）：★ 一手摆 3 台 orb **一直到 105 帧** ✓（★ 而扩张环从 45 起 ✓
+ *   —— ★ 两者**不同** ✗ ⇒ 新开这个常量给 orb 闸 ✓，**不要动** `POFV_C2_POINT_END` ✗）。*/
+#define POFV_C2_ORB_END           105
+
 #define POFV_C2_GEN_FRAMES          4   /* 一手 ✓ `Ecl_EtBreakLv2` 共 4 帧 */
 #define POFV_C2_GEN_R0            8.0f  /* 一手 ✓ 半径序列 8/12/16/20 */
 #define POFV_C2_GEN_STEP          4.0f  /* 一手 ✓ 每帧 +4 */
@@ -2354,13 +2362,16 @@ static void pofv_c2_tick(uint32_t id)
     if (!p) return;
 
     /* ① 通用层 `Ecl_EtBreakLv2`（一手 ✓）：4 帧、半径 8/12/16/20、中心 = 自机 ✓ */
-    if (s_c2.age < POFV_C2_GEN_FRAMES) {
+            /* ★ C2-⑤ 后半（C2 审计 42acbab9 ✓）：★ 一手在 age≥45 之后**仍然每帧把 3 台摆在轨道点**
+             *   （一直跑到 **105 帧** ✓）；★ 卡原来在 45 就停写 ✗ ⇒ ★ 本闸**取消**（3 台继续跟着轨道走 ✓），
+             *   ★ 而"环开始扩张/VM 中断 1"那些 age≥45 的动作**照旧** ✓（它们不在这个闸里 ✓）。*/
+            if (s_c2.age < POFV_C2_GEN_FRAMES) {   /* ★ 回滚 ✓：这个闸管的是**扩张消弹环** ✗，不是 orb ✓ */
         float pos[3];
         pos[0] = p[0]; pos[1] = p[1]; pos[2] = 0.0f;
         (void)c2_cancel_drop(pos, POFV_C2_GEN_R0 + POFV_C2_GEN_STEP * (float)s_c2.age);
     }
 
-    if (s_c2.age < POFV_C2_POINT_END) {
+    if (s_c2.age < POFV_C2_ORB_END) {   /* ★ C2-⑤ 后半 ✓：摆到 105 ✓（一手 ✓）*/
         /* ② 灵梦槽 4 · 帧 0–44：3 个环绕点（0°/120°/240°、整体 +10°/帧、环绕半径 0→64 / 22 帧）*/
         int i;
         float f = (float)s_c2.age / POFV_C2_ORBIT_FRAMES;
