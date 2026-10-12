@@ -3437,7 +3437,16 @@ static void pofv_c3_tick(void)
         if (b->x < -POFV_FIELD_HALF_W)     { b->x = -POFV_FIELD_HALF_W; b->dx = -b->dx; hit = 1; }
         else if (b->x > POFV_FIELD_HALF_W) { b->x =  POFV_FIELD_HALF_W; b->dx = -b->dx; hit = 1; }
         if (b->y < 0.0f)                   { b->y = 0.0f;   b->dy = -b->dy; hit = 1; }
-        else if (b->y > POFV_FIELD_H)      { b->y = POFV_FIELD_H; b->dy = -b->dy; hit = 1; }
+        /* ★★★ C3/C4 审计 60f3724f ⑪（低）✓：★ 一手这条弹的 `walls = **13**` ✓（= 上/左/右 ✓）
+         *   —— ★ **不含"下"** ✗；★ 而卡原来**四面都反** ✗ ⇒ ★ 去掉底部那次反弹 ✓
+         *   （★ 于是它会**往下飞出去** ✓）。★ 一手另有 `EX_OFFSCREEN(256,120)` ✓ 我方**没做** ✗
+         *   ⇒ ★ "飞出屏后到底怎么收"**证据不足** ✓ ⇒ ★ 先由下面的 ❓兜底寿命收 ✓（已登记 TUNING ✓）。*/
+        else if (b->y > POFV_FIELD_H + POFV_C1_OFF_MARGIN * 4.0f) {
+            /* ★ 只是给一个"远远出界就收"的兜底 ✓（★ 不是反弹 ✓）。*/
+            if (b->vm) { ce_anm_delete((uint32_t)b->vm); b->vm = 0; }
+            b->live = 0;
+            continue;
+        }
         if (hit && ++b->bounces > POFV_C3_BOUNCE_MAX) {
             if (b->vm) { ce_anm_delete((uint32_t)b->vm); b->vm = 0; }
             b->live = 0;
