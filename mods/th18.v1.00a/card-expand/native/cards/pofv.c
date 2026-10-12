@@ -2610,7 +2610,7 @@ static void do_storm_frame(const pofv_storm_t *bl)
         int idx = storm_hit_clipped(bl->x, bl->y, r, bl->dmg);
         if (idx > 0) { if (bl->age <= 1) ce_log("pofv: dmgsrc slot %d age %d r %d dmg %d size %.0fx%.0f",
                                                  idx, (int)bl->age, (int)r, (int)bl->dmg, r * 2.0f, r * 2.0f); }
-        else if (bl->age <= 1) ce_log("pofv: dmgsrc FAILED age %d r %d (r<=0 或整场在屏外)", (int)bl->age, (int)r);
+        else if (bl->age <= 1) ce_log("pofv: dmgsrc SKIP age %d r %.0f 中心 (%.0f,%.0f) — 裁到场地后交集为空（灵刚从屏外生成时正常）", (int)bl->age, (double)r, (double)bl->x, (double)bl->y);
     }
     if (n > 0) {   /* 补括号：消除 -Wmisleading-indentation，语义不变 */
         ce_log("pofv: storm age %d/%d r %d cancelled %d", (int)bl->age, (int)bl->life, (int)r, n);
