@@ -1711,6 +1711,9 @@ static int aura_scan_bullets(const float *center, int cap, float *ox, float *oy)
         bx = *(const float *)(b + CE_BULLET_POS);
         by = *(const float *)(b + CE_BULLET_POS + 4);
         if (!pofv_aura_hit_here(bx - center[0], by - center[1], br)) continue;
+        /* ★ 2026-10-12 goal ① 第二条（与擦弹侧同一个守卫 ✓）：★ **池满 ⇒ 不置位** ✓
+         *   ⇒ ★ 那颗弹等有空位时**仍能掉** ✓（★ 原实现先置位后生成 ⇒ 池满就永久不补 ✗）。*/
+        if (!pofv_power_has_room()) continue;
         s_aura_bullet_done[i] = 1;
         if (n < cap) { ox[n] = bx; oy[n] = by; }
         ++n;
