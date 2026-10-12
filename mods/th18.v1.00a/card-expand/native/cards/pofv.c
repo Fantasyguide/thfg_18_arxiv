@@ -3475,6 +3475,8 @@ static void pofv_barrier_fire(void)
 {
     if (s_barrier_brk > 0) return;     /* ★② 破罩位移中不许重张 ✓（否则会"破-张"无限循环 ⇒ 无敌永续 ✓）*/
     s_barrier_on = 1;
+    /* ★ 保命无敌：★ **张开这一帧给一次** ✓（一手 100 帧 ✓）—— ★ 会到期 ⇒ **不再永续** ✓（owner #1 的正解 ✓）。*/
+    ce_invuln_request(POFV_CARD_ID, POFV_BARRIER_INVULN_N);
 }
 
 /* ★ 每帧：盾挡 1 发 ⇒ 破罩；破罩后跑那三件事 */
@@ -3522,10 +3524,8 @@ static void pofv_barrier_tick(void)
          *     ★ 那颗弹**下一帧还在** ⇒ ★ **每帧都破罩** ⇒ `ce_invuln_request(…,100)` **每帧续命**
          *     ⇒ ★ **永久无敌** ✓；★ 而 `s_barrier_brk > 0` 期间不重复推 ⇒ ★ 撞击/音效被吃掉 ✓。
          *   ⇒ ★ 修：★ ① 破罩时**真的消弹**（`pofv_barrier_clear()` ✓）；★ ② **正在破罩就不再破** ✓。*/
-        if (n == 0 && s_barrier_brk == 0) {
-            float hx0 = 0.0f, hy0 = 0.0f;
-            if (pofv_barrier_nearest_bullet(pp, POFV_BARRIER_R, &hx0, &hy0)) n = 1;
-        }
+        /* ★ owner 纠正（2026-10-11）：「罩子只是说**我有保命的指示 UI** ✓，**不是也要有碰撞体** ✗」
+         *   ⇒ ★ **不看弹** ✗（不做半径检测 / 不消弹 / 不撞击位移 ✓ —— 那些是我上轮方向做反了 ✗）。*/
         if (n > 0) {
             pofv_barrier_clear();          /* ★① 真的把半径内的弹消掉 ✓（缺这一句 = 每帧重破 ✓）*/
             s_barrier_on = 0;
@@ -3542,7 +3542,9 @@ static void pofv_barrier_tick(void)
                     pofv_barrier_dir_from(hx, hy);
                 else { s_barrier_dx = 0.0f; s_barrier_dy = 1.0f; }
             }
-            ce_invuln_request(POFV_CARD_ID, POFV_BARRIER_INVULN_N);   /* ★ 一手 ✓ 无敌 100 帧 */
+            /* ★ 这句原来在「破罩」里 ⇒ ★ 每帧重破 ⇒ 每帧续无敌 ⇒ **永续** ✗（owner 症状① ✓）
+             *   ⇒ ★ 已挪到「**张开那一帧给一次**」✓（见 `pofv_barrier_fire` ✓）。*/
+
         }
     }
     if (s_barrier_brk > 0) {
