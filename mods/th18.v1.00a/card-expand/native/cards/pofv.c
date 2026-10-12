@@ -3473,6 +3473,7 @@ static void pofv_barrier_grant_tick(void)
 
 static void pofv_barrier_fire(void)
 {
+    if (s_barrier_brk > 0) return;     /* ★② 破罩位移中不许重张 ✓（否则会"破-张"无限循环 ⇒ 无敌永续 ✓）*/
     s_barrier_on = 1;
 }
 
@@ -3514,11 +3515,19 @@ static void pofv_barrier_tick(void)
          *     ⇒ ★ 破罩分支恢复 ✓ ⇒ ★ 一手那 **100 帧无敌** 恢复 ✓。
          *   ⚠ 尚待细化（❓登记 ✓）：一手是"**吸收**那颗弹"（把它消掉并沿命中点反推方向 ✓），
          *     现在只做了"**受力判定 + 反推方向**" ✓ —— ★ 免死这条已恢复 ✓，**吸弹**再补 ✓。*/
-        {
+        /* ★ 破罩闸（2026-10-11 owner 报的两个症状联立推出的根因 ✓）：
+         *   ★ owner：「它的**无敌一直没有取消** ✗」+「撞弹应当朝撞弹方向 180° 强制移动、**有音效**」✓
+         *   ⇒ ★ 我上轮"把破罩检测接回来"**只做了一半** ✗：★ 检测到半径内有弹就破 ✓，
+         *     ★ **却没把弹消掉** ✗（文件里早有 `pofv_barrier_clear()` ✓ 我没调 ✗）⇒
+         *     ★ 那颗弹**下一帧还在** ⇒ ★ **每帧都破罩** ⇒ `ce_invuln_request(…,100)` **每帧续命**
+         *     ⇒ ★ **永久无敌** ✓；★ 而 `s_barrier_brk > 0` 期间不重复推 ⇒ ★ 撞击/音效被吃掉 ✓。
+         *   ⇒ ★ 修：★ ① 破罩时**真的消弹**（`pofv_barrier_clear()` ✓）；★ ② **正在破罩就不再破** ✓。*/
+        if (n == 0 && s_barrier_brk == 0) {
             float hx0 = 0.0f, hy0 = 0.0f;
             if (pofv_barrier_nearest_bullet(pp, POFV_BARRIER_R, &hx0, &hy0)) n = 1;
         }
         if (n > 0) {
+            pofv_barrier_clear();          /* ★① 真的把半径内的弹消掉 ✓（缺这一句 = 每帧重破 ✓）*/
             s_barrier_on = 0;
             /* ★ 破罩 ⇒ 视觉先收（两台 VM 真删 ✓，铁律）*/
             if (s_barrier_vm_disc) { ce_anm_delete((uint32_t)s_barrier_vm_disc); s_barrier_vm_disc = 0; }
