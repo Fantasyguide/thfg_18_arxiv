@@ -4216,7 +4216,10 @@ static void pofv_c4m_fire(void)
 {
     const float *pp = ce_player_pos();
     s_c4m_st.active = 1; s_c4m_st.emitted = 0; s_c4m_st.timer = 0;
-    s_c4m_st.level = 0;                       /* ❓① */
+    /* ★★★ 复核审计 `251ad3c6`（Q2）✓：★ 一手那张表（`ins_570($G, 25,30,15,20,30,30,30,30)` ✓，
+     *   `pl01:401` ✓）是**按 rank 取**的 ✓ ⇒ ★ 与卡里三处 C3 同一套做法 ✓（`clamp(s_*_lv_n,0,7)` ✓）
+     *   ⇒ ★ 原来是写死的 `0` ✗，★ 改成按 `s_c4_lv_n` ✓（★ 卡里那张 `cnt[8]` 正是这 8 个字面量 ✓）。*/
+    s_c4m_st.level = (s_c4_lv_n < 0) ? 0 : ((s_c4_lv_n > 7) ? 7 : s_c4_lv_n);
     s_c4m_st.base = 3.1415927f;               /* ❓②：一手 `%D`（`[-9989] + [-9987]×5°`），取 π ✓ */
     /* ★ 槽 0：一条**向上的激光**（用魔理沙竖带当激光 ✓），寿命 = `ins_701` 的 60 ✓ */
     if (s_c4m_st.laser_vm) { ce_anm_delete((uint32_t)s_c4m_st.laser_vm); s_c4m_st.laser_vm = 0; }
