@@ -20509,3 +20509,21 @@ SDK 没有"自机弹命中"钩子（只有 on_bullet_created），所以卡侧**
 **不是一条指令** => 指令清单里本来就看不到它。我方源的写法是 `… stop(); interruptLabel(1); <爆开那支>`，
 `stop()` 停住主流、引擎 `interrupt(1)` 再跳进那个入口 => 这正是 TH19 一手的结构。
 => 所以"编译有没有丢这个标签"**只能实跑判**（就是 owner 要看的那下爆炸）；静态这层到此为止。
+
+### ★★★★★★ 实跑证据：走原生弹**在游戏里确认生效**（2026-10-12 19:08 的日志）
+
+（按 `local/GAME-LOG.md` 的规矩：先自己读日志尾巴，不问 owner。）
+日志 = `/mnt/d/项目/幻想指南/18/th18_modkit/game/th18_card_expand.log`（993581 字节，2026-10-12 19:08）。
+| 行 | 原文 | 说明 |
+| --- | --- | --- |
+| 797 | `pofv: [CLAIM] -> none (kind=3 sel=0 win=0)` | 初始，无窗口 => 不认领 |
+| 3846 | `pofv: [REL] tier=1 charge=575 chg=0 prev=1 aura=0 f=363` | C1 松手 |
+| 3848 | `pofv: [CLAIM] -> 0x68 (kind=3 sel=0 win=29)` | **认领 = 蛇（0x68）**；win=29 = 窗口刚开那帧 |
+| **3850** | `trace: card 109 on_shot_set_index (+0x7c) first hit` | **引擎确实调了这个钩子** |
+| 4099 | `pofv: [CLAIM] -> none (kind=3 sel=0 win=0)` | 30 帧后窗口关闭 |
+| 8968 / 8972 | `[REL] tier=1` … `[CLAIM] -> 0x68` | 第二次蛇 |
+| 13363 | `pofv: [REL] tier=2 charge=1120 chg=0 prev=1 aura=0 f=1232` | **C2 松手** |
+| 13369 | `pofv: [CLAIM] -> 0x69 (kind=3 sel=1 win=29)` | **认领 = 青蛙（0x69）** |
+统计：`[CLAIM]` 6 次、`[REL]` 3 次、**无 CRASH / 无 assert**。
+=> 认领链在实机上跑通：钩子被调用、按档返回对的那一格、窗口按时开合。
+剩下只有「观感」（图 / 那下爆开 / 声音）需要人眼判 —— 静态与日志这两层都到头了。
