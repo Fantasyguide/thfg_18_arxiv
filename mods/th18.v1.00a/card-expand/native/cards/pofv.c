@@ -2509,6 +2509,91 @@ static void pofv_eb_ring_close(int32_t *vm)
     *vm = 0;
 }
 
+/* ============================ TH09 一手：CA 消弹环（锚定场）============================
+ * 出处 `engine/card/th09/01-pofv-charge-and-cancel-fields.md` ✅
+ *   （§1.2 节点字段 / §1.3 推进与消费 / §1.4 在册实例表 / §2.3 发放门槛 / §5 绘制）：
+ *   ★ 一个环 = `(圆心, r₀, dr, 寿命, kind)` —— ★ 圆心**建完不动** ✓、★ 每帧 **`r += dr`**（线性 ✓）、
+ *     ★ 寿命 `--` 到 0 释放 ✓；★ 消费 = 逐帧「点在不在圈内」（`0x41dff0` ✓）⇒ 弹被消 ✓
+ *     （★ 不是"一次性命中" ✗ —— 圈**不动**，是弹幕飞进来 ✓）。
+ *   ★ 在册数值（§1.4 表，一手逐条读 push 得出 ✓）：
+ *       CA 释放那一下 : r₀ **16**, dr **20** , 寿命 **8**   ⇒ 终点 **176**
+ *       CA L1        : r₀  0, dr **4.0**, 寿命 **48**  ⇒ 终点 **192**
+ *       CA L2        : r₀  0, dr **4.0**, 寿命 **64**  ⇒ 终点 **256**
+ *       CA L3        : r₀  0, dr **3.5**, 寿命 **128** ⇒ 终点 **448**
+ *   ★ 画法（§1.4 末 + §5）：★ CA 环走 anm —— TH09 `etama.anm` script 91/92/93 =
+ *     `pos(16.0f, …)` + `posTime(寿命, 0, 终点)` ✓（★ 与判定**只对齐终点、过程不等** ✗ ✓）。
+ *     ⚠ 本卡现在**借** 432（`texArcEven(64)` = 圈带 ✓）按**判定半径**逐帧画 ⇒ ★ 观感是"贴住判定"，
+ *       与一手的 `pos → posTime` 缓动**不同** ✗ ⇒ ★ 已登记 ❓（要贴一手就照 `etama` 91/92/93 另写脚本 ✓）。*/
+typedef struct {
+    int     active;
+    float   x, y;      /* ★ 圆心：建完**不动** ✓（一手 `+0x0/+0x4`）*/
+    float   r;         /* ★ 当前半径 ✓（一手 `+0x8`）*/
+    float   dr;        /* ★ 每帧增量 ✓（一手 `+0xc`）*/
+    int     life;      /* ★ 剩余寿命（帧）✓（一手 `+0x24`）*/
+    int     kind;      /* 1 = CA 释放(176) / 2 = L1(192) / 3 = L2(256) / 4 = L3(448) ✓ */
+    int32_t vm;        /* 画环的 VM（脚本 432 ✓）*/
+} pofv_ca_ring_t;
+static pofv_ca_ring_t s_ca_ring;
+
+/* ★ 一手三元组表（§1.4 ✓）：`{r₀, dr, 寿命}` —— ★ 终点 = r₀ + dr × 寿命（与 §1.4 表逐个相等 ✓）*/
+static const float s_ca_ring_tab[5][3] = {
+    {  0.0f, 0.0f,   0.0f },   /* 0 = 不用 ✓ */
+    { 16.0f, 20.0f,  8.0f },   /* kind 1 = CA 释放那一下 ⇒ 16 + 20×8 = 176 ✓ */
+    {  0.0f,  4.0f, 48.0f },   /* kind 2 = L1 ⇒ 0 + 4.0×48 = 192 ✓ */
+    {  0.0f,  4.0f, 64.0f },   /* kind 3 = L2 ⇒ 0 + 4.0×64 = 256 ✓ */
+    {  0.0f,  3.5f, 128.0f },  /* kind 4 = L3 ⇒ 0 + 3.5×128 = 448 ✓ */
+};
+
+static void pofv_ca_ring_clear(void)
+{
+    if (s_ca_ring.vm) pofv_eb_ring_close(&s_ca_ring.vm);   /* ★ 铁律：自建 VM 必须收 ✓ */
+    s_ca_ring.active = 0; s_ca_ring.r = 0.0f; s_ca_ring.dr = 0.0f;
+    s_ca_ring.life = 0;   s_ca_ring.kind = 0;
+}
+
+/* ★ 起一个环（★ 圆心 = 传入点 ✓，一手「建完不动」✓）*/
+static void pofv_ca_ring_spawn(int kind, float x, float y)
+{
+    if (kind < 1 || kind > 4) return;
+    pofv_ca_ring_clear();                       /* 同一时刻只留一个（❓一手节点表 512 个 ⇒ 多环待核 ✓）*/
+    s_ca_ring.active = 1;
+    s_ca_ring.x = x;  s_ca_ring.y = y;
+    s_ca_ring.r    = s_ca_ring_tab[kind][0];
+    s_ca_ring.dr   = s_ca_ring_tab[kind][1];
+    s_ca_ring.life = (int)s_ca_ring_tab[kind][2];
+    s_ca_ring.kind = kind;
+    ce_log("pofv: [CA_RING] 起环 kind=%d r0=%.1f dr=%.2f 寿命=%d ⇒ 终点 %.0f 圆心=(%.0f,%.0f)"
+           "（一手 th09:0x41cf30 族 ✓）",
+           kind, (double)s_ca_ring.r, (double)s_ca_ring.dr, s_ca_ring.life,
+           (double)(s_ca_ring.r + s_ca_ring.dr * (float)s_ca_ring.life), (double)x, (double)y);
+}
+
+/* ★ 每帧（一手 `0x41c8e0` 的推进律 ✓）：① 半径内**逐颗**消可消弹 ✓ ② `r += dr` ✓ ③ 寿命 `--` ⇒ 0 释放 ✓ */
+static void pofv_ca_ring_tick(void)
+{
+    float pos[3];
+    int n;
+    if (!s_ca_ring.active) return;
+    pos[0] = s_ca_ring.x; pos[1] = s_ca_ring.y; pos[2] = 0.0f;
+    if (s_ca_ring.r > 0.0f) {
+        n = cancel_white_in_circle(pos, s_ca_ring.r, POFV_CANCEL_MAX, POFV_BULLET_CANCEL_MODE);
+        if (n > 0)
+            ce_log("pofv: [CA_RING] kind=%d r=%.1f 消掉 %d 颗（一手：逐帧点测试 ✓）",
+                   s_ca_ring.kind, (double)s_ca_ring.r, n);
+        if (!s_ca_ring.vm) {
+            const uint32_t id = ce_anm_spawn(CE_ABILITY_ANM(),
+                                CE_ANM_ABILITY_SCRIPT_POFV109_C_RING_ARC, 6);
+            if (id) s_ca_ring.vm = (int32_t)id;
+        }
+        if (s_ca_ring.vm) {
+            vm_set_world_pos((uint32_t)s_ca_ring.vm, s_ca_ring.x, s_ca_ring.y);   /* ★ 锚在圆心 ✓ */
+            ce_anm_set_scale((uint32_t)s_ca_ring.vm, POFV_C2_RING_BAND_W, s_ca_ring.r);
+        }
+    }
+    s_ca_ring.r += s_ca_ring.dr;                 /* ★ 一手 `fadd [eax+0x8]` ✓ 线性 ✓ */
+    if (--s_ca_ring.life <= 0) pofv_ca_ring_clear();   /* ★ 一手 `dec [eax+0x24]` ✓ */
+}
+
 static void pofv_c2_clear(void)
 {
     if (s_c2.ring_vm) {                                       /* ★ 铁律：范围圈 VM 也收 ✓ */
@@ -4758,6 +4843,7 @@ static void clear_card(ce_card_t *c)
     {   int k3; for (k3 = 0; k3 < POFV_C2_POINTS; ++k3)      /* ★ 铁律：C2 的 3 台可见物也收 ✓ */
             if (s_c2.orb_vm[k3]) { ce_anm_delete((uint32_t)s_c2.orb_vm[k3]); s_c2.orb_vm[k3] = 0; } }
     s_barrier_grant_pending = 1;                /* ★ #5：重新拿到卡 ⇒ 再给一个罩 ✓ */
+    pofv_ca_ring_clear();                       /* ★ 2026-10-12 铁律：CA 消弹环的自建 VM / 状态也要收 ✓ */
     s_c3_uses = 0; s_c4_uses = 0;
     {   int k5; for (k5 = 0; k5 < POFV_C1_TRAIL_MAX; ++k5) {          /* ★ 铁律：残影也收 ✓ */
             if (s_c1_trail[k5] && ce_anm_get_vm((uint32_t)s_c1_trail[k5]))
@@ -5838,6 +5924,22 @@ static int on_tick_2(ce_card_t *c)
                 if (s_aura_kind == 1) pofv_c4m_fire();
                 else if (s_aura_kind == 3) pofv_c3s_fire();
                 else pofv_c4_fire();
+            }
+            /* ★★★★★ 2026-10-12 **TH09 一手：CA 消弹环**（锚定场 ✓ —— 见 `s_ca_ring` 定义处的长注释 ✓）：
+             *   ★ 一手 §2.3 的发放门槛逐档对应 §1.4 的在册环 ✓：
+             *     tier 1 ⇒ **L1**（r₀ 0 + dr 4.0 × 48 帧 = **192** ✓）
+             *     tier 2 ⇒ **L2**（0 + 4.0 × 64 = **256** ✓）
+             *     tier 3 ⇒ **L3**（0 + 3.5 × 128 = **448** ✓）
+             *     tier 4 ⇒ ★ 一手那一支是「≥400 且**场上没有 kind-3 boss** ⇒ boss attack」✗ ——
+             *       ★ **不是环** ✗（有 kind-3 boss 时才退回 L3 那一支 ✓）⇒ ★ 本卡 C4 暂给 **L3(448)**，
+             *       并把「一手 C4 无环」登记为 ❓ 待 owner 裁 ✓（★ 不猜 ✓）。
+             *   ★ 圆心 = 松手那一刻的自机位置 ✓（一手：建完**不动** ✓）。*/
+            {
+                const float *pp_ring = ce_player_pos();
+                if (pp_ring) {
+                    const int rk = (tier_rel <= 1) ? 2 : (tier_rel == 2) ? 3 : 4;
+                    pofv_ca_ring_spawn(rk, pp_ring[0], pp_ring[1]);
+                }
             }
             /* ★★ 一手 ✓ 同帧：★ 档位发完**紧接着**发这份 C1 ✓
              *   （⇒ 魔理沙 C2 设的 `EX+0xd4` 由**这一份** C1 消耗 ✓，不再拖到下一份 ✓）。*/
@@ -7328,6 +7430,7 @@ static int on_tick_2(ce_card_t *c)
         if (bl && bl->active) do_storm_frame(bl);
     }
     pofv_storm_tick(&s_storm);
+    pofv_ca_ring_tick();   /* ★ 2026-10-12 TH09 一手：CA 消弹环（锚定场）每帧推进 + 消弹 ✓ */
     storm_vm_sync();
     pofv_spark_tick();   /* ★ ③ 消弹火花：占位计时器 + 到期清句柄 ✓ */
     pofv_stage_flush();  /* ★ 阶段仪表（卡死定位用 ✓）*/
