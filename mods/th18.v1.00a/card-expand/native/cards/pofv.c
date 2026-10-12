@@ -2132,6 +2132,9 @@ static const pofv_c1_shot_t s_c1_table[POFV_C1_GROUPS][POFV_C1_SHOTS_PER_GROUP] 
 #define POFV_C1_HIT_W      30.0f
 #define POFV_C1_HIT_H      30.0f
 
+/* ★ 前置声明（本函数定义在 C3 那一段，`pofv.c:3319` ✓；★ D8 在 fire_range 里要用它 ✓）。*/
+static void c3_dir5(int idx5, float *dx, float *dy);
+
 #define POFV_C1_HIT_W_REI    20.0f
 #define POFV_C1_HIT_H_REI    20.0f
 #define POFV_C1_HIT_W_MAR     0.0f
@@ -2896,11 +2899,21 @@ static void pofv_c1_fire_range(int grp, int from, int cnt)
          *     `−120°` 算成 **−11**（应为 −12 ✓）、`−100°` 算成 −9（应为 −10 ✓）……
          *     ★ 左侧那几发**整体偏一格** ⇒ 图案歪掉 ✓。
          *   ⇒ ★ 改成**四舍五入到最近的 10° 档** ✓（先 `+36.5` 再 `% 36` ⇒ 负数也安全 ✓）。*/
+        /* ★ D8（C1 审计 d40db02d ✓）：★ 一手早苗 set10 的**第 13–25 行是 15° 交错** ✓，
+         *   而 36 向表只有 **10° 一档** ✗ ⇒ ★ 量化后**系统性偏 5°** ✗。
+         *   ⇒ ★ 早苗这一组改用仓里现成的 **72 向 5° 表**（`c3_dir5` ✓，`pofv.c:3319` ✓）；
+         *   ★ 其余组（灵梦/魔理沙）角度本来就是 10° 的整倍 ✓ ⇒ 仍走 36 向表 ✓。*/
         di = (int)(r->ang * (36.0f / 6.2831853f) + 36.5f) % 36;
         s_c1_x[t] = ox + r->x;
         s_c1_y[t] = oy + r->y;
-        s_c1_vx[t] = s_c2_dir36[di][0];      /* ★ 单位方向（速度另存 ⇒ 两段运动只改标量 ✓）*/
-        s_c1_vy[t] = s_c2_dir36[di][1];
+        if (grp == POFV_C1_GROUP_SANA) {
+            /* ★ D8 ✓：★ 早苗用 5° 表（72 向 ✓）⇒ 15° 交错不再被量化成 10° ✓。*/
+            int i5 = (int)(r->ang * (72.0f / 6.2831853f) + 72.5f) % 72;
+            c3_dir5(i5, &s_c1_vx[t], &s_c1_vy[t]);
+        } else {
+            s_c1_vx[t] = s_c2_dir36[di][0];      /* ★ 单位方向（速度另存 ⇒ 两段运动只改标量 ✓）*/
+            s_c1_vy[t] = s_c2_dir36[di][1];
+        }
         s_c1_spd[t] = r->spd;                 /* ★ 一手：初始速度来自弹表（灵梦 14 ✓）*/
         s_c1_rot[t] = 0.0f;                   /* ★ 自转从 0 起 ✓ */
         s_c1_ang[t] = r->ang;                /* ★ 运动方向（一手朝运动方向 rotate ✓）*/
