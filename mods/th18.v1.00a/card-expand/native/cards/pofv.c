@@ -2388,8 +2388,10 @@ static void pofv_c2_tick(uint32_t id)
                 ce_anm_set_scale((uint32_t)s_c2.orb_vm[i], 1.0f, 1.0f);   /* ★ 一手 126×126 原尺寸 ✓ */
                 /* ★★ 2026-10-11 owner 实跑：「它**得转**」✗ ⇒ ★ 这 3 台要**跟着环绕角自转** ✓
                  *   （一手 tick 里那 3 点的角就是 θ / θ+120 / θ+240 ✓，整体 +10°/帧 ✓）。*/
-                ce_anm_set_rotation((uint32_t)s_c2.orb_vm[i], 0.0f, 0.0f,
-                                    (float)di_ang * (6.2831853f / 36.0f));
+                /* ★ C2-⑤（C2 审计 42acbab9 ✓）：★ 一手**没有**这处父级 rotation ✗ ——
+                 *   ★ 一手转动来自 `pl00.anm` script23/25/27 的**子级** `rotate(%RANDRAD)+angleVel(...)` ✓，
+                 *   ★ 而卡的 436/438/440 **已经照抄** ✓ ⇒ ★ 这里再写 = **双倍自转** ✗ ⇒ **删掉本次写入** ✓。*/
+                (void)0;
             }
             if (s_c2.age % POFV_C2_POINT_HIT_EVERY == 0)            /* 每 5 帧一个伤害源 ✓ */
                 (void)storm_hit_clipped(pos[0], pos[1], POFV_C2_POINT_HIT_R, POFV_C2_POINT_HIT_DMG);
