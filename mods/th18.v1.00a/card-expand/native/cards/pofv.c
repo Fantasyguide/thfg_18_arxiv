@@ -2581,14 +2581,21 @@ static void pofv_ca_ring_tick(void)
             ce_log("pofv: [CA_RING] kind=%d r=%.1f 消掉 %d 颗（一手：逐帧点测试 ✓）",
                    s_ca_ring.kind, (double)s_ca_ring.r, n);
         if (!s_ca_ring.vm) {
-            const uint32_t id = ce_anm_spawn(CE_ABILITY_ANM(),
-                                CE_ANM_ABILITY_SCRIPT_POFV109_C_RING_ARC, 6);
+            /* ★ 2026-10-12：★ 改成**按档选一手环脚本** ✓ —— 450/451/452 =
+             *   TH09 `etama.anm` **script91/92/93** 的等效 ✓（一手正文见各脚本头注释 ✓）。
+             *   ★ 半径动画**交给脚本** ✓（一手如此 ✓）⇒ ★ 卡侧**不再写 `scale`** ✗
+             *   （否则会盖掉脚本的 `scaleTime` ✗）⇒ ★ 也一并收掉了 432 头注释里那条「**有意不同 ②**」✓：
+             *     ★ 一手的画面是"起点 16 → 终点"的**固定动画** ✓，★ 与卡侧的**判定半径**（`r += dr` ✓）
+             *     只对齐**终点**、过程不等 ✓ —— ★ 现在本卡也是这个语义了 ✓（= 一手 ✓）。
+             *   ⚠ 故 ★ 视觉**不再**逐帧贴住判定圈 ✗（这是**一手的语义** ✓，不是缺陷 ✓）。*/
+            const uint32_t sid = (s_ca_ring.kind == 2) ? CE_ANM_ABILITY_SCRIPT_POFV109_CA_RING_L1
+                               : (s_ca_ring.kind == 3) ? CE_ANM_ABILITY_SCRIPT_POFV109_CA_RING_L2
+                                                       : CE_ANM_ABILITY_SCRIPT_POFV109_CA_RING_L3;
+            const uint32_t id = ce_anm_spawn(CE_ABILITY_ANM(), sid, 6);
             if (id) s_ca_ring.vm = (int32_t)id;
         }
-        if (s_ca_ring.vm) {
+        if (s_ca_ring.vm)
             vm_set_world_pos((uint32_t)s_ca_ring.vm, s_ca_ring.x, s_ca_ring.y);   /* ★ 锚在圆心 ✓ */
-            ce_anm_set_scale((uint32_t)s_ca_ring.vm, POFV_C2_RING_BAND_W, s_ca_ring.r);
-        }
     }
     s_ca_ring.r += s_ca_ring.dr;                 /* ★ 一手 `fadd [eax+0x8]` ✓ 线性 ✓ */
     if (--s_ca_ring.life <= 0) pofv_ca_ring_clear();   /* ★ 一手 `dec [eax+0x24]` ✓ */

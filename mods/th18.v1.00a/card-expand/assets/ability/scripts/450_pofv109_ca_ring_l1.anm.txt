@@ -1,0 +1,40 @@
+script script450 {
+    // 109 · **TH09 一手 CA 消弹环 L1（终点 192）** —— ★ 一手配方逐字抽出（TH09 v1.50a `etama.anm` **script91** ✓，
+    //   抽出命令见 `engine/card/th09/01-pofv-charge-and-cancel-fields.md` §6 ✓）：
+    //     `sprite(sprite224); blendAdditiveSet(1); posMode(1); alpha(0); alphaTime(20,0,255);
+    //      iset($I0,64); iset($I1,5); scale(24.0,24.0); scaleTime(32,0,16.0,16.0);
+    //      pos(16.0,0,0); rotate(0,0,%RANDRAD); posTime(48,0,192.0,0,0);
+    //      +38: alphaTime(10,0,0); +10: delete();`
+    //   ★ 判定侧（同文档 §1.4 ✓）：`r₀ 0 / dr 4.0 / 寿命 48 ⇒ 终点 192` ✓。
+    //
+    // ★★ TH18 侧的**等效**（★ 有意不同，已登记 TUNING ❓）：
+    //   · 一手的半径走 `posMode(1)` + `pos(16) → posTime(48,0,192)`（**极坐标位移** ✓）——
+    //     ★ 但 **v8（TH18）的 opcode map 里没有 `posMode`** ✗（只有 v0/v2 有 ✓，见 `mapfile/v8.anmm` ✓）
+    //     ⇒ ★ TH18 侧改用 `texArcEven` 的 **`scale.y` = 半径** ✓（本卡 432 既有用法 ✓）
+    //     ⇒ `scale(1.0, 16.0)` → `scaleTime(48, 0, 1.0, 192.0)` ✓
+    //       （★ 起点 16 与一手 `pos(16)` 相同 ✓、终点 192 相同 ✓、线性 ✓）。
+    //   · ★ **贴图：只借配方、不借贴图** ✓ —— 一手的 `sprite224` 是 TH09 `etama3.png` 的竖条 ✗
+    //     （本仓没有 ✓），这里仍用本卡自己的条 `@POFV109_C_RING_STRIP` ✓；
+    //     ★ 段数保持 64 段（= 一手 `iset($I0,64)` ✓）。
+    //   · ★ 带宽度：一手 `scaleTime(32,0,16,16)`（24→16 ✓）；本卡贴图宽 16 px 且 `x=1.0` 即 16 px ✓
+    //     ⇒ ★ 这里 x 恒 1.0（不再重复一手那条带宽动画 ✗ ⇒ ❓ 登记 ✓）。
+    sprite(@POFV109_C_RING_STRIP);
+    layer(6);
+    resampleMode(1);
+    blendMode(1);
+    iset($I0, 64);
+    texArcEven($I0);
+    scrollY(0.02f);
+    color(255, 255, 255);
+    alpha(0);
+    alphaTime(20, 0, 255);              // ★ 一手 ✓ 20 帧淡入
+    scale(1.0f, 16.0f);                 // ★ 一手起点半径 16 ✓（x = 带宽度 1.0 = 16 px ✓ / y = 半径 ✓）
+    scaleTime(48, 0, 1.0f, 192.0f);     // ★ 一手 ✓ 48 帧线性长到 192
+    rotate(0.0f, 0.0f, %RANDRAD);       // ★ 一手 ✓ 随机初始角
+    angleVel(0.0f, 0.0f, 0.07853982f);  // ★ 一手 ✓ 4.5°/帧 自转（与 432 同一手出处 ✓）
+    stop();
++38: // 38
+    alphaTime(10, 0, 0);                // ★ 一手 ✓ 末 10 帧淡出
++10: // 48
+    delete();
+}
