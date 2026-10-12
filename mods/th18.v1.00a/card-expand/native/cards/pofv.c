@@ -3756,7 +3756,7 @@ typedef struct {
 } pofv_c4_bullet_t;
 
 static pofv_c4_bullet_t s_c4_b[POFV_C4_MAX_BULLETS];
-static struct { int timer, emitted, dir, live; float base; int eb, ring_vm; } s_c4;
+static struct { int timer, emitted, dir, live, sweep; float base; int eb, ring_vm; } s_c4;   /* sweep: 0 = +2pi 扫描 / 1 = -2pi（③ 顺序）*/
 
 static void pofv_c4_clear(void)
 {
@@ -3767,13 +3767,13 @@ static void pofv_c4_clear(void)
         if (s_c4_b[k].vm) { ce_anm_delete((uint32_t)s_c4_b[k].vm); s_c4_b[k].vm = 0; }
         s_c4_b[k].live = 0; s_c4_b[k].age = 0;
     }
-    s_c4.timer = 0; s_c4.emitted = 0; s_c4.dir = 1; s_c4.live = 0; s_c4.base = 0.0f;
+    s_c4.timer = 0; s_c4.emitted = 0; s_c4.dir = 1; s_c4.live = 0; s_c4.base = 0.0f; s_c4.sweep = 0;
 }
 
 /* ★ 一轮开始（一手：每 60 帧调两次 `_at`，方向 +2π / −2π ✓）*/
 static void pofv_c4_fire(void)
 {
-    s_c4.live = 1; s_c4.timer = 0; s_c4.emitted = 0; s_c4.dir = 1;
+    s_c4.live = 1; s_c4.timer = 0; s_c4.emitted = 0; s_c4.dir = 1; s_c4.sweep = 0;
     s_c4.eb = 0;   /* ★ 一手的 `Ecl_EtBreakLv4`（16/24/32/40/48）从这一帧起 ✓ */
 }
 
@@ -3829,13 +3829,21 @@ static void pofv_c4_tick(void)
     }
     int k;
     if (s_c4.live) {
-        /* ★ 每 2 帧一发；两条扫描同时跑（一手每轮调两次 `_at` ✓）*/
+        /* ★★★ C3/C4 审计 60f3724f ③（高）: 一手那两条 +-2pi 扫描是顺序的 ——
+         *   第一条跑完（内含 ins_23(2) 的节奏、要 return 才轮到第二条）才轮到第二条；
+         *   而卡原来同帧并发（一次两发 => 方向数翻倍、同时铺开）。
+         *   => 改成 本轮先跑 +2pi（13 发），跑满再切 -2pi（13 发）；
+         *   合计 13 x 2 帧 x 2 = 52 帧，在一轮 60 帧之内。
+         *   ❓ 循环那半（一手 if(1) goto）未做 —— 循环到什么时候 证据不足
+         *   （要核一手 ECL 的总体时长）=> 先保持 一轮 60 帧就收（已登记 TUNING）。*/
         if (s_c4.timer % POFV_C4_EMIT_EVERY == 0) {
-            if (s_c4.emitted < POFV_C4_SHOTS_PER_SWEEP) {
-                pofv_c4_emit(+1);
-                pofv_c4_emit(-1);
-            }
+            if (s_c4.emitted < POFV_C4_SHOTS_PER_SWEEP)
+                pofv_c4_emit(s_c4.sweep ? -1 : +1);
             ++s_c4.emitted;
+            if (s_c4.emitted >= POFV_C4_SHOTS_PER_SWEEP) {
+                s_c4.emitted = 0;
+                if (!s_c4.sweep) s_c4.sweep = 1;
+            }
         }
         if (++s_c4.timer >= POFV_C4_WAVE_PERIOD) {
             s_c4.timer = 0; s_c4.emitted = 0; s_c4.live = 0;
