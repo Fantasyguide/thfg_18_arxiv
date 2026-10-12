@@ -2718,7 +2718,9 @@ static float s_c1_vx[POFV_C1_SHOTS_PER_GROUP], s_c1_vy[POFV_C1_SHOTS_PER_GROUP];
 static float s_c1_spd[POFV_C1_SHOTS_PER_GROUP];
 /* ★★ 魔理沙 C1 = **原地伸长的光束**（一手 tick `0x54c830` ✓：`shot+0xb0` 每帧 **+12** 伸到 **512**，
  *   `age > 119` 收 ✓）⇒ 卡侧按弹记「类型」与「长度」✓（长度 → `scale.x`，贴图是 256 宽的一片 ✓）。*/
-#define POFV_C1_LEN_STEP   12.0f
+/* ★ D6（C1 审计 d40db02d ✓）：★ 一手 `0x54cb02` 用 `[0x5aa310]` = **18.0** ✓
+ *   ⇒ ★ 伸长步长 12 → **18** ✓（原 12 无出处 ✗）。*/
+#define POFV_C1_LEN_STEP   18.0f
 #define POFV_C1_LEN_MAX   512.0f
 #define POFV_C1_M_END_AGE   120
 static int   s_c1_kind[POFV_C1_SHOTS_PER_GROUP];   /* 0 = 灵梦那种弹 ✓；1 = 魔理沙的光束 ✓ */
@@ -3159,7 +3161,7 @@ static void pofv_c1_tick(void)
                 ce_anm_set_rotation((uint32_t)s_c1_vm[t], 0.0f, 0.0f, -1.5707964f);
             }
             ++s_c1_age[t];
-            if (s_c1_age[t] > POFV_C1_M_END_AGE) {
+            if (s_c1_age[t] >= POFV_C1_M_END_AGE)   /* ★ D7 ✓：一手 `0x54cc5d cmp ,0x78 / jge` ⇒ **age >= 120** ✓（原 > 是 off-by-one ✗）*/ {
                 if (s_c1_vm[t]) { ce_anm_interrupt((uint32_t)s_c1_vm[t], 1); s_c1_vm[t] = 0; }
                 s_c1_live[t] = 0;
             }
