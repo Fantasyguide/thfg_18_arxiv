@@ -3267,7 +3267,14 @@ static void pofv_c1_tick(void)
         {   /* ★ D5 ✓：★ 逐角色盒（一手 plNN.sht +0x0c/+0x10 ✓）*/
             float hw = POFV_C1_HIT_W_REI, hh = POFV_C1_HIT_H_REI;
             if (s_c1_grp[t] == 1) { hw = POFV_C1_HIT_W_MAR;  hh = POFV_C1_HIT_H_MAR; }
-            else if (s_c1_grp[t] == 2) { hw = POFV_C1_HIT_W_SANA; hh = POFV_C1_HIT_H_SANA; }
+            else if (s_c1_grp[t] == 2) {
+                /* ★ D5 补：★ 早苗这一组**跨两套表** ✓ —— ★ set10（蛇）的盒是 **8×48** ✓、
+                 *   ★ 而 set11（**青蛙**）那行是 **24×24** ✓（★ 我直接读一手 `pl02.sht` 得 ✓：
+                 *   ★ set10 `0x41000000/0x42400000` = 8/48 ✓；★ set11 `0x41C00000` 两侧 = 24/24 ✓）
+                 *   ⇒ ★ 按 `s_c1_set_sel` 分流 ✓（★ 1 = set11 = 青蛙 ✓）。*/
+                if (s_c1_set_sel) { hw = 24.0f; hh = 24.0f; }
+                else { hw = POFV_C1_HIT_W_SANA; hh = POFV_C1_HIT_H_SANA; }
+            }
             ce_damage_rect(pos, 0.0f, POFV_C1_HIT_LIFE, (float)s_c1_dmg_ov[t], hw, hh);
         }
     }
