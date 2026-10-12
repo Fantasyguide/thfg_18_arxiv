@@ -1142,6 +1142,10 @@ static int32_t  s_spirit_ex[POFV_SPIRIT_MAX];
  *   半径 `= clamp(S+0x8c, 0, 200) × K / 100` ✓。本卡**无蓄力槽** ⇒ 取等效蓄力值 `S+0x8c = 125`
  *   （一手自己举的例：`@AUN2` 给 `S+0x8c = 125` ✓）⇒ **R = 125 × 64 / 100 = 80.0f** ✓。
  *   ❓ 待 owner：是否改按 TH18 当前角色映射 TH19 各套（Reimu 64 / Marisa 14 / Sanae 128 … ✓）。*/
+/* ★ 2026-10-12 goal ①（spec `engine/versus/th19/11-graze-and-barrier-drop-spec.md` §8.3 ✓）：
+ *   ★ **擦弹圈半径 R1** ✓ —— ★ spec §8.1a 记着一手出现过的半径实参 = **40 / 64 / 128 / 640** ✓
+ *   ⇒ ★ 取最小的 **40** 当擦弹圈 ✓（★ 🟡 待 owner 过眼、**一行可改** ✓；★ 不硬说它是一手定值 ✗）。*/
+#define POFV_GRAZE_R1        40.0f
 #define POFV_AURA_R          80.0f
 /* ★ 魔理沙那套（一手 §7.2：`K = 14.0` ✓、形状 = **竖向带** ✓）⇒ 同样取 `S+0x8c = 125`：
  *   `R = 125 × 14 / 100 = 17.5f` ✓ */
@@ -1352,6 +1356,46 @@ static int pofv_aura_marisa(void) { return pofv_aura_kind() == 1; }   /* 兼容�
 /* ★★★ 2026-10-06 咲夜的判定入口（owner：「**继续接**」✓）：一手 `th09/02:493` 的形状 = **圆 × 扇形** ✓
  *   ⇒ 本卡把「命中判定」收成一个入口：**咲夜走扇形** ✓（`ux/uy` = 方向参考向量 ✓、`half_deg` = 半张角 ✓）、
  *     其余角色走各自的形状（魔理沙 = 竖带 ✓ / 灵梦·早苗 = 圆 ✓），`pad` 一律由调用方给（§9.15 ✓）。*/
+/* ★★★★★ 2026-10-12 goal ① 主任务：★ **擦弹掉落** ✓（spec §8.3 ✓ —— ★ "一套共享规则 + 两个触发源" ✓）：
+ *   ★ owner 口径：★ **普通擦弹也掉灵力道具** ✓（★ 且认为"一手只结界掉"那处**核错了** ✗；spec 自己也标 🟡 未钉死 ✓
+ *     ⇒ ★ 按 METHOD.md「有无/性质类 ⇒ **表现即一手**」以**表现**为准 ✓）。
+ *   ★ 去重 = ★ **复用现成闩锁 `s_aura_bullet_done[]`** ✓ —— ★ 它**只管"掉道具"** ✓；★ 结界染色
+ *     （`pofv_aura_tint_tick`）**完全不看它** ✓ ⇒ ★ 接线安全 ✓；★ 而**两边共用** ⇒ ★ 同一颗弹
+ *     「**擦弹 / 结界**」**只掉一次** ✓ = owner 明确要的"**不重复计数**" ✓。
+ *   ★ 分工（spec §8.3 第 3 条 ✓）：★ **已在结界圈内**的弹**归结界那条** ✓（这里 `continue` ✓）；
+ *     ★ 本函数只管**擦弹圈** ✓。
+ *   ★ **只做"产生灵力道具"这一件事** ✓ —— ★ 不推进连击、不算擦弹点、不进别的账 ✓（owner ✓）。*/
+static int pofv_aura_hit_here(float dx, float dy, float pad);   /* ★ 前置声明（本函数定义在后面 ✓）*/
+
+static void pofv_graze_scan_drop(void)
+{
+    uint8_t *bm = CE_BULLET_MGR();
+    const float *pp = ce_player_pos();
+    uint32_t i;
+    if (!bm || !pp) return;
+    for (i = 0; i < CE_BM_BULLET_COUNT; ++i) {
+        uint8_t *b = bm + CE_BM_BULLETS + (size_t)i * CE_BULLET_STRIDE;
+        uint16_t state = *(const uint16_t *)(b + CE_BULLET_STATE);
+        float br, bx, by, dx, dy;
+        if (state == 0) { s_aura_bullet_done[i] = 0; continue; }   /* ★ 空槽清闩锁 ✓（与 aura 扫描同款 ✓）*/
+        if (s_aura_bullet_done[i]) continue;                        /* ★ 这颗弹已经掉过了 ✓ */
+        br = *(const float *)(b + POFV_BULLET_RADIUS_OFF);
+        if (!(br > 0.0f)) continue;                                 /* 半径 0 的哨兵弹种：不算 ✓ */
+        bx = *(const float *)(b + CE_BULLET_POS);
+        by = *(const float *)(b + CE_BULLET_POS + 4);
+        dx = bx - pp[0]; dy = by - pp[1];
+        if (!(dx * dx + dy * dy <= POFV_GRAZE_R1 * POFV_GRAZE_R1)) continue;   /* ★ 擦弹圈 R1 ✓ */
+        if (pofv_aura_hit_here(dx, dy, br)) continue;                          /* ★ 在结界内 ⇒ 归结界 ✓ */
+        s_aura_bullet_done[i] = 1;
+        {
+            float gx[1], gy[1]; int32_t gpts = 0;
+            gx[0] = bx; gy[0] = by;
+            pofv_power_spawn_packed_at(&s_power, gx, gy, 1, POFV_POWER_PTS_AURA, 1,
+                                       POFV_POWER_SRC_AURA, &gpts);
+        }
+    }
+}
+
 static int pofv_aura_hit_here(float dx, float dy, float pad)
 {
     if (s_aura_kind == 2)
@@ -7029,6 +7073,9 @@ static int on_tick_2(ce_card_t *c)
             }
         }
     }
+
+    /* ★ goal ①：★ **擦弹掉落** ✓（每帧扫一次 ✓；与结界共用闩锁 ⇒ 只掉一次 ✓）*/
+    pofv_graze_scan_drop();
 
     /* ★★ 灵力道具推进（口径 5）：待发射 / 飞散 / 飘落 / 回收线 / 吸引 / 收取。
      *   **回收线** = 现读 SDK 的 live 字段（`ce_poc_height_semantic()` —— SDK 纪律：我们自己的
