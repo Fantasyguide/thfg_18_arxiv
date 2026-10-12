@@ -2372,7 +2372,8 @@ static void pofv_c2_tick(uint32_t id)
     /* ① 通用层 `Ecl_EtBreakLv2`（一手 ✓）：4 帧、半径 8/12/16/20、中心 = 自机 ✓ */
     /* ★ 2026-10-12 清掉我两次尝试的留痕 ✓（见 TUNING 第 5 轮 ✓）：★ 这个闸管的是
      *   **通用 4 帧消弹环** ✓（`Ecl_EtBreakLv2` ✓，半径 8/12/16/20 ✓、中心 = 自机 ✓），
-     *   ★ **不是 orb** ✗ —— ★ orb 的闸在下面**单列** ✓（`POFV_C2_ORB_END` = 105 帧 ✓）。
+     *   ★ **不是 orb** ✗ —— ★ orb 的闸在下面**单列** ✓（`POFV_C2_ORB_END` = **60 帧** ✓；★ 审计 R11 ✓
+     *   更正：这里原写"105 帧" ✗ 是旧值 ✓）。
      *   ⚠ ★ 两者**不要混** ✗：★ 我一度想放开这个闸 ⇒ ★ 会让环**一直长** ✗（已回滚 ✓）。*/
     if (s_c2.age < POFV_C2_GEN_FRAMES) {
         float pos[3];
@@ -2380,7 +2381,8 @@ static void pofv_c2_tick(uint32_t id)
         (void)c2_cancel_drop(pos, POFV_C2_GEN_R0 + POFV_C2_GEN_STEP * (float)s_c2.age);
     }
 
-    if (s_c2.age < POFV_C2_ORB_END) {   /* ★ C2-⑤ 后半 ✓：摆到 105 ✓（一手 ✓）*/
+    if (s_c2.age < POFV_C2_ORB_END) {   /* ★ C2-⑤ 后半 ✓：orb 摆到 **60** ✓（一手 = 管家/434 的 `+60` ✓；
+                                         *   ★ 审计 R11 ✓ 更正：原写"摆到 105" ✗ 是旧值 ✓）*/
         /* ② 灵梦槽 4 · 帧 0–44：3 个环绕点（0°/120°/240°、整体 +10°/帧、环绕半径 0→64 / 22 帧）*/
         int i;
         float f = (float)s_c2.age / POFV_C2_ORBIT_FRAMES;
@@ -4142,13 +4144,9 @@ static void pofv_c4_emit(int dir)
     ang += 3.14159265f;                          /* ★ 翻 180° ✓（朝对面打、不朝我 ✓）*/
     s_c4_b[k].ang = ang;
     s_c4_b[k].spd = POFV_C4_SPEED;
-    {
-        int a5 = (int)(ang * (36.0f / 6.2831853f)) % 36;
-        if (a5 < 0) a5 += 36;
-        (void)a5;
-        /* ★ 2026-10-13：★ **不再把位置写回 `(0,128)`** ✗ —— ★ 那是 **boss 本地坐标** ✓（= 没翻 ✗），
-         *   ★ 会把上面刚写好的"**中心 = 自机位置**"整个盖掉 ✗ ⇒ ★ 删掉那两句位置写 ✓。*/
-    }
+    /* ★ 2026-10-13（★ 独立审计 `48e1d2c8` **R12** ✓）：★ 这里原来有个 `{ int a5 = …; (void)a5; }` 的块 ✗
+     *   —— ★ 它的唯一作用是"算了个 `a5` 却没用" ✓（★ 旧版那两句"把位置写回 `(0,128)`"**早已删掉** ✓，
+     *   见上一提交 ✓）⇒ ★ **整块删除** ✓（★ 纯死码 ✓）。*/
     s_c4_b[k].vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), POFV_C_RING_SCRIPT, POFV_C4_VM_LAYER);
     if (s_c4_b[k].vm) {
         ce_anm_set_color((uint32_t)s_c4_b[k].vm, 0xffffffffu);
