@@ -3264,6 +3264,15 @@ static void pofv_c1_tick(void)
 #define POFV_C3_ACCEL_RATE        0.01f    /* ★ 一手 ✓ `0.01f + %B*0.02f`，而 %B ❓= 0.0 */
 #define POFV_C3_ACCEL_FRAMES       600     /* ★ 一手 ✓ `ins_611($A, 0, 4, 600, …)` 的 600 */
 #define POFV_C3_BOUNCE_MAX           4     /* ★ 一手 ✓ §10.5「EX_BOUNCE（4 次撞墙）」*/
+/* ★★★ C3/C4 审计 60f3724f ⑪（低）补 ✓：★ 一手灵梦 C3 还有两个 etEx ——
+ *   ① EX_ANGLE_ACCEL（+-2 度/帧，每波 %E 变号，pl00.txt:451-462）
+ *      => 弹的 方向 每帧转 +-2 度（用常量 cos/sin，不做运行时三角；符号取本波奇偶 = s_c3.parity）。
+ *      时长一手没给 => ❓ 先按 整条寿命都转。
+ *   ② EX_INVULN(240) => 放 C3 时给 240 帧无敌（走 SDK 声明层、与 C2 那 40 帧同一套写法：
+ *      逐帧声明剩余帧数 + 递减；绝不每帧重报一个大值）。*/
+#define POFV_C3_ANGACCEL_COS   0.99939083f
+#define POFV_C3_ANGACCEL_SIN   0.03489950f
+#define POFV_C3_INVULN           240
 #define POFV_C3_BULLET_LIFE        600     /* ❓⑥：兜底寿命（= 加速时长）*/
 #define POFV_C3_HIT_DMG             14     /* ❓②：借 C1 的一手口径（灵梦主炮 14）*/
 #define POFV_C3_HIT_LIFE             2     /* 同 C1：伤害源每帧按当前位置重发 ⇒ life 2 */
@@ -3321,6 +3330,7 @@ typedef struct {
     int wait;       /* 距下一波的剩余帧（0 = 本帧发）*/
     int parity;     /* 波奇偶（近似一手 `etSprite(46)/(47)`，见 ❓⑤）*/
     int     eb, ring_vm;   /* ★ 一手 `Ecl_EtBreakLv3` 的步进 / 范围圈句柄 ✓ */
+    int invuln;      /* ★ ⑪ ✓：无敌剩余帧（一手 EX_INVULN(240)）*/
 } pofv_c3_t;
 static pofv_c3_t s_c3;
 
@@ -3334,6 +3344,8 @@ static void pofv_c3_clear(void)
         s_c3_b[k].live = 0; s_c3_b[k].age = 0; s_c3_b[k].bounces = 0;
     }
     s_c3.active = 0; s_c3.level = 0; s_c3.wave = 0; s_c3.wait = 0; s_c3.parity = 0;
+    s_c3.invuln = 0;
+    ce_invuln_request(POFV_CARD_ID, 0);
 }
 
 /* 发一波：★ 一手 = 同一帧把 `$C` 颗按 `2π·i/$C + %F` 全放出去（环），每颗**一颗一发** ✓。
@@ -3378,6 +3390,7 @@ static void pofv_c3_fire(void)
     s_c3.active = 1;
     /* ★ ⑩ ✓: 档位接 s_c3_lv_n（初值 = 难度常数、每次 C3 +1）。*/
     s_c3.level = (s_c3_lv_n < 0) ? 0 : ((s_c3_lv_n > 7) ? 7 : s_c3_lv_n);
+    s_c3.invuln = POFV_C3_INVULN;   /* ★ ⑪ ✓：一手 EX_INVULN(240) */
     if (s_c3.level < 0) s_c3.level = 0;
     if (s_c3.level > 7) s_c3.level = 7;
     s_c3.wave = 0;
@@ -3390,6 +3403,9 @@ static void pofv_c3_fire(void)
  * ⚠ **不依赖结界键电平** ✓；波发完（`active=0`）后**已飞的弹要继续走完** ⇒ 不能在这里 early-return ✗。*/
 static void pofv_c3_tick(void)
 {
+    /* ★ ⑪ ✓：无敌声明（逐帧报剩余帧数 + 递减；与 C2 同款）。*/
+    if (s_c3.invuln > 0) { ce_invuln_request(POFV_CARD_ID, s_c3.invuln); --s_c3.invuln; }
+    else ce_invuln_request(POFV_CARD_ID, 0);
     /* ★★ 一手 `Ecl_EtBreak`（§5.1 ✓）：**每帧一档**、共 POFV_EB_LV3_FRAMES 帧 ⇒ 消弹 + 撒道具 + 范围圈 ✓
      *   （★ 留本侧 ✓ —— 一手这一档会送对侧，本作是"我方场地"⇒ 不翻 ✓）。*/
     /* ★ C3/C4 审计 60f3724f ⑧ ✓：★ 一手 Lv3 = **16/24/32 三帧** ✗ ⇒ `eb` 应为 0..2 ⇒
@@ -3435,6 +3451,14 @@ static void pofv_c3_tick(void)
         ++b->age;
         /* ★ 一手 ✓ `EX_ACCEL`（600 帧）：**只改速率、不改方向**（⇒ 不必重算三角 ✓）。
          *   速率 = `0.01f + %B*0.02f`（%B ❓= 0.0）⇒ 每帧 +0.01 ✓。*/
+        /* ★ ⑪ ✓ EX_ANGLE_ACCEL：方向每帧转 +-2 度（符号 = 本波奇偶）。*/
+        {
+            const float sg = s_c3.parity ? POFV_C3_ANGACCEL_SIN : -POFV_C3_ANGACCEL_SIN;
+            const float cC = POFV_C3_ANGACCEL_COS;
+            const float ndx = b->dx * cC - b->dy * sg;
+            const float ndy = b->dx * sg + b->dy * cC;
+            b->dx = ndx; b->dy = ndy;
+        }
         if (b->age <= POFV_C3_ACCEL_FRAMES) b->spd += POFV_C3_ACCEL_RATE;
         b->x += b->dx * b->spd;
         b->y += b->dy * b->spd;
