@@ -3582,7 +3582,11 @@ static void c3_fire_wave(void)
 {
     const float *p = ce_player_pos();
     const int n = (int)s_c3_count[s_c3.level];
-    const int base5 = (int)(ce_rand() % 72u);          /* ★ 一手 ✓ 基准角 `%F`（本卡量化到 5° 网格 ❓）*/
+    /* ★★★★★ 2026-10-13 **owner 模型「翻转 180°」** ✓（模型与四条自检 = `HANDOFF-VERSUS-TO-SINGLE-MODEL.md` ✓）：
+     *   ★ C3 的弹在对面是"**从那个 boss 本体朝我扇开**" ✓ ⇒ ★ 拉回本侧后中心 = **我自机** ✓
+     *   （见下面生成处的 `b->x/b->y` ✓）；★ 而它**不能成为我的敌人** ✗ ⇒ ★ 整个扇形 **+180°** ✓
+     *   （★ 本卡量化到 5° 网、72 格 ⇒ **+36 格 = +180°** ✓）。*/
+    const int base5 = ((int)(ce_rand() % 72u) + 36) % 72;   /* ★ 一手基准角 ✓ + 模型翻转 +180° ✓ */          /* ★ 一手 ✓ 基准角 `%F`（本卡量化到 5° 网格 ❓）*/
     const float scale = (s_c3.parity & 1) ? POFV_C3_VM_SCALE_ODD : POFV_C3_VM_SCALE_EVEN;
     int i;
     if (!p) return;
@@ -3599,8 +3603,13 @@ static void c3_fire_wave(void)
          *   （ECL-info 口径 ✓）⇒ ★ 载体/环心固定在 **(0, 128)** ✓，★ **不跟自机** ✗。
          *   ★ 原来写成"自机上方 128" ✗ —— ★ 而同卡 C4（`s_c4_b[k].x=0; y=128` ✓）与魔理沙 C3
          *   （`y=448` 绝对 ✓）都用**绝对** ⇒ ★ 本处自相矛盾 ✓ ⇒ 改绝对 ✓。*/
-        b->x = 0.0f;
-        b->y = 128.0f;
+        /* ★ 2026-10-13 模型：★ 发弹中心 = **我自机的位置** ✓
+         *   （★ 一手写的是 boss 本体 `(0, 128)` ✗ —— ★ 直接照搬就是"**没翻**" ✓，也就是你看到的那版 ✗）。*/
+        {
+            const float *pp3 = ce_player_pos();
+            b->x = pp3 ? pp3[0] : 0.0f;
+            b->y = pp3 ? pp3[1] : 128.0f;
+        }
         b->spd = POFV_C3_SPEED;
         b->age = 0; b->bounces = 0; b->live = 1;
         b->vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_POFV109_STORM, POFV_C3_VM_LAYER);
