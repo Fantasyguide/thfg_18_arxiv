@@ -2970,19 +2970,20 @@ static int pofv_native_set_active(void);
 
 static void pofv_c1_fire(void)
 {
-    /* ★ goal ① ✓：★ 认领了原生 set ⇒ 手写那套**停手** ✓（同一个判据 ✓ ⇒ 绝不双份 ✓）。*/
-    if (pofv_native_set_active()) return;
     const int grp = (s_aura_kind == 1) ? POFV_C1_GROUP_MARISA
                   : (s_aura_kind == 3) ? POFV_C1_GROUP_SANA
                   : POFV_C1_GROUP_REI;
-    s_c1_win_left = 0; s_c1_win_age = 0; s_c1_sanae_half = 0;
-    if (grp == POFV_C1_GROUP_SANA) {
-        pofv_c1_fire_range(grp, 0, 13);          /* ★ t=0：行 0–12 ✓ */
-        s_c1_win_left = 30;                       /* ★ 一手 ✓ 早苗窗口 30 帧 */
-    } else {
-        pofv_c1_fire_range(grp, 0, s_c1_rows[grp]);   /* ★ 灵梦 4 行一次 / 魔理沙 1 行一次 ✓ */
-        s_c1_win_left = (grp == POFV_C1_GROUP_MARISA) ? 1 : 21;   /* ★ 一手 ✓ 1 / 21 帧 */
-    }
+    /* ★★★ 2026-10-12 **修"释放那一帧双份"** ✗：★ 原来先 `fire_range` 再置 `s_c1_win_left` ✓
+     *   ⇒ ★ 那么"**只有 C1** 的那次释放"里，★ 早退判据在那一刻还**为假** ✗（窗口还没开 ✓）
+     *   ⇒ ★ **手写先发了一次** ✗，★ 而后引擎查认领时窗口已开 ✗ ⇒ ★ **同帧再发一次** ✗ = 双份 ✓。
+     *   ⇒ ★ 改成：★ **先把窗口开好** ✓（= 认领的前提 ✓），★ **再**判"要不要手写" ✓
+     *   （★ 后面那个早退于是必然命中 ✓ ⇒ 一份都不多发 ✓）。*/
+    s_c1_win_age = 0; s_c1_sanae_half = 0;
+    s_c1_win_left = (grp == POFV_C1_GROUP_SANA) ? 30               /* ★ 一手 ✓ 早苗 30 帧 */
+                  : ((grp == POFV_C1_GROUP_MARISA) ? 1 : 21);      /* ★ 一手 ✓ 1 / 21 帧 */
+    if (pofv_native_set_active()) return;     /* ★ 窗口已开 ⇒ 认领生效 ⇒ 手写停手 ✓（绝不双份 ✓）*/
+    if (grp == POFV_C1_GROUP_SANA) pofv_c1_fire_range(grp, 0, 13);        /* ★ t=0：行 0–12 ✓ */
+    else pofv_c1_fire_range(grp, 0, s_c1_rows[grp]);   /* ★ 灵梦 4 行一次 / 魔理沙 1 行一次 ✓ */
     /* ★★ 一手 ✓ `EX+0xd4`：★ 魔理沙放过 C2 后，**这份 C1 追加两发**（dmg6 / ∓32 / spd0 ✓）。
      *   ★ 用 1、2 号槽（魔理沙自己只占 0 号 ✓）；★ 贴图/脚本同光束 ✓（一手 anm8 ✓）。*/
     if (s_c1_m_set11 && grp == POFV_C1_GROUP_MARISA) {
@@ -7437,7 +7438,12 @@ static int32_t pofv_active_tick(ce_card_t *c, uint32_t elapsed)
 static int pofv_native_set_active(void)
 {
     if (!POFV109_NATIVE_SETS) return 0;
-    if (s_aura_kind != POFV_C1_GROUP_SANA) return 0;      /* ★ 只有早苗那两组 ✓ */
+    /* ★★★★ 2026-10-12 **修一个会让整条路不生效的硬 bug** ✗：★ 我原来写的是
+     *   `s_aura_kind != POFV_C1_GROUP_SANA` ✗ —— ★ 但 `POFV_C1_GROUP_SANA` 是**组号 2** ✓，
+     *   ★ 而早苗的 `s_aura_kind` 是**角色号 3** ✓（★ 分派处写的就是 `s_aura_kind == 3` ✓）
+     *   ⇒ ★ 那个判据**恒假** ✗ ⇒ ★ 认领**从不生效** ✗；★ 而手写那套**已被删** ✗
+     *   ⇒ ★ **早苗 C1/C2 会什么都不出** ✗（★ 正是"松手后不出来"那个症状 ✓）。★ 改成 `3` ✓。*/
+    if (s_aura_kind != 3) return 0;                       /* ★ 3 = 早苗（角色号 ✓，不是组号 ✓）*/
     if (s_c1_set_sel) return 1;                           /* ★ 青蛙窗口（set11）✓ */
     return (s_c1_win_left > 0);                           /* ★ 蛇窗口（set10）✓ */
 }
