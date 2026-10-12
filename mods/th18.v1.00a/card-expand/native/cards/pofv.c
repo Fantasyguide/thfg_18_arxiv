@@ -2431,7 +2431,16 @@ static void pofv_c2_tick(uint32_t id)
             if (s_c2.age % POFV_C2_POINT_HIT_EVERY == 0)            /* 每 5 帧一个伤害源 ✓ */
                 (void)storm_hit_clipped(pos[0], pos[1], POFV_C2_POINT_HIT_R, POFV_C2_POINT_HIT_DMG);
         }
-    } else {
+    }
+    /* ★★★★★ 2026-10-13（★ 独立审计 `48e1d2c8` **R4** ✓）：★ 这一段原来挂在 `age < POFV_C2_ORB_END(60)` 的
+     *   **`else`** 里 ✗ ⇒ ★ 可达条件 = `age >= 60 && age == 45` = **永假** ✗ ⇒ ★ owner 看到的
+     *   「**然后"炸"**，还得有光效」（434 的 `interruptLabel(1)` 分支 ✓）**从来没触发过** ✗；
+     *   ★ 且扩张环从 60 才起、★ 半径却按 `(age − 45)/60` 算 ⇒ ★ **跳过 45–59 帧（25%）** ✗ ——
+     *   ★ 这是我上几轮把 `POFV_C2_ORB_END` 从 105 改成 60 时**引入的回归** ✗
+     *   （★ 文件自己的 `:2375` 注释就写着这两闸「**单列、不要混**」✓）。
+     * ⇒ ★ 拆成**两个独立闸** ✓：★ orb（含"回中心"那 15 帧）= `POFV_C2_ORB_END`(60 ✓)；
+     *   ★ 环 + 中断 = ★ **从 `POFV_C2_POINT_END`(45 ✓) 起** ✓。*/
+    if (s_c2.age >= POFV_C2_POINT_END) {
         /* ③ 帧 45–105：单个扩张环 128→192（60 帧线性 ✓）：消弹 + 撒道具 + 覆盖圈的伤害源（dmg 24 ✓）
          *   ⚠ 中心按「自机坐标」实现（一手该支传局部原点 (0,0,0) ⇒ **语义存疑**，见块注释 ⚠存疑 1）*/
         const float r = POFV_C2_RING_R0
