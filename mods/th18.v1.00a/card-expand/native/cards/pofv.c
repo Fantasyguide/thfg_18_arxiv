@@ -4105,8 +4105,9 @@ static void pofv_c4_emit(int dir)
     if (dir >= 0) ang = s_c4.base + 6.2831853f * di;
     else          ang = s_c4.base - 6.2831853f * di;
     /* ★★★★★ 2026-10-13 **按 owner 模型「翻转 180°」** ✓（模型与四条自检 = `HANDOFF-VERSUS-TO-SINGLE-MODEL.md` ✓）：
-     *   ★ 一手 = `pl00.txt` 的 **`Boss00BossCard1`（符卡段 ✓）**：★ `ins_316(0, 0)` = 把**中心**设成
-     *     **boss 的本体原点** ✓；★ 那个 boss = ★ **"我在对面的表现"** ✓
+     *   ★ 一手 = `pl00.txt` 的 **`Boss00BossCard1`（符卡段 ✓）**：★ **弹从 boss 本体出** ✓
+     *     —— ★ 证据 = ★ **一手全篇不用 `etOffset` / `shoot_offset`** ✓（★ 不是 `ins_316` ✗：
+     *     ★ 那个是**切 boss 本体 anm 姿态** ✓，见 `TUNING.md` 的撤回条目 ✓）；★ 那个 boss = ★ **"我在对面的表现"** ✓
      *     （★ 一手出生在对手侧 ✓：`03-sending-and-rules` §1.3「送り込み = 生成侧设成 `1 − 自己`」✓）。
      *   ⇒ ★ **拉回本侧**：★ 它的本体原点 ⇒ ★ **我自机的位置** ✓（★ 原来写死 `(0,128)` ✗ 是 **boss 本地坐标**
      *     ⇒ ★ 就是"**没翻**"那一条 ✓）；★ 且它**不能成为我的敌人** ✗ ⇒ ★ **整体 +180°** ✓（下面 `ang += π` ✓）。
@@ -4137,6 +4138,81 @@ static void pofv_c4_emit(int dir)
 }
 
 /* ★ 每帧：波次机 + 逐发（自转/加速/出屏/寿命）*/
+/* ============ ⑤b C4 —— **早苗**分支：一把"扫动的风扇"（一手 `pl02` `Boss00BossCard1` ✓）============
+ * ★★★★★ 模型（owner 2026-10-13 ✓，全文 = `HANDOFF-VERSUS-TO-SINGLE-MODEL.md` ✓）：
+ *   ★ 一手那套是"**对面那个 boss（= 我在对面的表现）** 朝我打" ✓ ⇒ ★ **拉回本侧 + 整体转 180°** ✓：
+ *   ★ ① 中心 = **我自机的位置** ✓（★ 一手中心是 boss 本体 ✓）；★ ② 方向 **+180°** ✓；
+ *   ★ ③ **版顶反弹、版底出去** ✓ —— ★ 本档**复用 C4 的池与运动** ✓ ⇒ 反弹/加速/绘制/伤害**全部同款** ✓。
+ * ★ 一手出处（`local/th19.v1.10c/_ext/ecl/pl02.txt` ✓；★ 前置换算 agent `87daea23` 的转写 ✓）：
+ *   · ★ 外壳 `Boss00BossCard1`（`:125–176`）：★ **三个发射口** `@…_at(0, 11, 8)`(`:163`) ✓ /
+ *     `(1, 1, 8)`(`:164`) ✓ / ★ `!67` 才 `(2, 18, 1)`(`:166`) ✓ ⇒ ★ 实参 = ★ **（槽号, 弹型, 颜色）** ✓
+ *     （★ `_at` 里就是 `etSprite($A,$B,$C)` `:183` ✓）；
+ *   · ★ `_at(var A,B,C)`（`:178–242`）：★ 弹 = `etNew` / `etAim(,3)` / ★ `etCount(**,1,1**)`（★ **一次一颗** ✓）/
+ *     ★ `etAngle(π/2, **2°**)` ✓ / ★ `etSpeed(**2.0**,1.0)` ✓ + ★ `EX_ANIM` / `EX_OFFSCREEN 120` /
+ *     ★ `EX_ACCEL 120@0.01` ✓（`:181–192` ✓）；
+ *   · ★ `%D`（**发射器**的角 ✓）初值 **π/2** ✓，★ 每帧三分支朝目标靠：★ **±10° 窗 ⇒ 1°/帧** ✓、
+ *     ★ **±2° 死区 ⇒ 2°/帧** ✓（`:200–217` ✓）→ ★ `ins_604($A, %D, 0)` → `ins_601($A)` **发弹** ✓（`:219–220` ✓）；
+ *   · ★ 每轮 wait = ★ **8 档表 `{8,8,6,5,4,3,4,3}` 帧** ✓（`:221–238` ✓，★ **不是发数** ✗）；
+ *     ★ 速度表 `ins_571(%E, 2.0,2.0,2.0,2.4,2.8,3.0,3.0,3.2)` ✓（`:191` ✓）；★ 循环 `$F=100000` ✓。
+ * ★ **模型换算（本卡 ✓）**：★ `%D` 的收敛目标 `π/2`（= 朝下 **朝我** ✗）⇒ ★ 本卡取 **`-π/2`（朝上 = 背对我 ✓）** ✓；
+ *   ★ 初始角（一手 `ins_618 = RANDF2×π/2 − π/2` ∈ [−90°,0°] ✓）★ **+180° 后 ∈ [90°,180°]** ✓（上/侧方 ✓）。
+ * ❓ 未定（★ 不猜 ✓）：★ `ins_618` / `ins_620` / `ins_316` 语义 ✓、★ 8 档 rank ↔ 难度映射 ✓（见 `TUNING.md` ✓）。
+ * ================================================================================================*/
+#define POFV_C4S_STEER_SLOW   0.0174533f   /* ★ 一手 ✓ 1°/帧（±10° 窗 ✓ `0.017453`）*/
+#define POFV_C4S_STEER_FAST   0.0349066f   /* ★ 一手 ✓ 2°/帧（±2° 死区 ✓ `0.034907`）*/
+#define POFV_C4S_WIN_WIDE     0.1745329f   /* ★ 一手 ✓ ±10°（`0.17453292`）*/
+#define POFV_C4S_WIN_TIGHT    0.0349066f   /* ★ 一手 ✓ ±2°（`0.034906585`）*/
+static const int   s_c4s_wait_tab[8] = { 8, 8, 6, 5, 4, 3, 4, 3 };   /* ★ 一手 ✓ 8 档 wait（帧 ✓）*/
+static const float s_c4s_spd_tab[8]  = { 2.0f, 2.0f, 2.0f, 2.4f, 2.8f, 3.0f, 3.0f, 3.2f };  /* ★ 一手 ✓ `ins_571` ✓ */
+static struct { int active, timer, wait; float aim, tgt; } s_c4s;
+
+static void pofv_c4s_emit(float ang, float spd)
+{
+    int k;
+    for (k = 0; k < POFV_C4_MAX_BULLETS; ++k) if (!s_c4_b[k].live) break;
+    if (k >= POFV_C4_MAX_BULLETS) return;
+    {
+        const float *pp = ce_player_pos();
+        s_c4_b[k].x = pp ? pp[0] : 0.0f;      /* ★ 中心 = 自机位置 ✓（模型 ① ✓）*/
+        s_c4_b[k].y = pp ? pp[1] : 128.0f;
+    }
+    s_c4_b[k].live = 1; s_c4_b[k].age = 0; s_c4_b[k].bounced = 0;
+    s_c4_b[k].ang = ang; s_c4_b[k].spd = spd;
+    s_c4_b[k].vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), POFV_C_RING_SCRIPT, POFV_C4_VM_LAYER);
+    if (s_c4_b[k].vm) {
+        ce_anm_set_color((uint32_t)s_c4_b[k].vm, 0xffffffffu);
+        ce_anm_set_scale((uint32_t)s_c4_b[k].vm, 0.5f, 0.5f);
+    }
+}
+
+static void pofv_c4s_fire(void)
+{
+    s_c4s.active = 1;
+    s_c4s.timer = -POFV_C4_PRE_WAIT;                 /* ★ 一手 ✓ `ins_23(60)`：先等 60 帧再发 ✓ */
+    s_c4s.wait  = s_c4s_wait_tab[pofv_c4_rank()];    /* ★ 一手 ✓ 8 档 wait ✓ */
+    s_c4s.tgt   = -1.5707963f;                       /* ★ 目标角 −π/2 = **朝上（背对我）** ✓（模型 ④ ✓）*/
+    s_c4s.aim   = 1.5707963f + 1.5707963f * ((float)(ce_rand() % 1024u) / 1024.0f);  /* ★ 一手 ✓ 初始角 [π/2, π] ✓ */
+}
+
+static void pofv_c4s_tick(void)
+{
+    if (!s_c4s.active) return;
+    ++s_c4s.timer;
+    if (s_c4s.timer <= 0) return;                    /* ★ 60 帧预备期 ✓ */
+    {   /* ★ 每帧把**发射器**的角朝 `s_c4s.tgt` 靠 ✓（一手三分支 ✓：±10° 窗 1°/帧 ✓、±2° 死区 2°/帧 ✓）*/
+        const float d  = s_c4s.aim - s_c4s.tgt;
+        const float ad = (d < 0.0f) ? -d : d;
+        const float s  = (ad > POFV_C4S_WIN_TIGHT) ? POFV_C4S_STEER_SLOW : POFV_C4S_STEER_FAST;
+        if (ad > 0.0f) s_c4s.aim += (d > 0.0f) ? -s : s;
+        (void)POFV_C4S_WIN_WIDE;
+    }
+    if (s_c4s.timer % s_c4s.wait == 0) {             /* ★ 每 wait 帧发一颗 ✓（一手 8 档 ✓）*/
+        const float jitter = ((float)(ce_rand() % 201u) - 100.0f) * 0.0002f;   /* ★ 一手 ✓ `etAngle(π/2, 2°)` ⇒ ±2° */
+        pofv_c4s_emit(s_c4s.aim + jitter, s_c4s_spd_tab[pofv_c4_rank()]);     /* ★ 一手 ✓ 8 档速度表 ✓ */
+    }
+    if (s_c4s.timer > 3600) s_c4s.active = 0;        /* ★ 一手是无限循环 ✓；本卡给个上限 ❓ ✓ */
+}
+
 static void pofv_c4_tick(void)
 {
     /* ★★ 一手 `Ecl_EtBreak`（§5.1 ✓）：**每帧一档**、共 POFV_EB_LV4_FRAMES 帧 ⇒ 消弹 + 撒道具 + 范围圈 ✓
@@ -6078,7 +6154,7 @@ static int on_tick_2(ce_card_t *c)
                  *   ★ 最短修法：给她自己的分支 ✓（先与途中一致走 C3S ✓）；
                  *   ★ **正解** = 照一手 `pl02.txt:125` 那**三个 async 发射器** ✓（★ 已登记待做 ✓）。*/
                 if (s_aura_kind == 1) pofv_c4m_fire();
-                else if (s_aura_kind == 3) pofv_c3s_fire();
+                else if (s_aura_kind == 3) pofv_c4s_fire();   /* ★ 2026-10-13：★ 早苗 C4 由"借 C3S 占位"改成**自己的 C4S** ✓ */
                 else pofv_c4_fire();
             }
             /* ★★★★★ 2026-10-12 **TH09 一手：CA 消弹环**（锚定场 ✓ —— 见 `s_ca_ring` 定义处的长注释 ✓）：
@@ -6375,6 +6451,7 @@ static int on_tick_2(ce_card_t *c)
         pofv_c2m_tick();                    /* ★ ② C2 魔理沙：6 条激光 ✓ */
         pofv_c3m_tick();                    /* ★ ⑤ C3 魔理沙：横扫双镜像激光 ✓ */
         pofv_c4m_tick();                    /* ★ ⑤ C4 魔理沙：激光 + 扫射弹 ✓ */
+        pofv_c4s_tick();                    /* ★ ⑤b C4 早苗：扫动的风扇（一手 pl02 ✓ + 模型翻转 ✓）*/
         pofv_c2s_tick();                    /* ★ ② C2 早苗：更慢的 26 发整圈 ✓ */
         pofv_c3s_tick();                    /* ★ ⑤ C3/C4 早苗：交替两侧刷弹 ✓ */
     }
