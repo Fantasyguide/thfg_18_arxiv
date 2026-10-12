@@ -3328,8 +3328,7 @@ static void yk_familiars_tick(yk_card_t *s)
                 }
             }
             /* ★ 敌弹总数（帧间增长 = 「这一帧真的产了弹」）*/
-            {   uint8_t *bm = CE_BULLET_MGR();
-                int32_t bc = 0;   /* ⛔ 订正（engine.h:757/758）：0x7d0 是弹数组**格数**不是活跃弹数 ⇒ 读它恒 0（produced 永假的真因）；真值要扫 bm+0xec 起的数组 */
+            {   int32_t bc = 0;   /* ⛔ 订正（engine.h:757/758）：0x7d0 是弹数组**格数**不是活跃弹数 ⇒ 读它恒 0（produced 永假的真因）；真值要扫 bm+0xec 起的数组 */
                 s_cur_bc_grew = (bc > s_prev_bc) ? 1 : 0;
                 s_cur_bc = bc;
             }
@@ -6912,7 +6911,7 @@ static unsigned yk_deathbomb_tint(void)
 {
     uint8_t *mgr;
     uint8_t *pl = CE_PLAYER();
-    unsigned i, n = 0;
+    unsigned n = 0;                     /* ★ z59：`i` 随全池扫描一起去掉（改走活弹链表）*/
     int want;
 
     if (!pl) {
@@ -6926,9 +6925,16 @@ static unsigned yk_deathbomb_tint(void)
     if (!want) { s_tint_logged = 0; return 0; }
     mgr = CE_BULLET_MGR();
     if (!mgr) return 0;
-    for (i = 0; i < CE_BM_BULLET_COUNT; ++i) {
-        uint8_t *b = mgr + CE_BM_BULLETS + (size_t)i * CE_BULLET_STRIDE;
-        if (*(const uint16_t *)(b + CE_BULLET_STATE) == 0) continue;      /* 空槽（一手语义）*/
+    /* ★★★ 2026-10-12z59（goal「扫描全部敌弹抽离+加速」第 2 步 · 第一张卡）——
+     *   老写法：**扫 2000 槽静态池**（`mgr + CE_BM_BULLETS + i*CE_BULLET_STRIDE`，
+     *   每槽 0xfa0 步长 ⇒ 一次全扫摸 ~8MB ✗），且判据 `state == 0` 只跳空槽
+     *   ⇒ **`state == 5` 的池尾哨兵（假弹，下标 1997–1999）也会被当成弹** ✗
+     *   （实跑对账已坐实：`链表数 ≡ 直方图[1] 数`，差的恰好是 `[5]` 那一个 ✓）。
+     *   新写法：走 **`mgr+0xbc` 活弹链表**（`CE_BULLET_LIVE_FOR_EACH`）⇒
+     *     · 只摸**活弹**（O(活弹) 而不是 O(2000)）✓；
+     *     · 结构上**不可能碰到哨兵** ✓（链表里只有真弹）。
+     *   ⚠ **行为微变**（已登记待 owner 过目）：不再给哨兵染色 ✓（它本来就不是弹）。*/
+    CE_BULLET_LIVE_FOR_EACH(b) {
         yk_tint_mark(b, (uint32_t *)(b + YK_BULLET_VM + CE_ANM_VM_COLOR1));
         ++n;
     }

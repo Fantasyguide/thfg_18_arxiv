@@ -1208,6 +1208,9 @@ void ce_bullet_scan_probe(void)
     int n_list = 0, guard = 0, bad = 0, i;
     unsigned hist[8];
     int idx_first[4];
+    int sp_idx[6], sp_state[6], sp_arr[6], i_sp;
+    unsigned sp_flags[6], sp_vm[6];
+    int n_sp = 0;
     if (++s_tick % 60u) return;                     /* 一秒一次（数组扫描贵：2000×4KB 步长）*/
     mgr = CE_BULLET_MGR();
     if (!mgr) return;
@@ -1236,7 +1239,23 @@ void ce_bullet_scan_probe(void)
         const uint8_t *b = mgr + CE_BM_BULLETS + (size_t)i * CE_BULLET_STRIDE;
         const unsigned st = *(const uint16_t *)(b + CE_BULLET_STATE);
         if (st < 8) ++hist[st];
+        /* ★ z59（第 2 步）：**非 0/1 的槽**（疑似哨兵）逐个打明细 —— 下标、flags(+0x20)、
+         *   index_in_bullet_array(+0x660)、以及它的 VM id：哨兵应当是**位置固定、内容恒定**的假弹 ✓。*/
+        if (st != 0 && st != 1 && n_sp < 6) {
+            sp_idx[n_sp] = i;
+            sp_state[n_sp] = st;
+            sp_flags[n_sp] = *(const uint32_t *)(b + 0x20);
+            sp_arr[n_sp] = *(const int32_t *)(b + CE_BULLET_INDEX_IN_ARRAY);
+            sp_vm[n_sp] = *(const uint32_t *)(b + 0x28);
+            ++n_sp;
+        }
     }
+    if (n_sp) {
+        for (i_sp = 0; i_sp < n_sp; ++i_sp)
+            ce_log("bullet: 非 0/1 槽：下标 %d state=%d flags=0x%x index_in_array=%d vm=0x%x",
+                   sp_idx[i_sp], sp_state[i_sp], sp_flags[i_sp], sp_arr[i_sp], sp_vm[i_sp]);
+    }
+    (void)i_sp;
     ce_log("bullet: 活弹链表 %d 发%s vs 数组非零槽 %u 发 | 状态直方图 "
            "[0]=%u [1]=%u [2]=%u [3]=%u [4]=%u [5]=%u [6]=%u [7]=%u | 链表前 4 发的数组下标 %d %d %d %d",
            n_list, bad ? "（走到坏指针就停 ✗）" : "",
