@@ -20355,3 +20355,32 @@ dict(macro="PL03_GLINT", src="pl03", sid=7, new_sid=31, ...)
 ★ `EXMarisaInf` 槽 4 的 vtable **`0x5a8b8c`** ✓ **只差 `0x118`** ✓ ⇒ ★ **同一族 ExtraAttack 类** ✓
 （★ 说明"那族类"这条线没走错 ✓）。
 ★ **⑨b 副弹幕** ✓：★ owner 定 **「先不做，保持现状」** ✓ ⇒ ★ 从"待办"改为"**按 owner 决定不做**" ✓。
+
+### ★★★★★★ owner 定案：★ **"那就往里编"** —— 把 TH19 一手那两支追加进 `pl03.anm`（2026-10-12）
+
+★ **owner 原话** ✓：★「★ **那就往里编**」✓ + ★「★ **那个所谓 40 的限制已经没了吧**」✓。
+★ **答"40 限制"** ✓：★ 是 ★ **`N_SLOTS_RETAIL = 40`**（零售 `pl0X.sht` 只有 40 格 ✓）★ —— ★ **已经没了** ✓：
+★ 另一会话把它抬到 **`N_SLOTS = 160`** ✓（★ 提交 `420651ee` ✓），★ 而我方这两格 `0x68`/`0x69` **正是靠它才存在** ✓
+（★ 否则 40 格早就满了 ✓）。
+★ **owner 的抱怨根因（★ 已定 ✓）** ✓：★ 行的 `+0x22`（anm）★ 我指到了 `pl03.anm` 的 **`PL03_SCRIPT_SNAKE`(30) / `PL03_SCRIPT_FROG`(29)** ✓
+—— ★ 那两支脚本**本身是 TH18 早苗的** ✓，★ 但 117 的 `APPEND_PLAN` 条目**把每一个 sprite 都 `smap` 重编号到了新条目** ✓
+（★ `smap目标=[57,62,63,64,65,66]` / `[58,59,60,61]` ✓）★ = **贴图被换成了 117 那批的图** ✗
+⇒ ★ **owner 一眼看出"这是 117 的样式"** ✓✓（★ 脚本是 TH18 的、★ **图是 117 的** ✓）。
+★ **本轮摸清的"怎么编"** ✓（★ 全部读代码得来 ✓）：
+| 事实 | ★ 出处 |
+| --- | --- |
+| ★ plan 条目支持 **`spec_file=<号>`** ✓ = ★ "**正文取自我们自己的脚本**"✓（★ 不走游戏 anm 源 ✓）| ★ `build_player_anm.py:1186/1192` ✓ |
+| ★ 走该路的块由 **`_yk_bullet_block`** 生成 ✓，★ 它只做两件事：★ `@名字@` → 本 entry 的 sprite 号 ✓、★ `scriptN` → 追加号 ✓（★ 不翻译 opcode / 不注入 scale / 不重排 ✓）| ★ `:1226` ✓ |
+| ★ ⚠ **追加脚本号必须连续** ✓ —— 计划里写错一个号 ⇒ ★ `SystemExit`（★ 仓里明写"那是最难查的一类静默错"✓）| ★ `:1189` ✓ |
+| ★ ⚠ **`_yk_bullet_block` 目前只认固定命名** ✓（`<spec_file>_yk_bullet_*.anm.txt` ✓，★ 且会做 pl03 的"妖侧秋黄换色"✓）★ ⇒ ★ 我方要复用它，得**加一个小而通用的分支** ✓（★ 动共享件 ⇒ ★ 必须 `AUDIT.md §BE` 登记 ✓）| ★ `:1233` ✓ |
+| ★ 我们自己的脚本正文现成 ✓：★ `assets/ability/scripts/444_pofv109_c1s_shot.anm.txt` ✓（蛇 ✓ 4 帧 `sprite(@POFV109_C1S_F0..F3)` ✓）、★ `445_…c1s_hit` ✓、★ `448_pofv109_c2s_frog.anm.txt` ✓ | ★ `ls` ✓ |
+| ★ 图也现成 ✓：★ `assets/ability/POFV109_C1S_F0..F3.png` ✓ / `POFV109_C2S_FROG.png` ✓ / `POFV109_C1S_HIT.png` ✓ | ★ `ls` ✓ |
+★ **⇒ 下一轮的施工步骤（★ 已定，不再需要你拍 ✓）**：
+1. ★ 在 `APPEND_PLAN["pl03"]` **末尾**加两条 ✓（`macro="PL03_109_SNAKE"/"PL03_109_FROG"` ✓），
+   `new_sid` = ★ 当前 pl03 追加脚本的**下一个连续号** ✓（由流水线自身断言校对 ✓）；
+2. ★ 给这两条走 `spec_file=` ✓ —— ★ 需要在 `_yk_bullet_block` 旁边加一个**通用版** ✓
+   （★ 按 `spec_file` 找 `assets/ability/scripts/<N>_*.anm.txt` ✓、★ 不做妖侧换色 ✓）；
+3. ★ spawn 的图：★ 用 `player_art_src/<key>.png` ✓ 那套 ✓（★ 缺图会自动回落 ✓，★ `build_player_anm.py:16` ✓）；
+4. ★ 重编 ✓ ⇒ ★ 新宏进 `pl_anm_ids.h` ✓ ⇒ ★ 把两行的 `anm` 从 30/29 改指**新号** ✓；
+5. ★ 回归：★ `python3 assets/check_player_anm_bounds.py` ✓ rc=0 ✓ + ★ `make check` ✓ + ★ **117 的 29/30/31/32/33 不受影响** ✓
+   （★ 只加号 ✓）+ ★ `AUDIT.md §BE` 登记 ✓ + ★ 发布四处同 md5 ✓。
