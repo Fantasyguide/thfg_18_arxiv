@@ -4421,6 +4421,30 @@ static int32_t pofv_spirit_kind_random_animal(void)
     return k3[ce_rand() % 3];
 }
 
+/* ★★★★ 2026-10-11 owner 拍板 ✓（goal ④）：「**应当阻断 Z**，但**仅限有 109 蓄力的时候**」
+ *   —— ★ 一手 TH19「**蓄力期间不能发射**」✓。
+ *   ★ 实现走**本仓现成的钩子** `on_native_shot_suppress` ✓（108/117/trance 都在用 ✓，
+ *     `sdk.c` 的 `BP_ce_shot_set_index` 0x45ebfb 处问它 ✓）⇒ ★ **不动共享层** ✗、★ 不需要 AUDIT §BE ✓，
+ *     且 ★ 这个钩子**只在本卡装备时被问** ✓ ⇒ ★ 天生就是"仅限 109" ✓ = owner 的"仅限"要求 ✓。
+ *   ★ 条件 = ★ **蓄力键按住**（`pofv_charge_key()` = C only ✓）⇒ ★ 按住 C 期间原生射击被抑制 ✓，
+ *     松开立刻恢复 ✓（不做任何常驻改动 ✓）。
+ *   ⚠ ★★ **owner 2026-10-11 追加订正** ✓：「抑制原生射击，**最好是阻断 Z**，因为还会有
+ *     **茫茫多的子机**」✗ ⇒ ★ 只压原生主炮**不够** ✗（子机/装备各自发弹 ✓）⇒ ★ 改成 **阻断 Z** ✓：
+ *     ★ 蓄力期间把**输入块的 Z 位清掉** ✓（`CE_ADDR_INPUT_HELD` `0x4ca428` bit **`0x001`** ✓ =
+ *     ★ **本文件自己的常量 `POFV_INPUT_SHOT`** ✓；同仓同款读法见 `animal.c:2681` ✓）
+ *     ⇒ ★ **引擎与所有子机这一帧都读到"Z 没按"** ✓ ⇒ ★ 谁都不发弹 ✓。
+ *   ★ 时机：写在 `on_tick_2` ✓（★ 本仓已定论：`on_tick_2` **先于** `Player::on_tick` ⇒ **当帧生效** ✓，
+ *     同文件 ~3440 那条注释 ✓）。★ 只清**这一位** ✓、**只在本卡装备且蓄力键按住时** ✓（钩子/本 tick
+ *     都只在本卡装备时跑 ✓）⇒ ★ 对没装 109 的玩家**逐帧零影响** ✓。
+ *   ⚠ 记录一条已知副作用（登记 TUNING ❓）：★ 该输入块也是**录像录制**的来源 ✓ ⇒ ★ 蓄力期间录进去的
+ *     会是"Z 未按" ✓（观感上等价于一手"蓄力期间不能发射" ✓，故可接受 ✓，但**如实记下** ✓）。*/
+static int on_native_shot_suppress(ce_card_t *c) __attribute__((unused));
+static int on_native_shot_suppress(ce_card_t *c)
+{
+    (void)c;
+    return pofv_charge_key() ? 1 : 0;      /* ★ 1 = 抑制原生射击 ✓（一手：蓄力期间不能发射 ✓）*/
+}
+
 static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
 {
     (void)c;
@@ -5628,7 +5652,15 @@ static int on_tick_2(ce_card_t *c)
          *   （旧版挂在结界边沿 ✗ ⇒ 也是那个 Shift bug 的一部分 ✓ 已一并去掉 ✓）。
          *   C3/C4 做好后在这里按 C3/C4 阈值给盾 ✓，或直接调 `pofv_barrier_fire()` ✓。*/
         pofv_c2_tick(POFV_CARD_ID);
-        pofv_barrier_tick();
+        /* ★★★★ 2026-10-11 owner 拍板（goal ④）：「**应当阻断 Z**，但**仅限有 109 蓄力的时候**」
+     *   —— ★「因为原生 th19 就是**蓄力期间不能发射**的」+ ★「会有**茫茫多的子机**」✗ ⇒
+     *   ★ 只压原生主炮不够 ✗ ⇒ ★ 这里**直接清掉输入块的 Z 位** ✓（**bit `0x001`** ✓ = 射击(Z) ✓，`animal.c:2681` 同款读法 ✓；地址 `CE_ADDR_INPUT_HELD = 0x4ca428` ✓）⇒ ★ 引擎与所有子机这帧都读到
+     *   "Z 没按" ✓ ⇒ ★ 一个都不发 ✓。★ 松开 C ⇒ 下一帧立刻恢复 ✓（非粘性 ✓）。
+     *   ★ 时机正确性：`on_tick_2` **先于** `Player::on_tick` ✓（同文件 ~3440 注释 ✓）⇒ **当帧生效** ✓。*/
+    if (pofv_charge_key()) {
+        *(uint32_t *)CE_ADDR_INPUT_HELD &= ~(uint32_t)1u;   /* ★ bit 0x001 = 射击(Z) ✓（`animal.c:2681` 同款 ✓）*/
+    }
+    pofv_barrier_tick();
 
     /* ★★★★ 2026-10-11 **对抗审计 D 的结论已并账** ✓（它证伪/纠正了我三处 ✗）：
      *   ① ★ 「从 `ce_option_x/y` 出膛 = 一手 `class 5`」**证据不足** ✗ —— 一手 `class 5` 读的是
@@ -7072,6 +7104,7 @@ CE_CARD(109, .on_active_tick = pofv_active_tick,
         .on_activate = on_activate,
         .ctor = on_ctor,
         .on_load = on_load,             /* ★ 2026-10-08：认领「灵力 = 蓄力槽」的 HUD 货架块（幂等 ✓）*/
+        .on_native_shot_suppress = on_native_shot_suppress,   /* ★ goal ④ ✓ */
         .on_enemy_death = on_enemy_death,
         .on_tick_2 = on_tick_2,
         .on_draw = on_draw,             /* ★ 2026-10-09：固灵结界碰弹染色（一手 TH19 `0x4f5130`）*/
