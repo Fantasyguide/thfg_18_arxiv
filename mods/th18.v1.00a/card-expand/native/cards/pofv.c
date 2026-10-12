@@ -2812,6 +2812,10 @@ static float s_c1_ang[POFV_C1_SHOTS_PER_GROUP];
 #define POFV_C1_TRAIL_MAX 32
 #define POFV_C1_TRAIL_EVERY 2
 static int s_c1_trail_burst;   /* ★ 本帧已补几台 ✓（安全阀 ✓）*/
+/* ★★ 2026-10-12 自证计数 ✓（D3 结论的佐证 ✓）：★ 一手那套"闪白"**就是每帧残影** ✓（`script10` 的 jmp 循环 ✓）
+ *   ⇒ ★ 本卡由这条 `433` 提供 ✓ ⇒ ★ **它 spawn 成不成功**，决定了 owner 还会不会说"中间没有变白" ✓。
+ *   ★ 每 300 帧打一行 ⇒ ★ 一局就能判：★ `fail > 0` ⇒ VM 池/层出问题 ✗；★ `full > 0` ⇒ 安全阀在压 ✗。*/
+static int s_c1_trail_ok, s_c1_trail_fail, s_c1_trail_full;
 static int32_t s_c1_trail[POFV_C1_TRAIL_MAX];
 static int     s_c1_trail_ttl[POFV_C1_TRAIL_MAX];
 static void pofv_c1_trail_spawn(float x, float y)
@@ -2819,12 +2823,13 @@ static void pofv_c1_trail_spawn(float x, float y)
     pofv_stage_set(14);   /* ★ 残影 spawn ✓ */
     int k;
     for (k = 0; k < POFV_C1_TRAIL_MAX; ++k) if (s_c1_trail_ttl[k] <= 0) break;
-    if (k >= POFV_C1_TRAIL_MAX) return;                 /* ★ 池满 ⇒ 这一帧不放 ✓ */
-    if (s_c1_trail_burst >= 4) return;                  /* ★ 每帧上限 4 台 ✓（安全阀 ✓）*/
+    if (k >= POFV_C1_TRAIL_MAX) { ++s_c1_trail_full; return; }   /* ★ 池满 ⇒ 这一帧不放 ✓ */
+    if (s_c1_trail_burst >= 4) { ++s_c1_trail_full; return; }    /* ★ 每帧上限 4 台 ✓ */
     ++s_c1_trail_burst;
     s_c1_trail[k] = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
                         CE_ANM_ABILITY_SCRIPT_POFV109_C1_TRAIL, POFV_C1_VM_LAYER);
-    if (!s_c1_trail[k]) return;
+    if (!s_c1_trail[k]) { ++s_c1_trail_fail; return; }
+    ++s_c1_trail_ok;
     ce_anm_set_pos((uint32_t)s_c1_trail[k], x, y, 0.0f);
     s_c1_trail_ttl[k] = 22;                             /* ★ 略长于脚本的 20 帧 ✓ */
 }
@@ -2833,6 +2838,8 @@ static void pofv_c1_trail_tick(void)
     pofv_stage_set(15);   /* ★ 残影 tick ✓ */
     int k;
     s_c1_trail_burst = 0;
+    if (!(s_card_frames % 300))   /* ★ 每 300 帧一行 ✓（一局够判 ✓）*/
+        ce_log("pofv: [TRAIL] ok=%d fail=%d full=%d", s_c1_trail_ok, s_c1_trail_fail, s_c1_trail_full);
     for (k = 0; k < POFV_C1_TRAIL_MAX; ++k) {
         if (s_c1_trail_ttl[k] <= 0) continue;
         if (--s_c1_trail_ttl[k] > 0) continue;
