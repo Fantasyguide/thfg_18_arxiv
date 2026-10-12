@@ -1367,6 +1367,16 @@ static int pofv_aura_marisa(void) { return pofv_aura_kind() == 1; }   /* 兼容�
  *   ★ **只做"产生灵力道具"这一件事** ✓ —— ★ 不推进连击、不算擦弹点、不进别的账 ✓（owner ✓）。*/
 static int pofv_aura_hit_here(float dx, float dy, float pad);   /* ★ 前置声明（本函数定义在后面 ✓）*/
 
+/* ★ 2026-10-12 goal ① 第二条（审计 `89c60c46` 标"证据不足"、但确实是个漏 ✓）：
+ *   ★ 原实现**先置闩锁、后生成** ✓ ⇒ ★ **池满**时生成失败而闩锁**已置** ✗ ⇒ ★ 那颗弹**永久不再补** ✓。
+ *   ⇒ ★ 修：★ **池里有空位才置位** ✓；★ 满则这一帧**不置也不掉** ✓ ⇒ ★ 等有空位它仍能掉 ✓。*/
+static int pofv_power_has_room(void)
+{
+    int i;
+    for (i = 0; i < POFV_POWER_MAX; ++i) if (!s_power.s[i].active) return 1;
+    return 0;
+}
+
 static void pofv_graze_scan_drop(void)
 {
     int g_live = 0, g_br_pos = 0, g_in_r1 = 0, g_done = 0;   /* ★ 自证计数 ✓ */
@@ -1391,6 +1401,7 @@ static void pofv_graze_scan_drop(void)
         if (dx * dx + dy * dy <= POFV_GRAZE_R1 * POFV_GRAZE_R1) ++g_in_r1;   /* ★ 在 R1 内计数 ✓ */
         if (!(dx * dx + dy * dy <= POFV_GRAZE_R1 * POFV_GRAZE_R1)) continue;   /* ★ 擦弹圈 R1 ✓ */
         if (pofv_aura_hit_here(dx, dy, br)) continue;                          /* ★ 在结界内 ⇒ 归结界 ✓ */
+        if (!pofv_power_has_room()) continue;       /* ★ 池满 ⇒ **不置位** ✓（以后还能掉 ✓）*/
         s_aura_bullet_done[i] = 1;
         {
             float gx[1], gy[1]; int32_t gpts = 0;
