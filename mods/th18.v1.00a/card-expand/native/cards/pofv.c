@@ -4087,15 +4087,29 @@ static void pofv_c4_emit(int dir)
     di = (float)s_c4.emitted / (float)pofv_c4_d();
     if (dir >= 0) ang = s_c4.base + 6.2831853f * di;
     else          ang = s_c4.base - 6.2831853f * di;
+    /* ★★★★★ 2026-10-13 **按 owner 模型「翻转 180°」** ✓（模型与四条自检 = `HANDOFF-VERSUS-TO-SINGLE-MODEL.md` ✓）：
+     *   ★ 一手 = `pl00.txt` 的 **`Boss00BossCard1`（符卡段 ✓）**：★ `ins_316(0, 0)` = 把**中心**设成
+     *     **boss 的本体原点** ✓；★ 那个 boss = ★ **"我在对面的表现"** ✓
+     *     （★ 一手出生在对手侧 ✓：`03-sending-and-rules` §1.3「送り込み = 生成侧设成 `1 − 自己`」✓）。
+     *   ⇒ ★ **拉回本侧**：★ 它的本体原点 ⇒ ★ **我自机的位置** ✓（★ 原来写死 `(0,128)` ✗ 是 **boss 本地坐标**
+     *     ⇒ ★ 就是"**没翻**"那一条 ✓）；★ 且它**不能成为我的敌人** ✗ ⇒ ★ **整体 +180°** ✓（下面 `ang += π` ✓）。
+     *   ★ 于是：★ 弹从**自机身上**发出、**背对我、朝对面**飞 ✓ —— ★ 自检四条里"**位置**"与"**方向**"两条 ✓；
+     *     ★ "**上下**"那条见 `pofv_c4_tick` 的出屏/反弹处 ✓。*/
+    {
+        const float *pp4 = ce_player_pos();
+        s_c4_b[k].x = pp4 ? pp4[0] : 0.0f;      /* ★ 中心 = 自机位置 ✓（一手：中心 = boss 本体 ✓）*/
+        s_c4_b[k].y = pp4 ? pp4[1] : 128.0f;
+    }
     s_c4_b[k].live = 1; s_c4_b[k].age = 0;
-    s_c4_b[k].x = 0.0f; s_c4_b[k].y = 128.0f;      /* ★ 一手：环心在 (0,128) ✓（`ins_504(0,128,…)`）*/
+    ang += 3.14159265f;                          /* ★ 翻 180° ✓（朝对面打、不朝我 ✓）*/
     s_c4_b[k].ang = ang;
     s_c4_b[k].spd = POFV_C4_SPEED;
     {
         int a5 = (int)(ang * (36.0f / 6.2831853f)) % 36;
         if (a5 < 0) a5 += 36;
-        s_c4_b[k].x = 0.0f; s_c4_b[k].y = 128.0f;
         (void)a5;
+        /* ★ 2026-10-13：★ **不再把位置写回 `(0,128)`** ✗ —— ★ 那是 **boss 本地坐标** ✓（= 没翻 ✗），
+         *   ★ 会把上面刚写好的"**中心 = 自机位置**"整个盖掉 ✗ ⇒ ★ 删掉那两句位置写 ✓。*/
     }
     s_c4_b[k].vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), POFV_C_RING_SCRIPT, POFV_C4_VM_LAYER);
     if (s_c4_b[k].vm) {
