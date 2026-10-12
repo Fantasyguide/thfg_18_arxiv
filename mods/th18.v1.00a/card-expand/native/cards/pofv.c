@@ -5784,20 +5784,17 @@ static int on_tick_2(ce_card_t *c)
             /* 2026-10-11 owner：蓄力到 C2 自动放肯定不对 => 途中一律不发（C2）；改到释放支按松手时的档发。*/
         } else s_c2_lv = 0;
         /* ★ ② C2 —— **早苗**分支（一手 = shot 行 11 = 更慢的 26 发整圈 ✓，见上）*/
-        if (s_aura_charge >= c2_at && s_aura_kind == 3) {
-            if (!s_c2s_lv) { pofv_c2s_fire(); s_c2s_lv = 1; }
-        } else s_c2s_lv = 0;
+        /* ★ D1（C1 审计 d40db02d ✓）：★ 一手只在释放路发射 ✓ ⇒ 这里不再途中发 ✗。*/
+        s_c2s_lv = 0;
         /* ★ ② C2 —— **魔理沙**分支（一手 = 6 条 `EXLaserInf` ✓，见上）*/
-        if (s_aura_charge >= c2_at && s_aura_kind == 1) {
-            if (!s_c2m_lv) { pofv_c2m_fire(); s_c2m_lv = 1; }
-        } else s_c2m_lv = 0;
+        /* ★ D1 ✓：★ 这里原来就是蓄力到 C2 就放六向激光 ✗ 的真身 ⇒ 关掉 ✓。*/
+        s_c2m_lv = 0;
         /* ★ ⑤ C3（ExtraAttack）：★ 按蓄力档（**不是**边沿 ✗ —— 旧 `pofv_aura_rise_edge()` 已被 owner 实跑否掉 ✓）*/
         /* ★ ⑤ C4：一手阈值 = 2500（= `pl00.sht +0x38` ×10 ✓，= 满 ✓）*/
         {
             /* ★ ⑤ C4 —— **魔理沙**分支（一手 = 一条激光 + 一串绕圈扫射弹 ✓，见上）*/
-        if (s_aura_charge >= c4_at && s_aura_kind == 1) {
-            if (!s_c4m_lv) { pofv_c4m_fire(); s_c4m_lv = 1; }
-        } else s_c4m_lv = 0;
+        /* ★ D1 ✓：同 C2 ⇒ 途中不发 ✓。*/
+        s_c4m_lv = 0;
         /* ★ 同上：一手三人的 C4 也不同 ⇒ ★ **只对灵梦** ✓（❓待补）。*/
             if (s_aura_charge >= c4_at && s_aura_kind == 0) {
             /* 2026-10-11 owner：蓄力到 C2 自动放肯定不对 => 途中一律不发（C4）；改到释放支按松手时的档发。*/
