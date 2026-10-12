@@ -678,3 +678,14 @@ if (*(int *)(param_1 + 0x94) < iVar3) {          // 蓄力 < 限制
 **⚠ 三次误诊记录（防复发）**：① "卡侧没写 rotation" ✗；② "缺静态 `rotate(...)` 声明" ✗；
 ③ "卡侧写坐标 ⇒ 引擎拿不到运动向量" ✗（曾写进 `TUNING.md`，已订正 ✓）。
 ⇒ 教训：**渲染模式类指令（`type()`）必须逐条对抄** ✓ —— 漏了以后下游怎么调 API 都白费 ✗。
+
+---
+
+## 19. TH09 的 Z 射击语义（一手，卡侧若要"连打手感"必须自己实现）
+
+⇒ 详见 [`engine/card/th09/04-player-shot-sequences.md`](../../../engine/card/th09/04-player-shot-sequences.md) ✓。
+要点：`th09:0x41f810` 里**普通射击有独立 playhead** `player+0x303a4` ——
+**按下上升沿**：停着（<0）⇒ 归 0 从头播；在跑且 ≥10 ⇒ **回退 10**、≥5 ⇒ **回退 5**（连打续命）；
+**每帧**用 playhead 当 index 调 `0x41f4c0(player, index, 0)` 发一列；playhead **≥15 ⇒ 置 −1（停）**
+⇒ **一次按下 = 约 15 帧一小串** ✓。CA 另有 playhead `player+0x30398`（选择子 1）✓。
+★ TH18 原生 sht 是"按住连发" ✗ ⇒ 要 TH09 手感只能卡侧复刻这套 playhead ✓。
