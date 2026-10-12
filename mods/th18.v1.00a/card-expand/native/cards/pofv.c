@@ -3267,8 +3267,13 @@ static void pofv_c1_tick(void)
 #define POFV_C3_BULLET_LIFE        600     /* ❓⑥：兜底寿命（= 加速时长）*/
 #define POFV_C3_HIT_DMG             14     /* ❓②：借 C1 的一手口径（灵梦主炮 14）*/
 #define POFV_C3_HIT_LIFE             2     /* 同 C1：伤害源每帧按当前位置重发 ⇒ life 2 */
-#define POFV_C3_HIT_W             32.0f    /* 同 C1 ❓自定（一手 `pl00.anm` script10 弹体 30×30）*/
-#define POFV_C3_HIT_H             32.0f
+/* ★★★ C3/C4 审计 60f3724f ⑤（中）✓：★ 原来**同族弹两个盒** ✗ —— ★ C3 用 **32×32** ✓、
+ *   ★ 而 C4 走的是通用 `POFV_C1_HIT_W/H` = **30×30** ✓（见本文件 C4 那处 ✓）。★ 而一手弹体是
+ *   `pl00.anm` script10 的 **30×30** ✓ ⇒ ★ 统一到 **30×30** ✓。
+ *   ❓ ★ **精确值仍是自定** ✓：★ ECL 的弹**不带命中盒字段** ✗ ⇒ ★ "一手这个盒到底多大"
+ *   **证据不足** ✓ ⇒ ★ 只把"同族两值不一致"这条消掉 ✓，★ 数值本身照弹体贴图那一档 ✓。*/
+#define POFV_C3_HIT_W             30.0f
+#define POFV_C3_HIT_H             30.0f
 #define POFV_C3_VM_LAYER             6     /* ❓自定：同 C1/C2/暴风 */
 #define POFV_C3_VM_SCALE_EVEN     0.25f    /* ❓⑤：偶波（一手 `etSprite(46)`）*/
 #define POFV_C3_VM_SCALE_ODD      0.35f    /* ❓⑤：奇波（一手 `etSprite(47)`）*/
