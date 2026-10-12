@@ -482,13 +482,14 @@ static int bullet_in_graze_zone(void)
 
     tint_restore_all();          /* 先把上一帧染过的弹还原 */
 
-    for (i = 0; i < CE_BM_BULLET_COUNT; ++i) {
-        uint8_t *b = mgr + CE_BM_BULLETS + i * CE_BULLET_STRIDE;
+    /* ★★★ 2026-10-12z60（goal「扫描全部敌弹抽离+加速」③）——
+     *   老写法扫 2000 槽（~8MB/次）且判据 `state == 0` 才跳过 ⇒ **`state=5` 池尾哨兵也会被当成弹** ✗；
+     *   改成走 `mgr+0xbc` **活弹链表** ⇒ O(活弹)、结构上只有真弹 ✓。**判据其余一字未动** ✓。*/
+    CE_BULLET_LIVE_FOR_EACH(b) {
         uint32_t flags;
         float br, dx, dy;
         int inside = 0;
 
-        if (*(uint16_t *)(b + CE_BULLET_STATE) == 0) continue;      /* 空槽 */
         flags = *(uint32_t *)(b + CE_BULLET_FLAGS);
         if (!(flags & CE_BULLET_FLAG_COLLIDE)) continue;            /* 不参与碰撞 */
         br = *(float *)(b + CE_BULLET_RADIUS);

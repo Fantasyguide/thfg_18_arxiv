@@ -1200,6 +1200,11 @@ void ce_hud_native_face_dim_tick(void)
  *   ⇒ 本函数**只读**、把两者的活弹数**对上账**，并把**状态直方图**打出来（第 2 步要的一手数据）：
  *     状态直方图正是"什么算有效弹"的原始素材，各卡判据可以据此写对 ✓。
  *   ⚠ 安全：每一步 `IsBadReadPtr`、上限 4096 防环、**不写任何内存** ✓（#272/#278 的教训）。*/
+int ce_ptr_readable(const void *p, unsigned n)
+{
+    return p && !IsBadReadPtr(p, n);
+}
+
 void ce_bullet_scan_probe(void)
 {
     static unsigned s_tick;

@@ -2084,12 +2084,11 @@ static int signal_remilia_ring_want(const uint8_t *pl)
 
     if (!mgr || !pl) return 0;
     focus = *(const int32_t *)(pl + SIGNAL_OFF_PLAYER_FOCUS) != 0;
-    for (k = 0; k <= (unsigned)CE_BM_BULLET_COUNT; ++k) {
-        uint8_t *b = mgr + CE_BM_BULLETS + (size_t)k * CE_BULLET_STRIDE;
-        uint16_t st = *(const uint16_t *)(b + CE_BULLET_STATE);
+    /* ★★★ 2026-10-12z60（goal ③）：老写法 `k = 0..2000`（含 **k=0 的哨兵**）+
+     *   `st == 0/3/4` 才跳过 ⇒ **state=5 的哨兵会被当成弹** ✗ ⇒ 改走活弹链表（只有真弹）✓。*/
+    CE_BULLET_LIVE_FOR_EACH(b) {
         uint32_t flags;
         float br;
-        if (st == 0 || st == 3 || st == 4) continue;
         flags = *(const uint32_t *)(b + CE_BULLET_FLAGS);
         if (!(flags & SIGNAL_BULLET_FLAG_COLLIDE)) continue;
         br = *(const float *)(b + SIGNAL_BULLET_RADIUS);
@@ -2141,14 +2140,13 @@ static void signal_tint_tick(void)
     if (*(const volatile int32_t *)CE_ADDR_CHARACTER != SIGNAL_CHAR_SAKUYA) return;
 
     /* ② 新进圈的弹：记原色 + 染红（已在表里的由①保持，重复写也幂等）*/
-    for (k = 0; k <= (unsigned)CE_BM_BULLET_COUNT && s_tint_n < SIGNAL_REMILIA_TINT_MAX; ++k) {
-        uint8_t *b = mgr + CE_BM_BULLETS + (size_t)k * CE_BULLET_STRIDE;
-        uint16_t st = *(const uint16_t *)(b + CE_BULLET_STATE);
+    /* ★★★ z60：同上一处（哨兵修正）；原来的 `s_tint_n < MAX` 上界改成体首 `break`（等价 ✓）。*/
+    CE_BULLET_LIVE_FOR_EACH(b) {
         uint32_t flags;
         float br;
         int j, dup = 0;
 
-        if (st == 0 || st == 3 || st == 4) continue;
+        if (s_tint_n >= SIGNAL_REMILIA_TINT_MAX) break;
         flags = *(const uint32_t *)(b + CE_BULLET_FLAGS);
         if (!(flags & SIGNAL_BULLET_FLAG_COLLIDE)) continue;
         br = *(const float *)(b + SIGNAL_BULLET_RADIUS);

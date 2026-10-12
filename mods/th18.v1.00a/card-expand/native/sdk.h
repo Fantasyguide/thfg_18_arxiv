@@ -1247,6 +1247,10 @@ void ce_hud_native_face_dim_tick(void);
  * 并打**状态直方图**（各卡判据的一手素材）。详见 `AUDIT.md` §BE #279。*/
 void ce_bullet_scan_probe(void);
 
+/* ★ z60：**可读性检查的 SDK 薄封装** —— 卡文件不引 `<windows.h>`（也不该引 ⇒ 那是平台头），
+ *   所以迭代宏不能直接调 `IsBadReadPtr` ✓。实现见 `sdk.c`（内部就是 `IsBadReadPtr`）。*/
+int ce_ptr_readable(const void *p, unsigned n);
+
 /* ★ z58：**抽离出来的"怎么走"**（判据仍各卡自己写 ✓，owner 口径）——
  *   `CE_BULLET_LIVE_FOR_EACH(b)`：走**活弹链表**（`mgr+0xbc` 哨兵头的 `head.next`，
  *     `node.entry` = `zBullet*`）⇒ **只摸活弹** ✓（O(活弹)）；
@@ -1255,13 +1259,13 @@ void ce_bullet_scan_probe(void);
  *   ⚠ 每一步都过 `IsBadReadPtr`（坏指针即停 ✓）、链表顺序 ≠ 数组顺序（顺序敏感的卡用 POOL ✓）。*/
 #define CE_BULLET_LIVE_FOR_EACH(b)                                                   \
     for (uint8_t *ce_bl_head = (CE_BULLET_MGR() ? (CE_BULLET_MGR() + CE_BM_TICK_LIST_HEAD) : 0), \
-                 *ce_bl_node = ((ce_bl_head && !IsBadReadPtr(ce_bl_head, 16))         \
+                 *ce_bl_node = ((ce_bl_head && !ce_ptr_readable(ce_bl_head, 16))         \
                                     ? *(uint8_t *const *)(ce_bl_head + CE_BULLET_LIST_NEXT) : 0), \
                  *b = 0;                                                             \
              ce_bl_node && ce_bl_node != ce_bl_head &&                               \
-             !IsBadReadPtr(ce_bl_node, 16) &&                                        \
+             !ce_ptr_readable(ce_bl_node, 16) &&                                        \
              ((b) = *(uint8_t *const *)ce_bl_node) != 0 &&                           \
-             !IsBadReadPtr((b), CE_BULLET_STATE + 2);                                \
+             !ce_ptr_readable((b), CE_BULLET_STATE + 2);                                \
          ce_bl_node = *(uint8_t *const *)(ce_bl_node + CE_BULLET_LIST_NEXT))
 
 #define CE_BULLET_POOL_FOR_EACH(b)                                                   \
