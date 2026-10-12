@@ -5701,7 +5701,12 @@ static int on_tick_2(ce_card_t *c)
                 else if (s_aura_kind == 3) pofv_c3s_fire();
                 else pofv_c3_fire();
             } else if (tier_rel >= 4) {
+                /* ★ C3/C4 审计 60f3724f ①（**高**）：★ 原来 `else pofv_c4_fire();` ✗ ⇒
+                 *   ★ **早苗（kind 3）掉进了灵梦的扫描弧** ✗ —— ★ 那是**别的角色**的攻击 ✓。
+                 *   ★ 最短修法：给她自己的分支 ✓（先与途中一致走 C3S ✓）；
+                 *   ★ **正解** = 照一手 `pl02.txt:125` 那**三个 async 发射器** ✓（★ 已登记待做 ✓）。*/
                 if (s_aura_kind == 1) pofv_c4m_fire();
+                else if (s_aura_kind == 3) pofv_c3s_fire();
                 else pofv_c4_fire();
             }
             /* ★★ 一手 ✓ 同帧：★ 档位发完**紧接着**发这份 C1 ✓
@@ -5866,21 +5871,21 @@ static int on_tick_2(ce_card_t *c)
              *   原先挂在**结界张开的上升沿** ✗（那行旧注释自己就写着"等 C3/C4 做好后改成按阈值" ✓）
              *   ⇒ 现在改按**蓄力到 C3 阈值**给盾 ✓（= 够得着 C3/C4 才能蓄罩 ✓，与一手一致 ✓）。*/
             if (s_aura_charge >= POFV_C3_THRESH) {
-                if (!s_barrier_lv) { pofv_barrier_fire(); s_barrier_lv = 1; }
+            /* ★ C3/C4 审计 60f3724f ②：★ 一手**只在松手沿发** ✗ ⇒ 途中这一发**删除** ✓（我上轮 D1 只删了一半 ✗）。*/
             } else s_barrier_lv = 0;
         } else s_barrier_lv = 0;
 
         /* ★ ⑤ C3/C4 —— **早苗**分支（一手 = 刷 ExAttack2 子敌人；她的 ExtraAttack00 不存在
          *   ⇒ ★ **C3 与 C4 是同一套** ✓，只是阈值不同 ✓）*/
         if (s_aura_charge >= c3_at && s_aura_kind == 3) {
-            if (!s_c3s_lv) { pofv_c3s_fire(); s_c3s_lv = 1; }
+            /* ★ C3/C4 审计 60f3724f ②：★ 一手**只在松手沿发** ✗ ⇒ 途中这一发**删除** ✓（我上轮 D1 只删了一半 ✗）。*/
         } else s_c3s_lv = 0;
         if (s_aura_charge >= c4_at && s_aura_kind == 3) {
-            if (!s_c3s4_lv) { pofv_c3s_fire(); s_c3s4_lv = 1; }
+            /* ★ C3/C4 审计 60f3724f ②：★ 一手**只在松手沿发** ✗ ⇒ 途中这一发**删除** ✓（我上轮 D1 只删了一半 ✗）。*/
         } else s_c3s4_lv = 0;
         /* ★ ⑤ C3 —— **魔理沙**分支（一手 = 纯激光、沿 y=448 横扫、每步双镜像 ✓，见上）*/
         if (s_aura_charge >= c3_at && s_aura_kind == 1) {
-            if (!s_c3m_lv) { pofv_c3m_fire(); s_c3m_lv = 1; }
+            /* ★ C3/C4 审计 60f3724f ②：★ 一手**只在松手沿发** ✗ ⇒ 途中这一发**删除** ✓（我上轮 D1 只删了一半 ✗）。*/
         } else s_c3m_lv = 0;
         /* ★ 同上：一手三人的 C3 也不同（§10.1）⇒ ★ **只对灵梦** ✓（❓待补）。*/
         if (s_aura_charge >= c3_at && s_aura_kind == 0) {
