@@ -3587,6 +3587,11 @@ static void pofv_c3_tick(void)
 #define POFV_BARRIER_INVULN_N   100      /* ★ 一手 ✓ 无敌 100 帧 */
 #define POFV_BARRIER_PUSH       128.0f   /* ★ 一手 ✓ 位移单位 */
 #define POFV_BARRIER_PUSH_K     3.2f     /* ❓自定：128 px / 40 帧 / 平均 v 1.0 ⇒ 3.2（见下面位移段）*/
+/* ★★★★ 2026-10-12 **权威位置副本**（一手 ✓ `engine/player/th18/01-position-and-state-timers.md` §2 ②）：★
+ *   `Player__sub_45b170` `0x45B170` 每帧 `+0x62c += (int)(dx*…)` → 钳位 → `+0x620 = (float)(+0x62c)/128`
+ *   ⇒ ★ **位移必须加到 `+0x62c/+0x630`（int32，单位 1/128 px ✓）**，★ 写 float 位置或速度向量都会被覆盖 ✗。
+ *   ★ 钳位（一手 ✓）：x ∈ [-0x5c00, 0x5c00]（±184 px）、y ∈ [0x1000, 0xd800]（32..432 px）。*/
+#define POFV_PLAYER_SUBPIXEL    0x62c
 #define POFV_BARRIER_PUSH_V     2.0f     /* ★ 一手 ✓ 初速（线性衰减到 0）*/
 static int32_t s_barrier_vm_disc;        /* ★ 内层：白圆（脚本 428）*/
 /* ★★ #5（owner ✓）：「**获取 109 的时候会给一个罩子**（对应 TH19 **开局给你一个罩子** ✓）」✓
@@ -3766,23 +3771,29 @@ static void pofv_barrier_tick(void)
          * ★★★★ 2026-10-12 **改机制**（owner 实跑："没有强制移动"✗）：
          *   ★ 原来**直接写自机坐标**（`player+0x620` ✗）—— 而自机自己的移动代码在**本帧稍后**会按
          *     输入/速度**重算并写回**位置 ✓ ⇒ ★ 我们那个加法被**冲掉** ⇒ 看起来完全没动 ✓。
-         *   ⇒ ★ 改成写**引擎自己的速度向量** `CE_PLAYER_SPEED_BASE`（`+0x477f0` ✓，float×2 ✓，
-         *     每帧从 `0x5217dc` 拷来、由引擎自己积分 ✓）⇒ ★ 位移由引擎走出来、不会被冲掉 ✓。
-         *   ★ 标度：一手「位移 128 / 初速 2.0 线性衰减」✓ ⇒ 40 帧平均 v = 1.0 ⇒ 走出 ~128 px
-         *     需要 K = 128/40 = **3.2** ✓（❓自定：一手那个 128 是"位移"还是别的单位，未逐字核到 ✓）。*/
+         *   ★ 第二次仍不动（owner："没有强制移动"✗）⇒ ★ 读引擎一手文档定位到**真正的机制** ✓：
+         *     `engine/player/th18/01-position-and-state-timers.md` §2 ② ✅ ——
+         *     ★ `Player__sub_45b170`（移动处理，`0x45B170`）**每帧**做的是：
+         *        `player+0x62c += (int)(dx * …)`（**1/128 px 定点累加**）→ 钳位 → 然后
+         *        `player+0x620 = (float)(player+0x62c) / 128` **重新算出 float 位置** ✗
+         *     ⇒ ★ **权威副本是 `+0x62c/+0x630` 的定点整数** ✓，★ float 位置（`+0x620/624`）每帧被它覆盖 ✗
+         *     ⇒ ★ 这就是"写坐标没用、写速度向量也没用"的原因 ✓（速度向量每帧还被 `0x5217dc` 覆盖 ✓）。
+         *   ⇒ ★ **正解：把位移加到权威的定点累加上** (`+0x62c/+0x630`，int32，单位 **1/128 px** ✓)
+         *     ⇒ ★ 引擎自己会把 float 位置算出来 ✓、且不会被冲掉 ✓。*/
         float f = (float)(POFV_BARRIER_BREAK_N - s_barrier_brk);
         float v = POFV_BARRIER_PUSH_V * (1.0f - f / (float)POFV_BARRIER_BREAK_N);
         float *mult = CE_PLAYER() ? (float *)(CE_PLAYER() + CE_PLAYER_SPEED_MULT) : 0;
-        float *vel  = CE_PLAYER() ? (float *)(CE_PLAYER() + CE_PLAYER_SPEED_BASE) : 0;
+        int32_t *sub = CE_PLAYER() ? (int32_t *)(CE_PLAYER() + POFV_PLAYER_SUBPIXEL) : 0;
         if (mult) *mult = 0.0f;                        /* ★ 一手 ✓：禁主动移动（当帧生效）*/
-        if (vel) {
-            vel[0] = s_barrier_dx * v * POFV_BARRIER_PUSH_K;
-            vel[1] = s_barrier_dy * v * POFV_BARRIER_PUSH_K;
+        if (sub) {
+            /* ★ 每帧推 `dir * v * K` 像素 = `× 128` 定点单位 ✓（一手：位移 128 / 初速 2.0 线性衰减 ✓）*/
+            sub[0] += (int32_t)(s_barrier_dx * v * POFV_BARRIER_PUSH_K * 128.0f);
+            sub[1] += (int32_t)(s_barrier_dy * v * POFV_BARRIER_PUSH_K * 128.0f);
         }
         if (s_barrier_brk % 8 == 0)
-            ce_log("pofv: [PUSH] brk=%d dir=(%.0f,%.0f) v=%.2f vel=(%.1f,%.1f) pos=(%.0f,%.0f)",
+            ce_log("pofv: [PUSH] brk=%d dir=(%.0f,%.0f) v=%.2f subpx=(%d,%d) pos=(%.0f,%.0f)",
                    s_barrier_brk, (double)s_barrier_dx, (double)s_barrier_dy, (double)v,
-                   (double)(vel ? vel[0] : 0.0f), (double)(vel ? vel[1] : 0.0f),
+                   sub ? sub[0] : 0, sub ? sub[1] : 0,
                    (double)(ce_player_pos() ? ce_player_pos()[0] : 0.0f),
                    (double)(ce_player_pos() ? ce_player_pos()[1] : 0.0f));
         --s_barrier_brk;
