@@ -2,6 +2,8 @@
 
 > **版本**：TH19 v1.10c（imagebase `0x400000`）／TH09 v1.50a；本文裸地址默认 th19，th09 显式标注。
 > 状态：**规划中（未动代码）**。相关：`HANDOFF-109.md`、`HANDOFF-109-AURA-FORMS.md`、`engine/versus/th19/05-four-mechanics.md`。
+> ★★★★ **动手做 C3/C4 的 "boss attack" 前先读** [`HANDOFF-VERSUS-TO-SINGLE-MODEL.md`](HANDOFF-VERSUS-TO-SINGLE-MODEL.md) ✓
+> —— ★ 它把 **§0 那套模型**（两个耦合 PVE ✓）**翻译成代码参数**（★ 中心 = 自机位 ✓ / 重力朝上 ✓ / 版顶反弹 ✓ / 角度 +180° ✓）✓。
 
 ## 0. ★★ owner 定的基本模型（2026-10-10，权威）
 
