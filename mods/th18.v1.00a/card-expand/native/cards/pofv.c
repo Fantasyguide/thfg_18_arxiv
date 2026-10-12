@@ -3474,9 +3474,18 @@ static void pofv_barrier_grant_tick(void)
 static void pofv_barrier_fire(void)
 {
     if (s_barrier_brk > 0) return;     /* ★② 破罩位移中不许重张 ✓（否则会"破-张"无限循环 ⇒ 无敌永续 ✓）*/
+    /* ★★★★★ 2026-10-11 **"从开局就无敌"的真根因** ✓（owner 问「什么叫做从开局就开始无敌」✗）：
+     *   ★ SDK 的落笔 `ce_invuln_apply()`（`sdk.h:1045` 附近 ✓）取各卡声明的**最大值** ✓、且
+     *     ★ `if (t->cur < frames) t->cur = frames;` ⇒ ★ **只抬高、从不压低** ✗
+     *     ⇒ ★ 只要**每帧都声明 100**，计时器就被**每帧顶回 100** ⇒ ★ **永远不掉 ⇒ 无敌永续** ✓✓。
+     *   ★ 我上一步把 `ce_invuln_request(…,100)` 放进了本函数 ✗ ⇒ ★ 而本函数会被**每帧**调到
+     *     （罩子/领域态每帧成立 ✓）⇒ ★ 就变成"**从开局起**一直无敌" ✓ = owner 的现象 ✓。
+     *   ⇒ ★ 修：★ **只在 `s_barrier_on` 真正 0→1 的那一帧**给一次 ✓（★ 下一次张开前不可能再声明 ✓）
+     *     ⇒ ★ 100 帧**到期就结束** ✓ ⇒ **不再永续** ✓。*/
+    if (!s_barrier_on) {
+        ce_invuln_request(POFV_CARD_ID, POFV_BARRIER_INVULN_N);   /* ★ 0→1 沿：给一次 ✓（一手 100 帧 ✓）*/
+    }
     s_barrier_on = 1;
-    /* ★ 保命无敌：★ **张开这一帧给一次** ✓（一手 100 帧 ✓）—— ★ 会到期 ⇒ **不再永续** ✓（owner #1 的正解 ✓）。*/
-    ce_invuln_request(POFV_CARD_ID, POFV_BARRIER_INVULN_N);
 }
 
 /* ★ 每帧：盾挡 1 发 ⇒ 破罩；破罩后跑那三件事 */
