@@ -224,7 +224,7 @@
 | **81 ★★ 发射口闸在**人侧**真的生效**（owner：只有人侧才能打死使魔）| 删掉 `yk_on_shot_slot()` 的 `if (!CE_PLAYER_FOCUSED()) return 0;`（原 P8-1）⇒ 口径变成 **与侧无关**：这一槽的使魔**建过、现在没了** ⇒ 掐掉这一刻那条 `etOn` | 判据：**人侧**打掉一只发射口使魔 ⇒ 该口下一发被掐（`youkai: emitter gate CLAMPED slot … (focused=0 …)`）；妖侧使魔无敌 ⇒ 本来无口可堵 |
 | **98 ★★ 硬约束：只能"不发弹"，不能改发弹位置**（owner 原话）| 站点 `0x433ffa` **只读** `props+0x08/0c/10`（latch）+ **只否决**该 `etOn`；**禁止**写 props 任何格（`etDist`/offsets/origins/aim/angle/type）。上一批的 `props[i]+0x24=0` **已回滚**；「覆写 offset_final 让弹从壳出」= **禁止**（不再是未来工作）| 判据：站点内**没有任何写 props 的语句**（代码不变量注释 + 台账 `dist0=` 恒 0）§BE #211 |
 | **106 ★ 所有自建敌人统一无体术（绕转层补上）** | 抽共用入口 `yk_no_body_attack(f)`（写 `e+0x6334`=2），**映射层 + 绕转层**都调、**出生 + 每帧**都调 | 判据：撞**绕转使魔**也不掉命/不被击退，且仍可被打掉/锁定。§BE #220 |
-| **133 ★ 整蛊协同：有 106 ⇒ 决死扣 2 个 B**（owner）| 「有 106」= **只读** AbilityManager 卡链表查 id=106（D 路线，不改共享件）；B 数 = `CE_CURRENT_BOMBS()`（`0x4ccd58`）；落点 `on_death_before_deathbomb()`（决死窗口前一帧）⇒ `bombs>0 ? b ...(TUNING 2.1ccc-89)| 判据：有 106 ⇒ 扣 2、不为负、1 个也能决死；无 106 ⇒ 照旧扣 1。`TUNING §2.1ccc-89` |
+| **133 ★ 整蛊协同：有 106 ⇒ 决死扣 2 个 B**（owner）| 「有 106」= **只读** AbilityManager 卡链表查 id=106（D 路线，不改共享件）；B 数 = `CE_CURRENT_BOMBS()`（`0x4ccd58`）；落点 `on_death_before_deathbomb()`（决死窗口前一帧）⇒ `bombs>0 ? b ...(TUNING 2.1ccc-89)| 判据：有 106 ⇒ 扣 2、不为负、1 个也能决死；无 106 ⇒ 照旧扣 1。`TUNING §2.1ccc-89` | 另：**TTL 600 是口径，不是待办**（持续性符卡 TTL=收益，2026-10-11 owner）。
 | **132 ★ 调试键「108 = 无敌」**（owner）| `YK_DEBUG_INVINCIBLE=1`；键 **`I`（0x49）** 边沿切换；字段 `player+0x47774`（`CE_PLAYER_INVULN_TIMER`）；每帧把 `cur` 刷到 **≥60**，只作用于自机；日志 `INVINCIBLE ON/OFF …` | 判据：按 I 切换（ON/OFF 各一行）；ON 时撞弹/撞使魔不掉命、不被击退、可穿弹幕；OFF 立刻恢复；不影响其它输入与别的卡。§BE #246 |
 | **131 ★★ C0+C1：HP 覆盖归零 + FIRE/ORIGIN-GATE 观测**（只加观测）| C0 `YK_EMIT_FAM_HP_OVERRIDE` 1→0（Q2 消失）；C1 站点每次 fire 一行 `FIRE: … k=… props08/0c/10=… offsets/origins … frame=`（k = 同帧内该槽第几次 fire，帧边界清、上限 8）+ 每帧 `ORIG …（§BE #245）| C2 待 C1 数据：身份 = `(enemy,slot,k)`、否决按 k 匹配、跨帧同 k 只动位置。§BE #245 |
 | **130 ★★ `produced` 降级为软前提（默认关）+ BMPROBE** | `bullets` 恒 0 ⇒ 我们读错 `0x7d0`（`CE_BM_BULLET_COUNT`）⇒ 所有壳被拒；新开关 **`YK_EMIT_REQUIRE_BULLETS = 0`**（关 ⇒ 距离闸是唯一闸，壳回来）；新增 `BMPROBE:`（前 8 帧打 `+0x7d0…+0x7f8` 逐 dword）找真计数 | 判据：5 面中 boss 壳回来、5 面小怪 0 壳、6 面妖精仍有壳、BMPROBE 里某计数在涨、一枪一个 ⇒ 停火 ⇒ 下一波重建、母机不掉血。§BE #244 |
@@ -458,4 +458,3 @@ TH16 的布局索引 = 三角数表 `0x4a5dac` ⇒ 档 k 块大小 = k），我�
 - 顺带记账欠账（owner 说「站点的本质原因不是数量」，故不挡发布）：发布闸的 ⚠ 显示
   **进程级站点合计 53 > 安全线 42**、我们自己的 `SITE_BUDGET=24` 超（33 条）⇒
   `GATES.md` §8 与 `AUDIT.md` §BE 的记账还没补。
-
