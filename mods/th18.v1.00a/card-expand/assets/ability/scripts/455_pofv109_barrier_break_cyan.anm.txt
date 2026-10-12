@@ -1,0 +1,21 @@
+script script455 {
+    // 109 · **罩子破罩的爆发 · 青内环** —— ★ 一手配方逐字抽出
+    //   （`02-self-field-systems.md` §4.3 ✅，源 `barrier/effect.anm` **script3** ✓）：
+    //     `color(128,255,255)`（青 ✓）+ `ins_604(20.0f, 16)` ⇒ **20 / 16** ✓
+    //     + `ins_412(10, 4, 4.0f, 4.0f)`（**10 帧** ✓）⇒ `+10: end()` ✓。
+    // ★★ 与 453 同一套等效写法（理由与 ❓ 见 `453_pofv109_barrier_break_main.anm.txt` 头注释 ✓）。
+    sprite(@POFV109_C_RING_STRIP);
+    layer(6);
+    resampleMode(1);
+    blendMode(1);
+    iset($I0, 16);                      // ★ 一手 `ins_604(20.0f, 16)` 的 **16** 段 ✓
+    texArcEven($I0);
+    color(128, 255, 255);               // ★ 一手 ✓ 青
+    alpha(0);
+    alphaTime(10, 0, 255);              // ★ 一手 ✓ 10 帧
+    scale(0.5f, 4.0f);
+    scaleTime(10, 4, 0.5f, 20.0f);      // ★ 一手 ✓ 半径 20（`ins_604(20.0f, 16)` 的第一个数 ✓）
+    stop();
++10: // 10
+    delete();
+}

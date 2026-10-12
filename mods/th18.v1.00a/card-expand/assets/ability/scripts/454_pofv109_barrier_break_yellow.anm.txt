@@ -1,0 +1,23 @@
+script script454 {
+    // 109 · **罩子破罩的爆发 · 黄环** —— ★ 一手配方逐字抽出
+    //   （`02-self-field-systems.md` §4.3 ✅，源 `barrier/effect.anm` **script2** ✓）：
+    //     `color(255,255,0)`（纯黄 ✓）+ `ins_615(28.0f, 8.0f, 24)` ⇒ **28 / 8 / 24** ✓
+    //     + `ins_412(10, 4, 4.0f, 4.0f)`（**10 帧** ✓）⇒ `+10: end()` ✓。
+    // ★★ 与 453 同一套等效写法（理由与 ❓ 见 `453_pofv109_barrier_break_main.anm.txt` 头注释 ✓）；
+    //   ★ 一手 `615` 是 **mode 29**（本仓 v8 只有 mode 19 ✗，见 `446_pofv109_barrier_ring.anm.txt` 头注释 ✓）
+    //   ⇒ ★ 这里用"半径 28 上的一段黄环"近似 ✓（半径取一手的第一个数 28 ✓）。
+    sprite(@POFV109_C_RING_STRIP);
+    layer(6);
+    resampleMode(1);
+    blendMode(1);
+    iset($I0, 24);                      // ★ 一手 615 的第三个数 24 ✓
+    texArcEven($I0);
+    color(255, 255, 0);                 // ★ 一手 ✓ 纯黄
+    alpha(0);
+    alphaTime(10, 0, 255);              // ★ 一手 ✓ 10 帧
+    scale(0.5f, 8.0f);
+    scaleTime(10, 4, 0.5f, 28.0f);      // ★ 一手 ✓ 半径 28（`ins_615(28.0f, 8.0f, 24)` 的第一个数 ✓）
+    stop();
++10: // 10
+    delete();
+}

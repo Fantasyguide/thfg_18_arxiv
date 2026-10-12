@@ -3719,6 +3719,7 @@ static int32_t s_barrier_vm_disc;        /* ★ 内层：白圆（脚本 428）*
 static int s_barrier_grant_pending;
 static int32_t s_barrier_vm_glow;        /* ★ 外层：黄外发光（脚本 429）*/
 static int   s_barrier_on;               /* 盾在不在 */
+static int32_t s_barrier_break_vm[3];    /* ★ 2026-10-13：破罩的三台爆发 VM（脚本 453/454/455 ✓，一手 §4.3 ✓）*/
 static int   s_barrier_log_pending;      /* ★ 2026-10-12：发放后等视觉起完再打日志 ✓ */
 static int   s_barrier_brk;              /* 破罩计时（>0 = 禁移 + 位移中）*/
 static float s_barrier_dx, s_barrier_dy; /* ❓自定：位移方向（先取正下）*/
@@ -4893,6 +4894,14 @@ static void clear_card(ce_card_t *c)
             if (s_c2.orb_vm[k3]) { ce_anm_delete((uint32_t)s_c2.orb_vm[k3]); s_c2.orb_vm[k3] = 0; } }
     s_barrier_grant_pending = 1;                /* ★ #5：重新拿到卡 ⇒ 再给一个罩 ✓ */
     pofv_ca_ring_clear();                       /* ★ 2026-10-12 铁律：CA 消弹环的自建 VM / 状态也要收 ✓ */
+    {   /* ★ 2026-10-13 铁律：破罩爆发那三台 VM 也要收 ✓（它们 10 帧自删，但删卡可能落在中间 ✓）*/
+        int ib;
+        for (ib = 0; ib < 3; ++ib) {
+            if (s_barrier_break_vm[ib] && ce_anm_get_vm((uint32_t)s_barrier_break_vm[ib]))
+                ce_anm_delete((uint32_t)s_barrier_break_vm[ib]);
+            s_barrier_break_vm[ib] = 0;
+        }
+    }
     s_c3_uses = 0; s_c4_uses = 0;
     {   int k5; for (k5 = 0; k5 < POFV_C1_TRAIL_MAX; ++k5) {          /* ★ 铁律：残影也收 ✓ */
             if (s_c1_trail[k5] && ce_anm_get_vm((uint32_t)s_c1_trail[k5]))
@@ -7769,6 +7778,37 @@ static int pofv_on_shot_set_index(ce_card_t *c, int power_level)
  *   `Player__cancel_impending_death`（`th18:0x45d590`）唯一包装 ✓（111 同款 ✓）。
  *   ❓ 方向：回调不带参数 ⇒ 用「半径内最近的那颗**敌弹**」当命中点反推（★ 只用于定方向 ✓，
  *      **不消弹、不因它决定吃不吃** ✗ ⇒ 不构成碰撞体 ✓）；找不到就兜底朝正下 ✓（沿用原实现 ✓）。*/
+/* ★★★★★ 2026-10-13 **破罩的三层爆发**（一手 ✓ `engine/versus/th19/02-self-field-systems.md`
+ *   §4.2 / §4.3 / §4.4 / §4.5 ✅，源 = `local/th19.v1.10c/barrier/effect.anm` script1/2/3 ✓）：
+ *   ★ 一手破罩（`th19:0x544c90`）= 状态 1→2 + ★ **给那台常驻视觉弹发 anm 事件 1**（= **重放**这套
+ *     **10 帧**爆发 ✓）+ 音效 `0x1b` ✓；★ 造型 = ★「**白主环（24 段 / 半径 28）** + **黄环（半径 28）**
+ *     + **青内环（16 段 / 半径 20）**」✓（§4.3 表 ✓），★ 各 10 帧 ✓（`ins_412(10,4,4.0f,4.0f)` ✓）。
+ *   ⚠ ★ **有意不同**（登记 TUNING ❓）：★ 一手是"**同一台常驻 VM 重放**爆发" ✗ —— ★ 本卡罩子的常驻 VM
+ *     是**每 8 帧重发**的（见 `pofv_barrier_tick` ✓）⇒ ★ 打断它没意义 ✗ ⇒ ★ 这里**另起三台爆发 VM** ✓
+ *     （脚本 453/454/455 ✓，自带 10 帧自删 ✓）。
+ *   ⚠ ★ 一手那支 **半径 128 的消弭圈不是罩子的通用行为** ✗ —— ★ 只在 `@MAMIZOU2`（狸猫）时才有 ✓
+ *     （`S+0xba` ✓，§4.2 ✓）⇒ ★ 本卡**不加** ✓（加了就是给所有人狸猫的效果 ✗）。*/
+static void pofv_barrier_break_fx(void)
+{
+    static const uint32_t fx[3] = {
+        CE_ANM_ABILITY_SCRIPT_POFV109_BARRIER_BREAK_MAIN,
+        CE_ANM_ABILITY_SCRIPT_POFV109_BARRIER_BREAK_YELLOW,
+        CE_ANM_ABILITY_SCRIPT_POFV109_BARRIER_BREAK_CYAN,
+    };
+    const float *p = ce_player_pos();
+    int i, n = 0;
+    if (!p) return;
+    for (i = 0; i < 3; ++i) {
+        if (s_barrier_break_vm[i] && ce_anm_get_vm((uint32_t)s_barrier_break_vm[i])) continue;
+        s_barrier_break_vm[i] = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), fx[i], 6);   /* layer 6 = 本卡世界层 ✓ */
+        if (s_barrier_break_vm[i]) {
+            vm_set_world_pos((uint32_t)s_barrier_break_vm[i], p[0], p[1]);   /* ★ 在玩家身上 ✓（一手 ✓）*/
+            ++n;
+        }
+    }
+    ce_log("pofv: [BREAK_FX] 破罩爆发：三层起 %d 台（一手 anm 事件 1 那套 10 帧 ✓；❓另起 VM 而非重放 ✓）", n);
+}
+
 static int pofv_on_death_before_deathbomb(ce_card_t *c)
 {
     const float *pp;
@@ -7784,8 +7824,20 @@ static int pofv_on_death_before_deathbomb(ce_card_t *c)
     ce_rescue_note_claim(POFV_CARD_ID);       /* 救援闩锁：照 107/117 的约定（返回值丢弃 ✓）*/
     bomb10_cancel_impending_death();          /* ★ 一手 `th11:0x4078c4`：把这一下中弹撤销 ✓ */
     ce_invuln_request(POFV_CARD_ID, POFV_BARRIER_INVULN_N);   /* ★ 一手：撞后 100 帧无敌 ✓ */
-    if (s_barrier_vm_disc) { ce_anm_delete((uint32_t)s_barrier_vm_disc); s_barrier_vm_disc = 0; }
-    if (s_barrier_vm_glow) { ce_anm_delete((uint32_t)s_barrier_vm_glow); s_barrier_vm_glow = 0; }
+    /* ★★★★★ 2026-10-13 **破罩的"anm 事件 1"** ✓（一手 §4.2/§4.4 ✅）：
+     *   ★ 一手破罩 = 状态 1→2 + ★ **给常驻视觉弹发 anm 事件 1**（= 重放 10 帧爆发 ✓）+ 音效 `0x1b` ✓。
+     *   ★ 本卡 446 脚本里那条 `interruptLabel(1)`（`alphaTime(6,0,0)` + `+6: delete()` ✓）就是
+     *     **它自己的破罩分支** ✓ ⇒ ★ 改用 `ce_anm_interrupt(vm, 1)` ✓（★ 不再硬删 ✗ = 更贴一手 ✓）。
+     *   ⚠ ★ 音效 `0x1b` 是 **TH19 的 SE 号** ✗ ⇒ TH18 未必对应 ⇒ ★ 未落地、登记 ❓ ✓。*/
+    if (s_barrier_vm_disc) {
+        if (ce_anm_get_vm((uint32_t)s_barrier_vm_disc)) ce_anm_interrupt((uint32_t)s_barrier_vm_disc, 1);
+        s_barrier_vm_disc = 0;
+    }
+    if (s_barrier_vm_glow) {
+        if (ce_anm_get_vm((uint32_t)s_barrier_vm_glow)) ce_anm_interrupt((uint32_t)s_barrier_vm_glow, 1);
+        s_barrier_vm_glow = 0;
+    }
+    pofv_barrier_break_fx();                  /* ★ 三层爆发 ✓（见该函数头注释 ✓）*/
     s_barrier_brk = POFV_BARRIER_BREAK_N;     /* ★ 破罩演出：40 帧禁主动移动 + 位移 ✓（一手常数 ✓）*/
     {
         float hx = 0.0f, hy = 0.0f;
