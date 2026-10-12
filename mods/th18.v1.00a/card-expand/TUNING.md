@@ -18951,4 +18951,24 @@ if (flags & CE_BULLET_FLAG_SCALED) br *= *(float *)(b + CE_BULLET_SIZE_SCALE);  
 | 2 | ★ `if (flags & CE_BULLET_FLAG_SCALED) br *= size_scale;` ✓（★ 缩放弹用**实际**半径 ✓）| ★ **没有** ✗ ⇒ ★ 大/小弹的判定半径不准 ✓ |
 ⇒ ★ **下一轮照卡 115 补齐这两条** ✓（★ 这是"复刻优先"的具体一条 ✓）。
 ★ 而 ★ **"擦弹到底掉不掉"** 的最终判定仍靠 ★ 已埋的 `[GRAZE]` 日志 ✓（★ 一局即有 ✓）。
+### ★★★★★ goal 第 6 轮：照卡 115 补齐两条（★ "实现照本仓的卡" ✓）（2026-10-12）
+
+★ **卡 115 的定义（`lolk.c:72–81` ✓，`engine.h` 里没有 ✓ ⇒ 它们是**本地**常量 ✓）**：
+| 常量 | 值 | 含义 |
+| --- | --- | --- |
+| ★ `CE_BULLET_RADIUS` | ★ `0x658` ✓ | ★ float 命中半径 ✓ |
+| ★ `CE_BULLET_FLAG_COLLIDE` | ★ `0x2` ✓ | ★ 参与与自机的碰撞 ✓ |
+| ★ `CE_BULLET_FLAG_SCALED` | ★ `0x40` ✓ | ★ 半径按 `+0xf38` 缩放 ✓ |
+| ★ `CE_BULLET_SIZE_SCALE` | ★ `0xf38` ✓ | ★ 缩放倍率 ✓ |
+
+★ **本轮补齐（两侧都加 ✓：擦弹扫描 ✓ + 结界扫描 ✓）**：
+1. ★ `if (!(flags & COLLIDE)) continue;` ✓ ⇒ ★ **不参与碰撞的弹不算** ✓（否则会对装饰弹也掉道具 ✗）；
+2. ★ `if (flags & SCALED) br *= *(float *)(b + SIZE_SCALE);` ✓ ⇒ ★ 用**实际半径** ✓。
+★ 常量在 109 里以 `POFV_BULLET_FLAG_COLLIDE` / `POFV_BULLET_FLAG_SCALED` / `POFV_BULLET_SIZE_SCALE`
+**本地定义** ✓（★ 与卡 115 同值 ✓ —— ★ 不动共享件 `engine.h` ✗ ⇒ 不需要 `AUDIT §BE` ✓）。
+
+★ ★ **顺带把 `br > 0` 那条疑虑彻底坐实** ✓：★ 卡 115 读的 `CE_BULLET_RADIUS` **也是 `0x658`** ✓
+（= 一手文档里那个"对普通弹为 0"的字段 ✗）★ 而它**要求 `> 0` 且已验证可用** ✓
+⇒ ★ **普通弹的 `0x658` 非 0** ✓ ⇒ ★ 两个说法里**一手文档那句是特定上下文**（★ 消弹判定的**尺寸 pad** ✓）
+⇒ ★ 我们那道 `br > 0` **干净** ✓、★ **不是没掉落的原因** ✓。
 

@@ -90,6 +90,14 @@ typedef void (__attribute__((thiscall)) *pofv_fn_bullet_cancel_t)(void *bullet, 
 
 /* `0x658` = `zBullet.radius`（出生时从弹种表 `0x4c5f90` stride `0x118` 的 `+0x104` 拷入：
  *   一手 asm `0x425998 movss xmm0,[eax+0x4c6094]` → `0x4259a8 movss [edi+0x658],xmm0`）。 */
+/* ★ 2026-10-12 goal 第 6 轮：★ 照卡 115（`lolk.c`）的**本地定义** ✓（`engine.h` 只给了 `CE_BULLET_FLAGS` ✓）：
+ *   `POFV_BULLET_FLAG_COLLIDE` = `0x2` ✓
+ *   `POFV_BULLET_FLAG_SCALED` = `0x40` ✓
+ *   `POFV_BULLET_SIZE_SCALE` = `0xf38` ✓
+ *   ★ 用途：★ 不参与碰撞的弹**不算**（✓ COLLIDE）+ ★ 缩放弹用**实际半径**（✓ SCALED × SIZE_SCALE）。*/
+#define POFV_BULLET_FLAG_COLLIDE   0x2
+#define POFV_BULLET_FLAG_SCALED   0x40
+#define POFV_BULLET_SIZE_SCALE   0xf38
 #define POFV_BULLET_RADIUS_OFF  0x658
 
 /* 消掉的可消弹走 `mode = 1`：引擎 `0x4290e0` 会**加分 + 掉点道具**
@@ -1393,7 +1401,16 @@ static void pofv_graze_scan_drop(void)
         if (*(const float *)(b + POFV_BULLET_RADIUS_OFF) > 0.0f) ++g_br_pos;
         if (s_aura_bullet_done[i]) continue;                        /* ★ 这颗弹已经掉过了 ✓ */
         ++g_done;
-        br = *(const float *)(b + POFV_BULLET_RADIUS_OFF);
+        /* ★★★★ 2026-10-12 goal 第 6 轮：★ 照**卡 115**（`lolk.c:484` 那段，"已验证可用"✓）
+         *   补齐两条 ✓（owner 规矩：★ **实现照本仓的卡** ✓）：
+         *   ★ ① `POFV_BULLET_FLAG_COLLIDE` —— ★ **不参与碰撞的弹不算** ✓（否则会对装饰弹也掉道具 ✗）；
+         *   ★ ② `POFV_BULLET_FLAG_SCALED` —— ★ 缩放弹要用**实际半径**（`POFV_BULLET_SIZE_SCALE` ✓）。*/
+        {
+            const uint32_t bfl = *(const uint32_t *)(b + CE_BULLET_FLAGS);
+            if (!(bfl & POFV_BULLET_FLAG_COLLIDE)) continue;          /* ★ 不参与碰撞 ⇒ 跳过 ✓ */
+            br = *(const float *)(b + POFV_BULLET_RADIUS_OFF);
+            if (bfl & POFV_BULLET_FLAG_SCALED) br *= *(const float *)(b + POFV_BULLET_SIZE_SCALE);   /* ★ 实际半径 ✓ */
+        }
         if (!(br > 0.0f)) continue;                                 /* 半径 0 的哨兵弹种：不算 ✓ */
         bx = *(const float *)(b + CE_BULLET_POS);
         by = *(const float *)(b + CE_BULLET_POS + 4);
@@ -1706,8 +1723,15 @@ static int aura_scan_bullets(const float *center, int cap, float *ox, float *oy)
          *     非 0 一律当活弹 ✓（同时把闩锁在空槽时清掉 ✓）。*/
         if (state == 0) { s_aura_bullet_done[i] = 0; continue; }   /* 空槽：清闩锁 ✓ */
         if (s_aura_bullet_done[i]) continue;                                    /* ★ 这颗弹已经算过 */
-        br = *(const float *)(b + POFV_BULLET_RADIUS_OFF);
-        if (!(br > 0.0f)) continue;                                             /* 半径 0 的哨兵弹种：不算 */
+        /* ★ 2026-10-12 goal 第 6 轮：★ 与擦弹侧同一套 ✓（照卡 115 ✓）：不参与碰撞的弹不算 ✓ +
+         *   缩放弹用实际半径 ✓。*/
+        {
+            const uint32_t bfl = *(const uint32_t *)(b + CE_BULLET_FLAGS);
+            if (!(bfl & POFV_BULLET_FLAG_COLLIDE)) continue;                       /* ★ 不参与碰撞 ⇒ 跳过 ✓ */
+            br = *(const float *)(b + POFV_BULLET_RADIUS_OFF);
+            if (bfl & POFV_BULLET_FLAG_SCALED) br *= *(const float *)(b + POFV_BULLET_SIZE_SCALE);   /* ★ 实际半径 ✓ */
+        }
+        if (!(br > 0.0f)) continue;                                             /* 半径 0 的哨兵弹种：不算 ✓ */
         bx = *(const float *)(b + CE_BULLET_POS);
         by = *(const float *)(b + CE_BULLET_POS + 4);
         if (!pofv_aura_hit_here(bx - center[0], by - center[1], br)) continue;
