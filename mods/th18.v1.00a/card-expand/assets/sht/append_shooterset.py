@@ -2441,6 +2441,44 @@ def _youkai_tier_sets(target_file: str, anm_ids: dict) -> list:
     return out
 
 
+# ---- 109 pofv（TH09×TH19 融合）：早苗 C1/C2 **改走原生弹**（owner 2026-10-12「给 109 两格」✓）------
+#
+# 一手出处：TH19 **1.10c** `pl02.sht` 的 **set10**（相位A = 蛇 ✓）/ **set11**（相位B = 青蛙 ✓）。
+#   逐字节读数与窗口取证见 `mods/th18.v1.00a/card-expand/TUNING.md` 的「第 13–15 轮」与
+#   「C2-⑦ 审计 e5ec2a2f 并账」两节 ✓（角度/伤害/速度/命中盒/life/func/rate/delay/slot 全在其中）。
+#
+# ★ 为什么走原生（owner 定案 ✓）：C1/C2 的表现与 TH18 早苗自机弹幕**一模一样**，只差发射量与初始角度 ✓
+#   ⇒ 命中函数必然等价 ✓ ⇒ **填格子 = 最忠实的做法** ✓（= 117 的路 ✓）。
+# ★ 命中等价已核（TUNING 第 13 轮 ✓）：TH18 **`hit4`**（`0x460cb0`）= 原生「早苗高速」的**命中伤害源** ✓
+#   —— 与一手青蛙的 `FUN_0054c2f0` 逐项吻合（行内 dmg ✓、`2.0` ✓、SE `0x41` 同族 ✓）
+#   ⇒ ★ **碰敌爆炸由引擎给** ✓；★ 蛇的 `init4/tick4/hit5` = **与 117 狼那组逐字节同构** ✓
+#   （狼就是这套行为的 TH18 原生实现 ✓）。
+# ★ 槽号 = `N_RETAIL + 序号` ⇒ 这两组**必须排在最末** ✓（插中间会把既有的 WOLF/EAGLE/YOUKAI 全顶掉 ✗）。
+#
+# ⚠ TH18 的角色文件序：**pl00 灵梦 / pl01 魔理沙 / pl02 咲夜 / pl03 早苗** ✓
+#   （卡里 `povf.c` 有依据：`0x4cccf4` 对照 ✓）⇒ ★ **只有 `pl03` 填真行** ✓；
+#   其余三份给**同名空组**（只有终止符 ✓）以保住「四份同长度同名字」的不变式 ✓。
+POFV109_HALF = [-3.14159274101257324 + i * (3.14159274101257324 / 6.0) for i in range(13)]
+
+
+def _pofv109_sets(target_file: str, anm_ids: dict) -> list:
+    if target_file != "pl03.sht":
+        return [("POFV109_SNAKE", TERMINATOR), ("POFV109_FROG", TERMINATOR)]
+    angles = POFV109_HALF + [a + (3.14159274101257324 / 12.0) for a in POFV109_HALF]
+    snake = [dict(fire_rate=16, start_delay=(0 if i < 13 else 8), damage=22,
+                  hit_w=8.0, hit_h=48.0, angle=a, speed=16.0, opt_slot=0, mode=0,
+                  anm="CE_ANM_ABILITY_SCRIPT_POFV109_C1S_SHOT", sfx=-1,
+                  func_on_init=4, func_on_tick=4, func_on_draw=0, func_on_hit=5)
+             for i, a in enumerate(angles)]
+    frog = [dict(fire_rate=16, start_delay=(0 if i < 13 else 8), damage=22,
+                 hit_w=24.0, hit_h=24.0, angle=a, speed=3.0, opt_slot=5, mode=0,
+                 anm="CE_ANM_ABILITY_SCRIPT_POFV109_C2S_FROG", sfx=-1,
+                 func_on_init=0, func_on_tick=0, func_on_draw=0, func_on_hit=4)
+            for i, a in enumerate(angles)]
+    return [(nm, b"".join(pack_shooter(sh, anm_ids) for sh in rows) + TERMINATOR)
+            for nm, rows in (("POFV109_SNAKE", snake), ("POFV109_FROG", frog))]
+
+
 def sets_for_file(target_file: str, anm_ids: dict) -> list:
     # ★ **顺序即槽号**（`N_RETAIL + 序号`）⇒ 111 的五组必须排在最后：插在中间会让
     #   117 的 WOLF/EAGLE 十个槽整体移位（`animal_core.h` 的槽号是写死的 ⇒ 静默错弹）。
@@ -2452,6 +2490,8 @@ def sets_for_file(target_file: str, anm_ids: dict) -> list:
             # ★ 2026-09-22：妖侧的 15 组**排在最末**（下标 = 槽号 ⇒ 插在中间会把 111 的
             #   `MARISA_OPT_*` 与 117 的 WOLF/EAGLE 整体移位，那是静默错弹）。
             + _youkai_tier_sets(target_file, anm_ids)
+            # ★ 2026-10-12：109 的两组**排在最末** ✓（owner 给格 ✓ ⇒ 落在 0x68/0x69 ✓）
+            + _pofv109_sets(target_file, anm_ids)
             )
 
 
