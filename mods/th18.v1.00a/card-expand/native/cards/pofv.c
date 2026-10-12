@@ -263,6 +263,24 @@ static float s_reiryoku;
  *   ⇒ ★ 提到文件级 ✓ 并在 `clear_card()` 里归 0 ✓。*/
 static int32_t s_rei_prev;
 
+/* ★★★★★ 2026-10-11：★ **跨卡在场查询**（owner：「跨卡在场查询**我记得甚至是原生的**，**是否有某张卡**」✓）
+ *   ★ 本仓先例：★ `cards/faith.c:1883` `faith_green_owner_present()` ✓（「110/111 任一在场才跑」✓）与
+ *     ★ `sdk.c` 的 `optpose_call_one` ✓ —— ★ 后者走的就是**引擎的卡链表**（★ 自终止 ⇒ 不用猜数量 ✓）：
+ *     ★ 表头 `CE_ABILITY_MGR() + CE_MGR_CARD_LIST_FIRST` ✓（`engine.h:391` ✓）⇒ 节点 `+CE_NODE_CARD`（0x0 ✓）
+ *     取卡指针 ✓、`+CE_NODE_NEXT`（0x4 ✓）取下一个 ✓；★ 判 id 用 `ce_card_id` ✓。
+ *   ★ 用途：★ 「**有 106**」时把 `s_z_th09_mode` 打开 ✓（owner 定案 ✓：106 是整蛊卡 ⇒ 有它才走 TH09 ✓）。*/
+static int pofv_card_present(int want_id)
+{
+    const uint8_t *node = *(const uint8_t *const *)(CE_ABILITY_MGR() + CE_MGR_CARD_LIST_FIRST);
+    unsigned guard = 0;
+    while (node && guard++ < 256u) {
+        uint8_t *card = *(uint8_t *const *)(node + CE_NODE_CARD);
+        if (card && (int)ce_card_id(card) == want_id) return 1;
+        node = *(const uint8_t *const *)(node + CE_NODE_NEXT);
+    }
+    return 0;
+}
+
 /* ★★★★★ 2026-10-11 owner 指示「就按照这个做」：★ **TH09 的 Z 续命模型** ✓
  *   ★ 一手（`th09:0x41f810` ✓；文档 `engine/card/th09/04-player-shot-sequences.md` ✓；本卡 HANDOFF §19 ✓）：
  *     ★ TH09 的 Z 射击**不是"按住连发"** ✗，而是「**每次按下播一小段有限序列**」✓：
@@ -2044,7 +2062,8 @@ static const pofv_c1_shot_t s_c1_table[POFV_C1_GROUPS][POFV_C1_SHOTS_PER_GROUP] 
  *     的「零 x87」不变式 ✗，同 `trance.c:1652` 的教训）⇒ 用**预计算的 36 向单位圆表**（10°/档，
  *     构建前用 Python `math.cos/sin` 生成一次、写死常数 ✓；做法同 `pofv_core.c:829`）。
  */
-#define POFV_CARD_ID             109u   /* = `CE_CARD(109, …)`；无敌**声明层**的键 = 卡号 ✓ */
+#define POFV_CARD_ID             109u
+#define POFV_CARD_ID_106         106u   /* ★ 整蛊卡：有它 ⇒ 切 TH09 的 Z 手感 ✓ */   /* = `CE_CARD(109, …)`；无敌**声明层**的键 = 卡号 ✓ */
 #define POFV_C2_TOTAL             105   /* 一手 ✓ 总时长（`+0x6c`=45 + `0x3c`=60）*/
 #define POFV_C2_POINT_END          45   /* 一手 ✓ 3 点阶段结束 / 扩张环起点（= `+0x6c`）*/
 #define POFV_C2_POINTS              3   /* 一手 ✓ 3 个环绕点（0°/120°/240°）*/
@@ -5681,6 +5700,7 @@ static int on_tick_2(ce_card_t *c)
      *   ★ 按下沿三条规则（一手 ✓）：<0 ⇒ 归 0；≥10 ⇒ 回退 10；≥5 ⇒ 回退 5 ✓；
      *   ★ 每帧：若 playhead ≥ 0 ⇒ **本帧把 Z 位按上**（= 内部 Z ✓ ⇒ 原生按 TH09 节奏发 ✓）⇒ ++ ⇒
      *     ★ ≥15 ⇒ 置 −1（停 ✓）。*/
+    s_z_th09_mode = pofv_card_present(POFV_CARD_ID_106);   /* ★ 有 106 ⇒ 走 TH09 ✓（否则恒 0 ✓）*/
     if (s_z_th09_mode) {
         const uint32_t pr = *(uint32_t *)CE_ADDR_INPUT_PRESSED;
         if (pr & 1u) {                                  /* ★ Z 按下沿 ✓ */
