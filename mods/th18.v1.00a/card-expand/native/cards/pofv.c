@@ -1401,8 +1401,7 @@ static void pofv_graze_scan_drop(void)
     const float *pp = ce_player_pos();
     uint32_t i;
     if (!bm || !pp) return;
-    for (i = 0; i < CE_BM_BULLET_COUNT; ++i) {
-        uint8_t *b = bm + CE_BM_BULLETS + (size_t)i * CE_BULLET_STRIDE;
+    CE_BULLET_POOL_FOR_EACH_IDX(b, i) {   /* ★ z65（goal ③ 收口）：本处要 `s_aura_bullet_done[i]`（按下标清闩锁）✓ ⇒ 保池扫 ✓。 */
         uint16_t state = *(const uint16_t *)(b + CE_BULLET_STATE);
         float br, bx, by, dx, dy;
         if (state == 0) { s_aura_bullet_done[i] = 0; continue; }   /* ★ 空槽清闩锁 ✓（与 aura 扫描同款 ✓）*/
@@ -1677,8 +1676,7 @@ static int cancel_white_in_circle(const float *pos, float r, int max_count, int 
     int n = 0;
 
     if (!bm || !pos || r <= 0.0f || max_count <= 0) return 0;
-    for (i = 0; i < CE_BM_BULLET_COUNT; ++i) {
-        uint8_t *b = bm + CE_BM_BULLETS + (size_t)i * CE_BULLET_STRIDE;
+    CE_BULLET_POOL_FOR_EACH_IDX(b, i) {   /* ★ z65（goal ③ 收口）：本处要 `s_aura_bullet_done[i]`（按下标）✓，且判据含 `state 2` ⇒ **必须保池扫** ✓。 */
         uint16_t state = *(const uint16_t *)(b + CE_BULLET_STATE);
         float br, dx, dy, rr;
         if (state != 1 && state != 2) continue;        /* 0 = 空槽；3 / 4 = 别的状态 */
@@ -1721,8 +1719,7 @@ static int aura_scan_bullets(const float *center, int cap, float *ox, float *oy)
     int n = 0;
 
     if (!bm || !center || !ox || !oy || cap <= 0 || s_aura_r <= 0.0f) return 0;
-    for (i = 0; i < CE_BM_BULLET_COUNT; ++i) {
-        uint8_t *b = bm + CE_BM_BULLETS + (size_t)i * CE_BULLET_STRIDE;
+    CE_BULLET_POOL_FOR_EACH_IDX(b, i) {   /* ★ z65（goal ③ 收口）：本处要 `s_aura_bullet_done[i]`（按下标）✓，且判据含 `state 2` ⇒ **必须保池扫** ✓。 */
         uint16_t state = *(const uint16_t *)(b + CE_BULLET_STATE);
         float br, bx, by;
         /* ★★★★ 2026-10-08 **修 bug**（owner：「结界碰弹**没有生成灵力道具**」✗ ⇒ 找到真因 ✓）：
@@ -1908,8 +1905,7 @@ static void pofv_aura_tint_tick(void)
     if (!active) return;
 
     /* ② 本帧**新进**结界的弹：记下原色 + 写 `n = 0` 那一档（`G = 0xd0`）。*/
-    for (k = 0; k < CE_BM_BULLET_COUNT; ++k) {
-        uint8_t *b = bm + CE_BM_BULLETS + (size_t)k * CE_BULLET_STRIDE;
+    CE_BULLET_LIVE_FOR_EACH(b) {   /* ★ z65（goal ③ 收口）：老判据只跳 `st == 0` ⇒ **`state = 5`（池尾哨兵）会被当成弹参与染色** ✗（进 owner 清单，已修 ✓）。 */
         uint16_t st = *(const uint16_t *)(b + CE_BULLET_STATE);
         float br, dx, dy;
         int j, dup = 0;
@@ -3508,8 +3504,7 @@ static int pofv_barrier_nearest_bullet(const float *pos, float r, float *ox, flo
     float bx = 0.0f, by = 0.0f;
     int found = 0;
     if (!bm || !pos) return 0;
-    for (i = 0; i < CE_BM_BULLET_COUNT; ++i) {
-        uint8_t *b = bm + CE_BM_BULLETS + (size_t)i * CE_BULLET_STRIDE;
+    CE_BULLET_POOL_FOR_EACH(b) {   /* ★ z65（goal ③ 收口）：判据含 `state 2`（出现中，**不在活弹链表里** ✓）⇒ 保池扫 ✓（哨兵本来就被排除 ✓）。 */
         uint16_t state = *(const uint16_t *)(b + CE_BULLET_STATE);
         float br, dx, dy, rr, d2;
         if (state != 1 && state != 2) continue;
