@@ -20500,3 +20500,12 @@ interruptLabel(1) = scaleTime(4, 9, 1.2f, 1.2f) → delete() —— 注释里就
 SDK 没有"自机弹命中"钩子（只有 on_bullet_created），所以卡侧**补不了**那一声。
 => 现在按 owner 原话「碰到敌人**爆炸**」选了画面；若实跑觉得"**少了那声**"更刺耳，改回 `hit4` 只需**一行**
 （`append_shooterset.py` 里 109 青蛙行的 `func_on_hit`）。
+
+### 澄清：`thanm -l` 里看不到 `interruptLabel` —— 那不是证据（2026-10-12）
+
+复核部署侧 script50/51 时我一度慌了一下：`script51` 只有 14 行、结尾是 `ins_3()`（= `stop()`）
+然后 `ins_412(4,9,1.2f,1.2f)` + `+4: ins_1()`（= delete），**看不到 interruptLabel 的痕迹**。
+想清楚后：**`thanm -l` 打的是指令流**，而 `interruptLabel(n)` 编出来是**标签表里的一个入口**（元数据），
+**不是一条指令** => 指令清单里本来就看不到它。我方源的写法是 `… stop(); interruptLabel(1); <爆开那支>`，
+`stop()` 停住主流、引擎 `interrupt(1)` 再跳进那个入口 => 这正是 TH19 一手的结构。
+=> 所以"编译有没有丢这个标签"**只能实跑判**（就是 owner 要看的那下爆炸）；静态这层到此为止。
