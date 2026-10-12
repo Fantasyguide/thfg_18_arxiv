@@ -3209,8 +3209,22 @@ static void pofv_c1_tick(void)
                 s_c1_live[t] = 0;
             }
             pos[0] = s_c1_x[t]; pos[1] = s_c1_y[t]; pos[2] = 0.0f;
-            ce_damage_rect(pos, 0.0f, POFV_C1_HIT_LIFE, (float)s_c1_dmg_ov[t],
-                           POFV_C1_HIT_W, POFV_C1_HIT_H);
+            /* ★ D5 后半（C1 审计 d40db02d ✓）：★ 一手把源长写成 `[edi+0xb0]` ✓（`0x54cb48/0x54cbd7` ✓）
+             *   ⇒ ★ 光束**沿长度铺伤害** ✓，★ 原来只伤枪口（盒 30×30 ✗）。
+             *   ★ 照卡 108 的已验版式（`youkai.c:8232-8241` ✓）：★ 盒 16 宽 × 长度、
+             *   盒心 = 膛口 + len/2·u(ang) ✓、角度带上 ✓ ⇒ ★ 判定 = 绘制 ✓。*/
+            {
+                /* ★ 照**卡 108 的已验证版式逐字**（`youkai.c:8232-8241` ✓）：★ 束恒**朝上**（一手 −90° ✓）
+                 *   ⇒ ★ `angle = 0.0f` ✓、★ 盒心 = 膛口 **− len/2**（束向上伸 ✓）、★ `w=16`、`h=len` ✓。
+                 *   ⚠ 为什么 `angle=0` 而不是 −π/2：★ SDK 注明 `ce_damage_rect` 是「宽 XMM2、**高** XMM3」✓
+                 *   ⇒ ★ **h（高）轴 = angle + 90°** ✓ ⇒ ★ 竖直的 h 轴对应 `angle = 0` ✓（108 就是这么用的 ✓）。*/
+                float hp[3];
+                hp[0] = s_c1_x[t];
+                hp[1] = s_c1_y[t] - s_c1_len[t] * 0.5f;
+                hp[2] = 0.0f;
+                (void)ce_damage_rect(hp, 0.0f, POFV_C1_HIT_LIFE,
+                                     (float)s_c1_dmg_ov[t], 16.0f, s_c1_len[t]);
+            }
             continue;
         }
         /* ★★ 一手 `0x54b380` 两段运动 ✓：age < 120 ⇒ 减速（下限 0.2）；age ≥ 120 ⇒ 重新加速 ✓ */
@@ -4016,7 +4030,16 @@ static void pofv_c2m_tick(void)
         pos[0] = L->x; pos[1] = L->y; pos[2] = 0.0f;
         /* ★ 审计 A ✓：108 是**每 `SETTLE`=2 帧**建一次源（`youkai.c:8399` ✓）⇒ 照做 ✓。*/
         if ((L->age % POFV_C2M_SETTLE) == 0)
-            (void)ce_damage_rect(pos, L->ang, POFV_C2M_SETTLE, 14.0f, POFV_C2M_HIT_LEW, POFV_C2M_HIT_LEN);
+            /* ★★★★ 2026-10-12：★ 我上一轮把贴图 `rz` 改成 `L->ang`（修"画歪 90°"✓）之后，
+             *   ★ **判定盒的角度必须同步改** ✗ —— ★ 否则变成"画对了、打歪了" ✓。
+             *   ★ 依据（两条独立互证 ✓）：
+             *     · ★ SDK：`ce_damage_rect` = 「宽 XMM2、**高** XMM3」✓ ⇒ ★ **h（高）轴 = angle + 90°** ✓；
+             *     · ★ 卡 108（已验证 ✓）：★ 竖直束却传 `angle = 0.0f` ✓ + 盒心 `y − H/2` ✓
+             *       ⇒ ★ 与"h 轴竖直 ⇔ angle = 0"一致 ✓；
+             *     · ★ 本卡**原来那对本来就是自洽的**（`rz = ang+90` ✓ + `angle = ang` ✓ ⇒ 轴 = `rz` ✓）
+             *       ⇒ ★ 所以贴图改成 `rz` 后，盒角应取 **`rz − 90°` = `L->ang − π/2`** ✓。*/
+            (void)ce_damage_rect(pos, L->ang - 1.5707964f, POFV_C2M_SETTLE, 14.0f,
+                                 POFV_C2M_HIT_LEW, POFV_C2M_HIT_LEN);
     }
 }
 
