@@ -2217,7 +2217,11 @@ static void c3_dir5(int idx5, float *dx, float *dy);
 #define POFV_C2_RING_DMG     24
 /* ★ C2-⑤ 后半（审计 42acbab9 ✓）：★ 一手摆 3 台 orb **一直到 105 帧** ✓（★ 而扩张环从 45 起 ✓
  *   —— ★ 两者**不同** ✗ ⇒ 新开这个常量给 orb 闸 ✓，**不要动** `POFV_C2_POINT_END` ✗）。*/
-#define POFV_C2_ORB_END           105
+#define POFV_C2_ORB_END           60    /* ★ 2026-10-13 改 105 → **60** ✓ —— ★ 一手依据：管家脚本
+                                          *   （TH19 `pl00.anm` **script20** ✓）= **`+60: ins_1()`** ✓，
+                                          *   ★ 本卡 434 也是 **`+60: delete()`** ✓ ⇒ ★ 60 帧之后那 3 台
+                                          *   管家**已自删** ⇒ ★ 卡侧再写就是写**死句柄** ✗（无害但脏 ✓）。
+                                          *   ★ 原来的 105 ✗ **无出处**（注释里那个"一手 ✓"查不到 ✓）。*/
 
 #define POFV_C2_GEN_FRAMES          4   /* 一手 ✓ `Ecl_EtBreakLv2` 共 4 帧 */
 #define POFV_C2_GEN_R0            8.0f  /* 一手 ✓ 半径序列 8/12/16/20 */
