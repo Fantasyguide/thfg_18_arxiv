@@ -77,7 +77,7 @@
 /* ★★ 层号必须是**世界层 3–19**（24+ = UI 层、1 单位 = 1 表面 px；且 `layer(20..32)` 会派生
  * `resolutionMode` 模式 1 ⇒ 位置三分量 ×2 —— 旧版 `layer(28)` 就是这样把暴风画偏的）。
  * 取 **6**（一手 `effect.anm` script20 的层号同支）。脚本里也写 `layer(6)`，两边一致。 */
-#define POFV_STORM_VM_LAYER          6
+#define POFV_STORM_VM_LAYER          6    /* ★ 2026-10-13 **回退** ✗：曾改 13 又撤回 ✓ —— ★ owner 实跑见过层 6 的红色环 ✓（「C2-C4 有随时间扩张的红色消弹圈」✓）⇒ 层 6 **没问题** ✗，换层是**无据猜测** ✓ */
 
 /* 一次消弹最多认几颗（原版 `FUN_004ee770` 传 99999）。 */
 #define POFV_CANCEL_MAX          99999
@@ -2147,7 +2147,7 @@ static void c3_dir5(int idx5, float *dx, float *dy);
                                           *   ★ 实际由"出屏即收"先触发 ⇒ 这个值只是上限 ✓ */
 #define POFV_C1_BOUNCE_MAX    4          /* ★ 一手 ✓ `EX_BOUNCE` 撞墙 4 次 */
 #define POFV_C1_BOUNCE_MASK  13          /* ★ 一手 ✓ walls = 13 = 上(1)|左(4)|右(8) ⇒ **不弹下边** ✓ */
-#define POFV_C1_VM_LAYER   6             /* ❓自定：与世界层对齐（暴风 `POFV_STORM_VM_LAYER` 同层 ✓）*/
+#define POFV_C1_VM_LAYER   6             /* ★ 2026-10-13 回退 ✗：层 6 可用（见 `POFV_STORM_VM_LAYER` 注释 ✓）*/
 
 /* C1 各发的飞行状态（VM 句柄 + 位置 + 剩余寿命）；`clear_card()` 里真删 ✓。*/
 
@@ -2240,7 +2240,7 @@ static void c3_dir5(int idx5, float *dx, float *dy);
 #define POFV_C2_POINT_HIT_DMG 4
 #define POFV_C2_POINT_HIT_R      16.0f  /* ❓自定：32×32 的矩形源（一手形状未给；≈ 环绕点体量）*/
 #define POFV_C2_INVULN             40   /* 一手 ✓（39/40/40.0f）*/
-#define POFV_C2_VM_LAYER            6   /* 同暴风 `POFV_STORM_VM_LAYER`（脚本 396 里自己也写 `layer(6)` ✓）*/
+#define POFV_C2_VM_LAYER            6   /* ★ 2026-10-13 回退 ✗：层 6 可用（见 `POFV_STORM_VM_LAYER` 注释 ✓）*/
 #define POFV_C2_RING_SCRIPT  CE_ANM_ABILITY_SCRIPT_POFV109_STORM   /* ★ 借一手脚本 396（❓自定画法）*/
 
 /* 36 向单位圆表（10°/档，Python 生成；**不引 libm** ⇒ 守住 `dllx87` ✓）。*/
@@ -2397,7 +2397,7 @@ static void pofv_c2_tick(uint32_t id)
             if (i == 0) { s_c2_pt0x = pos[0]; s_c2_pt0y = pos[1]; }   /* ★ 环心用它 ✓ */
             if (!s_c2.orb_vm[i])
                 s_c2.orb_vm[i] = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
-                                  CE_ANM_ABILITY_SCRIPT_POFV109_C2_ORB, 6);
+                                  CE_ANM_ABILITY_SCRIPT_POFV109_C2_ORB, POFV_C2_VM_LAYER);
             if (s_c2.orb_vm[i]) {
                 ce_anm_set_pos((uint32_t)s_c2.orb_vm[i], pos[0], pos[1], 0.0f);
                 ce_anm_set_scale((uint32_t)s_c2.orb_vm[i], 1.0f, 1.0f);   /* ★ 一手 126×126 原尺寸 ✓ */
@@ -2467,7 +2467,7 @@ static void c2_ring_vm_sync(float r)
     if (r <= 0.0f) return;
     if (!s_c2.ring_vm) {
         const uint32_t id = ce_anm_spawn(CE_ABILITY_ANM(),
-                            CE_ANM_ABILITY_SCRIPT_POFV109_C_RING_ARC, 6);
+                            CE_ANM_ABILITY_SCRIPT_POFV109_C_RING_ARC, 6);   /* ★ 2026-10-13 回退 ✗：层 6 可用 ✓ */
         if (!id) return;
         s_c2.ring_vm = (int32_t)id;
     }
@@ -2625,7 +2625,7 @@ static void pofv_ca_ring_tick(void)
                                    : (R->kind == 3) ? CE_ANM_ABILITY_SCRIPT_POFV109_CA_RING_L2
                                                     : CE_ANM_ABILITY_SCRIPT_POFV109_CA_RING_L3;
                 /* ★ 到这里的 kind 只可能是 2/3/4 ✓（1 已在上面被挡掉 ✓）⇒ 192 / 256 / 448 ✓*/
-                const uint32_t id = ce_anm_spawn(CE_ABILITY_ANM(), sid, 13);   /* ★ 层 13 ✓（原 6 ✗ 不渲染，见脚本头注释 ✓）*/
+                const uint32_t id = ce_anm_spawn(CE_ABILITY_ANM(), sid, 6);   /* ★ 2026-10-13 回退 ✗：层 6 可用 ✓（owner 实跑见过 ✓）*/
                 if (id) {
                     R->vm = (int32_t)id;
                     ce_log("pofv: [CA_RING] 环 VM 已起 slot=%d script=%u ✓", i, (unsigned)sid);
@@ -2646,7 +2646,8 @@ static void pofv_ca_ring_tick(void)
                  *   ★ 于是"一手画面 `pos(16) → posTime(终点)` 的缓动"在 **v8 里用不了** ✗（无 `posMode` ✓）
                  *   ⇒ ★ 本卡**有意**改成"卡侧按判定半径逐帧画" ✓ —— ★ 已登记 TUNING ✓，
                  *     ★ **不再**写成"把 432 那条偏差收掉了" ✗（那句已被这次实跑证伪 ✓）。*/
-                ce_anm_set_scale((uint32_t)R->vm, POFV_C2_RING_BAND_W, R->r);
+                /* ★ 2026-10-13 **回退** ✗：★ **半径仍由脚本的 `scaleTime` 负责** ✓（= owner 实跑见过的那套 ✓）——
+                 *   卡侧再写会与脚本插值**打架** ✗ ⇒ ★ **不写** ✓（上面那段"卡侧每帧写"的推理已被实跑否掉 ✗）。*/
             }
         }
         R->r += R->dr;                 /* ★ 一手 `fadd [eax+0x8]` ✓ 线性 ✓ */
@@ -3486,7 +3487,7 @@ static void pofv_c1_tick(void)
  *   **证据不足** ✓ ⇒ ★ 只把"同族两值不一致"这条消掉 ✓，★ 数值本身照弹体贴图那一档 ✓。*/
 #define POFV_C3_HIT_W             30.0f
 #define POFV_C3_HIT_H             30.0f
-#define POFV_C3_VM_LAYER             6     /* ❓自定：同 C1/C2/暴风 */
+#define POFV_C3_VM_LAYER             6     /* ★ 2026-10-13 回退 ✗：层 6 可用（见 `POFV_STORM_VM_LAYER` 注释 ✓）*/
 #define POFV_C3_VM_SCALE_EVEN     0.25f    /* ❓⑤：偶波（一手 `etSprite(46)`）*/
 #define POFV_C3_VM_SCALE_ODD      0.35f    /* ❓⑤：奇波（一手 `etSprite(47)`）*/
 
@@ -7830,7 +7831,7 @@ static void pofv_barrier_break_fx(void)
     if (!p) return;
     for (i = 0; i < 3; ++i) {
         if (s_barrier_break_vm[i] && ce_anm_get_vm((uint32_t)s_barrier_break_vm[i])) continue;
-        s_barrier_break_vm[i] = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), fx[i], 6);   /* layer 6 = 本卡世界层 ✓ */
+        s_barrier_break_vm[i] = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), fx[i], 6);   /* ★ 2026-10-13 回退 ✗：层 6 可用 ✓ */
         if (s_barrier_break_vm[i]) {
             vm_set_world_pos((uint32_t)s_barrier_break_vm[i], p[0], p[1]);   /* ★ 在玩家身上 ✓（一手 ✓）*/
             ++n;
