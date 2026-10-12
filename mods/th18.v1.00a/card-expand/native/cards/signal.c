@@ -2050,7 +2050,14 @@ void signal_tint_restore_all(void)
     int i;
     for (i = 0; i < s_tint_n; ++i) {
         volatile uint32_t *col = (volatile uint32_t *)(s_tint_b[i] + SIGNAL_BULLET_VM_OFF + CE_ANM_VM_COLOR1);
-        *col = s_tint_orig[i];
+        /* ★★★ 2026-10-12 修：★ 与 115 的**已修版式**同款（`lolk.c:446` ✓）——
+             *   ★ 只还原 **RGB**（低 24 位）✓、★ **保留当前 alpha**（高 8 位）✓，
+             *   ★ 不把"染色前那一帧的 alpha 快照"写回去 ✗。
+             *   ★ 依据：owner 指出 111 可能同病 ⇒ 我**只读核实**：★ 本卡的 `signal_tint_apply`
+             *   早就保留了 alpha ✓（`(*col & 0xff000000u) | RGB` ✓），★ 但**还原这两处**是整条写回 ✗
+             *   ⇒ ★ 弹在擦弹圈内**出生**时，其 alpha 会被旧快照覆盖 ⇒ **变暗** ✗（与 109 同因 ✓）。
+             *   ★ 改动已登记 `AUDIT.md §BE`（动的是**别人的卡** ✓）。*/
+        *col = (*col & 0xff000000u) | (s_tint_orig[i] & 0x00ffffffu);
     }
     s_tint_n = 0;
 }
@@ -2131,7 +2138,8 @@ static void signal_tint_tick(void)
             s_tint_b[w] = b; s_tint_orig[w] = s_tint_orig[i]; ++w;
         } else {
             volatile uint32_t *col = (volatile uint32_t *)(b + SIGNAL_BULLET_VM_OFF + CE_ANM_VM_COLOR1);
-            *col = s_tint_orig[i];
+            /* ★ 同上：★ 保留当前 alpha ✓（`§BE` 已登记 ✓）。*/
+            *col = (*col & 0xff000000u) | (s_tint_orig[i] & 0x00ffffffu);
         }
     }
     s_tint_n = w;
