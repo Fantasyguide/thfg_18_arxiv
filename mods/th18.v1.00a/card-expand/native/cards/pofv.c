@@ -64,7 +64,8 @@
  */
 #include "sdk.h"
 #include "pofv_core.h"
-#include "faith.h"   /* ★ 2026-10-09：借用共享落点散布 faith_scatter_from_enemy() ✓（见 AUDIT §BE）*/
+#include "faith.h"
+#include "bomb10.h"   /* ★ 2026-10-12：罩子撞弹豁免要用共用件 `bomb10_cancel_impending_death()` ✓ */   /* ★ 2026-10-09：借用共享落点散布 faith_scatter_from_enemy() ✓（见 AUDIT §BE）*/
 
 /* ============================================================ 常量 */
 
@@ -3657,9 +3658,9 @@ static void pofv_barrier_fire(void)
      *     （罩子/领域态每帧成立 ✓）⇒ ★ 就变成"**从开局起**一直无敌" ✓ = owner 的现象 ✓。
      *   ⇒ ★ 修：★ **只在 `s_barrier_on` 真正 0→1 的那一帧**给一次 ✓（★ 下一次张开前不可能再声明 ✓）
      *     ⇒ ★ 100 帧**到期就结束** ✓ ⇒ **不再永续** ✓。*/
-    if (!s_barrier_on) {
-        ce_invuln_request(POFV_CARD_ID, POFV_BARRIER_INVULN_N);   /* ★ 0→1 沿：给一次 ✓（一手 100 帧 ✓）*/
-    }
+    /* ★★★★ 2026-10-12：★ **授予时不再给无敌** ✗ —— ★ owner 口径：那 100 帧无敌是
+     *   **撞弹之后**的行为 ✓（「撞弹之后的一手行为是…给一段无敌时间」✓），★ 不是拿到罩子就无敌 ✗。
+     *   ⇒ ★ 改由撞弹回调 `pofv_on_death_before_deathbomb()` 给 ✓。*/
     s_barrier_on = 1;
 }
 
@@ -3678,58 +3679,11 @@ static void pofv_barrier_tick(void)
          *     ★ **禁主动移动 40 帧** ✓、★ **位移 128 / 初速 2.0 线性衰减** ✓、★ 以及那个**标识 VM** ✓。
          *   ★ 下面那个 `pofv_barrier_nearest_bullet(...)` 只为**给位移定方向** ✓（★ 它**不消弹** ✗）⇒ 保留 ✓。
          *   ❓若你的意思是"**连无敌也不给**"（纯标识 ✓），★ 说一声我把 `ce_invuln_request` 那行也收了 ✓。*/
-        int n = 0;
-        /* ★★★ 2026-10-11 owner：短周期重发（一手是"罩子侧不断重发同一支演出弹" ✓，
-         *   脚本 10 帧就完 ✓）—— 我原来是"起一次、6 帧淡出自删" ✗ ⇒ 中间会空 ✗。
-         *   ⇒ 这里每 8 帧重发一台 446（= 整罩烤图，含白心 ✓）。*/
-        {
-            static int s_re;
-            if (--s_re <= 0) {
-                if (s_barrier_vm_glow && ce_anm_get_vm((uint32_t)s_barrier_vm_glow))
-                    ce_anm_delete((uint32_t)s_barrier_vm_glow);
-                s_barrier_vm_glow = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
-                                        CE_ANM_ABILITY_SCRIPT_POFV109_BARRIER_RING, POFV_BARRIER_VM_LAYER_GLOW);
-                s_re = 8;
-            }
-        }
-        pofv_barrier_vm_sync();   /* ★ 视觉：白圆 + 黄外发光（每帧跟随自机 ✓）*/
-        /* ★★★★ 2026-10-11 **回归修复**（owner：「罩子**没有起到免死的作用**，可能是哪根线
-         *   后来改错了，**原来是没问题的**」✗ —— ★ 判断完全正确 ✓）：
-         *   ★ 我先前把"清弹检测"那条线掏空了 ✗ ⇒ ★ `n` **恒为 0** ✗ ⇒ ★ 下面 `if (n > 0)`
-         *   整段（**破罩 + `ce_invuln_request(…, 100)` 免死** ✓）**从不执行** ✗ ⇒ ★ 免死失效 ✓。
-         *   ⇒ ★ 这里把检测接回来 ✓：半径内**有弹**就认作"罩子受力" ⇒ `n = 1` ✓
-         *     ⇒ ★ 破罩分支恢复 ✓ ⇒ ★ 一手那 **100 帧无敌** 恢复 ✓。
-         *   ⚠ 尚待细化（❓登记 ✓）：一手是"**吸收**那颗弹"（把它消掉并沿命中点反推方向 ✓），
-         *     现在只做了"**受力判定 + 反推方向**" ✓ —— ★ 免死这条已恢复 ✓，**吸弹**再补 ✓。*/
-        /* ★ 破罩闸（2026-10-11 owner 报的两个症状联立推出的根因 ✓）：
-         *   ★ owner：「它的**无敌一直没有取消** ✗」+「撞弹应当朝撞弹方向 180° 强制移动、**有音效**」✓
-         *   ⇒ ★ 我上轮"把破罩检测接回来"**只做了一半** ✗：★ 检测到半径内有弹就破 ✓，
-         *     ★ **却没把弹消掉** ✗（文件里早有 `pofv_barrier_clear()` ✓ 我没调 ✗）⇒
-         *     ★ 那颗弹**下一帧还在** ⇒ ★ **每帧都破罩** ⇒ `ce_invuln_request(…,100)` **每帧续命**
-         *     ⇒ ★ **永久无敌** ✓；★ 而 `s_barrier_brk > 0` 期间不重复推 ⇒ ★ 撞击/音效被吃掉 ✓。
-         *   ⇒ ★ 修：★ ① 破罩时**真的消弹**（`pofv_barrier_clear()` ✓）；★ ② **正在破罩就不再破** ✓。*/
-        /* ★ owner 纠正（2026-10-11）：「罩子只是说**我有保命的指示 UI** ✓，**不是也要有碰撞体** ✗」
-         *   ⇒ ★ **不看弹** ✗（不做半径检测 / 不消弹 / 不撞击位移 ✓ —— 那些是我上轮方向做反了 ✗）。*/
-        if (n > 0) {
-            pofv_barrier_clear();          /* ★① 真的把半径内的弹消掉 ✓（缺这一句 = 每帧重破 ✓）*/
-            s_barrier_on = 0;
-            /* ★ 破罩 ⇒ 视觉先收（两台 VM 真删 ✓，铁律）*/
-            if (s_barrier_vm_disc) { ce_anm_delete((uint32_t)s_barrier_vm_disc); s_barrier_vm_disc = 0; }
-            if (s_barrier_vm_glow) { ce_anm_delete((uint32_t)s_barrier_vm_glow); s_barrier_vm_glow = 0; }
-            s_barrier_brk = POFV_BARRIER_BREAK_N;
-            /* ★★ 一手：背向**命中点**位移 ✓ ⇒ 用半径内最近那颗被消掉的弹当命中点 ✓
-             *   （原来只有"正下" ❓ —— 已收掉 ✓）。找不到弹（理论上不该发生，因为刚挡到 ✓）
-             *   ⇒ 退回正下 ✓。*/
-            {
-                float hx = 0.0f, hy = 0.0f;
-                if (pofv_barrier_nearest_bullet(pp, POFV_BARRIER_R, &hx, &hy))
-                    pofv_barrier_dir_from(hx, hy);
-                else { s_barrier_dx = 0.0f; s_barrier_dy = 1.0f; }
-            }
-            /* ★ 这句原来在「破罩」里 ⇒ ★ 每帧重破 ⇒ 每帧续无敌 ⇒ **永续** ✗（owner 症状① ✓）
-             *   ⇒ ★ 已挪到「**张开那一帧给一次**」✓（见 `pofv_barrier_fire` ✓）。*/
-
-        }
+        /* ★★★★ 2026-10-12：★ 这里**不再做任何半径检测** ✗ —— ★ owner 明确「罩子**不是碰撞体**」
+         *   （2026-10-11 原话 ✓），而"半径内有弹就破罩"那条**正是**把罩子做成碰撞体的错路 ✗
+         *   （当年 `int n` 恒为 0、整段从不执行，owner 也因此强停过一次 ✓）。
+         *   ⇒ ★ 破罩/免死的**唯一入口** = 撞弹回调 `pofv_on_death_before_deathbomb()`（卡虚表 `+0x10`）✓，
+         *     它由**引擎在真撞弹时**广播 ✓ ⇒ ★ 本函数只管**视觉**（短周期重发 + 跟随自机）✓。*/
     }
     if (s_barrier_brk > 0) {
         /* ★ 一手 ✓：禁主动移动（当帧写 0；`on_tick_2` 先于 `Player::on_tick` ⇒ 当帧生效）+ 背向位移 */
@@ -7508,6 +7462,48 @@ static int pofv_on_shot_set_index(ce_card_t *c, int power_level)
     return want;
 }
 
+/* ★★★★ 2026-10-12 **罩子 = 一次撞弹豁免**（owner 口径逐字：「它只是一个视觉上的，我有一次撞弹豁免，
+ *   我用罩子来代指这个豁免」✓；「它的回调应当是在**撞弹之后**、在**其他所有撞弹保命手段之前**」✓；
+ *   「撞弹之后的一手行为是，**朝着伤害源的反方向强制运动一段距离**，**给一段无敌时间**」✓）。
+ *
+ *   为什么挂在卡虚表 **`+0x10` = `on_death_before_deathbomb`** ✓：
+ *     ① 它是**引擎在真撞弹时**广播的"中弹瞬间"钩子 ✓（先例：107/117 的救援、111 的河童罩子 ✓）；
+ *     ② 它在**决死窗口之前** ✓ ⇒ 正好是 owner 说的「其他所有保命手段之前」✓；
+ *     ③ ★ **不用** `ce_no_hit_declare` ✗ —— 那一层（113 的灵界闸门）会**跳过整个 `Player__die` 体** ✓
+ *        （照 111 的注释：两者不互相替代 ✓），而我们要的是"这一下被罩子吃掉、别的照走" ✓。
+ *
+ *   撤销中弹走共用件 `bomb10_cancel_impending_death()` ✓ = 一手 `th11:0x4078c4` 的
+ *   `Player__cancel_impending_death`（`th18:0x45d590`）唯一包装 ✓（111 同款 ✓）。
+ *   ❓ 方向：回调不带参数 ⇒ 用「半径内最近的那颗**敌弹**」当命中点反推（★ 只用于定方向 ✓，
+ *      **不消弹、不因它决定吃不吃** ✗ ⇒ 不构成碰撞体 ✓）；找不到就兜底朝正下 ✓（沿用原实现 ✓）。*/
+static int pofv_on_death_before_deathbomb(ce_card_t *c)
+{
+    const float *pp;
+    (void)c;
+    if (!s_barrier_on) return 0;              /* 没有罩子 ⇒ 本卡不接这一下 ✓ */
+    if (s_barrier_brk > 0) return 0;          /* 正在破罩位移 / 已破 ⇒ 不再吃 ✓ */
+    if (ce_forced_death_active()) {           /* ★ 卡造的死不是撞弹（照 111 ✓）⇒ 让位 */
+        ce_log("pofv: 这一下是卡自己造的死（不是撞弹）⇒ 罩子不吃、不破");
+        return 0;
+    }
+    pp = ce_player_pos();
+    s_barrier_on = 0;
+    ce_rescue_note_claim(POFV_CARD_ID);       /* 救援闩锁：照 107/117 的约定（返回值丢弃 ✓）*/
+    bomb10_cancel_impending_death();          /* ★ 一手 `th11:0x4078c4`：把这一下中弹撤销 ✓ */
+    ce_invuln_request(POFV_CARD_ID, POFV_BARRIER_INVULN_N);   /* ★ 一手：撞后 100 帧无敌 ✓ */
+    if (s_barrier_vm_disc) { ce_anm_delete((uint32_t)s_barrier_vm_disc); s_barrier_vm_disc = 0; }
+    if (s_barrier_vm_glow) { ce_anm_delete((uint32_t)s_barrier_vm_glow); s_barrier_vm_glow = 0; }
+    s_barrier_brk = POFV_BARRIER_BREAK_N;     /* ★ 破罩演出：40 帧禁主动移动 + 位移 ✓（一手常数 ✓）*/
+    {
+        float hx = 0.0f, hy = 0.0f;
+        if (pp && pofv_barrier_nearest_bullet(pp, POFV_BARRIER_R, &hx, &hy))
+            pofv_barrier_dir_from(hx, hy);
+        else { s_barrier_dx = 0.0f; s_barrier_dy = 1.0f; }   /* 兜底：正下 ✓ */
+    }
+    ce_log("pofv: 罩子吃掉这一下中弹（不扣命）+ 朝伤害源反向位移 + %d 帧无敌", POFV_BARRIER_INVULN_N);
+    return 0;
+}
+
 CE_CARD(109, .on_active_tick = pofv_active_tick,
         .active_recharge = POFV_ACTIVE_RECHARGE,
         .on_activate = on_activate,
@@ -7516,6 +7512,7 @@ CE_CARD(109, .on_active_tick = pofv_active_tick,
         .on_native_shot_suppress = on_native_shot_suppress,   /* ★ goal ④ ✓ */
         .on_shot_set_index = pofv_on_shot_set_index,   /* ★ goal ① ✓：早苗 C1/C2 认领原生弹表 ✓ */
         .on_enemy_death = on_enemy_death,
+        .on_death_before_deathbomb = pofv_on_death_before_deathbomb,   /* ★ 2026-10-12：罩子 = 一次撞弹豁免 ✓ */
         .on_tick_2 = on_tick_2,
         .on_draw = on_draw,             /* ★ 2026-10-09：固灵结界碰弹染色（一手 TH19 `0x4f5130`）*/
         .on_run_reset = on_run_reset,
