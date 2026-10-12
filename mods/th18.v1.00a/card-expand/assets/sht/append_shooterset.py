@@ -2449,6 +2449,10 @@ def _youkai_tier_sets(target_file: str, anm_ids: dict) -> list:
 #
 # ★ 为什么走原生（owner 定案 ✓）：C1/C2 的表现与 TH18 早苗自机弹幕**一模一样**，只差发射量与初始角度 ✓
 #   ⇒ 命中函数必然等价 ✓ ⇒ **填格子 = 最忠实的做法** ✓（= 117 的路 ✓）。
+# ⚠ ★★ 2026-10-12 **订正一处误移植** ✗：★ 一手那个 `+0x28`（= TH19 的"子机槽"，青蛙全 = **5**）★
+#   **不是** TH18 这个 `opt_slot`（生成器写的是 **`+0x20`** ✓）—— ★ 两者**不同字段、不同编号体系** ✗；
+#   ★ 而 TH18 的膛口只认 **原生那 4 格**（`slot >= 1` ⇒ 4 格；见 `sdk.h` 的说明 ✓）
+#   ⇒ ★ 填 `5` **越界** ✗ ⇒ ★ 两行一律 **`opt_slot = 0`** ✓（= 用本体位置 ✓，与其余追加组同款 ✓）。
 # ★ 命中等价已核（TUNING 第 13 轮 ✓）：TH18 **`hit4`**（`0x460cb0`）= 原生「早苗高速」的**命中伤害源** ✓
 #   —— 与一手青蛙的 `FUN_0054c2f0` 逐项吻合（行内 dmg ✓、`2.0` ✓、SE `0x41` 同族 ✓）
 #   ⇒ ★ **碰敌爆炸由引擎给** ✓；★ 蛇的 `init4/tick4/hit5` = **与 117 狼那组逐字节同构** ✓
@@ -2471,7 +2475,7 @@ def _pofv109_sets(target_file: str, anm_ids: dict) -> list:
                   func_on_init=4, func_on_tick=4, func_on_draw=0, func_on_hit=5)
              for i, a in enumerate(angles)]
     frog = [dict(fire_rate=16, start_delay=(0 if i < 13 else 8), damage=22,
-                 hit_w=24.0, hit_h=24.0, angle=a, speed=3.0, opt_slot=5, mode=0,
+                 hit_w=24.0, hit_h=24.0, angle=a, speed=3.0, opt_slot=0, mode=0,
                  anm="CE_ANM_ABILITY_SCRIPT_POFV109_C2S_FROG", sfx=-1,
                  func_on_init=0, func_on_tick=0, func_on_draw=0, func_on_hit=4)
             for i, a in enumerate(angles)]
