@@ -2990,8 +2990,9 @@ static void pofv_c1_fire(void)
     if (pofv_native_set_active()) return;     /* ★ 窗口已开 ⇒ 认领生效 ⇒ 手写停手 ✓（绝不双份 ✓）*/
     /* ★ 2026-10-12 诊断：区分"引擎按认领发"与"卡侧自己发"（owner 报"放完一次 C1 后再也放不出"）*/
     ce_log("pofv: [C1FIRE] 手写路径（认领没接管）grp=%d win=%d age=%d", grp, s_c1_win_left, s_c1_win_age);
-    if (grp == POFV_C1_GROUP_SANA) pofv_c1_fire_range(grp, 0, 13);        /* ★ t=0：行 0–12 ✓ */
-    else pofv_c1_fire_range(grp, 0, s_c1_rows[grp]);   /* ★ 灵梦 4 行一次 / 魔理沙 1 行一次 ✓ */
+    /* ★ 2026-10-12：早苗这一档**不再卡侧起 VM** ✗ —— 改由 `pofv_emit_group()` 调引擎真发弹 ✓
+     *   （与 Z 无关 ✓）；灵梦/魔理沙两档仍走原来的卡侧发射 ✓。*/
+    pofv_c1_fire_range(grp, 0, s_c1_rows[grp]);   /* ★ 灵梦 4 行一次 / 魔理沙 1 行一次 ✓（早苗不到这里 ✓）*/
     /* ★★ 一手 ✓ `EX+0xd4`：★ 魔理沙放过 C2 后，**这份 C1 追加两发**（dmg6 / ∓32 / spd0 ✓）。
      *   ★ 用 1、2 号槽（魔理沙自己只占 0 号 ✓）；★ 贴图/脚本同光束 ✓（一手 anm8 ✓）。*/
     if (s_c1_m_set11 && grp == POFV_C1_GROUP_MARISA) {
@@ -3063,6 +3064,39 @@ static void pofv_c1_fire(void)
 }
 
 /* ★ 每帧：窗口计时（早苗每 8 帧换半圈 ⇒ t=0/8/16/24 各 13 发 ✓，一手 ✓）。*/
+/* ★★★★★ 2026-10-12 **改成"卡侧真发弹"，与 Z 无关** ✓（owner 口径逐字：
+ *   「★ **一手跟 Z 一点关系没有，只是 C 控制**」✗ + 「★ 除了需要按 Z 之外没问题」✓）。
+ *
+ *   为什么必须换：★ 原实现是"**认领主炮 shooterset**"✗ —— 引擎只在**按 Z 时**才问那个 set
+ *   ⇒ ★ 不按 Z 就什么都不出 ✓（= owner 报的"放完一次 C1 后再也放不出"的一种 ✓）。
+ *   ⇒ ★ 改成**卡侧直接调引擎的发弹函数** ✓，照 **117 咲夜鹫弹**的先例（`cards/animal.c:2848` ✓）：
+ *       `Player__shoot_one_bullet`（`th18:0x45e930` ✓，thiscall(player; packed_id, timer, pos*, option)
+ *       `ret 0x10` ✓，★ **不是 hook**、无新断点 ✓），`packed_id = (set << 8) | row` ✓。
+ *   ⇒ ★ 行为/外观**仍来自引擎那几行**（狼特技 / 直线 ✓、`pl03` 的 **50/51** 脚本 ✓ ——
+ *     ★ 卡侧自己调时 `player+0x10` = `pl0X.anm` ✓ ⇒ 命名空间正确 ✓）；
+ *   ★ 而**发射时机由卡决定** ⇒ ★ C 一松就出 ✓、★ 与 Z 无关 ✓、★ 正常主炮照旧（= 一手"额外发射"✓）。*/
+#define POFV_FN_PLAYER_SHOOT_ONE_BULLET 0x45e930u
+typedef int (__attribute__((thiscall)) *pofv_shoot_one_fn_t)(void *player, int packed_id, int timer,
+                                                             const float *pos, void *option);
+
+static int pofv_emit_row(int set, int row, const float *pos)
+{
+    uint8_t *p = CE_PLAYER();
+    if (!p || !pos) return 0;
+    return ((pofv_shoot_one_fn_t)POFV_FN_PLAYER_SHOOT_ONE_BULLET)(
+        p, (int)(((uint32_t)set << 8) | (uint32_t)row), 0, pos, 0);
+}
+
+static void pofv_emit_group(int set, int from)
+{
+    const float *pp = ce_player_pos();
+    int i, n = 0;
+    if (!pp) return;
+    for (i = 0; i < 13; ++i) n += (pofv_emit_row(set, from + i, pp) != 0);
+    ce_log("pofv: [EMIT] set=0x%02x 行 %d..%d 实发 %d 发（卡侧真发弹、与 Z 无关 ✓）",
+           (unsigned)set, from, from + 12, n);
+}
+
 static void pofv_c1_window_tick(void)
 {
     pofv_stage_set(13);   /* ★ 窗口 tick ✓ */
@@ -3080,25 +3114,20 @@ static void pofv_c1_window_tick(void)
             ce_log("pofv: C2 窗口尽 ⇒ 切回 set10（下一次问认领会回 none）");
         }
     }
-    const int native_on = pofv_native_set_active();
-    /* ★★★★★ 2026-10-12 **把被我误删的门接回来** ✗✗（owner 实跑："一进关什么都没按就在发 C1 弹幕、
-     *   弹只走几个 px、还朝右；开一次 C1 什么都没发、只是这个怪弹幕停止"）：
-     *   ★ 我上一轮用**正则整段替换**本函数头时 ✓，把原来那句
-     *       `if (s_c1_win_left <= 0) return;`
-     *   **连门一起替换掉了** ✗ ⇒ ★ 下面那个"每 8 帧发半圈"不再受窗口约束 ✗；
-     *   ★ 而 `s_c1_win_age` **只在窗口开着时才递增** ✓ ⇒ ★ 窗口一关它就**冻在上次的值**
-     *   （通常是 0 ✓，满足 `% 8 == 0 && < 30` ✓）⇒ ★ 条件**恒真** ⇒ ★ 卡侧**一直在造弹** ✓；
-     *   ★ 而且那些是**卡自己起的 VM**（没有引擎速度 ✓）⇒ 恢复 `rotateAuto(1)` 后它们被按回 +x
-     *   ⇒ ★ **弹只走几个 px 且朝右** ✓；★ 松一次 C1 会把 `s_c1_win_age` 重新从 0 推起 ✓
-     *   ⇒ 涨过 30 后条件为假 ⇒ ★ **怪弹幕停止** ✓ = owner 看到的三条症状 ✓。
-     *   ⇒ ★ 教训（记 TUNING ✓）：**用正则整段替换函数体时，替换范围里可能夹着必需的门** ✗
-     *     ⇒ 替换后必须把整段**读一遍**再编译 ✓。*/
-    if (s_c1_win_left <= 0) return;   /* ★ 窗口没开 ⇒ 卡侧一发都不造 ✓（这行就是被误删的那门 ✓）*/
+    const int native_on = pofv_native_set_active();   /* ★ 只留作诊断/统计 ✓ */
+    if (s_c1_win_left <= 0) return;   /* ★ 窗口没开 ⇒ 卡侧一发都不造 ✓（这行是被我误删过一次的门 ✓）*/
     if (s_aura_kind != 3) return;
-    if (native_on) return;                     /* ★ goal ① ✓：认领了原生 set ⇒ 不再自己造弹 ✓ */
-    if (s_c1_win_age % 8 == 0 && s_c1_win_age < 30) {
-        s_c1_sanae_half ^= 1;
-        pofv_c1_fire_range(POFV_C1_GROUP_SANA, s_c1_sanae_half ? 13 : 0, 13);
+    /* ★★ 2026-10-12：这里从"等引擎按认领发"改成"**卡侧真发弹**" ✓ ⇒ 与 Z 无关 ✓
+     *   （理由与先例见上面 `pofv_emit_group()` 的长注释 ✓；★ 去掉了原来那道 `if (native_on) return;` ✗）。*/
+    /* ★ 窗口长度按档分 ✓：一手 set10（蛇）30 帧 ⇒ 4 组 ×13 = **2 圈** ✓；
+     *   set11（青蛙）60 帧 ⇒ 8 组 ×13 = **4 圈** ✓（★ 原来写死 `< 30` 会让 C2 只发一半 ✗）。*/
+    {
+        const int win_n = s_c1_set_sel ? 60 : 30;
+        if (s_c1_win_age % 8 == 0 && s_c1_win_age < win_n) {
+            s_c1_sanae_half ^= 1;
+            pofv_emit_group(s_c1_set_sel ? CE_SHT_SET_POFV109_FROG : CE_SHT_SET_POFV109_SNAKE,
+                            s_c1_sanae_half ? 13 : 0);
+        }
     }
 }
 
@@ -7498,8 +7527,10 @@ static int pofv_on_shot_set_index(ce_card_t *c, int power_level)
     static int last = -2;
     int want;
     (void)c; (void)power_level;
-    want = (!pofv_native_set_active()) ? -1
-         : (s_c1_set_sel ? CE_SHT_SET_POFV109_FROG : CE_SHT_SET_POFV109_SNAKE);
+    /* ★ 2026-10-12：**不再认领主炮 set** ✗ —— owner 口径「一手跟 Z 无关、只有 C」⇒
+     *   按住 Z 时**正常主炮照旧** ✓（一手是"额外发射"✓），早苗那两批改由卡侧 `pofv_emit_group()`
+     *   直接调引擎发弹 ✓。⇒ 这里恒返回 -1（= 本卡不覆盖主炮 ✓）。*/
+    want = -1;
     if (want != last) {
         if (want < 0) ce_log("pofv: [CLAIM] -> none (kind=%d sel=%d win=%d)",
                              s_aura_kind, s_c1_set_sel, s_c1_win_left);
