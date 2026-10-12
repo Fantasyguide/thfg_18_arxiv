@@ -7889,9 +7889,51 @@ static void on_item_commit(ce_card_t *c)
 /* ★★ 2026-09-22（人妖槽：死亡清零）：一手 `th08:0x44ac09`（`Player::begin_death` 里
  * `set_youkai_gauge(0)`）。走 `on_death_before_deathbomb`（决死窗口**之前**那一帧，
  * 与 TH08 的 `begin_death` 同一时刻）。*/
+/* ★★★★ 2026-10-11（owner 整蛊协同：「当有 106 的时候，决死 B 消耗两个」）——
+ *   **106 判据（D 路线，不改共享件）**：**只读** AbilityManager 的卡链表（SDK 自己用的那份：
+ *   `CE_MGR_CARD_LIST_FIRST` → node → `CE_NODE_CARD` → `ce_card_id(card)`），查有没有 id=106。
+ *   这就是「在卡组里（已加载的卡）」的读法；不需要新增 sdk 接口 ⇒ 无共享件登记成本。*/
+static int yk_has_card(uint32_t want)
+{
+    uint8_t *mgr = CE_ABILITY_MGR();
+    const uint8_t *node;
+    unsigned g = 0;
+    if (!mgr) return 0;
+    for (node = *(const uint8_t *const *)(mgr + CE_MGR_CARD_LIST_FIRST); node && g < 256;
+         node = *(const uint8_t *const *)(node + CE_NODE_NEXT), ++g) {
+        uint8_t *card = *(uint8_t *const *)(node + CE_NODE_CARD);
+        if (card && ce_card_id((ce_card_t *)card) == want) return 1;
+    }
+    return 0;
+}
+
+#define YK_DEATHBOMB_DOUBLE_WITH_106 1   /* ★ owner 整蛊协同：有 106 ⇒ 决死多扣 1 个 B（总消耗 2）；0 = 关 */
+static unsigned s_db106_logged;
+
 static int on_death_before_deathbomb(ce_card_t *c)
 {
     if (!YK_ENABLE_CARD || !YK_ENABLE_CB_DEATHBOMB) return 0;   /* ★ 总开关 + 回调族 ⑨ */
+    /* ★★★ 2026-10-11（owner：「**当有 106 的时候，决死 B 消耗两个**」；「**不会扣到负数**」、
+     *   「**最后一个 B 的时候也可以决死**」）—— 本回调在**决死窗口之前**那一帧跑（`youkai.c` 本函数），
+     *   在这里**多扣 1 个**：B 数 = `CE_CURRENT_BOMBS()`（`0x4ccd58`）；`fragments/max` = `0x4ccd5c/0x4ccd64`。
+     *   · `bombs >= 1` 才扣（`bombs=1` ⇒ 扣成 **0**，**触发判定不动** ⇒ 照旧允许决死）；
+     *   · **clamp ≥ 0**：`bombs=0` 时不动（绝不出现负数）；
+     *   · **只在有 106 时生效**；无 106 / 开关关 ⇒ 一个字节都不写（行为逐位不变）。*/
+    if (YK_DEATHBOMB_DOUBLE_WITH_106 && yk_has_card(106u)) {
+        int32_t before = CE_CURRENT_BOMBS();
+        if (before > 0) {
+            CE_CURRENT_BOMBS() = before - 1;
+            if (s_db106_logged < 32u) {
+                ++s_db106_logged;
+                ce_log("youkai/debug: deathbomb cost = 2 (card 106 present); bombs %d -> %d%s",
+                       (int)before, (int)CE_CURRENT_BOMBS(),
+                       (CE_CURRENT_BOMBS() == 0) ? " (clamped, still allowed)" : "");
+            }
+        } else if (s_db106_logged < 32u) {
+            ++s_db106_logged;
+            ce_log("youkai/debug: deathbomb cost = 2 (card 106 present) but bombs already 0 (clamped, no negative)");
+        }
+    }
     yk_card_t *s = ce_state(c, yk_card_t);
     if (s) s->gauge = 0;
     return 0;

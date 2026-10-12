@@ -18312,3 +18312,14 @@ if (pofv_charge_key()) *(uint32_t *)CE_ADDR_INPUT_HELD &= ~(uint32_t)1u;   /* �
 （观感上**等价于一手"蓄力期间不能发射"** ✓ 故可接受 ✓，但记下 ✓）。
 ★ 本改动**没有动共享层** ✗（用的都是卡自己的 tick + 现成常量/地址 ✓）⇒ ★ **不需要 AUDIT §BE** ✓。
 
+#### 2.1ccc-89 2026-10-11：整蛊协同（有 106 ⇒ 决死 B 消耗 2）
+
+| 项 | 说明 |
+| --- | --- |
+| owner 原话 | 「整蛊协同：**当有 106 的时候，决死 B 消耗两个**（不会扣到负数，最后一个 B 的时候也可以决死）」|
+| 「有 106」判据（**D 路线，不改共享件**）| **只读** AbilityManager 的卡链表（`CE_MGR_CARD_LIST_FIRST` → `CE_NODE_CARD` → `ce_card_id`）查 id=106 ⇒ 无需新增 sdk 接口、无共享件登记/全卡回归成本；口径 = **在卡组里（已加载的卡）** |
+| B 数地址（一手）| `CE_CURRENT_BOMBS()` = **`0x4ccd58`**（`GlobalsInner+0x7c`）；`fragments` = `0x4ccd5c`、`max` = `0x4ccd64`（`engine.h:24/25/26/361-363`）|
+| 落点 | `on_death_before_deathbomb()`（决死窗口**之前**那一帧）⇒ 有 106 时 `bombs>0 ? bombs-1 : 不动`（**clamp ≥ 0**）；**触发判定不动** ⇒ B=1 照旧允许决死、扣完变 0 |
+| 开关 | `YK_DEATHBOMB_DOUBLE_WITH_106`（默认 **1**；0 = 完全不动，行为逐位不变）|
+| 日志 | `youkai/debug: deathbomb cost = 2 (card 106 present); bombs 1 -> 0 (clamped, still allowed)`（≤32 行）|
+| 判据 | **有 106**：决死扣 2、不为负、只剩 1 个 B 也能决死；**无 106**：照旧扣 1（逐位不变）|
