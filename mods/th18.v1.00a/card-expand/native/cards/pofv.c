@@ -4337,6 +4337,25 @@ static void pofv_c2s_fire(void)
     s_c2s_st.active = 1; s_c2s_st.ring = 0; s_c2s_st.timer = 0;
     s_c1_set_sel = 1;
     s_c2s_win = 60;                 /* ★ 一手 ✓ 60 帧窗口 */
+    /* ★★★★ 2026-10-12（★ **走原生弹的连带项** ✓，★ 窗口审计 e5ec2a2f 的实测结论 ✓）：
+     *   ★ 这几行的 `opt_slot = **5**` ✓ ⇒ ★ 引擎从 `player + 0x650 + 5×0x128 = **player + 0xc18**`
+     *   取**发射点** ✓（★ ×128 定点 ✓，★ y 在 `+0xc1c` ✓）。
+     *   ★ 而一手在**释放那一刻**把自机坐标写进这一对 int ✓（`0x418db9`/`0x418dd3` ✓；
+     *   ★ 该字段**全 exe 唯一写点就是那里** ✓ ⇒ ★ 叫"释放时刻钉住的点" ✓）。
+     *   ⇒ ★ 本卡必须在**放 C2 这一帧**把它写上 ✓ —— ★ 否则那 26 发会从槽 5 的
+     *   **未初始化值**出来 ✗（★ 这也是"原生"与"手写"真正的差别之一 ✓）。
+     *   ★ 对照：★ 相位 A（蛇 = set10 ✓）的 `opt_slot = 0` ⇒ ★ 它用**实时自机位** ✓（一手如此 ✓）。*/
+    {
+        const float *pp6 = ce_player_pos();
+        uint8_t *pl6 = CE_PLAYER();
+        if (pp6 && pl6) {
+            *(int32_t *)(pl6 + 0xc18) = (int32_t)(pp6[0] * 128.0f);
+            *(int32_t *)(pl6 + 0xc1c) = (int32_t)(pp6[1] * 128.0f);
+            ce_log("pofv: [FROG] snap=(%.1f,%.1f) -> slot5 int=(%d,%d)",
+                   (double)pp6[0], (double)pp6[1],
+                   *(int32_t *)(pl6 + 0xc18), *(int32_t *)(pl6 + 0xc1c));
+        }
+    }
     pofv_c1_fire();                 /* ★ 立刻按 set11 放一份 ✓（一手同帧 ✓）*/
 }
 
