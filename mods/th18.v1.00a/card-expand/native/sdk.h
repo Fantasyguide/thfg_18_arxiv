@@ -1242,6 +1242,36 @@ void ce_hud_debug_blocks_tick(void);
  * 只写已验证的 `color_1` 的 A（保留 RGB ⇒ 乘性 ⇒ 与引擎自己的闸只叠加）。*/
 void ce_hud_native_face_dim_tick(void);
 
+/* ★ z58：**"扫描全部敌弹"的只读验证探针**（定义在 `sdk.c`；帧钩子里已挂，一秒一行）——
+ * 比对「活弹链表（`mgr+0xbc`，O(活弹)）」与「数组扫描（2000 槽，O(池)）」的活弹数，
+ * 并打**状态直方图**（各卡判据的一手素材）。详见 `AUDIT.md` §BE #279。*/
+void ce_bullet_scan_probe(void);
+
+/* ★ z58：**抽离出来的"怎么走"**（判据仍各卡自己写 ✓，owner 口径）——
+ *   `CE_BULLET_LIVE_FOR_EACH(b)`：走**活弹链表**（`mgr+0xbc` 哨兵头的 `head.next`，
+ *     `node.entry` = `zBullet*`）⇒ **只摸活弹** ✓（O(活弹)）；
+ *   `CE_BULLET_POOL_FOR_EACH(b)`：走**2000 槽静态池**（老写法；顺序 = 数组下标 ✓）；
+ *   两者都**不判断有效性** ⇒ 卡体里照旧 `if (!你的判据(b)) continue;` ✓。
+ *   ⚠ 每一步都过 `IsBadReadPtr`（坏指针即停 ✓）、链表顺序 ≠ 数组顺序（顺序敏感的卡用 POOL ✓）。*/
+#define CE_BULLET_LIVE_FOR_EACH(b)                                                   \
+    for (uint8_t *ce_bl_head = (CE_BULLET_MGR() ? (CE_BULLET_MGR() + CE_BM_TICK_LIST_HEAD) : 0), \
+                 *ce_bl_node = ((ce_bl_head && !IsBadReadPtr(ce_bl_head, 16))         \
+                                    ? *(uint8_t *const *)(ce_bl_head + CE_BULLET_LIST_NEXT) : 0), \
+                 *b = 0;                                                             \
+             ce_bl_node && ce_bl_node != ce_bl_head &&                               \
+             !IsBadReadPtr(ce_bl_node, 16) &&                                        \
+             ((b) = *(uint8_t *const *)ce_bl_node) != 0 &&                           \
+             !IsBadReadPtr((b), CE_BULLET_STATE + 2);                                \
+         ce_bl_node = *(uint8_t *const *)(ce_bl_node + CE_BULLET_LIST_NEXT))
+
+#define CE_BULLET_POOL_FOR_EACH(b)                                                   \
+    for (uint8_t *b = (CE_BULLET_MGR() ? (CE_BULLET_MGR() + CE_BM_BULLETS + CE_BULLET_STRIDE) : 0), \
+                 *ce_bp_end = (CE_BULLET_MGR()                                  \
+                                   ? (CE_BULLET_MGR() + CE_BM_BULLETS +         \
+                                      (size_t)(CE_BM_BULLET_COUNT + 1) * CE_BULLET_STRIDE) : 0); \
+         b && ce_bp_end && b < ce_bp_end;                                            \
+         b += CE_BULLET_STRIDE)
+
 /* ★★★ 2026-10-03z55（owner：「**单 109 的时候，蓄力槽被弄到主动卡上面了**」）——
  *   卡侧**自己算声明宽度**时必须先刷这个：`ce_hud_row_remaining_w()`（"底边剩余宽度"）读的是
  *   `s_hud_card_present`，而那个标志原本只在**认领包装器**里更新 ⇒ 109 先算宽度、后调包装器

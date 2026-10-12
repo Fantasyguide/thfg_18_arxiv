@@ -1188,6 +1188,64 @@ void ce_hud_native_face_dim_tick(void)
     }
 }
 
+/* ★★★★ 2026-10-03z58（owner 第 1 步：**只加 API + 只读探针，不动任何卡的判据**）——
+ *   **把"扫描全部敌弹"这件事抽离 + 加速**的验证件。抽离的**只是"怎么走"**：
+ *   判据（半径 <10 / 自机身边 / 只染某色 …）**仍然各卡自己写** ✓（owner 口径）。
+ *
+ *   两条路：
+ *     · **活弹链表**：`mgr+0xbc`（`tick_list_head`）的 `head.next` 起走，
+ *       `node.entry` = `zBullet*` ⇒ **只摸活弹** ✓（O(活弹)）；
+ *     · **数组扫描**：`mgr+CE_BM_BULLETS + i*CE_BULLET_STRIDE`（i = 1..2000）⇒ 现在的写法
+ *       （**2000 个分散地址、每个 4KB 步长** ✗）。
+ *   ⇒ 本函数**只读**、把两者的活弹数**对上账**，并把**状态直方图**打出来（第 2 步要的一手数据）：
+ *     状态直方图正是"什么算有效弹"的原始素材，各卡判据可以据此写对 ✓。
+ *   ⚠ 安全：每一步 `IsBadReadPtr`、上限 4096 防环、**不写任何内存** ✓（#272/#278 的教训）。*/
+void ce_bullet_scan_probe(void)
+{
+    static unsigned s_tick;
+    uint8_t *mgr;
+    uint8_t *head, *node;
+    int n_list = 0, guard = 0, bad = 0, i;
+    unsigned hist[8];
+    int idx_first[4];
+    if (++s_tick % 60u) return;                     /* 一秒一次（数组扫描贵：2000×4KB 步长）*/
+    mgr = CE_BULLET_MGR();
+    if (!mgr) return;
+    for (i = 0; i < 8; ++i) hist[i] = 0;
+    for (i = 0; i < 4; ++i) idx_first[i] = -1;
+
+    /* ① 活弹链表（快路）*/
+    head = mgr + CE_BM_TICK_LIST_HEAD;
+    if (!IsBadReadPtr(head, 16)) {
+        node = *(uint8_t *const *)(head + CE_BULLET_LIST_NEXT);
+        while (node && node != head && guard++ < 4096) {
+            uint8_t *b;
+            if (IsBadReadPtr(node, 16)) { bad = 1; break; }
+            b = *(uint8_t *const *)node;
+            if (!b || IsBadReadPtr(b, CE_BULLET_STATE + 2)) { bad = 1; break; }
+            if (n_list < 4) idx_first[n_list] = *(const int32_t *)(b + CE_BULLET_INDEX_IN_ARRAY);
+            ++n_list;
+            node = *(uint8_t *const *)(node + CE_BULLET_LIST_NEXT);
+        }
+    } else {
+        bad = 1;
+    }
+
+    /* ② 数组扫描（老路）+ 状态直方图（第 2 步的一手素材）*/
+    for (i = 1; i <= CE_BM_BULLET_COUNT; ++i) {
+        const uint8_t *b = mgr + CE_BM_BULLETS + (size_t)i * CE_BULLET_STRIDE;
+        const unsigned st = *(const uint16_t *)(b + CE_BULLET_STATE);
+        if (st < 8) ++hist[st];
+    }
+    ce_log("bullet: 活弹链表 %d 发%s vs 数组非零槽 %u 发 | 状态直方图 "
+           "[0]=%u [1]=%u [2]=%u [3]=%u [4]=%u [5]=%u [6]=%u [7]=%u | 链表前 4 发的数组下标 %d %d %d %d",
+           n_list, bad ? "（走到坏指针就停 ✗）" : "",
+           (unsigned)(hist[1] + hist[2] + hist[3] + hist[4] + hist[5] + hist[6] + hist[7]),
+           (unsigned)hist[0], (unsigned)hist[1], (unsigned)hist[2], (unsigned)hist[3],
+           (unsigned)hist[4], (unsigned)hist[5], (unsigned)hist[6], (unsigned)hist[7],
+           idx_first[0], idx_first[1], idx_first[2], idx_first[3]);
+}
+
 void ce_hud_slot_log_all(const char *tag)
 {
     int i, n = ce_hud_slot_count();
@@ -2712,6 +2770,7 @@ int __cdecl BP_ce_item_frame(x86_reg_t *regs, void *bp_info)
     ce_hud_stage_reset_end_frame();   /* ★ z44：帧末重新武装"每关一次"的重置闸 */
     ce_hud_band_dim_tick(ce_player_pos());
     ce_hud_native_face_dim_tick();   /* ★ z50：原生主动卡与共享带**每帧**同步（安全写，见函数头）*/
+    ce_bullet_scan_probe();          /* ★ z58：只读比对"活弹链表 vs 数组扫描"（第 1 步验证件）*/
     ce_hud_debug_blocks_tick();   /* ★ z17：把声明块画出来（debug；宏可关）*/
         dim_now = ce_hud_band_dim_dimmed();
         if (s_dim_was != dim_now) {

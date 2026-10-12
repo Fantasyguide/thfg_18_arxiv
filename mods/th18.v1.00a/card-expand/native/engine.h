@@ -772,6 +772,21 @@ typedef struct { int32_t prev; int32_t cur; float cur_f; int32_t speed_src; uint
 /* ---- zBulletManager / zBullet（ExpHP 结构 + cancel_all 0x4297a0 的扫描：起点 mgr+0xec，2000 张，stride 0xfa0）---- */
 #define CE_BM_BULLETS              0xec       /* 第 0 张（ExpHP 叫 list_0_tail_dummy_bullet；cancel_all 从它起扫 0x7d0 张）*/
 #define CE_BM_BULLET_COUNT         0x7d0
+/* ★★★ 2026-10-03z58（owner：「什么算一发有效弹各写各的 ✓，但**扫描这个行为能不能抽离/加速**」）——
+ *   **命名金矿给了加速的路**（`local/vendor/th-re-data/data/th18.v1.00a/type-structs-own.json`）：
+ *     · `zBulletManager.tick_list_head` 在 **mgr+0xbc**（`zBulletList` 双向循环链表）
+ *       = **当前活着的敌弹** ⇒ 走它 = **O(活弹)**，而扫数组是 O(2000) ✓✓；
+ *     · `zBulletList = { entry(zBullet*), next(+4), prev(+8), __seldom_used(+0xc) }`；
+ *     · 每发弹身上在 **bullet+0x10** 嵌了一个这样的节点（`node_10`），
+ *       另有 `freelist_node`（+0x0）属于"空闲链"，**不要**拿它当活弹 ✓；
+ *     · `zBullet.index_in_bullet_array` 在 **+0x660**（需要按数组顺序时用它排序 ✓）；
+ *     · 引擎自己就用这些：`iter_current/_2`、`iter_next/_2`（`mgr+0x7a41d8…`）✓
+ *       ⇒ 我们走链表是**回到引擎的既有做法**，不是自创 ✓。*/
+#define CE_BM_TICK_LIST_HEAD       0xbc       /* zBulletList：活弹链表的哨兵头（head.next 起走）*/
+#define CE_BULLET_LIST_ENTRY       0x0        /* zBulletList.entry = zBullet* */
+#define CE_BULLET_LIST_NEXT        0x4
+#define CE_BULLET_NODE             0x10       /* 每发弹身上嵌的 zBulletList 节点 */
+#define CE_BULLET_INDEX_IN_ARRAY   0x660      /* int32：它在静态池里的下标（排序用）*/
 #define CE_BULLET_STRIDE           0xfa0
 #define CE_BULLET_FLAGS            0x20
 #define CE_BULLET_POS              0x638      /* float3 */

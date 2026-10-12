@@ -1647,6 +1647,14 @@ static int cancel_white_in_circle(const float *pos, float r, int max_count, int 
             const float by = *(const float *)(b + CE_BULLET_POS + 4);
             ((pofv_fn_bullet_cancel_t)POFV_FN_BULLET_CANCEL)(b, mode);
             pofv_spark_spawn(bx, by);
+            /* ★★★★★ 2026-10-12 goal-b68a8c72 ① **修"同一颗弹同帧掉两次"** ✓
+             *   （审计 `89c60c46` 抓到 ✓）：★ 消弹之后**槽 state 仍非 0** ✓（一手：`Bullet__cancel` 写
+             *   `+0xf68 = 4` ✓，不清 state ✓）⇒ ★ 本卡后面的**结界扫描**（`aura_scan_bullets` ✓）与
+             *   **擦弹扫描**（`pofv_graze_scan_drop` ✓）**仍会把这颗弹当活弹** ✓ ⇒ ★ 同帧**再掉一颗** ✗。
+             *   ⇒ ★ 这里就地**置上同一把闩锁** ✓ ⇒ ★ **三条掉落路径**（霊撃消弹 ✓ / 结界 ✓ / 擦弹 ✓）
+             *     **统一到 `s_aura_bullet_done[]`** ✓ = spec §8.3 的"**一套共享规则**" ✓
+             *     ⇒ ★ 同一颗弹**只掉一次** ✓。*/
+            s_aura_bullet_done[i] = 1;
         }
         if (++n >= max_count) break;
     }
