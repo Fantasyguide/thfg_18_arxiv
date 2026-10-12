@@ -1928,7 +1928,13 @@ static void pofv_aura_tint_tick(void)
             s_aura_tint[s_aura_tint_n].b = b;
             s_aura_tint[s_aura_tint_n].orig = *col;   /* 整条快照（见文件头对 alpha 的说明）*/
             s_aura_tint[s_aura_tint_n].n = 0;         /* 一手：新碰到 ⇒ n=0 ⇒ G=0xd0 */
-            *col = pofv_aura_tint_color(0);
+            /* ★★★★ 2026-10-12 owner ②（★「**子弹在固灵领域内出生时透明度会降低**」✗ ——
+             *   ★ owner 指出**115 早有此 bug 并已解决** ✓）⇒ ★ 照 115 的**已修版式**（`lolk.c:446` ✓）：
+             *     `*p = (*p & 0xff000000u) | (orig & 0x00ffffffu);` ✓
+             *   ★ 即 ★ **只还原 RGB（低 24 位）** ✓、★ **保留当前 alpha（高 8 位）** ✓
+             *   ⇒ ★ 不再把"染色前那一帧的 alpha 快照"写回去 ✗ —— ★ 那正是"**领域内出生的弹被降透明**"的成因 ✓
+             *     （★ 出生时快照就已经是被染过的低 alpha ✓ ⇒ 还原时又把它写回 ⇒ 永久偏暗 ✗）。*/
+            *col = (*col & 0xff000000u) | (pofv_aura_tint_color(0) & 0x00ffffffu);
 #if POFV_AURA_BULLET_SHAKE
             pofv_aura_shake_apply(b);
 #endif
