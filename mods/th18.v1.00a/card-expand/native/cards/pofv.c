@@ -2533,7 +2533,12 @@ typedef struct {
     int     kind;      /* 1 = CA 释放(176) / 2 = L1(192) / 3 = L2(256) / 4 = L3(448) ✓ */
     int32_t vm;        /* 画环的 VM（脚本 432 ✓）*/
 } pofv_ca_ring_t;
-static pofv_ca_ring_t s_ca_ring;
+/* ★★ 2026-10-12 **多环池** ✓（一手：节点**不是只有一个** ✗ —— 文档 §1.1 说 `player+0xb100` 是
+ *   **活动节点指针数组** ✓、计数在 `player+0xc110` ✓、池初始化 `0x41ec45` 写 **512 个空闲节点** ✓）。
+ *   ★ 本卡取 8（❓自定：不是 512 ✓ —— 单局同时存在的 CA 环远少于这个数 ✓，但**必须 > 1** ✗：
+ *   一手允许重叠（如 L1 48 帧没走完又放一次 ✓），原来"同一时刻只留一个"会把前一个**整个丢掉** ✗）。*/
+#define POFV_CA_RING_MAX 8
+static pofv_ca_ring_t s_ca_ring[POFV_CA_RING_MAX];
 
 /* ★ 一手三元组表（§1.4 ✓）：`{r₀, dr, 寿命}` —— ★ 终点 = r₀ + dr × 寿命（与 §1.4 表逐个相等 ✓）*/
 static const float s_ca_ring_tab[5][3] = {
@@ -2546,59 +2551,80 @@ static const float s_ca_ring_tab[5][3] = {
 
 static void pofv_ca_ring_clear(void)
 {
-    if (s_ca_ring.vm) pofv_eb_ring_close(&s_ca_ring.vm);   /* ★ 铁律：自建 VM 必须收 ✓ */
-    s_ca_ring.active = 0; s_ca_ring.r = 0.0f; s_ca_ring.dr = 0.0f;
-    s_ca_ring.life = 0;   s_ca_ring.kind = 0;
+    int i;
+    for (i = 0; i < POFV_CA_RING_MAX; ++i) {
+        if (s_ca_ring[i].vm) pofv_eb_ring_close(&s_ca_ring[i].vm);   /* ★ 铁律：自建 VM 必须收 ✓ */
+        s_ca_ring[i].active = 0; s_ca_ring[i].r = 0.0f; s_ca_ring[i].dr = 0.0f;
+        s_ca_ring[i].life = 0;   s_ca_ring[i].kind = 0;
+    }
 }
 
 /* ★ 起一个环（★ 圆心 = 传入点 ✓，一手「建完不动」✓）*/
 static void pofv_ca_ring_spawn(int kind, float x, float y)
 {
+    int i, slot = -1;
     if (kind < 1 || kind > 4) return;
-    pofv_ca_ring_clear();                       /* 同一时刻只留一个（❓一手节点表 512 个 ⇒ 多环待核 ✓）*/
-    s_ca_ring.active = 1;
-    s_ca_ring.x = x;  s_ca_ring.y = y;
-    s_ca_ring.r    = s_ca_ring_tab[kind][0];
-    s_ca_ring.dr   = s_ca_ring_tab[kind][1];
-    s_ca_ring.life = (int)s_ca_ring_tab[kind][2];
-    s_ca_ring.kind = kind;
-    ce_log("pofv: [CA_RING] 起环 kind=%d r0=%.1f dr=%.2f 寿命=%d ⇒ 终点 %.0f 圆心=(%.0f,%.0f)"
+    /* ★ 一手：从**空闲链表**取一个节点 ✓（`0x41cf30` ✓）；★ 本卡的池小 ⇒ 找第一个空槽 ✓。
+     *   ❓池满时一手会"退到内嵌的第一个节点"（`+0xb0bc` ✓），本卡先**丢弃并记日志** ✓（不猜那个退路 ✓）。*/
+    for (i = 0; i < POFV_CA_RING_MAX; ++i) {
+        if (!s_ca_ring[i].active) { slot = i; break; }
+    }
+    if (slot < 0) {
+        ce_log("pofv: [CA_RING] 池满（%d）⇒ 这一环丢弃（❓一手会退到内嵌节点，未落地 ✓）",
+               POFV_CA_RING_MAX);
+        return;
+    }
+    s_ca_ring[slot].active = 1;
+    s_ca_ring[slot].x = x;  s_ca_ring[slot].y = y;
+    s_ca_ring[slot].r    = s_ca_ring_tab[kind][0];
+    s_ca_ring[slot].dr   = s_ca_ring_tab[kind][1];
+    s_ca_ring[slot].life = (int)s_ca_ring_tab[kind][2];
+    s_ca_ring[slot].kind = kind;
+    ce_log("pofv: [CA_RING] 起环 slot=%d kind=%d r0=%.1f dr=%.2f 寿命=%d ⇒ 终点 %.0f 圆心=(%.0f,%.0f)"
            "（一手 th09:0x41cf30 族 ✓）",
-           kind, (double)s_ca_ring.r, (double)s_ca_ring.dr, s_ca_ring.life,
-           (double)(s_ca_ring.r + s_ca_ring.dr * (float)s_ca_ring.life), (double)x, (double)y);
+           slot, kind, (double)s_ca_ring[slot].r, (double)s_ca_ring[slot].dr, s_ca_ring[slot].life,
+           (double)(s_ca_ring[slot].r + s_ca_ring[slot].dr * (float)s_ca_ring[slot].life),
+           (double)x, (double)y);
 }
 
 /* ★ 每帧（一手 `0x41c8e0` 的推进律 ✓）：① 半径内**逐颗**消可消弹 ✓ ② `r += dr` ✓ ③ 寿命 `--` ⇒ 0 释放 ✓ */
 static void pofv_ca_ring_tick(void)
 {
-    float pos[3];
-    int n;
-    if (!s_ca_ring.active) return;
-    pos[0] = s_ca_ring.x; pos[1] = s_ca_ring.y; pos[2] = 0.0f;
-    if (s_ca_ring.r > 0.0f) {
-        n = cancel_white_in_circle(pos, s_ca_ring.r, POFV_CANCEL_MAX, POFV_BULLET_CANCEL_MODE);
-        if (n > 0)
-            ce_log("pofv: [CA_RING] kind=%d r=%.1f 消掉 %d 颗（一手：逐帧点测试 ✓）",
-                   s_ca_ring.kind, (double)s_ca_ring.r, n);
-        if (!s_ca_ring.vm) {
-            /* ★ 2026-10-12：★ 改成**按档选一手环脚本** ✓ —— 450/451/452 =
-             *   TH09 `etama.anm` **script91/92/93** 的等效 ✓（一手正文见各脚本头注释 ✓）。
-             *   ★ 半径动画**交给脚本** ✓（一手如此 ✓）⇒ ★ 卡侧**不再写 `scale`** ✗
-             *   （否则会盖掉脚本的 `scaleTime` ✗）⇒ ★ 也一并收掉了 432 头注释里那条「**有意不同 ②**」✓：
-             *     ★ 一手的画面是"起点 16 → 终点"的**固定动画** ✓，★ 与卡侧的**判定半径**（`r += dr` ✓）
-             *     只对齐**终点**、过程不等 ✓ —— ★ 现在本卡也是这个语义了 ✓（= 一手 ✓）。
-             *   ⚠ 故 ★ 视觉**不再**逐帧贴住判定圈 ✗（这是**一手的语义** ✓，不是缺陷 ✓）。*/
-            const uint32_t sid = (s_ca_ring.kind == 2) ? CE_ANM_ABILITY_SCRIPT_POFV109_CA_RING_L1
-                               : (s_ca_ring.kind == 3) ? CE_ANM_ABILITY_SCRIPT_POFV109_CA_RING_L2
-                                                       : CE_ANM_ABILITY_SCRIPT_POFV109_CA_RING_L3;
-            const uint32_t id = ce_anm_spawn(CE_ABILITY_ANM(), sid, 6);
-            if (id) s_ca_ring.vm = (int32_t)id;
+    int i;
+    for (i = 0; i < POFV_CA_RING_MAX; ++i) {
+        pofv_ca_ring_t *R = &s_ca_ring[i];
+        float pos[3];
+        int n;
+        if (!R->active) continue;
+        pos[0] = R->x; pos[1] = R->y; pos[2] = 0.0f;
+        if (R->r > 0.0f) {
+            n = cancel_white_in_circle(pos, R->r, POFV_CANCEL_MAX, POFV_BULLET_CANCEL_MODE);
+            if (n > 0)
+                ce_log("pofv: [CA_RING] slot=%d kind=%d r=%.1f 消掉 %d 颗（一手：逐帧点测试 ✓）",
+                       i, R->kind, (double)R->r, n);
+            if (!R->vm) {
+                /* ★ 2026-10-12：★ 按档选一手环脚本 ✓ —— 450/451/452 =
+                 *   TH09 `etama.anm` **script91/92/93** 的等效 ✓（一手正文见各脚本头注释 ✓）。
+                 *   ★ 半径动画**交给脚本** ✓（一手如此 ✓）⇒ ★ 卡侧**不再写 `scale`** ✗
+                 *   （否则会盖掉脚本的 `scaleTime` ✗）⇒ ★ 也一并收掉了 432 头注释里那条「**有意不同 ②**」✓：
+                 *     ★ 一手的画面是"起点 16 → 终点"的**固定动画** ✓，★ 与卡侧的**判定半径**（`r += dr` ✓）
+                 *     只对齐**终点**、过程不等 ✓ —— ★ 现在本卡也是这个语义了 ✓（= 一手 ✓）。
+                 *   ⚠ 故 ★ 视觉**不再**逐帧贴住判定圈 ✗（这是**一手的语义** ✓，不是缺陷 ✓）。*/
+                const uint32_t sid = (R->kind == 2) ? CE_ANM_ABILITY_SCRIPT_POFV109_CA_RING_L1
+                                   : (R->kind == 3) ? CE_ANM_ABILITY_SCRIPT_POFV109_CA_RING_L2
+                                                    : CE_ANM_ABILITY_SCRIPT_POFV109_CA_RING_L3;
+                const uint32_t id = ce_anm_spawn(CE_ABILITY_ANM(), sid, 6);
+                if (id) R->vm = (int32_t)id;
+            }
+            if (R->vm)
+                vm_set_world_pos((uint32_t)R->vm, R->x, R->y);   /* ★ 锚在圆心 ✓ */
         }
-        if (s_ca_ring.vm)
-            vm_set_world_pos((uint32_t)s_ca_ring.vm, s_ca_ring.x, s_ca_ring.y);   /* ★ 锚在圆心 ✓ */
+        R->r += R->dr;                 /* ★ 一手 `fadd [eax+0x8]` ✓ 线性 ✓ */
+        if (--R->life <= 0) {          /* ★ 一手 `dec [eax+0x24]` ✓ 到 0 释放 ✓ */
+            if (R->vm) pofv_eb_ring_close(&R->vm);
+            R->active = 0; R->r = 0.0f; R->dr = 0.0f; R->kind = 0;
+        }
     }
-    s_ca_ring.r += s_ca_ring.dr;                 /* ★ 一手 `fadd [eax+0x8]` ✓ 线性 ✓ */
-    if (--s_ca_ring.life <= 0) pofv_ca_ring_clear();   /* ★ 一手 `dec [eax+0x24]` ✓ */
 }
 
 static void pofv_c2_clear(void)
