@@ -2982,7 +2982,14 @@ static void pofv_c1_fire(void)
     s_c1_win_age = 0; s_c1_sanae_half = 0;
     s_c1_win_left = (grp == POFV_C1_GROUP_SANA) ? 30               /* ★ 一手 ✓ 早苗 30 帧 */
                   : ((grp == POFV_C1_GROUP_MARISA) ? 1 : 21);      /* ★ 一手 ✓ 1 / 21 帧 */
+    /* ★ 2026-10-12 诊断（owner 报「放完一次 C1 后再也放不出任何 C1/C2」✗ ⇒ 分清断在哪一环）：
+     *   每次释放都打这行 ⇒ ★ 若某次释放没有 [C1SET] ⇒ 连 `pofv_c1_fire` 都没被调到；
+     *   ★ 有 [C1SET] native=1 但游戏里没弹 ⇒ 引擎那条路没被问（多半没按 Z = 已知副作用）。*/
+    ce_log("pofv: [C1SET] win=%d grp=%d native=%d age=%d", s_c1_win_left, grp,
+           pofv_native_set_active() ? 1 : 0, s_c1_win_age);
     if (pofv_native_set_active()) return;     /* ★ 窗口已开 ⇒ 认领生效 ⇒ 手写停手 ✓（绝不双份 ✓）*/
+    /* ★ 2026-10-12 诊断：区分"引擎按认领发"与"卡侧自己发"（owner 报"放完一次 C1 后再也放不出"）*/
+    ce_log("pofv: [C1FIRE] 手写路径（认领没接管）grp=%d win=%d age=%d", grp, s_c1_win_left, s_c1_win_age);
     if (grp == POFV_C1_GROUP_SANA) pofv_c1_fire_range(grp, 0, 13);        /* ★ t=0：行 0–12 ✓ */
     else pofv_c1_fire_range(grp, 0, s_c1_rows[grp]);   /* ★ 灵梦 4 行一次 / 魔理沙 1 行一次 ✓ */
     /* ★★ 一手 ✓ `EX+0xd4`：★ 魔理沙放过 C2 后，**这份 C1 追加两发**（dmg6 / ∓32 / spd0 ✓）。
@@ -3675,6 +3682,8 @@ static void pofv_barrier_fire(void)
      *   **撞弹之后**的行为 ✓（「撞弹之后的一手行为是…给一段无敌时间」✓），★ 不是拿到罩子就无敌 ✗。
      *   ⇒ ★ 改由撞弹回调 `pofv_on_death_before_deathbomb()` 给 ✓。*/
     s_barrier_on = 1;
+    ce_log("pofv: [BARRIER] 发放罩子（开局 / 获得 109 ⇒ 一手行为 ✓）brk=%d glow=%d disc=%d on=%d",
+           s_barrier_brk, s_barrier_vm_glow, s_barrier_vm_disc, s_barrier_on);
 }
 
 /* ★ 每帧：盾挡 1 发 ⇒ 破罩；破罩后跑那三件事 */
@@ -4344,6 +4353,7 @@ static void pofv_c2s_fire(void)
     s_c2s_st.active = 1; s_c2s_st.ring = 0; s_c2s_st.timer = 0;
     s_c1_set_sel = 1;
     s_c2s_win = 60;                 /* ★ 一手 ✓ 60 帧窗口 */
+    ce_log("pofv: [C2FIRE] 青蛙窗口开（60 帧）sel=%d win=%d kind=%d", s_c1_set_sel, s_c1_win_left, s_aura_kind);
     /* ★★★ 2026-10-12 **订正一处误移植** ✗：★ 我原以为青蛙那 26 行要从"子机槽 5"取膛口
      *   ⇒ ★ 还写了"把释放点写进 `player+0xc18`"的快照 ✗ —— ★ **那条在 TH18 不成立** ✗：
      *   ★ 一手那个 **`+0x28`（TH19 的子机槽 = 5 ✓）** ★ **不是** TH18 这个 `opt_slot`
@@ -5714,9 +5724,10 @@ static int on_tick_2(ce_card_t *c)
             /* ★★★ 2026-10-11 自证日志（owner：「还是有**意外释放 C2 C3** 的问题」✗ ⇒
              *   ★ 光读代码定不了 ✗ ⇒ 把每次释放的**现场**记下来 ✓：蓄力值 / 本帧键 / 前帧键 /
              *   领域态 / 帧号 ✓ ⇒ ★ 若是"抖动触发"，日志里会看到连续的释放行 ✓。）*/
-            ce_log("pofv: [REL] tier=%d charge=%.0f chg=%d prev=%d aura=%d f=%d",
+            ce_log("pofv: [REL] tier=%d charge=%.0f chg=%d prev=%d aura=%d f=%d kind=%d sel=%d win=%d reiryoku=%.0f",
                    tier_rel, (double)s_aura_charge, (int)chg_held, (int)s_chg_prev,
-                   (int)aura_held, (int)s_card_frames);
+                   (int)aura_held, (int)s_card_frames,
+                   s_aura_kind, s_c1_set_sel, s_c1_win_left, (double)s_reiryoku);
             /* ★★★★ 2026-10-11 **修一个明显的 bug**（owner：「早苗 C2 也不是发灵梦的那三颗大球啊，
              *   就是青蛙」✗ + 上一轮「意外释放 C2 C3 …**其他人也应该都有**」✓）：
              *   ★ 这里原来**写死了灵梦那三支**（`pofv_c2_fire/c3_fire/c4_fire` ✗）⇒
