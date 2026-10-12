@@ -4240,7 +4240,15 @@ static void pofv_c4m_tick(void)
     int k;
     static const int cnt[8] = { 25, 30, 15, 20, 30, 30, 30, 30 };   /* ★ 一手 ✓ `ins_570` */
     if (s_c4m_st.active) {
-        const int n = cnt[s_c4m_st.level];
+        /* ★★★ C3/C4 审计 60f3724f ⑦ + 复核审计 `251ad3c6`（Q2）✓：
+         *   ★ 一手那一轮是 **两个槽**（A/B 各 `$G` 发 ✓，`pl01:408/412` ✓）⇒ ★ 总数 **2×$G** ✓；
+         *   ★ 而 `$G` 来自 `ins_570` 的 **8 个字面量表** ✓（`pl01:401` ✓ = `{25,30,15,20,30,30,30,30}` ✓）
+         *     —— ★ 正是卡里这张 `cnt[8]` ✓ ⇒ ★ 我方原来只发 **1×** ✗（= 少一半 ✓）。
+         *   ★ 节奏（★ 复核审计确认 ✓）：★ **两个 `ins_23(2)`**（`409`/`413` ✓）⇒ ★ **相邻两发隔 2 帧** ✓、
+         *     ★ **一对 = 4 帧** ✓ ⇒ ★ 卡现在"每 2 帧一发"**本来就是对的** ✓ ⇒ ★ **只差把总数乘 2** ✓。
+         *   ❓ ★ `$G` 具体取表中哪一项 —— 一手**由运行时索引决定** ✗（★ 复核审计标"证据不足"✓）
+         *     ⇒ ★ 卡沿用"按 level 取表" ✓（★ 与一手的 8 项表同构 ✓）。*/
+        const int n = 2 * cnt[s_c4m_st.level];
         if (s_c4m_st.emitted < n) {
             if (s_c4m_st.timer % POFV_C4M_EVERY == 0) {
                 /* ★★★ C3/C4 审计 60f3724f ⑦（中）✓：★ 一手是**逐发 `ins_604(..., 0.0f)`**
@@ -7450,9 +7458,23 @@ static int pofv_native_set_active(void)
 
 static int pofv_on_shot_set_index(ce_card_t *c, int power_level)
 {
+    /* **给实跑一个直接信号**：本钩子每帧（或每次开火）都会被问
+     *   => 只在"返回值发生变化"时打一行（不刷屏，但足以证明"认领到底有没有生效"）。
+     *   判读：看到 [CLAIM] -> 0x68 => 认领生效（蛇）；-> 0x69 => 青蛙；-> none => 窗口关了；
+     *         一行都没有 => 认领从未生效（那问题在触发/窗口，不在引擎）。*/
+    static int last = -2;
+    int want;
     (void)c; (void)power_level;
-    if (!pofv_native_set_active()) return -1;             /* ★ −1 = 本帧不覆盖 ✓ */
-    return s_c1_set_sel ? CE_SHT_SET_POFV109_FROG : CE_SHT_SET_POFV109_SNAKE;
+    want = (!pofv_native_set_active()) ? -1
+         : (s_c1_set_sel ? CE_SHT_SET_POFV109_FROG : CE_SHT_SET_POFV109_SNAKE);
+    if (want != last) {
+        if (want < 0) ce_log("pofv: [CLAIM] -> none (kind=%d sel=%d win=%d)",
+                             s_aura_kind, s_c1_set_sel, s_c1_win_left);
+        else ce_log("pofv: [CLAIM] -> 0x%02x (kind=%d sel=%d win=%d)",
+                    (unsigned)want, s_aura_kind, s_c1_set_sel, s_c1_win_left);
+        last = want;
+    }
+    return want;
 }
 
 CE_CARD(109, .on_active_tick = pofv_active_tick,
