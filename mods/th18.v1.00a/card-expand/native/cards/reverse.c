@@ -14,10 +14,10 @@ static int on_activate(ce_card_t *c)
     uint8_t *bm = CE_BULLET_MGR();
     if (!bm) return 0;
     unsigned n = 0;
-    uint8_t *b = bm + CE_BM_BULLETS;
-    for (unsigned i = 0; i < CE_BM_BULLET_COUNT; ++i, b += CE_BULLET_STRIDE) {
-        uint16_t st = *(uint16_t *)(b + CE_BULLET_STATE);
-        if (st == 0 || st == 3) continue;
+    /* ★ z61（goal ③）：改走 mgr+0xbc 活弹链表（O(活弹)、结构上只有真弹）。
+     *   老判据 `st == 0 || st == 3` 才跳 ⇒ **state=2/4/5 都会进来**（5 = 池尾哨兵 ✗）⇒ 已修 ✓
+     *   （反正是"反转速度方向"，对哨兵做也无意义 ✗）。*/
+    CE_BULLET_LIVE_FOR_EACH(b) {
         float *v = (float *)(b + CE_BULLET_VELOCITY);
         v[0] = -v[0]; v[1] = -v[1];
         float *ang = (float *)(b + CE_BULLET_ANGLE);

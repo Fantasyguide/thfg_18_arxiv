@@ -711,12 +711,11 @@ static int cancel_spawn_points(season_card_t *s, const float *pos, float radius)
     unsigned i;
 
     if (!mgr || !pos) return 0;
-    for (i = 0; i < CE_BM_BULLET_COUNT; ++i) {
-        uint8_t *b = mgr + CE_BM_BULLETS + i * CE_BULLET_STRIDE;
+    CE_BULLET_LIVE_FOR_EACH(b) {
+        /* ★ z61（goal ③）：改走活弹链表（只有真弹、O(活弹)）；判据原为 `state != 1 && != 2` ⇒ 本就排除哨兵 ✓ */
         uint16_t state = *(uint16_t *)(b + CE_BULLET_STATE);
         float x, y, dx, dy, rr, ang;
-
-        if (state != 1 && state != 2) continue;                      /* 引擎命中段：state ∈ {1,2} */
+                      /* 引擎命中段：state ∈ {1,2} */
         if (*(uint32_t *)(b + CE_BULLET_FLAGS) != 0) continue;       /* 且 bullet+0x24 == 0 */
         x = *(float *)(b + CE_BULLET_POS);
         y = *(float *)(b + CE_BULLET_POS + 4);
@@ -1439,12 +1438,10 @@ static int graze_pick(float px, float py, float *bx, float *by)
         rect_hh = *(float *)(pl + SEASON_HITBOX_HH) + SEASON_GRAZE_RECT_MARGIN;
         pr = *(float *)(pl + SEASON_HIT_RADIUS);
     }
-    for (i = 0; i < CE_BM_BULLET_COUNT; ++i) {
-        uint8_t *b = mgr + CE_BM_BULLETS + i * CE_BULLET_STRIDE;
+    CE_BULLET_LIVE_FOR_EACH(b) {
+        /* ★ z61（goal ③）：改走活弹链表 —— 老判据 `state == 0` 才跳 ⇒ **含 state=5 哨兵** ✗ ⇒ 已修 ✓ */
         uint32_t flags;
         float x, y, dx, dy, d2, zone, ratio;
-
-        if (*(uint16_t *)(b + CE_BULLET_STATE) == 0) continue;
         flags = *(uint32_t *)(b + CE_BULLET_FLAGS);
         if (!(flags & 0x2)) continue;
         x = *(float *)(b + CE_BULLET_POS);

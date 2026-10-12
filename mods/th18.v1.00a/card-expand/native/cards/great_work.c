@@ -198,8 +198,10 @@ static int gw_take_bullets(int32_t *out_money)
     *out_money = 0;
     if (!bm) return 0;
 
-    for (i = 0; i < CE_BM_BULLET_COUNT; ++i) {
-        uint8_t *b = bm + CE_BM_BULLETS + (size_t)i * CE_BULLET_STRIDE;
+    /* ★ z61（goal ③，**别人的卡 id 92**：按协作纪律已在 AUDIT §BE #282 登记）——
+     *   改走活弹链表：老判据 `st != 1 && != 2` 本就排除哨兵 ✓ ⇒ 语义等价，
+     *   只是**从 O(2000) 降到 O(活弹)** ✓（`state=2` 从未在实跑直方图里出现过 ⇒ 无实际差异 ✓）。*/
+    CE_BULLET_LIVE_FOR_EACH(b) {
         int32_t st = (int32_t)*(uint16_t *)(b + CE_BULLET_STATE);
         if (st != 1 && st != 2) continue;                 /* 0 空槽 / 3·4 已在收尾 */
         seed = seed * 1103515245u + 12345u;               /* our LCG（不用引擎那两支走 x87 的）*/
@@ -308,8 +310,7 @@ static void gw_scan(int32_t *bullets_out, int64_t *hp_out, int32_t *items_out, i
     int64_t hp = 0;
 
     if (bm) {
-        for (i = 0; i < CE_BM_BULLET_COUNT; ++i) {
-            uint8_t *b = bm + CE_BM_BULLETS + (size_t)i * CE_BULLET_STRIDE;
+        CE_BULLET_LIVE_FOR_EACH(b) {              /* ★ z61：同上（链表 = 活弹 ⇒ 计数等价 ✓）*/
             int32_t st = (int32_t)*(uint16_t *)(b + CE_BULLET_STATE);
             if (st == 1 || st == 2) ++nb;
         }
