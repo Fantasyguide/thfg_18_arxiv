@@ -2973,8 +2973,14 @@ static void pofv_c1_tick(void)
         float pos[3];
         if (!s_c1_live[t]) continue;
         /* ★★ 早苗 C1：命中停 4 帧（一手 ✓）—— 停住时不动、之后以 14.0 继续 ✓ */
-        if (s_c1_grp[t] == POFV_C1_GROUP_SANA && s_c1_kind[t] == 0
-            && s_c1_phase[t] == 0) {   /* ★ 只有"搜索"相位才判 ✓（一手相位机 ✓）*/
+        /* ★★★★★ 2026-10-12 goal ② **真根因（owner 的亲见 bug ✗）** —— ★ 我原来把 `phase == 0`
+         *   这个闸**套得太外** ✗：★ 「停住 4 帧 / 恢复速度 / 置 phase=8」那整段**被关在闸里** ✗
+         *   ⇒ ★ 锁定那一帧把 `phase` 置 4 ✓ ⇒ ★ **下一帧闸就为假** ✗ ⇒ ★ **`s_c1_stop` 再不递减** ✗
+         *   ⇒ ★ **`s_c1_spd` 永远停在 0** ✗、★ `phase` 永远回不到 8 ✓ ⇒ ★ **弹从此一动不动** ✓✓
+         *   = ★ owner 说的「**没锁定却停在版顶内侧**」✓（★ 锁定其实发生了 ✓，只是画面看不出它锁了谁 ✓）。
+         *   ⇒ ★ 修：★ **外层只判"早苗 & kind 0"** ✓（停住/恢复**每帧都走** ✓）；
+         *     ★ **只有"检测"那一段**受 `phase == 0` 限制 ✓（= 一手"每颗弹只锁一次"✓）。*/
+        if (s_c1_grp[t] == POFV_C1_GROUP_SANA && s_c1_kind[t] == 0) {
             if (s_c1_stop[t] > 0) {
                 --s_c1_stop[t];
                 /* ★★★ 一手 ✓「**水平转向**」：停住这几帧里，把方向**一档一档**转目标 ✓
@@ -3014,6 +3020,9 @@ static void pofv_c1_tick(void)
                                POFV_C1_HIT_W, POFV_C1_HIT_H);
                 continue;
             }
+            if (s_c1_phase[t] != 0) {   /* ★ 非"搜索"相位 ⇒ 不检测（一手：只锁一次 ✓）*/
+                pofv_stage_set(23);     /* ★ 跳过检测（仪表沿用既有档 ✓）*/
+            } else {
             pofv_stage_set(19);   /* ★ 早苗命中遍历（最可疑 ✓）*/
             {   uint8_t *em2 = CE_ENEMY_MGR(), *e2; int hit2 = 0; float ep_tx = 0.0f, ep_ty = 0.0f;
                 CE_ENEMY_FOREACH(em2, e2) {
@@ -3057,6 +3066,7 @@ static void pofv_c1_tick(void)
                             ce_anm_set_pos(fid, s_c1_x[t], s_c1_y[t], 0.0f);
                     }
                 }
+            }
             }
         }
         /* ★★ 灵梦 C1 的**残影** ✓（一手 script12 ✓）：每帧在弹的位置补一台 ✓（卡侧驱动 ✓）。*/
