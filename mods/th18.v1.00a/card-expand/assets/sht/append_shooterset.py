@@ -774,6 +774,13 @@ PL02_SCRIPT_WOLF  = 30
 PL02_SCRIPT_EAGLE = 31
 PL03_SCRIPT_FROG  = 29
 PL03_SCRIPT_SNAKE = 30
+# ★★★ 109（2026-10-12，owner「那就往里编」）：**TH19 一手**那两支 —— 由
+#   `build_player_anm.py` 的 `CARD_ART_ENTRIES`/`APPEND_PLAN` 追加进 pl03.anm，
+#   号见 `native/pl_anm_ids.h`（`CE_PL_ANM_SCRIPT_PL03_109_*` = 50/51）。
+#   ⚠ 与 117 的 `PL03_SCRIPT_SNAKE`(30)/`PL03_SCRIPT_FROG`(29) **并存**：那两个是 117 的
+#   （贴图被其 `smap` 换过），109 用下面这两个（TH19 一手的图）。
+PL03_109_SCRIPT_SNAKE = 50
+PL03_109_SCRIPT_FROG = 51
 
 # ★ AL62：咲夜刀弹视觉 ×2（`build_player_anm.py` 的 `KNIFE_SCALE` 注入脚本 `scale(2,2)`）。
 #   命中框跟着放大（看得见的弹 = 打得到的地方）：
@@ -2478,12 +2485,12 @@ def _pofv109_sets(target_file: str, anm_ids: dict) -> list:
     angles = POFV109_HALF + [a + (3.14159274101257324 / 12.0) for a in POFV109_HALF]
     snake = [dict(fire_rate=16, start_delay=(0 if i < 13 else 8), damage=22,
                   hit_w=8.0, hit_h=48.0, angle=a, speed=16.0, opt_slot=0, mode=0,
-                  anm=PL03_SCRIPT_SNAKE, sfx=-1,
+                  anm=PL03_109_SCRIPT_SNAKE, sfx=-1,
                   func_on_init=4, func_on_tick=4, func_on_draw=0, func_on_hit=5)
              for i, a in enumerate(angles)]
     frog = [dict(fire_rate=16, start_delay=(0 if i < 13 else 8), damage=22,
                  hit_w=24.0, hit_h=24.0, angle=a, speed=3.0, opt_slot=0, mode=0,
-                 anm=PL03_SCRIPT_FROG, sfx=-1,
+                 anm=PL03_109_SCRIPT_FROG, sfx=-1,
                  func_on_init=0, func_on_tick=0, func_on_draw=0, func_on_hit=4)
             for i, a in enumerate(angles)]
     return [(nm, b"".join(pack_shooter(sh, anm_ids) for sh in rows) + TERMINATOR)
@@ -2585,6 +2592,8 @@ def check_pl_anm_ids():
             "CE_PL_ANM_SCRIPT_PL02_EAGLE": PL02_SCRIPT_EAGLE,
             "CE_PL_ANM_SCRIPT_PL03_FROG": PL03_SCRIPT_FROG,
             "CE_PL_ANM_SCRIPT_PL03_SNAKE": PL03_SCRIPT_SNAKE,
+            "CE_PL_ANM_SCRIPT_PL03_109_SNAKE": PL03_109_SCRIPT_SNAKE,
+            "CE_PL_ANM_SCRIPT_PL03_109_FROG": PL03_109_SCRIPT_FROG,
             # ★ 卡 113 灵界弹（TH13 灵界组的三支主弹脚本）
             "CE_PL_ANM_SCRIPT_PL00_TRANCE": PL00_SCRIPT_TRANCE,
             "CE_PL_ANM_SCRIPT_PL01_TRANCE": PL01_SCRIPT_TRANCE,

@@ -41,6 +41,13 @@ SPECS = [
     # 早苗狼命中「旋转小光斑」= 原生 script7 的 sprite25（16×16，单帧；旋转由父蛇 VM 的 rotateAuto 继承）
     # 缺图兜底：mono→红 H0、sat=0.65（比蛇亮一档的浅红；用户实机口径「更亮/偏白的红」）
     dict(key="sanae_wolf_glint_s25_f0",  src="pl03/player/pl03/pl03.png",  rect=(16, 144, 16, 16),   mode="mono", hue=0, sat=0.65),
+    # ★ 109：TH19 一手的蛇/青蛙/命中（**成品图**，mode="keep" = 原样用、不套色）
+    dict(key="pofv109_snake_f0", src="pl03/player/pl03/pl03.png", rect=(0, 160, 62, 14),   mode="keep", hue=0),
+    dict(key="pofv109_snake_f1", src="pl03/player/pl03/pl03.png", rect=(64, 160, 62, 14),  mode="keep", hue=0),
+    dict(key="pofv109_snake_f2", src="pl03/player/pl03/pl03.png", rect=(128, 160, 62, 14), mode="keep", hue=0),
+    dict(key="pofv109_snake_f3", src="pl03/player/pl03/pl03.png", rect=(192, 160, 62, 14), mode="keep", hue=0),
+    dict(key="pofv109_frog_f0",  src="pl03/player/pl03/pl03.png", rect=(1, 177, 30, 30),   mode="keep", hue=0),
+    dict(key="pofv109_hit_f0",   src="pl03/player/pl03/pl03.png", rect=(16, 144, 14, 14),  mode="keep", hue=0),
     # —— 咲夜：刀（红=零售；蓝=零售，缺图兜底 → 紫）——
     dict(key="sakuya_knife_red_s24_f0",  src="pl02/player/pl02/pl02.png",  rect=(0, 192, 64, 16),   mode="keep", hue=0),
     dict(key="sakuya_knife_blue_s25_f0", src="pl02/player/pl02/pl02.png",  rect=(64, 192, 64, 16),  mode="hue",  hue=275),

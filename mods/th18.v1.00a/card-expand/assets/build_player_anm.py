@@ -553,6 +553,8 @@ YK_EXTRA_SCRIPTS = (
 #   见 `AUDIT.md` §BE #107）——`assets/yk_bullet/` 存成员 PNG，`assets/yk_bullet/scripts/` 存 7 支 spec。
 YK_BULLET_ART = HERE / "yk_bullet"
 YK_BULLET_SCRIPT_DIR = HERE / "yk_bullet" / "scripts"
+# ★ 109：我们自己的脚本正文（= `ability.anm` 用的同一份文本）
+CARD_SCRIPT_DIR = HERE / "ability" / "scripts"
 # 该机体 entry 的成员（= `make_youkai_bullet_art.py` 的产物名；尺寸 = 那张 PNG 的实际尺寸）
 YK_BULLET_MEMBERS = {
     "pl00": (("YKB_R_MAIN", 64, 16), ("YKB_R_OPT", 64, 16)),
@@ -769,7 +771,14 @@ APPEND_PLAN = {
              smap={62: 72}, k=1.0, alpha255=False, scale_inject=False),
     ] + _youkai_plan(
         # ★★ 108 妖侧本体 = 射命丸文（**TH16** `pl03.anm` script0..4，24 帧；她的 0..4 就是本体全套）
-        "pl03", "pl03", 34, 97) + _yk_extra_plan("pl03"),
+        "pl03", "pl03", 34, 97) + _yk_extra_plan("pl03") + [
+            # ★ 109（owner「那就往里编」）：**TH19 一手**那两支 ⇒ 主炮路的 `+0x22` 才指得到。
+            dict(macro="PL03_109_SNAKE", spec_kind="card", spec_file=444, new_sid=50,
+                 sprite_names={"POFV109_C1S_F0": 148, "POFV109_C1S_F1": 149,
+                                "POFV109_C1S_F2": 150, "POFV109_C1S_F3": 151}),
+            dict(macro="PL03_109_FROG", spec_kind="card", spec_file=448, new_sid=51,
+                 sprite_names={"POFV109_C2S_FROG": 152}),
+        ],
 }
 PL_IDS_H = MOD / "native" / "pl_anm_ids.h"
 
@@ -931,13 +940,30 @@ def _entry_block(ent: dict) -> str:
     return "\n".join(lines)
 
 
+# ★ 109：卡片自己的追加 entry（TH19 一手美术）—— 必须排在 `_entries_of` **最后**（entry 号 = 序号）。
+CARD_ART_ENTRIES = {
+    "pl03": [
+        dict(idx=24, name="player/pl03/pl03snake109_c.png", size=(248, 14), sprites=[
+            (148, 0, 0, 62, 14, "pofv109_snake_f0"),
+            (149, 62, 0, 62, 14, "pofv109_snake_f1"),
+            (150, 124, 0, 62, 14, "pofv109_snake_f2"),
+            (151, 186, 0, 62, 14, "pofv109_snake_f3"),
+        ]),
+        dict(idx=25, name="player/pl03/pl03frog109_c.png", size=(32, 32), sprites=[
+            (152, 0, 0, 30, 30, "pofv109_frog_f0"),
+        ]),
+    ],
+}
+
+
 def _entries_of(player: str):
     """该文件**按追加顺序**排好的 entry 计划（117 的兽灵/刀 → 113 的灵界弹 → 108 的妖侧本体）。
 
     顺序就是 entry 号：`idx` 必须等于「原生 entry 数 + 前面几项」，`_append_spec` 会硬校验。
     """
     return (PLAYER_ART_ENTRIES.get(player, []) + TH13_TRANCE_ENTRIES.get(player, [])
-            + _youkai_body_entries(player) + _yk_extra_entries(player))
+            + _youkai_body_entries(player) + _yk_extra_entries(player)
+            + CARD_ART_ENTRIES.get(player, []))   # ★ 109：卡片自己的（必须最后）
 
 
 def _anmmap_for(game):
@@ -1189,6 +1215,9 @@ def _append_spec(player: str, retail_text: str, tools, anmmap) -> str:
         if new_sid != n_scripts + len(blocks):
             raise SystemExit(f"{player}: {macro} 计划 script{new_sid}，但下一条必须是 "
                              f"script{n_scripts + len(blocks)}（脚本号必须**连续**追加）")
+        if spec.get("spec_kind") == "card":
+            blocks.append(_card_script_block(player, spec))
+            continue
         if spec.get("spec_file") is not None:
             # ★ 妖侧弹那几支：正文取自 `make_youkai_bullet_art.py` 生成的 spec 文件（已经是 v8 语法、
             #   已经补过 `type(1)`/`layer(13)`）⇒ **不做** opcode 翻译 / scale 注入 / sprite 号重排，
@@ -1259,6 +1288,30 @@ def _yk_bullet_block(player: str, spec: dict) -> str:
     return body.replace(f"script script{spec['spec_file']} {{",
                         f"script script{spec['new_sid']} {{", 1)
 
+
+
+def _card_script_block(player: str, spec: dict) -> str:
+    """★ 109：把**我们自己的**脚本正文追加进 pl0X.anm（owner「那就往里编」）。
+
+    与 `_yk_bullet_block` 的差别（刻意）：正文取 `assets/ability/scripts/<N>_*.anm.txt`
+    （= ability.anm 用的同一份）；**单 `@`** 记号（ability 侧写 `sprite(@NAME)`）；
+    **不做** pl03 妖侧秋黄换色。其余一致：`@名字` → `sprite<号>`、`scriptN` → 追加号、去 `//` 注释。"""
+    hits = sorted(CARD_SCRIPT_DIR.glob(f"{spec['spec_file']}_*.anm.txt"))
+    if len(hits) != 1:
+        raise SystemExit(f"{player}: 找不到唯一的 109 脚本 spec（{spec['spec_file']}_*.anm.txt，命中 {len(hits)} 个）")
+    text = hits[0].read_text(encoding="utf-8")
+    body = _script_block(text, spec["spec_file"])
+    if not body:
+        raise SystemExit(f"{player}: {hits[0].name} 里没有 script{spec['spec_file']}")
+    # ★ 去注释：`//` 行 + `/* … */` 块（★ 反解回来的正文没有注释 ⇒ 不去就会"往返不一致"）
+    body = re.sub(r"/\*.*?\*/", "", body, flags=re.S)
+    body = "\n".join(l for l in body.splitlines()
+                      if l.strip() and not l.strip().startswith("//"))
+    for name, sid in spec["sprite_names"].items():
+        body = body.replace(f"@{name}", f"sprite{sid}")
+    if re.search(r"@[A-Za-z_]", body):
+        raise SystemExit(f"{player}: 109 脚本里还有没替换掉的 `@名字`：{body[:200]}")
+    return body.replace(f"script script{spec['spec_file']} {{", f"script script{spec['new_sid']} {{", 1)
 
 def _verify_appended(player: str, text: str, planned_text: str):
     """回读核对：原生部分没变（`L.verify_rebuilt` 已做）+ 追加脚本的 sprite/scriptNew 全在界内
@@ -1585,7 +1638,7 @@ def _body_readback(player: str, td: Path):
 def _write_entry_textures(player: str, tex: Path):
     """把追加 entry 的贴图写进编译用的 tex 目录（三类来源，见文件头与三个 ENTRIES 表）。"""
     from PIL import Image
-    for ent in PLAYER_ART_ENTRIES.get(player, []):
+    for ent in PLAYER_ART_ENTRIES.get(player, []) + CARD_ART_ENTRIES.get(player, []):
         canvas = Image.new("RGBA", ent["size"], (0, 0, 0, 0))
         for _sid, x, y, w, h, key in ent["sprites"]:
             src = PA.ensure(key)              # 缺图则用零售+默认色自动生成（不红）

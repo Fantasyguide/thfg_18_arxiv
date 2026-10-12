@@ -32212,3 +32212,23 @@ DLL 未重发 ⇒ 本轮的 5 处改动**尚未进入游戏** ✓（下次发版
 
 **余量**：可用 `0x00`–`0x9f`（160 格）✓；已定义到 `0x60` 一带 ✓；预留区 `0xa0`–`0xff`（96 格）
 ⇒ 将来再抬到 **256** 依旧**只改文件** ✓（超过 256 才需要动 exe 的立即数 + 14 条读者位移 ✗）。
+
+#### §BE-109b 往 `pl0X.anm` 追加「卡片自己的」脚本与贴图（卡 109，动共享件）
+
+动到的共享件（按 CLAUDE.md「改共享件要登记 + 说明影响面」）：
+| 文件 | 改了什么 | 为什么 |
+| --- | --- | --- |
+| `assets/build_player_anm.py` | 加 `CARD_ART_ENTRIES`（新表，挂 `_entries_of` 最后）；加 `_card_script_block`（+ `CARD_SCRIPT_DIR`、`spec_kind=="card"` 分派）；`_write_entry_textures` 认新表 | 109 要按 117 同机制把自己的两支脚本/两张图追加进 `pl03.anm`（主炮路的 `+0x22` 只认 `pl0X.anm`） |
+| `assets/player_art_src/player_art_lib.py` | `SPECS` 加 6 条（`pofv109_snake_f0..f3` / `pofv109_frog_f0` / `pofv109_hit_f0`，`mode="keep"`） | 让 `PA.ensure(key)` 认这些 key（成品图原样用、绝不套色） |
+| `assets/sht/append_shooterset.py` | 加 `PL03_109_SCRIPT_SNAKE=50` / `PL03_109_SCRIPT_FROG=51` + 登进交叉核对表；只改 109 那两行的 `anm=` | 让 109 的两行指到新脚本 |
+| `assets/player_art_src/pofv109_*.png`（6 张） | 新增 | 109 自己的美术（源自我方 `ability` 资产） |
+
+影响面（关键）：只「加号」—— 117 的 `PL03_SCRIPT_SNAKE`(30)/`FROG`(29)/`GLINT`(31)/`TRANCE`(32/33)
+一个字没动（生成器里 117 那两行仍在 829/847 行指 30/29）；108 的妖侧 entry 号也没动
+（我们的 entry 排在 `_entries_of` 最后 = 24/25）。新增脚本号 = 50/51、sprite 号 = 148..152。
+
+怎么验证的：`check_player_anm_bounds.py` rc=0（"sprite 全在界内；sht 的 anm/hit_fx 全部存在"）；
+`make anm` / `make check`(459) / `check-docs` 全 rc=0；产物 `pl03.sht` 两行的 `+0x22` 实测 = {50,51}；
+四处 DLL 同 md5。
+
+谁改的：本会话（109），2026-10-12，owner 直接指示「那就往里编」。
