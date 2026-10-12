@@ -2492,8 +2492,12 @@ static void pofv_eb_ring_sync(int32_t *vm, float r)
     const float *p = ce_player_pos();
     if (!vm || r <= 0.0f) return;
     if (!*vm) {
+        /* ★ 2026-10-13：★ 层 **6 → 13** ✓（owner：「检查一下 plot 的 layer」✓）——
+         *   ★ 理由与证据见 `assets/ability/scripts/450_pofv109_ca_ring_l1.anm.txt` 头注释 ✓：
+         *   ★ 桩 `0x10` 那趟只吃**敌机列表**（层 6 ✓）、卡侧 world 列表的 VM 吃不到 ✗；
+         *   ★ 本卡**看得见**的东西用的层 = **5**（罩子 ✓）/ **8**（结界 ✓）/ **13**（子弹 ✓）。*/
         const uint32_t id = ce_anm_spawn(CE_ABILITY_ANM(),
-                            CE_ANM_ABILITY_SCRIPT_POFV109_C_RING_ARC, 6);
+                            CE_ANM_ABILITY_SCRIPT_POFV109_C_RING_ARC, 13);
         if (!id) return;
         *vm = (int32_t)id;
     }
@@ -2621,7 +2625,7 @@ static void pofv_ca_ring_tick(void)
                                    : (R->kind == 3) ? CE_ANM_ABILITY_SCRIPT_POFV109_CA_RING_L2
                                                     : CE_ANM_ABILITY_SCRIPT_POFV109_CA_RING_L3;
                 /* ★ 到这里的 kind 只可能是 2/3/4 ✓（1 已在上面被挡掉 ✓）⇒ 192 / 256 / 448 ✓*/
-                const uint32_t id = ce_anm_spawn(CE_ABILITY_ANM(), sid, 6);
+                const uint32_t id = ce_anm_spawn(CE_ABILITY_ANM(), sid, 13);   /* ★ 层 13 ✓（原 6 ✗ 不渲染，见脚本头注释 ✓）*/
                 if (id) {
                     R->vm = (int32_t)id;
                     ce_log("pofv: [CA_RING] 环 VM 已起 slot=%d script=%u ✓", i, (unsigned)sid);

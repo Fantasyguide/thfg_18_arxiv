@@ -32270,3 +32270,28 @@ DLL 未重发 ⇒ 本轮的 5 处改动**尚未进入游戏** ✓（下次发版
 `engine/bullet/th18/01-cancel-to-item.md §7` ✓。
 
 **验证**：`python3 tooling/check-docs.py` 全绿（459）✓；`make check` **rc=0** ✓。
+
+---
+
+#### §BE-109c 消弹环的**绘制层** 6 → 13（卡 109；动共享面 `assets/ability/scripts/**` ✓）
+
+| 项 | 内容 |
+| --- | --- |
+| **改了哪些文件** | ★ 三支环脚本 + 432 + `pofv.c` 两处 spawn（明细见下面「细节」✓）|
+| **为什么** | ★ owner 实跑报「C2 看不见」+ ★ 渲染层文档（明细见下 ✓）|
+| **谁改的** | 卡 109 的会话（本轮 ✓，2026-10-13 ✓）|
+| **怎么验证** | ★ `make anm` rc=0 ✓、`make check` rc=0（459）✓、`check-docs` rc=0 ✓、发布四处同 md5 ✓；★ 观感待 owner 实跑（C2/C3/C4 应出现随判定半径扩张的红环 ✓）|
+| **对别的卡的影响面** | ★ `450/451/452` 与 `432` 都只被**卡 109** 用 ✓（`POFV109_*` ✓）；★ 只改这几支脚本的层号 ✓，**不动任何共享常量** ✓ |
+| **回归跑了什么** | ★ `make anm` + `make`（全量重编 ✓）+ `make check`（459 ✓）+ `check-docs`（459 ✓）✓ |
+| **遗留 ❓** | ★ 本卡另有层 6 的 VM（`POFV_STORM_VM_LAYER` / `POFV_C1_VM_LAYER` / `POFV_C2_VM_LAYER` / `POFV_C3_VM_LAYER`）★ 可能同样不渲染 ✗ ⇒ ★ 待 owner 实跑确认后再统一扫 ✓（见 `TUNING.md` 同轮登记 ✓）|
+
+**细节（表里放不下的 ✓）**：
+
+* ★ **改了哪些文件**：★ `assets/ability/scripts/450/451/452_pofv109_ca_ring_l{1,2,3}.anm.txt` ✓（`layer(6)`→`layer(13)`）；
+  ★ `assets/ability/scripts/432_pofv109_c_ring_arc.anm.txt` ✓（同 ✓）；
+  ★ `native/cards/pofv.c` 两处 spawn 末参 `6`→`13` ✓（`pofv_eb_ring_sync` / `pofv_ca_ring_tick`）。
+* ★ **为什么**：★ owner 实跑「**我没看到 C2**，你另外检查一下 plot 的 layer」✓；
+  ★ 依据 `engine/anm/th18/02-render-stages.md` ✓：桩 `0x10` → **层 6（敌机等）** ✓、
+  桩 `0x1c` → **层 13（道具 / 激光 / 子弹 / 自机）** ✓；★ 且 `render_layer` **按列表折算层号**
+  （**world 列表** 37–45 → **减 13** ✓）⇒ ★ 层 6 那趟**只吃敌机列表** ✗
+  ⇒ ★ 卡侧 **world 列表**的 VM 放层 6 **不渲染** ✓（★ 现象对照：看见过的层 = 5 / 8 / 13 ✓，从没看见的全是 6 ✗）。
