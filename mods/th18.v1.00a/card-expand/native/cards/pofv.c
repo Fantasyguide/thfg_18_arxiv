@@ -2798,7 +2798,6 @@ static float s_c1_ang[POFV_C1_SHOTS_PER_GROUP];
  *   （源脚本 script10 里 `scriptNewRoot(script12)` ✓）⇒ ★ 逐字抄成 449 ✓（同贴图 ✓、`blendMode(1)` ✓、
  *   `alpha(64)` ✓、`color(255,64,64)` ✓、`alphaTime(20,0,0)` ✓ = α 渐隐 20 帧后**自删** ✓）。
  *   ★ 卡侧 spawn ✓（不用 `scriptNewRoot` ✗ —— TH18 里它不建子 VM ✓）；★ 它自己 20 帧后 delete ✓。*/
-static int32_t s_c1_flash[POFV_C1_SHOTS_PER_GROUP];
 /* ★★ 2026-10-11 owner 实跑：「灵梦的 **C1 还有残影**」✗ ⇒ ★ 一手是靠 script10 里的
  *   `scriptNewRoot(script12)` ✓；★ 但 TH18 的 anmm 语义与 TH19 不同 ✗（旋转那条已经证明 ✓）
  *   ⇒ ★ **改卡侧自己补** ✓：每帧在弹的位置起一台 **433**（= 一手 script12 的复刻 ✓，20 帧自删 ✓）。
@@ -2920,7 +2919,6 @@ static void pofv_c1_fire_range(int grp, int from, int cnt)
         s_c1_py[t] = s_c1_y[t];               /* ★ 越过判据的上一帧 y ✓ */
         s_c1_turn[t] = 0; s_c1_tx[t] = 0.0f; s_c1_ty[t] = 0.0f;   /* ★ 转向状态 ✓ */
         s_c1_phase[t] = 0;                     /* ★ 相位机：0 = 搜索 ✓ */
-        s_c1_flash[t] = 0;                     /* ★② 闪白账（上一发的已在自删/清理里收 ✓）*/
         s_c1_age[t] = 0;
         s_c1_bounce[t] = 0;
         s_c1_live[t] = 1;
@@ -3038,12 +3036,6 @@ static void pofv_c1_fire(void)
          *     ★ 先例 `149_otter_orb` 证明「`type(1)` + `angleVel` + `stop()`」共存时**引擎自己积分角速度** ✓。
          *   ⇒ ★ **卡侧不要再写 rotation** ✗（写了就是**双倍转速** ✗）—— 故此处**删掉**我先前那句 ✓。*/
         if (s_c1_vm[t]) ce_anm_set_pos((uint32_t)s_c1_vm[t], s_c1_x[t], s_c1_y[t], 0.0f);
-        /* ★② 闪白跟随弹 ✓（它自己在 20 帧后 delete ⇒ 这句自然失效 ✓）*/
-        if (s_c1_flash[t]) {
-            if (ce_anm_get_vm((uint32_t)s_c1_flash[t]))
-                ce_anm_set_pos((uint32_t)s_c1_flash[t], s_c1_x[t], s_c1_y[t], 0.0f);
-            else s_c1_flash[t] = 0;      /* 已自删 ⇒ 清账 ✓ */
-        }
             }
         }
     }
@@ -3160,20 +3152,13 @@ static void pofv_c1_tick(void)
                     s_c1_tx[t] = ep_tx; s_c1_ty[t] = ep_ty;
                     s_c1_turn[t] = POFV_C1S_STOP_FRAMES;
                     s_c1_phase[t] = 4;      /* ★ 一手 ✓ 锁定相位 */
-                    /* ★② 闪白（一手 script12 ✓）：与"停住自转"**同刻** ✓ spawn 一份 ✓
-                     *   （★ 用它自己的 alphaTime 渐隐并在 20 帧后自删 ✓ ⇒ 无需回收 ✓）。*/
-                    if (!s_c1_flash[t] && s_c1_grp[t] == POFV_C1_GROUP_REI) {
-                        uint32_t fid = ce_anm_spawn(CE_ABILITY_ANM(),
-                            CE_ANM_ABILITY_SCRIPT_POFV109_C1_FLASH, 6);
-                        s_c1_flash[t] = (int32_t)fid;
-                        /* ★★ 自证日志（owner：「**没有看见闪白**」✗）：★ 脚本已与一手 script12 逐字一致 ✓
-                         *   ⇒ ★ 那就只剩"到底建没建出来"这一个未知 ✓ ⇒ 建成功/失败各记一行 ✓。
-                         *   （★ 只记一行、不刷屏 ✓；★ 一局就能分辨"没触发锁定"✗ / "建了却看不见"✗。）*/
-                        ce_log("pofv: [FLASH] t=%d spawn=%s x=%.1f y=%.1f",
-                               t, fid ? "ok" : "FAIL", (double)s_c1_x[t], (double)s_c1_y[t]);
-                        if (fid)
-                            ce_anm_set_pos(fid, s_c1_x[t], s_c1_y[t], 0.0f);
-                    }
+                    /* ★★★ 2026-10-12 **D3 结论（已删掉此块 ✓）**：★ 我早先以为"闪白"是"锁定那一帧挂一份"✗
+                     *   —— ★ 一手 `pl00.anm` script10 的实际结构是：
+                     *       `offset100: scriptNewRoot(script12); +1: jmp(offset100, 1);`
+                     *   ⇒ ★ **每帧挂一份**（1 帧循环 ✓）直到脚本结束 ✓ ⇒ ★ 它本来就是"**每帧加色残影**"✓，
+                     *   ★ 而这正是卡里的 **433**（`pofv109_c1_trail` ✓ 每帧一台 ✓）⇒ ★ 行为**早已忠实复刻** ✓；
+                     *   ⇒ ★ 那个"锁定帧挂 449"是我早先的**误读** ✗（一手没有这种一次性闪白 ✗）⇒ **删掉** ✓。
+                     *   ★ 连带删：`s_c1_flash` 数组 ✓、它的清零 ✓、以及"跟随弹"那段 ✓（全成死码 ✓）。*/
                 }
             }
             }
