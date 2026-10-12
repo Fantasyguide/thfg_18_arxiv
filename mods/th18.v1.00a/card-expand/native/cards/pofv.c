@@ -3127,6 +3127,14 @@ static void pofv_c1_tick(void)
             pofv_stage_set(19);   /* ★ 早苗命中遍历（最可疑 ✓）*/
             {   uint8_t *em2 = CE_ENEMY_MGR(), *e2; int hit2 = 0; float ep_tx = 0.0f, ep_ty = 0.0f;
                 CE_ENEMY_FOREACH(em2, e2) {
+                    /* ★★★★ D4（C1 审计 d40db02d ✓）：★ `E` **可能为 NULL** ✓（`sdk.h:588-592` 明说 ✓）
+                     *   ⇒ ★ 补**本仓既有的那条闸** ✓（`ce_enemy_lockable` ✓ = `e && !(flags & NO_LOCK)` ✓；
+                     *   ★ `broken_core.c:93` / `youkai.c:2515` 都这么写 ✓）。
+                     *   ★ 一手的过滤（`local/th19.v1.10c/decomp/all.c:246959-246964` ✓）是**三个位**：
+                     *     `~(+0x639c) & 1` ✓、`(+0x639c) & 0x21 == 0` ✓、`(+0x63a0) & 0xc00 == 0` ✓
+                     *   —— ★ 那是 **TH19 的偏移** ✗ ⇒ ★ 本卡按本仓语义用 `lockable` 这一个谓词 ✓
+                     *   （★ 位与位的**逐一对应关系未核** ⇒ 已在 TUNING 标 🟡 ✓，不假装是逐位复刻 ✗）。*/
+                    if (!ce_enemy_lockable(e2)) continue;
                     const float *ep = ce_enemy_pos(e2);
                     /* ★★★★ 2026-10-11 **照 TH19 一手订正** ✓（`FUN_0054c080` 反编译 ✓，
                      *   `local/th19.v1.10c/decomp/all.c:246937` 起；owner 语义 ✓
