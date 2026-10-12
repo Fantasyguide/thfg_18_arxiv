@@ -3350,8 +3350,12 @@ static void c3_fire_wave(void)
             const int idx5 = (base5 + (72 * i) / n) % 72;   /* `2π·i/$C + %F`（$C ∈ {6,8} ⇒ 整除 ✓）*/
             c3_dir5(idx5, &b->dx, &b->dy);
         }
-        b->x = p[0];
-        b->y = p[1] + POFV_C3_CARRIER_DY;               /* ★ 发弹原点 = 载体自身（自机上方 128）✓ */
+        /* ★★★ C3/C4 审计 60f3724f ④（中）✓：★ 一手 `ins_400(0.0f, 128.0f)` 是 **movePos = 绝对坐标** ✓
+         *   （ECL-info 口径 ✓）⇒ ★ 载体/环心固定在 **(0, 128)** ✓，★ **不跟自机** ✗。
+         *   ★ 原来写成"自机上方 128" ✗ —— ★ 而同卡 C4（`s_c4_b[k].x=0; y=128` ✓）与魔理沙 C3
+         *   （`y=448` 绝对 ✓）都用**绝对** ⇒ ★ 本处自相矛盾 ✓ ⇒ 改绝对 ✓。*/
+        b->x = 0.0f;
+        b->y = 128.0f;
         b->spd = POFV_C3_SPEED;
         b->age = 0; b->bounces = 0; b->live = 1;
         b->vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_POFV109_STORM, POFV_C3_VM_LAYER);
@@ -3382,12 +3386,13 @@ static void pofv_c3_tick(void)
 {
     /* ★★ 一手 `Ecl_EtBreak`（§5.1 ✓）：**每帧一档**、共 POFV_EB_LV3_FRAMES 帧 ⇒ 消弹 + 撒道具 + 范围圈 ✓
      *   （★ 留本侧 ✓ —— 一手这一档会送对侧，本作是"我方场地"⇒ 不翻 ✓）。*/
-    if (s_c3.eb >= 0 && s_c3.eb <= POFV_EB_LV3_FRAMES) {
-        const float *pe = ce_player_pos();
-        if (pe) {
+    /* ★ C3/C4 审计 60f3724f ⑧ ✓：★ 一手 Lv3 = **16/24/32 三帧** ✗ ⇒ `eb` 应为 0..2 ⇒
+     *   ★ `<=` 会多跑**第 4 帧（=40）** ✗ ⇒ 改 `<` ✓。*/
+    if (s_c3.eb >= 0 && s_c3.eb < POFV_EB_LV3_FRAMES) {
+        {   /* ★ ④ 同上 ✓：★ 环心 **绝对 (0,128)** ✓（一手 `ins_400` ✓）★ 不跟自机 ✗。*/
             float pos[3];
             const float r = POFV_EB_LV3_R0 + POFV_EB_STEP * (float)s_c3.eb;
-            pos[0] = pe[0]; pos[1] = pe[1]; pos[2] = 0.0f;
+            pos[0] = 0.0f; pos[1] = 128.0f; pos[2] = 0.0f;
             (void)c2_cancel_drop(pos, r);
             pofv_eb_ring_sync(&s_c3.ring_vm, r);
         }
@@ -3791,12 +3796,15 @@ static void pofv_c4_tick(void)
 {
     /* ★★ 一手 `Ecl_EtBreak`（§5.1 ✓）：**每帧一档**、共 POFV_EB_LV4_FRAMES 帧 ⇒ 消弹 + 撒道具 + 范围圈 ✓
      *   （★ 留本侧 ✓ —— 一手这一档会送对侧，本作是"我方场地"⇒ 不翻 ✓）。*/
-    if (s_c4.eb >= 0 && s_c4.eb <= POFV_EB_LV4_FRAMES) {
+    /* ★ ⑧ 同上 ✓：★ 一手 Lv4 = **16…48 五帧** ✗ ⇒ `eb` 应为 0..4 ⇒ 改 `<` ✓。*/
+    if (s_c4.eb >= 0 && s_c4.eb < POFV_EB_LV4_FRAMES) {
         const float *pe = ce_player_pos();
         if (pe) {
             float pos[3];
             const float r = POFV_EB_LV4_R0 + POFV_EB_STEP * (float)s_c4.eb;
-            pos[0] = pe[0]; pos[1] = pe[1]; pos[2] = 0.0f;
+            /* ★ ④ 同 C3 ✓：★ 环心 **绝对 (0,128)** ✓（一手 `ins_504(0,128,…)` ✓；★ 本卡 C4 的**视觉**
+             *   本来就在 (0,128) ✓，★ 而消弹心却跟自机 ✗ ⇒ **判定与绘制不一致** ⇒ 一并改绝对 ✓）。*/
+            pos[0] = 0.0f; pos[1] = 128.0f; pos[2] = 0.0f;
             (void)c2_cancel_drop(pos, r);
             pofv_eb_ring_sync(&s_c4.ring_vm, r);
         }
@@ -4090,9 +4098,12 @@ static void pofv_c3m_tick(void)
             b->live = 0;
             continue;
         }
-        pos[0] = b->x; pos[1] = b->y; pos[2] = 0.0f;
-        /* ★ 向上的一条长盒（`ce_damage_rect` 不转 ⇒ 竖直用宽 12 / 高 420 ❓③）*/
-        (void)ce_damage_rect(pos, 0.0f, 2, 14.0f, 12.0f, 420.0f);
+        /* ★★★ C3/C4 审计 60f3724f ⑥（中）✓：★ 一手这条是**向上**的激光 ✓（`ins_604($A,−π/2,−π/2)` ✓）
+         *   ⇒ ★ 盒心必须**从那一行往上偏 h/2** ✓；★ 原来直接传 `b->y`（= 横扫行 448 ✓）✗
+         *   ⇒ ★ 盒只覆盖 `y=[238,448]` ✓、★ **一半在屏外** ✗。
+         *   ★ 照**同卡 C4M** 的写法（`pp[1] − 210.0f` ✓，见本文件上面那处 ✓）⇒ ★ 改成 `b->y − h/2` ✓。*/
+        pos[0] = b->x; pos[1] = b->y - 210.0f; pos[2] = 0.0f;
+        (void)ce_damage_rect(pos, 0.0f, 2, 14.0f, 12.0f, 420.0f);   /* ❓③ 竖直长盒（宽 12 / 高 420 ✓）*/
     }
 }
 
