@@ -12,7 +12,7 @@ script script452 {
     texArcEven($I0);
     scrollY(0.02f);
     color(255, 255, 255);
-    alpha(0);
+    alpha(255);   /* ★ 2026-10-13：不靠 `alphaTime` 淡入 ✓（理由见 450 头注释 ✓）*/
     alphaTime(20, 0, 255);              // ★ 一手 ✓ 20 帧淡入
     scale(1.0f, 16.0f);                 // ★ 一手起点半径 16 ✓
     scaleTime(128, 0, 1.0f, 448.0f);    // ★ 一手 ✓ 128 帧线性长到 448

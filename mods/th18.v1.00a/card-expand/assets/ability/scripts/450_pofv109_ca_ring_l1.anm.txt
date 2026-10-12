@@ -29,7 +29,9 @@ script script450 {
     texArcEven($I0);
     scrollY(0.02f);
     color(255, 255, 255);
-    alpha(0);
+    alpha(255);   /* ★ 2026-10-13：★ **不靠 `alphaTime` 淡入** ✗ —— ★ owner 实跑"环 VM 起了但看不见" ✓
+                   *   ⇒ ★ 怀疑 `alphaTime` 与 `scaleTime` 一样**不驱动这类图元**（`texArcEven`）✗
+                   *   ⇒ ★ 直接给 **alpha 255** ✓（★ 可见优先 ✓；要淡入再说 ✓）。*/
     alphaTime(20, 0, 255);              // ★ 一手 ✓ 20 帧淡入
     /* ★ 2026-10-13 **回退** ✗：★ 半径仍在**脚本侧**用 `scaleTime` 走 ✓（owner 看见过的那套 ✓）*/
     scale(1.0f, 16.0f);                 // ★ 一手起点半径 16 ✓（x = 带宽度 1.0 = 16 px ✓ / y = 半径 ✓）
