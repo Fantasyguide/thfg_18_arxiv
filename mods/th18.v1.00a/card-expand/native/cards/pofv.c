@@ -3704,7 +3704,8 @@ static void pofv_c3_tick(void)
 #define POFV_BARRIER_BREAK_N    40       /* ★ 一手 ✓ 禁主动移动 40 帧 */
 #define POFV_BARRIER_INVULN_N   100      /* ★ 一手 ✓ 无敌 100 帧 */
 #define POFV_BARRIER_PUSH       128.0f   /* ★ 记录值：总位移 128 px ✓（★ 原始出处本仓查不到 ⇒ 见位移段的 ❓ 登记）*/
-#define POFV_BARRIER_PUSH_K     3.2f     /* ★ 恒速步长 = 128 px / 40 帧 = 3.2 px/帧 ✓（owner 观感：匀速、较慢 ✓）*/
+#define POFV_BARRIER_PUSH_W2S   2.0f     /* ★ 2026-10-13：世界单位 → 表面 px（❓：一手记"≈10 世界单位 = 20 表面 px" ✓，
+                                          *   本卡位置在表面 px ⇒ ×2 使累计峰值 ≈ 20 px ✓；一手未逐字给这个换算 ⇒ 标 ❓）*/
 /* ★★★★ 2026-10-12 **权威位置副本**（一手 ✓ `engine/player/th18/01-position-and-state-timers.md` §2 ②）：★
  *   `Player__sub_45b170` `0x45B170` 每帧 `+0x62c += (int)(dx*…)` → 钳位 → `+0x620 = (float)(+0x62c)/128`
  *   ⇒ ★ **位移必须加到 `+0x62c/+0x630`（int32，单位 1/128 px ✓）**，★ 写 float 位置或速度向量都会被覆盖 ✗。
@@ -3908,18 +3909,33 @@ static void pofv_barrier_tick(void)
          *     TH19 decomp 里确有 `2.0f` 写进 `player+0x6360`（`all.c:206951` ✓，自机初始化/状态段 ✓），
          *     但**全文件没有读它的地方** ✗ ⇒ ★ 只能支持"2.0 是个速度常数" ✓，**证明不了**"线性衰减" ✗。
          *     ⇒ ★ 此处以**owner 观感**为准 ✓，并把「匀速」记为已确认 ✓、把"一手出处"记为 ❓（待反汇编补 ✓）。*/
-        float step = POFV_BARRIER_PUSH_K;      /* ★ 恒速：每帧 3.2 px ✓（40 帧 ≈ 128 px ✓）*/
+        /* ★★★★★ 2026-10-13 **改成一手曲线** ✓（`engine/versus/th19/02-self-field-systems.md` **§4.32.2** ✅，
+         *   一手反汇编 `th19:0x546880`–`0x5469f8` ✓）：
+         *   ★ 一手每帧算 `scale = 1.0 − 2·t/40`（`0x5aa344 = 40.0f` ✓）
+         *     ⇒ ★ 幅度 **+1 → 0（t = 20）→ −1（t = 40）** ✓ = ★ **先抛出去、再滑回** ✓（★ 净位移 ≈ 0 ✓）；
+         *   ★ 方向 = `player+0x40 = atan2(玩家 − 命中源)` ✓（`0x407490` ✓）= ★ **远离命中源** ✓
+         *     （= 本卡的 `s_barrier_dx/dy` ✓，它就是这么算的 ✓）；
+         *   ★ 长度 < `0.01f`（`0x5aa1d8` ✓）⇒ 不归一化（避免除零 ✓）；★ 持续 **40 帧** ✓（`0x5469db cmp …,0x28` ✓）。
+         *   ⚠ ★ 我原来写的是「**恒定 3.2 px/帧一直推**」✗ —— ★ 与一手**完全不同** ✗（一手是**往返** ✓）。
+         *   ★ 单位（§4.32.3 ✓）：一手把结果 `× 128.0f` 取整后交给 `0x42fce0`，后者写 float 速度
+         *     `+0x20f4/+0x20f8` ✓ 并**逐帧积分**进 `+0x698/+0x69c`，再 `+0x68c = 值 / 128` ✓
+         *     ⇒ ★ 每帧位移（px）≈ `scale` ✓，累计峰值 ≈ 10.5 ⇒ ★ 归档记的是"≈10 世界单位 = **20 表面 px**" ✓
+         *     ⇒ ★ 本卡用 `POFV_BARRIER_PUSH_W2S = 2.0f` 把峰值凑到 ≈ **20 px** ✓（❓登记 ✓）。*/
+        float bt   = (float)(POFV_BARRIER_BREAK_N - s_barrier_brk);          /* ★ t: 0 → 39 ✓（一手 0 → 40 ✓）*/
+        float amp  = 1.0f - 2.0f * bt / (float)POFV_BARRIER_BREAK_N;         /* ★ 一手 `1 − 2t/40` ✓ */
+        float bpx  = amp * POFV_BARRIER_PUSH_W2S;                            /* ★ 世界 → 表面 px ✓ */
         float *mult = CE_PLAYER() ? (float *)(CE_PLAYER() + CE_PLAYER_SPEED_MULT) : 0;
         int32_t *sub = CE_PLAYER() ? (int32_t *)(CE_PLAYER() + POFV_PLAYER_SUBPIXEL) : 0;
         if (mult) *mult = 0.0f;                        /* ★ 一手 ✓：禁主动移动（当帧生效）*/
-        if (sub) {
-            /* ★ 恒速推 `step` 像素/帧 = `× 128` 定点单位 ✓（权威副本 ✓，见上面 §2 ②）*/
-            sub[0] += (int32_t)(s_barrier_dx * step * 128.0f);
-            sub[1] += (int32_t)(s_barrier_dy * step * 128.0f);
+        if (sub && (s_barrier_dx != 0.0f || s_barrier_dy != 0.0f)) {
+            /* ★ 一手 `× 128.0f` 取整 ✓（点积在**权威定点副本**上 ✓，见上面 §2 ②）*/
+            sub[0] += (int32_t)(s_barrier_dx * bpx * 128.0f);
+            sub[1] += (int32_t)(s_barrier_dy * bpx * 128.0f);
         }
         if (s_barrier_brk % 8 == 0)
-            ce_log("pofv: [PUSH] brk=%d dir=(%.0f,%.0f) step=%.2fpx subpx=(%d,%d) pos=(%.0f,%.0f)",
-                   s_barrier_brk, (double)s_barrier_dx, (double)s_barrier_dy, (double)step,
+            ce_log("pofv: [PUSH] brk=%d t=%.0f amp=%+.2f dir=(%.0f,%.0f) subpx=(%d,%d) pos=(%.0f,%.0f)",
+                   s_barrier_brk, (double)bt, (double)amp,
+                   (double)s_barrier_dx, (double)s_barrier_dy,
                    sub ? sub[0] : 0, sub ? sub[1] : 0,
                    (double)(ce_player_pos() ? ce_player_pos()[0] : 0.0f),
                    (double)(ce_player_pos() ? ce_player_pos()[1] : 0.0f));
@@ -5970,7 +5986,14 @@ static int on_tick_2(ce_card_t *c)
             {
                 const float *pp_ring = ce_player_pos();
                 if (pp_ring) {
-                    const int rk = (tier_rel <= 1) ? 2 : (tier_rel == 2) ? 3 : 4;
+                    /* ★★★★★ 2026-10-13 **owner 裁定**（原话：「从C1-C4是最终大小逐渐变大的环，它们各自是在时间上
+                     *   逐渐变大」✓ + 「boss attack 不管，**卡4 按照有环的做**」✓）：
+                     *   ⇒ ★ **C1→C4 直接映射一手那四条消弹环** ✓ = **176 / 192 / 256 / 448** ✓（正好是 §1.4 里
+                     *     四条 kind 1/2/3/4 的终点 ✓），★ 每一档都**在时间上逐渐变大** ✓（= 一手的 `r += dr` ✓）。
+                     *   ⚠ ★ **有意偏离一手**（登记 ✓）：★ 一手那三个档位函数体里**每次都会另起 kind 1（176）+ kind 4** ✓
+                     *     （见本文件上面那段反汇编注释 ✓）⇒ 一手一次释放是"**两个/三个场叠着**"✗；
+                     *     ★ owner 的口径是"**每档一个、逐渐变大**" ✓ ⇒ ★ 这里**只起一个** ✓（不再另加 kind 1 ✗）。*/
+                    const int rk = (tier_rel <= 1) ? 1 : (tier_rel == 2) ? 2 : (tier_rel == 3) ? 3 : 4;
                     pofv_ca_ring_spawn(rk, pp_ring[0], pp_ring[1]);
                     /* ★★ 2026-10-12 **一手核实（本轮反汇编）**：★ 档位那一支**本身就带 kind 1（176）** ✓ ——
                      *   拆 `th09:0x403c30` / `0x403c90` / `0x403cf0` 三个档位函数的**函数体**，
@@ -5986,7 +6009,9 @@ static int on_tick_2(ce_card_t *c)
                      *   —— ★ **不是两次独立的释放** ✓（这也回答了 owner 的问题 (b)：**要同时起** ✓）。
                      *   ⚠ ★ **kind 4 的 `+0x28` 标量语义一手没读到** ✗（`0x41e895 push 0xa` = 10 ✓）
                      *     ⇒ ★ **不实现、不猜** ✓（登记 ❓ TUNING ✓）。*/
-                    pofv_ca_ring_spawn(1, pp_ring[0], pp_ring[1]);
+                    /* ★ 2026-10-13：★ **这里原来还起一个 kind 1（176）** ✗ —— 那是照一手"档位函数体里带 kind 1"
+                     *   的做法 ✓；★ 但 **owner 2026-10-13 裁定**「从 C1-C4 是最终大小逐渐变大的环」✓
+                     *   ⇒ ★ 一档**只该有一个环** ⇒ ★ 已去掉 ✗（★ 有意偏离一手 ✓，登记 TUNING ✓）。*/
                 }
             }
             /* ★★ 一手 ✓ 同帧：★ 档位发完**紧接着**发这份 C1 ✓
