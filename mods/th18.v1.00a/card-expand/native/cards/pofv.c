@@ -2192,7 +2192,9 @@ static const pofv_c1_shot_t s_c1_table[POFV_C1_GROUPS][POFV_C1_SHOTS_PER_GROUP] 
 #define POFV_C2_RING_R0         128.0f  /* 一手 ✓ 扩张环起点 */
 #define POFV_C2_RING_R1         192.0f  /* 一手 ✓ 终点（60 帧线性 ⇒ `+0x40`/`0x3c`）*/
 #define POFV_C2_RING_FRAMES      60.0f  /* 一手 ✓ */
-#define POFV_C2_RING_DMG           24   /* 一手 ✓（`0x18`）*/
+/* ★ C2-③ ✓：★ `FUN_005200f0(...,0x18,1)` 的 **24 是寿命** ✓，**不是伤害** ✗
+ *   ⇒ ★ 原注释写的一手出处是**假的** ✗ ⇒ ★ 降级为 **❓自定** ✓。*/
+#define POFV_C2_RING_DMG     24
 #define POFV_C2_GEN_FRAMES          4   /* 一手 ✓ `Ecl_EtBreakLv2` 共 4 帧 */
 #define POFV_C2_GEN_R0            8.0f  /* 一手 ✓ 半径序列 8/12/16/20 */
 #define POFV_C2_GEN_STEP          4.0f  /* 一手 ✓ 每帧 +4 */
@@ -2208,7 +2210,10 @@ static const pofv_c1_shot_t s_c1_table[POFV_C1_GROUPS][POFV_C1_SHOTS_PER_GROUP] 
 #define POFV_EB_LV3_FRAMES    3    /* ★ 一手 ✓ 16/24/32 */
 #define POFV_EB_LV4_FRAMES    5    /* ★ 一手 ✓ 16/24/32/40/48 */
 #define POFV_C2_POINT_HIT_EVERY     5   /* 一手 ✓ 每 5 帧一个伤害源 */
-#define POFV_C2_POINT_HIT_DMG       4   /* ❓自定：一手只给了 kind=4（`FUN_005200f0(…, 4)`）⇒ 伤害量先用 4 */
+/* ★ C2-③（C2 审计 42acbab9 ✓）：★ 原来标的一手出处是**假的** ✗ ——
+ *   ★ `FUN_005200f0(pos,0,1,4)` 的**第 6 参 4 是 `kind`** ✓（→ `obj+0x98` ✓），**不是伤害** ✗。
+ *   ⇒ ★ 真实伤害**未知** ⇒ ★ 本值降级为 **❓自定** ✓（待查一手真实伤害后替换 ✓）。*/
+#define POFV_C2_POINT_HIT_DMG 4
 #define POFV_C2_POINT_HIT_R      16.0f  /* ❓自定：32×32 的矩形源（一手形状未给；≈ 环绕点体量）*/
 #define POFV_C2_INVULN             40   /* 一手 ✓（39/40/40.0f）*/
 #define POFV_C2_VM_LAYER            6   /* 同暴风 `POFV_STORM_VM_LAYER`（脚本 396 里自己也写 `layer(6)` ✓）*/
@@ -3869,7 +3874,12 @@ static void pofv_c4_tick(void)
  *   ★ 角度 = **−90° + k·60°** ✓（原来我从 0° 起等分 ✗，差 90°）。
  *   ★ 寿命 = **60 + rand()%100** ✓（60..159）；★ **无 anm**（一手是引擎原生激光 ✗，
  *     本卡没有那种原语 ⇒ 仍用脚本 403 画，观感属 ❓自定 ✓）。*/
-#define POFV_C2M_HIT_LEN   600.0f
+/* ★ C2-②（C2 审计 42acbab9 ✓）：★ 我先前写的"每条两端点 = 自机 + 半径 600"**被证伪** ✗ ——
+ *   ★ 一手那 600 只进了两个 `600·u(theta)` **向量**（`+0xd0/+0xdc` ✓）；★ 真正的两点 = **自机位** ✓
+ *   与 **(对面 x+320±156, 464)** ✓。⇒ ★ 本常量**没有一手依据** ⇒ 标 **❓自定** ✓，
+ *   ★ 且待修：★ 盒心应改 `自机 + len/2·u(ang)` ✓、高度=绘制长 ✓（★ 现在以自机为心、只 600 ⇒
+ *   只覆盖 [−300,+300] ✗，而绘制覆盖 [0,2048] ✗）。*/
+#define POFV_C2M_HIT_LEN     600.0f
 /* ★★ 2026-10-11 照抄 108 的两个常量（owner：完全参考 108 ✓）：
  *   ★ 108 `youkai.c:8163` = `scale.x = YK_LASER_LEN / YK_M_LASER_BEAM_SPRITE_W × grow`
  *     = 2048 / 768 = **2.6666667** ✓；★ 展开帧数 = `YK_M_LASER_BEAM_GROW_FRAMES` = **8** ✓。*/
