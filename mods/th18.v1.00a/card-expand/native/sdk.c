@@ -66,6 +66,8 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include "sdk.h"
+
+uint32_t ce_input_z_frozen;   /* ★ 2026-10-11 owner 定的 Z 快照槽 ✓（长注见 sdk.h）；★ 必须在条件编译之外 ✓ */
 #include "sdk_actions.h"
 /* ★ 2026-09-13 已拆线：#include "cards/input_synth.h" —— 调试件「逐帧合成方向输入」不再接入
  *   （代码保留在 cards/input_synth.{h,c}；重挂见 DEV-INPUT-SYNTH.md §0）。*/

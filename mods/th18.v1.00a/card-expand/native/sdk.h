@@ -678,6 +678,15 @@ static inline uint8_t *ce_option_get(ce_card_t *c, ce_option_t *o, int offset, i
     return p ? p : ce_option_retry(c, o, offset, anm_script, retry_frames, card);
 }
 /* 子机的世界坐标（`option+0x5c/0x60` 是定点数，× 1/128）*/
+/* ★★★★★ 2026-10-11 owner 定案：**Z 的快照槽**（「留一个不会被改的 Z 位置」✓）——
+ *   ★ 谁想「阻断 Z 的发弹」就 **先存后清** ✓（`ce_input_z_frozen = CE_INPUT_HELD() & 1u;` 然后清原始位 ✓）；
+ *   ★ 需要**键盘 Z 原义**的卡（如 108 妖子机「按 Z ⇒ 追踪」✓）**读这个槽** ✓ ⇒ ★ 两边不再互相影响 ✓、
+ *   ★ 也**不再依赖「卡按 id 顺序跑」** ✗（★ 顺序不同最多是「读到上一帧的 Z」= 1 帧滞后、肉眼无感 ✓，
+ *     但**永远不会读到被清过的值** ✓）。
+ *   ⚠ ★ 真·帧界快照（无滞后、完全不依赖顺序 ✓）需要**新装一个「卡之前」的站点** ✓（勘察见 `TUNING.md`：
+ *     本仓现成的帧界【ItemManager tick】在**卡之后** ✗、`ce_input_synth` 已拆线 ✗）⇒ ★ 待办 ✓。*/
+extern uint32_t ce_input_z_frozen;
+
 static inline float ce_option_x(const uint8_t *o) { return (float)*(const int32_t *)(o + CE_OPT_POS_X) * CE_SUBPIXEL_TO_PIXEL; }
 static inline float ce_option_y(const uint8_t *o) { return (float)*(const int32_t *)(o + CE_OPT_POS_Y) * CE_SUBPIXEL_TO_PIXEL; }
 

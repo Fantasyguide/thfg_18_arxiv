@@ -8683,7 +8683,7 @@ static int on_tick_2(ce_card_t *c)
 {
     /* ★★ 桥 —— 必须**第一件事**：★ 109（id 更大 ⇒ 本卡之后跑）会清输入块的 Z 位 ✓，
      *   ★ 所以本卡要在这里先把**键盘 Z** 抄下来 ✓（见 `yk_shooting` 那段长注 ✓）。*/
-    s_z_bridge = CE_INPUT_HELD();
+    s_z_bridge = ce_input_z_frozen;   /* ★ 读共享槽 ✓（109 先存后清 ✓）—— 不再自己抄键盘 Z ✗ */
     if (!YK_ENABLE_CARD || !YK_ENABLE_CB_TICK2) return 0;   /* ★ 总开关 + 回调族 ⑨ */
     yk_card_t *s = ce_state(c, yk_card_t);
     int focused;

@@ -2960,10 +2960,16 @@ static void pofv_c1_tick(void)
                     /* ★② 闪白（一手 script12 ✓）：与"停住自转"**同刻** ✓ spawn 一份 ✓
                      *   （★ 用它自己的 alphaTime 渐隐并在 20 帧后自删 ✓ ⇒ 无需回收 ✓）。*/
                     if (!s_c1_flash[t] && s_c1_grp[t] == POFV_C1_GROUP_REI) {
-                        s_c1_flash[t] = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
+                        uint32_t fid = ce_anm_spawn(CE_ABILITY_ANM(),
                             CE_ANM_ABILITY_SCRIPT_POFV109_C1_FLASH, 6);
-                        if (s_c1_flash[t])
-                            ce_anm_set_pos((uint32_t)s_c1_flash[t], s_c1_x[t], s_c1_y[t], 0.0f);
+                        s_c1_flash[t] = (int32_t)fid;
+                        /* ★★ 自证日志（owner：「**没有看见闪白**」✗）：★ 脚本已与一手 script12 逐字一致 ✓
+                         *   ⇒ ★ 那就只剩"到底建没建出来"这一个未知 ✓ ⇒ 建成功/失败各记一行 ✓。
+                         *   （★ 只记一行、不刷屏 ✓；★ 一局就能分辨"没触发锁定"✗ / "建了却看不见"✗。）*/
+                        ce_log("pofv: [FLASH] t=%d spawn=%s x=%.1f y=%.1f",
+                               t, fid ? "ok" : "FAIL", (double)s_c1_x[t], (double)s_c1_y[t]);
+                        if (fid)
+                            ce_anm_set_pos(fid, s_c1_x[t], s_c1_y[t], 0.0f);
                     }
                 }
             }
@@ -5666,6 +5672,9 @@ static int on_tick_2(ce_card_t *c)
      *   ★ 只清 **bit0（射击 Z）** ✓、★ 只在**蓄力键按住**时 ✓、★ 只在本卡装备时（本 tick 只在自己装备时跑 ✓）
      *     ⇒ ★ 对没装 109 的玩家**逐帧零影响** ✓。*/
     if (pofv_charge_key()) {
+        /* ★ 先存后清（owner 的「搭桥」✓ + 不依赖卡顺序 ✓）：★ 把**键盘 Z 的原始值**留给需要它的卡 ✓，
+         *   然后才清原始位（★ 覆盖一切发弹消费者：原生主炮 + 茫茫多的子机/装备 ✓）。*/
+        ce_input_z_frozen = CE_INPUT_HELD() & 1u;
         *(uint32_t *)CE_ADDR_INPUT_HELD &= ~(uint32_t)1u;   /* ★ 断 Z：引擎与所有子机这帧都读到"没按" ✓ */
     }
     /* ★★ 决策痕迹（owner 前一轮澄清 ✓，**还没搭桥时**的结论 ✓；搭桥后可安全清位 ✓）：
