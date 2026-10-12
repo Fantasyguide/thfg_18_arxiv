@@ -20471,3 +20471,15 @@ interruptLabel(1) = scaleTime(4, 9, 1.2f, 1.2f) → delete() —— 注释里就
 => 图（6 张）→ 流水线 → pl03.anm 50/51（sprite 148..152）→ 部署的 anm → 部署的 sht → 117 一字未动。
 （附注：我这轮先用 `sprite(spriteN)` 正则抓引用抓空了 —— 实际正文是 `ins_300(sprite148)` 形式，
 换写法即见。★ 记一笔：**写验证正则前先看一眼正文长什么样**。）
+
+### 自证伪：hit0 会不会把伤害一起免掉？（2026-10-12）—— 不会，两条独立支撑
+
+我改完青蛙 `func_on_hit = 0` 后，自己反过来怀疑：万一 hit0 连**碰撞伤害**都免了 => 青蛙就没伤害了。
+查证：
+1. `engine/sht/th18/03-func-tables-timers-and-dead-fields.md` 的命中表**只有 hit1..hit6**，**没有 hit0**
+   => `func_on_hit = 0` = **不挂任何命中处理** => 伤害走**行的 `damage`（`+0x02` → `bullet+0x9c`）的普通碰撞**，
+   与命中函数无关；
+2. **117 的鹰行自己就是这么用的**（`_sanae_eagle_rows` 的 docstring：「命中走 hit0（默认 handler：
+   interrupt(1) 播爆炸、不建伤害源）」）=> 而 117 在游戏里是有伤害的（owner 玩过 117）
+   => 「hit0 不给伤害」被实证否掉。
+结论：青蛙 = 行 damage(22) 的碰撞伤害 + hit0 触发的 `interruptLabel(1)`（脚本里那支"爆开"）。
