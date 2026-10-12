@@ -813,7 +813,23 @@ typedef struct { int32_t prev; int32_t cur; float cur_f; int32_t speed_src; uint
 #define CE_BULLET_VELOCITY         0x644      /* float3；普通子弹每帧 pos += velocity（0x423f1f..）*/
 #define CE_BULLET_SPEED            0x650      /* float；ex 状态改速时从 speed/angle 重算 velocity（0x429bc0）*/
 #define CE_BULLET_ANGLE            0x654      /* float；tick 里归一到 (-π, π]（0x4241b8..）*/
-#define CE_BULLET_STATE            0xf68      /* uint16：0 = 空槽，3 = 消弹中（cancel_all 都跳过）*/
+/* ★★★★ 2026-10-12z64（goal「扫描全部敌弹抽离+加速」②）：**状态取值表定稿**（`state` = `uint16` @ **0xf68**，
+ *   交叉验证：`zBullet` 结构**整好 0xfa0 字节** = 我们的 `CE_BULLET_STRIDE` ✓；
+ *   命名金矿 `type-structs-own.json` 里该字段**就叫 `state`** ✓）。
+ *
+ *   | 值 | 含义 | 证据 |
+ *   | :-: | --- | --- |
+ *   | 0 | 空槽 | 直方图：槽数 − 活弹 − 哨兵 ✓ |
+ *   | **1** | **活**（活动弹）| 我方对账：**活弹链表数 ≡ 直方图 `[1]`**，逐帧吻合 ✓ |
+ *   | **2** | **出现中**（spawning）| 引擎消弹入口 #2–4 的 `state ∈ {1,2}` 门（`engine/bullet/th18/01-cancel-to-item.md:27`）✓ |
+ *   | **3** | **消弹中** | 本行旧注释 ✓ + `cancel_all` 跳过 ✓ |
+ *   | 4 | 收尾（**不可消**）| 由 `{1,2}` 门反推 ✓（111 原先也跳 4 ✓）|
+ *   | **5** | **池尾哨兵（假弹）** | 我方只读探针：恒定、只在池尾（1997–1999 一带）、**从不进活弹链表** ✓ |
+ *
+ *   ⚠ 由此坐实的既有缺陷：**数组扫里用 `state != 0` 当"活弹"会把 5 号哨兵算进来** ✗
+ *     （108 只跳 0、111 只跳 0/3/4 都中招；109 收 1/2 恰好躲过 ✓）。
+ *   ⇒ 需要"活弹"语义时**一律用 `CE_BULLET_LIVE_FOR_EACH`**（链表里只有真弹 ✓）或显式排除 5 ✓。*/
+#define CE_BULLET_STATE            0xf68      /* uint16（`zBullet.state`）：见上表 0/1/2/3/4/5 */
 
 /* ---- zPlayerBullet ---- */
 #define CE_BULLET_DAMAGE           0x9c       /* int；PlayerBullet__create 0x45e396 写、0x45e7f5 调槽 +0x28、0x45e837 用；Momoyo 覆写（SDK）*/

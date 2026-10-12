@@ -345,3 +345,26 @@ local/vendor/thtk/build/thecl/thecl -d 18 -x -m local/vendor/eclmap/eclmap/th18.
 ```
 
 > 机读出处：`games/th18.v1.00a/symbols.json` 记的 `exe_md5` = 本文声明的 `9969cac756098c1da05a81de45437a70`（同 build）。
+
+---
+
+## 7. `zBullet.state`（`+0xf68`, uint16）取值表 —— 2026-10-12 定稿（mod 侧交叉实测）
+
+来源：命名金矿 `local/vendor/th-re-data/data/th18.v1.00a/type-structs-own.json`
+（`zBullet.state` 就在 **0xf68**，且 `zBullet` 整好 **0xfa0** 字节）+ 本文 §1 的消弹门 + mod 侧只读探针：
+
+| 值 | 含义 | 证据 |
+| :-: | --- | --- |
+| `0` | 空槽 | 直方图：槽数 − 活弹 − 哨兵 |
+| `1` | **活**（活动弹）| mod 侧对账：**`mgr+0xbc` 活弹链表数 ≡ `[1]` 计数**，逐帧吻合 |
+| `2` | **出现中**（spawning）| §1 的入口 #2–4 门 `state ∈ {1,2}`（`0x4292a7`/`0x4293ba`/`0x4294da`）|
+| `3` | **消弹中** | `cancel_all` 跳过；§1.4 那段的"置位即整段跳过" |
+| `4` | 收尾（**不可消**）| 由 `{1,2}` 门反推 |
+| `5` | **池尾哨兵（假弹）** | mod 侧探针：恒定、只在池尾（1997–1999 一带）、**从不进 `tick_list_head` 链表** |
+
+**⚠ 给改造者的硬结论**：**"活弹"必须按 `state == 1`（或走 `mgr+0xbc` 活弹链表）判** ✓；
+数组平扫里用 `state != 0` 会把 **5 号哨兵**当真弹 ✗（mod 侧 108/111/116/reverse 都踩过）。
+
+**相关结构**（同一份金矿）：`zBulletManager.tick_list_head` = **`mgr+0xbc`**（活弹双向循环链表 ✓）、
+`bullets[0x7d0]` = **`mgr+0x108c`**（静态池，每张 `0xfa0`）、`zBulletList = {entry,next(+4),prev(+8)}`、
+每张弹的链表节点在 **`bullet+0x10`**、`bullet+0x660` = `index_in_bullet_array` ✓。
