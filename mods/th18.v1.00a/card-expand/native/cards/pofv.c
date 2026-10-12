@@ -3557,6 +3557,7 @@ static void pofv_c3_tick(void)
 #define POFV_BARRIER_BREAK_N    40       /* ★ 一手 ✓ 禁主动移动 40 帧 */
 #define POFV_BARRIER_INVULN_N   100      /* ★ 一手 ✓ 无敌 100 帧 */
 #define POFV_BARRIER_PUSH       128.0f   /* ★ 一手 ✓ 位移单位 */
+#define POFV_BARRIER_PUSH_K     3.2f     /* ❓自定：128 px / 40 帧 / 平均 v 1.0 ⇒ 3.2（见下面位移段）*/
 #define POFV_BARRIER_PUSH_V     2.0f     /* ★ 一手 ✓ 初速（线性衰减到 0）*/
 static int32_t s_barrier_vm_disc;        /* ★ 内层：白圆（脚本 428）*/
 /* ★★ #5（owner ✓）：「**获取 109 的时候会给一个罩子**（对应 TH19 **开局给你一个罩子** ✓）」✓
@@ -3714,15 +3715,29 @@ static void pofv_barrier_tick(void)
          *     它由**引擎在真撞弹时**广播 ✓ ⇒ ★ 本函数只管**视觉**（短周期重发 + 跟随自机）✓。*/
     }
     if (s_barrier_brk > 0) {
-        /* ★ 一手 ✓：禁主动移动（当帧写 0；`on_tick_2` 先于 `Player::on_tick` ⇒ 当帧生效）+ 背向位移 */
+        /* ★ 一手 ✓：禁主动移动（当帧写 0；`on_tick_2` 先于 `Player::on_tick` ⇒ 当帧生效）+ 背向
+         * ★★★★ 2026-10-12 **改机制**（owner 实跑："没有强制移动"✗）：
+         *   ★ 原来**直接写自机坐标**（`player+0x620` ✗）—— 而自机自己的移动代码在**本帧稍后**会按
+         *     输入/速度**重算并写回**位置 ✓ ⇒ ★ 我们那个加法被**冲掉** ⇒ 看起来完全没动 ✓。
+         *   ⇒ ★ 改成写**引擎自己的速度向量** `CE_PLAYER_SPEED_BASE`（`+0x477f0` ✓，float×2 ✓，
+         *     每帧从 `0x5217dc` 拷来、由引擎自己积分 ✓）⇒ ★ 位移由引擎走出来、不会被冲掉 ✓。
+         *   ★ 标度：一手「位移 128 / 初速 2.0 线性衰减」✓ ⇒ 40 帧平均 v = 1.0 ⇒ 走出 ~128 px
+         *     需要 K = 128/40 = **3.2** ✓（❓自定：一手那个 128 是"位移"还是别的单位，未逐字核到 ✓）。*/
         float f = (float)(POFV_BARRIER_BREAK_N - s_barrier_brk);
         float v = POFV_BARRIER_PUSH_V * (1.0f - f / (float)POFV_BARRIER_BREAK_N);
-        float *mult = (float *)(CE_PLAYER() + CE_PLAYER_SPEED_MULT);
-        float *px;
-        if (CE_PLAYER()) *mult = 0.0f;            /* ★ 一手 ✓：禁主动移动（当帧生效）*/
-        px = (float *)(CE_PLAYER() + CE_PLAYER_X); /* ★ 与 `ce_player_pos()` 同一指针 ✓ */
-        px[0] += s_barrier_dx * v * POFV_BARRIER_PUSH;
-        px[1] += s_barrier_dy * v * POFV_BARRIER_PUSH;
+        float *mult = CE_PLAYER() ? (float *)(CE_PLAYER() + CE_PLAYER_SPEED_MULT) : 0;
+        float *vel  = CE_PLAYER() ? (float *)(CE_PLAYER() + CE_PLAYER_SPEED_BASE) : 0;
+        if (mult) *mult = 0.0f;                        /* ★ 一手 ✓：禁主动移动（当帧生效）*/
+        if (vel) {
+            vel[0] = s_barrier_dx * v * POFV_BARRIER_PUSH_K;
+            vel[1] = s_barrier_dy * v * POFV_BARRIER_PUSH_K;
+        }
+        if (s_barrier_brk % 8 == 0)
+            ce_log("pofv: [PUSH] brk=%d dir=(%.0f,%.0f) v=%.2f vel=(%.1f,%.1f) pos=(%.0f,%.0f)",
+                   s_barrier_brk, (double)s_barrier_dx, (double)s_barrier_dy, (double)v,
+                   (double)(vel ? vel[0] : 0.0f), (double)(vel ? vel[1] : 0.0f),
+                   (double)(ce_player_pos() ? ce_player_pos()[0] : 0.0f),
+                   (double)(ce_player_pos() ? ce_player_pos()[1] : 0.0f));
         --s_barrier_brk;
     }
 }
