@@ -4050,6 +4050,7 @@ static int pofv_c4_nsweep(void) { return (pofv_c4_rank() >= 2) ? 3 : 2; }
 
 typedef struct {
     int     live, age;
+    int     bounced;      /* ★ 2026-10-13 模型 ③：★ 版顶已反弹过否（★ 一手的这位 boss 弹**无反弹** ✗ ⇒ 这条按 owner 模型补 ✓）*/
     float   x, y, ang, spd;
     int32_t vm;
 } pofv_c4_bullet_t;
@@ -4101,6 +4102,7 @@ static void pofv_c4_emit(int dir)
         s_c4_b[k].y = pp4 ? pp4[1] : 128.0f;
     }
     s_c4_b[k].live = 1; s_c4_b[k].age = 0;
+    s_c4_b[k].bounced = 0;                       /* ★ 2026-10-13：★ 新弹的"已反弹"位清零 ✓ */
     ang += 3.14159265f;                          /* ★ 翻 180° ✓（朝对面打、不朝我 ✓）*/
     s_c4_b[k].ang = ang;
     s_c4_b[k].spd = POFV_C4_SPEED;
@@ -4175,6 +4177,17 @@ static void pofv_c4_tick(void)
         if (di < 0) di += 36;
         b->x += s_c2_dir36[di][0] * b->spd;
         b->y += s_c2_dir36[di][1] * b->spd;
+        /* ★★★★★ 2026-10-13 **模型 ③：版顶反弹** ✓（★ 模型与自检 = `HANDOFF-VERSUS-TO-SINGLE-MODEL.md` ✓）：
+         *   ★ 翻 180° 之后弹是**朝上**飞的 ✓ ⇒ ★ 应在**版顶**弹回、再从**版底**出去 ✓
+         *   （★ 你原话的症状是"★ 现在在**版底**反弹、**版顶**出去" ✗ = 没翻 ✓）。
+         *   ⚠ ★ **有意补的一条**（登记 ❓ ✓）：★ 一手这位 boss 的弹本身是**直线 + 速度斜坡、没有反弹** ✗
+         *   ⇒ ★ "版顶反弹"是**按模型补的** ✓，不是照抄 ✗。
+         *   ★ 反射：★ 屏幕 y 向下 ⇒ 方向 `(cos, sin)` 的 y 翻号 ⇒ ★ **`ang = -ang`** ✓（只翻一次 ✓）。*/
+        if (b->y < 0.0f && !b->bounced) {
+            b->y = 0.0f;
+            b->ang = -b->ang;
+            b->bounced = 1;
+        }
         ++b->age;
         if (b->x < -(POFV_FIELD_HALF_W + POFV_C1_OFF_MARGIN) ||
             b->x >  (POFV_FIELD_HALF_W + POFV_C1_OFF_MARGIN) ||
