@@ -3565,6 +3565,7 @@ static int32_t s_barrier_vm_disc;        /* ★ 内层：白圆（脚本 428）*
 static int s_barrier_grant_pending;
 static int32_t s_barrier_vm_glow;        /* ★ 外层：黄外发光（脚本 429）*/
 static int   s_barrier_on;               /* 盾在不在 */
+static int   s_barrier_log_pending;      /* ★ 2026-10-12：发放后等视觉起完再打日志 ✓ */
 static int   s_barrier_brk;              /* 破罩计时（>0 = 禁移 + 位移中）*/
 static float s_barrier_dx, s_barrier_dy; /* ❓自定：位移方向（先取正下）*/
 
@@ -3654,6 +3655,12 @@ static void pofv_barrier_vm_sync(void)
         vm_set_world_pos((uint32_t)s_barrier_vm_disc, p[0], p[1]);
         ce_anm_set_scale((uint32_t)s_barrier_vm_disc, k_disc, k_disc);
     }
+    if (s_barrier_log_pending) {
+        s_barrier_log_pending = 0;
+        ce_log("pofv: [BARRIER] 视觉就绪 glow=%d disc=%d pos=(%.0f,%.0f) scale=%.2f/%.2f layer=%d/%d",
+               s_barrier_vm_glow, s_barrier_vm_disc, (double)p[0], (double)p[1],
+               (double)k_glow, (double)k_disc, POFV_BARRIER_VM_LAYER_GLOW, POFV_BARRIER_VM_LAYER_DISC);
+    }
 }
 
 /* ★ 给盾（一手：C3/C4 才给；本卡先挂在结界张开上升沿 ❓）*/
@@ -3682,8 +3689,7 @@ static void pofv_barrier_fire(void)
      *   **撞弹之后**的行为 ✓（「撞弹之后的一手行为是…给一段无敌时间」✓），★ 不是拿到罩子就无敌 ✗。
      *   ⇒ ★ 改由撞弹回调 `pofv_on_death_before_deathbomb()` 给 ✓。*/
     s_barrier_on = 1;
-    ce_log("pofv: [BARRIER] 发放罩子（开局 / 获得 109 ⇒ 一手行为 ✓）brk=%d glow=%d disc=%d on=%d",
-           s_barrier_brk, s_barrier_vm_glow, s_barrier_vm_disc, s_barrier_on);
+    s_barrier_log_pending = 1;   /* ★ 视觉在同帧稍后起 ⇒ 那之后才打印才有意义 ✓（见 vm_sync）*/
 }
 
 /* ★ 每帧：盾挡 1 发 ⇒ 破罩；破罩后跑那三件事 */
