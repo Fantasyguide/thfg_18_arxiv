@@ -1305,7 +1305,8 @@ def _card_script_block(player: str, spec: dict) -> str:
         raise SystemExit(f"{player}: {hits[0].name} 里没有 script{spec['spec_file']}")
     # ★ 去注释：`//` 行 + `/* … */` 块（★ 反解回来的正文没有注释 ⇒ 不去就会"往返不一致"）
     body = re.sub(r"/\*.*?\*/", "", body, flags=re.S)
-    body = "\n".join(l for l in body.splitlines()
+    # ★ 逐行 rstrip：行内注释被去掉后留下的**尾随空格**会让「计划 vs 反解」不一致 ✗（已踩过一次）
+    body = "\n".join(l.rstrip() for l in body.splitlines()
                       if l.strip() and not l.strip().startswith("//"))
     for name, sid in spec["sprite_names"].items():
         body = body.replace(f"@{name}", f"sprite{sid}")

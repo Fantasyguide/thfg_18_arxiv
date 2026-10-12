@@ -3058,17 +3058,21 @@ static void pofv_c1_fire(void)
 static void pofv_c1_window_tick(void)
 {
     pofv_stage_set(13);   /* ★ 窗口 tick ✓ */
-    if (s_c1_win_left <= 0) return;
-    /* ★★★★ 2026-10-12 **修正我上一轮的 bug** ✗：★ 我原来把"停手写"的早退放在**倒计数之前** ✗
-     *   ⇒ ★ `s_c1_win_left` / `s_c2s_win` **永不递减** ✗ ⇒ ★ 窗口永不关闭 ✗ ⇒ ★ 认领**常开** ✗
-     *   （★ 那 26 行会一直发 ✗）。★ 正确：★ **记账每帧都走** ✓、★ 只在**造弹那一步**停手 ✓，
-     *   ★ 且判据要在**记账前**取 ✓（★ 否则最后那帧会漏判 ⇒ 手写多发一次 ✗）。*/
-    const int native_on = pofv_native_set_active();
-    --s_c1_win_left;
-    ++s_c1_win_age;
+    /* ★★★★ 2026-10-12 **修 owner 报的 bug ③（C2 不停、一直向四面八方发青蛙）** ✗：
+     *   原来 `if (s_c1_win_left <= 0) return;` 挡在**记账之前** ✗ ⇒ ★ 青蛙那条 60 帧窗口
+     *   （`s_c2s_win` ✓）的倒计数在它**后面** ⇒ ★ 蛇窗 30 帧一到就**整段早退** ⇒ `s_c2s_win`
+     *   **冻在 30** ⇒ `s_c1_set_sel` 永不清零 ⇒ ★ 认领**永远**返回青蛙 ✓
+     *   （★ 日志坐实：18169 行 `-> 0x69` 之后到 22780 行**再没有 `none`** ✓；而蛇那两次
+     *     都是 246 行后就 `none` ✓）。
+     *   ⇒ ★ 记账改为**每帧都跑** ✓（先记完账 ✓，再决定要不要自己写弹 ✓）。*/
+    if (s_c1_win_left > 0) { --s_c1_win_left; ++s_c1_win_age; }
     if (s_c2s_win > 0) {                       /* ★ 早苗 C2 的 60 帧窗口 ✓（一手 ✓）*/
-        if (--s_c2s_win == 0) s_c1_set_sel = 0;   /* ★ 窗口尽 ⇒ 切回 set10 ✓ */
+        if (--s_c2s_win == 0) {                /* ★ 窗口尽 ⇒ 切回 set10 ✓ */
+            s_c1_set_sel = 0;
+            ce_log("pofv: C2 窗口尽 ⇒ 切回 set10（下一次问认领会回 none）");
+        }
     }
+    const int native_on = pofv_native_set_active();
     if (s_aura_kind != 3) return;
     if (native_on) return;                     /* ★ goal ① ✓：认领了原生 set ⇒ 不再自己造弹 ✓ */
     if (s_c1_win_age % 8 == 0 && s_c1_win_age < 30) {
