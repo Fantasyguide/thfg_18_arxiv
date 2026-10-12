@@ -1189,9 +1189,22 @@ static int yk_boss_active(void)
  * TH08 是 `Player::shotActive`（一个 999 帧的射击周期标志，`th08:0x17d6ed4`）；TH18 没有同一个
  * 状态量（每帧按 rate 发弹，没有周期）⇒ 本卡用**射击键按住**（`CE_INPUT_HELD` 的 bit0）。
  * ❓ 口径，登记 `TUNING.md` §2.0y。*/
+/* ★ 2026-10-11 **桥**（owner 定案 ✓）：「留一个不会被改的 Z 位置」⇒ ★ 本卡在 `on_tick_2` 最开头
+ *   把键盘 Z 抄进这里 ✓（★ 卡按 id 跑 ⇒ **108 先于 109** ✓ ⇒ 109 之后清输入位**影响不到本卡** ✓）。*/
+static uint32_t s_z_bridge;
+
 static int yk_shooting(void)
 {
-    return (CE_INPUT_HELD() & 0x1u) != 0;
+    /* ★★★★★ 2026-10-11 **owner 定的"搭桥"**（比走闸简单 ✓）：
+     *   ★ owner：「有没有可能**两边搭桥**？相当于**留一个不会被改的 Z 位置**？」
+     *   ★ 背景：★ 卡 109 蓄力期间要**阻断发弹** ✓ ⇒ 它会**清掉输入块 `0x4ca428` 的 bit0** ✓；
+     *     ★ 而本卡（108 灵梦妖子机）的"按 Z ⇒ 子机本体追踪靠近怪"要读**键盘 Z** ✗ ⇒ 会被误伤 ✗。
+     *   ★ 桥 = ★ **本卡在自己 `on_tick_2` 的最开头把键盘 Z 抄一份**（`s_z_bridge` ✓）⇒ ★ 之后 109 怎么清
+     *     原始位都与本卡无关 ✓。★ 时序依据：★ **卡按 id 顺序跑** ✓（本仓已定论「卡按 id 顺序跑 ⇒ 111 > 109」✓）
+     *     ⇒ ★ **108 先于 109** ✓ ⇒ ★ 抄到的就是**本帧真实键盘 Z** ✓。
+     *   ★ 为什么这样最省：★ 不用新增共享层 API ✓、不用改引擎射击路径 ✓、★ 109 那边可以继续用"清位"这个
+     *     **覆盖一切子机**的暴力解 ✓（owner：茫茫多的子机 ✓）。*/
+    return (s_z_bridge & 0x1u) != 0;
 }
 
 /* 每帧用 id 回查使魔（**绝不缓存敌人指针**：敌人是堆对象，过场 `destroy_all` 会静默释放）。*/
@@ -8668,6 +8681,9 @@ static void yk_dup_run(yk_card_t *s)
 
 static int on_tick_2(ce_card_t *c)
 {
+    /* ★★ 桥 —— 必须**第一件事**：★ 109（id 更大 ⇒ 本卡之后跑）会清输入块的 Z 位 ✓，
+     *   ★ 所以本卡要在这里先把**键盘 Z** 抄下来 ✓（见 `yk_shooting` 那段长注 ✓）。*/
+    s_z_bridge = CE_INPUT_HELD();
     if (!YK_ENABLE_CARD || !YK_ENABLE_CB_TICK2) return 0;   /* ★ 总开关 + 回调族 ⑨ */
     yk_card_t *s = ce_state(c, yk_card_t);
     int focused;
