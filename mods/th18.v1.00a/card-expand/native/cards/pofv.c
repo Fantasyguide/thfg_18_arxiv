@@ -4177,8 +4177,7 @@ static void pofv_c4_emit(int dir)
  * ================================================================================================*/
 #define POFV_C4S_STEER_SLOW   0.0174533f   /* ★ 一手 ✓ 1°/帧（±10° 窗 ✓ `0.017453`）*/
 #define POFV_C4S_STEER_FAST   0.0349066f   /* ★ 一手 ✓ 2°/帧（±2° 死区 ✓ `0.034907`）*/
-#define POFV_C4S_WIN_WIDE     0.1745329f   /* ★ 一手 ✓ ±10°（`0.17453292`）*/
-#define POFV_C4S_WIN_TIGHT    0.0349066f   /* ★ 一手 ✓ ±2°（`0.034906585`）*/
+#define POFV_C4S_STEER_TIGHT  0.0349066f   /* ★ 一手 ✓ ±2°（`0.034906585`）= ★ **2°/帧**的判据（死区 ✓）*/
 static const int   s_c4s_wait_tab[8] = { 8, 8, 6, 5, 4, 3, 4, 3 };   /* ★ 一手 ✓ 8 档 wait（帧 ✓）*/
 static const float s_c4s_spd_tab[8]  = { 2.0f, 2.0f, 2.0f, 2.4f, 2.8f, 3.0f, 3.0f, 3.2f };  /* ★ 一手 ✓ `ins_571` ✓ */
 static struct { int active, timer, wait; float aim, tgt; } s_c4s;
@@ -4216,15 +4215,24 @@ static void pofv_c4s_tick(void)
     if (!s_c4s.active) return;
     ++s_c4s.timer;
     if (s_c4s.timer <= 0) return;                    /* ★ 60 帧预备期 ✓ */
-    {   /* ★ 每帧把**发射器**的角朝 `s_c4s.tgt` 靠 ✓（一手三分支 ✓：±10° 窗 1°/帧 ✓、±2° 死区 2°/帧 ✓）*/
+    {   /* ★ 每帧把**发射器**的角朝 `s_c4s.tgt` 靠 ✓。
+         * ★ 一手（`pl02.txt:200–217` ✓）是**三分支**：★ ① `> +0.01` ⇒ 朝 **π/2 − 10°** 以 **1°/帧** 靠 ✓；
+         *   ★ ② `< −0.01` ⇒ 朝 **π/2 + 10°** 以 1°/帧 靠 ✓；★ ③ 死区（`|FINAL_X| ≤ 0.01`）⇒ 朝
+         *   **π/2 ± 2°** 以 **2°/帧** 靠 ✓。
+         * ★ 本卡**简化**（登记 ❓ ✓）：★ 只取**一个**目标 `s_c4s.tgt`（= 翻 180° 后的 −π/2 ✓）
+         *   + ★ **两档速率**（★ 距目标 > 2° ⇒ **1°/帧** ✓；★ ≤ 2° ⇒ **2°/帧** ✓）——
+         *   ★ 即"±10° 那个窗"在本实现里体现为**速率切换点仍是 ±2°** ✗（★ 一手那 ±10° 是
+         *   **分支目标**的边界 ✓，不是速率切换点 ✓）⇒ ★ 已按审计 **R15** 如实登记 ✓。
+         * ★ （原 `POFV_C4S_WIN_WIDE` 定义了却 `(void)` 未用 ✗ —— ★ 本轮**删掉** ✓。）*/
         const float d  = s_c4s.aim - s_c4s.tgt;
         const float ad = (d < 0.0f) ? -d : d;
-        const float s  = (ad > POFV_C4S_WIN_TIGHT) ? POFV_C4S_STEER_SLOW : POFV_C4S_STEER_FAST;
+        const float s  = (ad > POFV_C4S_STEER_TIGHT) ? POFV_C4S_STEER_SLOW : POFV_C4S_STEER_FAST;
         if (ad > 0.0f) s_c4s.aim += (d > 0.0f) ? -s : s;
-        (void)POFV_C4S_WIN_WIDE;
     }
     if (s_c4s.timer % s_c4s.wait == 0) {             /* ★ 每 wait 帧发一颗 ✓（一手 8 档 ✓）*/
-        const float jitter = ((float)(ce_rand() % 201u) - 100.0f) * 0.0002f;   /* ★ 一手 ✓ `etAngle(π/2, 2°)` ⇒ ±2° */
+        /* ★ 一手 ✓ `etAngle($A, π/2, **0.034906585f = 2°**)`（`pl02.txt:186` ✓）⇒ ★ 抖动 = **±2°** ✓
+         *   （★ 审计 **R15** 抓到：原来 `(rand%201−100) × 0.0002f` 只有 **±1.15°** ✗ ⇒ 已对齐 ✓）。*/
+        const float jitter = ((float)(ce_rand() % 201u) - 100.0f) * (0.0349066f / 100.0f);
         pofv_c4s_emit(s_c4s.aim + jitter, s_c4s_spd_tab[pofv_c4_rank()]);     /* ★ 一手 ✓ 8 档速度表 ✓ */
     }
     if (s_c4s.timer > 3600) s_c4s.active = 0;        /* ★ 一手是无限循环 ✓；本卡给个上限 ❓ ✓ */
