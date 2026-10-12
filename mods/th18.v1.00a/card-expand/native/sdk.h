@@ -1268,6 +1268,17 @@ int ce_ptr_readable(const void *p, unsigned n);
              !ce_ptr_readable((b), CE_BULLET_STATE + 2);                                \
          ce_bl_node = *(uint8_t *const *)(ce_bl_node + CE_BULLET_LIST_NEXT))
 
+/* ★ z62：**带下标**的池遍历（给"按下标收集/消费"的卡用，例如 111 的 `counted[]`）——
+ *   下标口径与引擎自己的平扫一致：`idx = 1..CE_BM_BULLET_COUNT`（槽 1 = 数组第 1 张）✓。*/
+#define CE_BULLET_POOL_FOR_EACH_IDX(b, idx)                                         \
+    for (uint8_t *b = (CE_BULLET_MGR() ? (CE_BULLET_MGR() + CE_BM_BULLETS + CE_BULLET_STRIDE) : 0), \
+                 *ce_bpi_end = (CE_BULLET_MGR()                                   \
+                                    ? (CE_BULLET_MGR() + CE_BM_BULLETS +          \
+                                       (size_t)(CE_BM_BULLET_COUNT + 1) * CE_BULLET_STRIDE) : 0), \
+                 *ce_bpi_mgr = CE_BULLET_MGR();                                   \
+         b && ce_bpi_end && b < ce_bpi_end && ((idx) = (int)((b - ce_bpi_mgr - CE_BM_BULLETS) / CE_BULLET_STRIDE), 1); \
+         b += CE_BULLET_STRIDE)
+
 #define CE_BULLET_POOL_FOR_EACH(b)                                                   \
     for (uint8_t *b = (CE_BULLET_MGR() ? (CE_BULLET_MGR() + CE_BM_BULLETS + CE_BULLET_STRIDE) : 0), \
                  *ce_bp_end = (CE_BULLET_MGR()                                  \

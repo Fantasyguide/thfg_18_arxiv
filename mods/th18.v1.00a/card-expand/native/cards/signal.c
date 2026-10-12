@@ -1958,15 +1958,19 @@ static int32_t signal_graze_scan(signal_card_t *s)
     if (!mgr || !pl) return 0;
     focus = *(const int32_t *)(pl + SIGNAL_OFF_PLAYER_FOCUS) != 0;
 
-    for (i = 0; i <= (unsigned)CE_BM_BULLET_COUNT && n < SIGNAL_REMILIA_TRACK_MAX; ++i) {
-        uint8_t *b = mgr + CE_BM_BULLETS + (size_t)i * CE_BULLET_STRIDE;
+    /* ★★★ 2026-10-12z62（goal ③ 收口）——本处**必须保留下标语义**（下标收进 `counted[]` 稍后消费 ✓）
+     *   ⇒ 用 SDK 的**带下标池遍历**（不是链表变体 ✓）。
+     *   ⚠ **判据微变（进 owner 清单）**：原来只跳 `0/3/4` ⇒ **`state=5`（池尾哨兵）会被收进来** ✗
+     *   ⇒ 现在显式跳过 `5` ✓（哨兵不是弹，不该被跟踪/擦弹 ✓）。*/
+    CE_BULLET_POOL_FOR_EACH_IDX(b, i) {
         uint16_t st = *(const uint16_t *)(b + CE_BULLET_STATE);
         uint32_t flags;
         float br;
 
-        /* `state`：0 = 空槽、3 = 被自机打掉、4 = 消弹中 ⇒ 都跳过（一手 `0x4249c8` / `0x42901d`）；
-         * 1 / 2（出现中）才可能被擦（`0x4248a0` 的分派器只对活弹跑）。*/
-        if (st == 0 || st == 3 || st == 4) continue;
+        if (n >= SIGNAL_REMILIA_TRACK_MAX) break;            /* 原上界在循环条件里（等价 ✓）*/
+        /* `state`：0 空 / 3 被自机打掉 / 4 消弹中 / **5 池尾哨兵（假弹）** ⇒ 都跳过 ✓
+         * （一手 `0x4249c8` / `0x42901d`；`0x4248a0` 的分派器只对活弹 1/2 跑）。*/
+        if (st == 0 || st == 3 || st == 4 || st == 5) continue;
         flags = *(const uint32_t *)(b + CE_BULLET_FLAGS);
         if (!(flags & SIGNAL_BULLET_FLAG_COLLIDE)) continue;      /* 引擎在这一行早退（`0x4248cf`）*/
         br = *(const float *)(b + SIGNAL_BULLET_RADIUS);
