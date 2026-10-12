@@ -3376,7 +3376,8 @@ static void c3_fire_wave(void)
 static void pofv_c3_fire(void)
 {
     s_c3.active = 1;
-    s_c3.level = POFV_C3_LEVEL_DEFAULT;   /* ❓① 一手 = `clamp(S+0x38,0,7)`（每局按难度取常数）*/
+    /* ★ ⑩ ✓: 档位接 s_c3_lv_n（初值 = 难度常数、每次 C3 +1）。*/
+    s_c3.level = (s_c3_lv_n < 0) ? 0 : ((s_c3_lv_n > 7) ? 7 : s_c3_lv_n);
     if (s_c3.level < 0) s_c3.level = 0;
     if (s_c3.level > 7) s_c3.level = 7;
     s_c3.wave = 0;
@@ -4081,7 +4082,8 @@ static void pofv_c3m_beam(float x)
 
 static void pofv_c3m_fire(void)
 {
-    s_c3m_st.active = 1; s_c3m_st.level = 1;     /* ❓①：档位取 1 */
+    s_c3m_st.active = 1;                     /* ★ ⑩ ✓: level 见下面接 s_c3_lv_n */
+    s_c3m_st.level = (s_c3_lv_n < 0) ? 0 : ((s_c3_lv_n > 7) ? 7 : s_c3_lv_n);
     s_c3m_st.wave = 0; s_c3m_st.step = 0; s_c3m_st.timer = 0;
     s_c3m_st.g = POFV_C3M_X0;                    /* %G = 140 − 0×%F ✓ */
 }
@@ -4413,7 +4415,8 @@ static void pofv_c3s_spawn(float x, float y)
 static void pofv_c3s_fire(void)
 {
     s_c3s_st.active = 1; s_c3s_st.wave = 0; s_c3s_st.step = 0;
-    s_c3s_st.timer = 0; s_c3s_st.level = 0;     /* ❓① */
+    s_c3s_st.timer = 0;                     /* ★ ⑩ ✓: level 接 s_c3_lv_n */
+    s_c3s_st.level = (s_c3_lv_n < 0) ? 0 : ((s_c3_lv_n > 7) ? 7 : s_c3_lv_n);
     s_c3s_st.side = 1; s_c3s_st.f0 = POFV_C3S_X0;
 }
 
@@ -4465,6 +4468,12 @@ static void pofv_c3s_tick(void)
 
 static void clear_card(ce_card_t *c)
 {
+    /* ★★★ C3/C4 审计 60f3724f ⑩（中）: 档位/等级接起来 —— 两条说法同时满足:
+     *   初值 = 一手那个"每局按难度取常数"(= POFV_C3_LEVEL_DEFAULT)，
+     *   然后 每次 C3 自增 (审计: S+0x38 每次 +1、clamp 0..7)，
+     *   发弹时把 s_c3_lv_n 当 level 用 => 图案逐次升级。*/
+    s_c3_lv_n = POFV_C3_LEVEL_DEFAULT;
+    s_c4_lv_n = 0;
     int i, k;
     (void)c;
     for (i = 0; i < POFV_STORM_MAX; ++i)
