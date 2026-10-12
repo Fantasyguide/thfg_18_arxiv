@@ -2125,7 +2125,19 @@ static const pofv_c1_shot_t s_c1_table[POFV_C1_GROUPS][POFV_C1_SHOTS_PER_GROUP] 
 #define POFV_C1_HOLD_SPD    0.2f    /* ★ 一手 0x5aa1f4 = 0.2 ✓（停住的下限）*/
 #define POFV_C1_HOLD_AT       120   /* ★ 一手 `cmp [ecx+0x1c], 0x78` = 120 帧 ✓ */
 #define POFV_C1_REACCEL     0.2f    /* ★ 一手 同上那个 0.2 ✓（重新出发的加速度）*/
-#define POFV_C1_HIT_W      30.0f   /* ★ owner Q4：= 一手弹体 30x30 ✓ */
+/* ★ D5（C1 审计 d40db02d ✓）：★ 一手**逐角色**命中盒 = plNN.sht 的 `+0x0c/+0x10` ✓：
+ *   ★ 灵梦 **20×20** ✓、★ 魔理沙 **0×16**（★ 宽 0 ⇒ 一条**线** ✓）、★ 早苗 **8×48** ✓。
+ *   ★ 原来一律 30×30 ✗（无出处 ✗）⇒ ★ 下面按组取 ✓。*/
+/* ★ 其余三处（C2 环 / 蓄力命中 / 魔理沙 set11 追加 ✓）仍用这个通用盒 ✓ —— 它们的逐角色盒另议 ✓。*/
+#define POFV_C1_HIT_W      30.0f
+#define POFV_C1_HIT_H      30.0f
+
+#define POFV_C1_HIT_W_REI    20.0f
+#define POFV_C1_HIT_H_REI    20.0f
+#define POFV_C1_HIT_W_MAR     0.0f
+#define POFV_C1_HIT_H_MAR    16.0f
+#define POFV_C1_HIT_W_SANA    8.0f
+#define POFV_C1_HIT_H_SANA   48.0f
 #define POFV_C1_HIT_H      30.0f
 #define POFV_C1_BULLET_LIFE 999          /* ★ 一手 ✓（`pl00.sht` 第 10 项的寿命 = 999）；
                                           *   ★ 实际由"出屏即收"先触发 ⇒ 这个值只是上限 ✓ */
@@ -3219,8 +3231,12 @@ static void pofv_c1_tick(void)
         }
         if (s_c1_vm[t]) ce_anm_set_pos((uint32_t)s_c1_vm[t], s_c1_x[t], s_c1_y[t], 0.0f);
         pos[0] = s_c1_x[t]; pos[1] = s_c1_y[t]; pos[2] = 0.0f;
-        ce_damage_rect(pos, 0.0f, POFV_C1_HIT_LIFE, (float)s_c1_dmg_ov[t],
-                       POFV_C1_HIT_W, POFV_C1_HIT_H);
+        {   /* ★ D5 ✓：★ 逐角色盒（一手 plNN.sht +0x0c/+0x10 ✓）*/
+            float hw = POFV_C1_HIT_W_REI, hh = POFV_C1_HIT_H_REI;
+            if (s_c1_grp[t] == 1) { hw = POFV_C1_HIT_W_MAR;  hh = POFV_C1_HIT_H_MAR; }
+            else if (s_c1_grp[t] == 2) { hw = POFV_C1_HIT_W_SANA; hh = POFV_C1_HIT_H_SANA; }
+            ce_damage_rect(pos, 0.0f, POFV_C1_HIT_LIFE, (float)s_c1_dmg_ov[t], hw, hh);
+        }
     }
 }
 
