@@ -936,25 +936,24 @@ static void yk_fk_inc(yk_fk_t *t, uint32_t enemy)
 static unsigned yk_fk_lines2(yk_fk_t *t, uint32_t enemy)
 { unsigned i; for (i = 0; i < YK_FK_N; ++i) if (t[i].enemy == enemy) return (unsigned)t[i].k; return 0u; }
 
-/* ★★★★ 2026-10-11（一手 `cancel_all 0x4297a0` 的循环体）：**敌弹数组**的真位置与判据 ——
- *   `mov edi,[0x4cf2bc]` + `add edi,0x5a8` ⇒ **弹[0] = bm + 0x5a8**；循环尾 `add edi,0xfa0` ⇒ **stride = 0xfa0**；
- *   `mov ebx,0x7d0` ⇒ **格数 = 2000**；active 判据 = `movzx eax, WORD PTR [edi+0xaac]`（**u16 state @ +0xaac**；
- *   `0` 与 `3` 视为不活跃）。⛔ `CE_BM_BULLET_COUNT(0x7d0)` **不是**活跃弹数（那是格数）—— 旧读法作废。*/
-#define YK_BM_BASE_OFF   0x5a8
-#define YK_BM_STRIDE     0xfa0
-#define YK_BM_SLOTS      0x7d0
-#define YK_BM_STATE_OFF  0xaac
+/* ★★★★ 2026-10-12z66（**订正**）：敌弹池的**基址与 state 偏移**以**命名金矿 + 我方实测对账**为准 ——
+ *   · 命名金矿（`th-re-data/.../type-structs-own.json`）：`zBulletManager.bullets[0x7d0]` = **mgr+0x108c**、
+ *     每张 **0xfa0**、`zBullet.state` = **+0xf68（uint16）**、`zBullet` 整好 **0xfa0** 字节 ✓；
+ *   · 与 `engine.h` 的 `CE_BM_BULLETS(0xec)` 完全自洽：`0xec + 0xfa0 = 0x108c` ✓（0xec = list_0 的哨兵弹）；
+ *   · 我方只读对账：按这套读出来的非零槽数 **≡ 活弹链表数 + 1 个哨兵**，逐帧吻合 ✓✓。
+ *   ⛔ **旧注释写的 `bm + 0x5a8`（state `+0xaac`）是错的** ✗（两者基址差 0xAE4、state 差 0x4BC，
+ *      对不上任何自洽口径）⇒ 照它扫会读到**垃圾**（本卡旧诊断 `yk_bm_live_bullets()` 就是如此 ✗）。
+ *   ⇒ 需要"活弹"语义时**一律用 `CE_BULLET_LIVE_FOR_EACH`**（`engine.h`）✓。*/
 static unsigned s_bm2_logged;
 static int32_t  s_bm_prev_live = -1;
 
 static unsigned yk_bm_live_bullets(void)
 {
-    uint8_t *bm = CE_BULLET_MGR();
-    unsigned i, n = 0;
-    if (!bm) return 0u;
-    for (i = 0; i < (unsigned)YK_BM_SLOTS; ++i) {
-        uint16_t st = *(const uint16_t *)(bm + YK_BM_BASE_OFF + (size_t)i * YK_BM_STRIDE + YK_BM_STATE_OFF);
-        if (st != 0u && st != 3u) ++n;
+    unsigned n = 0;
+    /* ★ z66：改走**活弹链表**（旧实现按错的基址 0x5a8 扫 ⇒ 数是垃圾 ✗，且判据含哨兵 ✗）。*/
+    CE_BULLET_LIVE_FOR_EACH(b) {
+        (void)b;
+        ++n;
     }
     return n;
 }
@@ -7542,7 +7541,7 @@ static int yk_on_shot_slot(ce_card_t *c, const ce_enemy_shot_t *ev)
                 s_bm_prev_live = (int32_t)live;
                 if ((fr % 60u) == 0u && s_bm2_logged < 64u) {
                     ++s_bm2_logged;
-                    ce_log("youkai/emit BMPROBE2: live_bullets=%u frame=%u (scan bm+0x5a8 stride 0xfa0 x2000, state+0xaac != 0/3)",
+                    ce_log("youkai/emit BMPROBE2: live_bullets=%u frame=%u (走 mgr+0xbc 活弹链表, state+0xaac != 0/3)",
                            live, (unsigned)fr);
                 }
                 if (k <= 0 && s_fcout_logged < 64u) {
