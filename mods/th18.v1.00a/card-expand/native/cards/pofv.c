@@ -4426,7 +4426,15 @@ static void pofv_c3s_tick(void)
         if (s_c3s_st.step < n) {
             if (s_c3s_st.timer == 0) {
                 /* ★ 一手：x = F1 × F0（F1 每步取反 ⇒ **左右交替** ✓）、y = RANDF2×32 ✓ */
-                pofv_c3s_spawn((float)s_c3s_st.side * s_c3s_st.f0, POFV_C3S_Y);
+                /* ★★★ C3/C4 审计 60f3724f ⑨（中）✓：★ 一手 `enmCreate(..., F1*140, **RANDF2*32**, ...)` ✓
+                 *   ⇒ ★ `y = RANDF2 × 32 ∈ [−32, 32]` ✓（★ 而卡原来固定 `POFV_C3S_Y = 96` ✗）。
+                 *   ★ 用 `ce_rand()` 均分到 ±32 ✓；★ 基准取**环心 `(0,128)`** ✓（★ 一手那个 `enmCreate`
+                 *   是**相对**坐标 ✓ ⇒ 相对环心 ✓ —— ★ 这条读法标 **❓** ✓，★ 但它只影响"替身摆在哪" ✓，
+                 *   ★ 而替身**该带的副弹幕我方还没做** ✗ ⇒ 目前纯观感 ✓）。*/
+                {
+                    const int ry = (int)(ce_rand() % 65u) - 32;      /* ★ −32 .. +32 ✓ */
+                    pofv_c3s_spawn((float)s_c3s_st.side * s_c3s_st.f0, 128.0f + (float)ry);
+                }
                 s_c3s_st.side = -s_c3s_st.side;
                 s_c3s_st.f0 -= (float)s_c3s_f[lv];            /* ★ 一手 ✓ 每步 −%F */
             }
