@@ -2965,8 +2965,13 @@ static void pofv_c1_fire_range(int grp, int from, int cnt)
 static int s_c1_win_left;      /* ★ 窗口剩余帧（0 = 没开 ✓）*/
 static int s_c1_win_age;       /* ★ 窗口已过帧 ✓ */
 static int s_c1_sanae_half;    /* ★ 早苗当前放的是哪半圈（0 = 行 0–12 ✓ / 1 = 行 13–25 ✓）*/
+/* ★ 前置声明（定义在 vtable 那一段 ✓；★ 这个文件里"先用后定义"已经是第三次 ⇒ 记一笔 ✓）。*/
+static int pofv_native_set_active(void);
+
 static void pofv_c1_fire(void)
 {
+    /* ★ goal ① ✓：★ 认领了原生 set ⇒ 手写那套**停手** ✓（同一个判据 ✓ ⇒ 绝不双份 ✓）。*/
+    if (pofv_native_set_active()) return;
     const int grp = (s_aura_kind == 1) ? POFV_C1_GROUP_MARISA
                   : (s_aura_kind == 3) ? POFV_C1_GROUP_SANA
                   : POFV_C1_GROUP_REI;
@@ -3053,6 +3058,8 @@ static void pofv_c1_window_tick(void)
 {
     pofv_stage_set(13);   /* ★ 窗口 tick ✓ */
     if (s_c1_win_left <= 0) return;
+    /* ★ goal ① ✓：★ 认领了原生 set ⇒ **这里不再自己造弹** ✗（否则双份 ✓）。*/
+    if (pofv_native_set_active()) return;
     --s_c1_win_left;
     ++s_c1_win_age;
     if (s_c2s_win > 0) {                       /* ★ 早苗 C2 的 60 帧窗口 ✓（一手 ✓）*/
@@ -7398,12 +7405,43 @@ static int32_t pofv_active_tick(ce_card_t *c, uint32_t elapsed)
     return 0;                          /* 回调本身不做事（真正的逻辑在 tick 里）*/
 }
 
+/* ★★★★★ 2026-10-12 goal ①：★ 早苗 C1/C2 **改走原生弹**（owner 定案 ✓；两格已分配 ✓）
+ *   ★ 两组：`CE_SHT_SET_POFV109_SNAKE` = **`0x68`** ✓ / `CE_SHT_SET_POFV109_FROG` = **`0x69`** ✓
+ *   （★ 内容逐字节照一手 TH19 `pl02.sht` set10/set11 ✓，见生成器 `_pofv109_sets()` 与 TUNING ✓）。
+ *   ★ 认领钩子 = `on_shot_set_index` ✓ —— ★ 它与本卡已在用的 `on_native_shot_suppress` **是同一个断点**
+ *   （`sdk.c` 的 `BP_ce_shot_set_index` `0x45ebfb` ✓）⇒ ★ **不动共享层** ✗、★ 不需要新优先级常量 ✓
+ *   （★ 留默认 0 ✓ ⇒ 与 117 的 20 / 113 的 10 相比本卡更低 ✓ = 同帧都换 set 时让它们 ✓）。
+ *   ★ ★ **一个判据、两处共用** ✓（★ 这是关键：★ 认领为真时**手写那套必须停手** ✓，否则**双份** ✗）：
+ *     · 认领：`pofv_on_shot_set_index()` 返回那一格 ✓；
+ *     · 停手写：`pofv_c1_fire()` / `pofv_c1_window_tick()` 见到同一个判据就**不再自己造弹** ✓。
+ *   ⚠ ★ **一条已知的取舍（登记 TUNING ❓）**：★ 原生 set 走的是**主炮路径** ✓ ⇒ ★ 严格说
+ *     **需要自机在开火**（★ 一手那条是**独立发射器**、不看 Z ✗）⇒ ★ 若玩家松着 Z，那几帧就**不发** ✗。
+ *     ★ 这属于"一手与引擎能力冲突" ✓；★ 先按 owner 的定案走原生 ✓，★ 实跑若不对再回退 ✓
+ *     （★ 回退 = 把下面这个开关置 **0** ✓，一行 ✓）。*/
+#define POFV109_NATIVE_SETS   1
+
+static int pofv_native_set_active(void)
+{
+    if (!POFV109_NATIVE_SETS) return 0;
+    if (s_aura_kind != POFV_C1_GROUP_SANA) return 0;      /* ★ 只有早苗那两组 ✓ */
+    if (s_c1_set_sel) return 1;                           /* ★ 青蛙窗口（set11）✓ */
+    return (s_c1_win_left > 0);                           /* ★ 蛇窗口（set10）✓ */
+}
+
+static int pofv_on_shot_set_index(ce_card_t *c, int power_level)
+{
+    (void)c; (void)power_level;
+    if (!pofv_native_set_active()) return -1;             /* ★ −1 = 本帧不覆盖 ✓ */
+    return s_c1_set_sel ? CE_SHT_SET_POFV109_FROG : CE_SHT_SET_POFV109_SNAKE;
+}
+
 CE_CARD(109, .on_active_tick = pofv_active_tick,
         .active_recharge = POFV_ACTIVE_RECHARGE,
         .on_activate = on_activate,
         .ctor = on_ctor,
         .on_load = on_load,             /* ★ 2026-10-08：认领「灵力 = 蓄力槽」的 HUD 货架块（幂等 ✓）*/
         .on_native_shot_suppress = on_native_shot_suppress,   /* ★ goal ④ ✓ */
+        .on_shot_set_index = pofv_on_shot_set_index,   /* ★ goal ① ✓：早苗 C1/C2 认领原生弹表 ✓ */
         .on_enemy_death = on_enemy_death,
         .on_tick_2 = on_tick_2,
         .on_draw = on_draw,             /* ★ 2026-10-09：固灵结界碰弹染色（一手 TH19 `0x4f5130`）*/
