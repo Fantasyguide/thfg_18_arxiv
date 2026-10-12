@@ -4923,7 +4923,16 @@ static void pofv_c3s_tick(void)
                  *   ★ 而替身**该带的副弹幕我方还没做** ✗ ⇒ 目前纯观感 ✓）。*/
                 {
                     const int ry = (int)(ce_rand() % 65u) - 32;      /* ★ −32 .. +32 ✓ */
-                    pofv_c3s_spawn((float)s_c3s_st.side * s_c3s_st.f0, 128.0f + (float)ry);
+                    /* ★★★★★ 2026-10-13（★ 独立审计 `48e1d2c8` **R5** ✓）：★ 基准原来是"**绝对 boss 位**
+                     *   `(side*f0, 128 + ry)`" ✗ —— ★ 按 owner 模型：★ **boss 本体坐标拉回本侧
+                     *   = 我自机的位置** ✓ ⇒ ★ 改成 `ce_player_pos()` **+ 同样的偏移** ✓
+                     *   （★ 与 C4 发弹中心 / C3 中心 / EtBreak 环心**同源** ✓）。
+                     *   ★ 注：★ 这是**替身**（一手 `enmCreate` 那个"我在对面的表现" ✓）⇒ ★ 摆到自机身上才合模型 ✓；
+                     *   ★ 它该带的副弹幕我方还没做 ✗ ⇒ 目前纯观感 ✓。*/
+                    {   const float *pp3s = ce_player_pos();
+                        pofv_c3s_spawn((pp3s ? pp3s[0] : 0.0f) + (float)s_c3s_st.side * s_c3s_st.f0,
+                                       (pp3s ? pp3s[1] : 128.0f) + (float)ry);
+                    }
                 }
                 s_c3s_st.side = -s_c3s_st.side;
                 s_c3s_st.f0 -= (float)s_c3s_f[lv];            /* ★ 一手 ✓ 每步 −%F */
