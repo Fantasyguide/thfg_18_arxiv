@@ -2579,7 +2579,7 @@ static void c2_ring_vm_sync(float r)
     if (r <= 0.0f) return;
     if (!s_c2.ring_vm) {
         const uint32_t id = ce_anm_spawn(CE_ABILITY_ANM(),
-                            CE_ANM_ABILITY_SCRIPT_POFV109_C_RING_ARC, 6);   /* ★ 2026-10-13 回退 ✗：层 6 可用 ✓ */
+                            CE_ANM_ABILITY_SCRIPT_POFV109_C_RING_ARC, 13);   /* ★ 2026-10-13 回退 ✗：层 6 可用 ✓ */
         /* ★★★★★ 2026-10-13（owner：「★ C2 对了但★ **似乎缺少消弹圈**」✓）—— 加诊断 ✓：
          *   ★ 已排除：★ 层 6（★ owner 实跑见过层 6 的红环 ✓）、★ `BAND_W`（= 1.0f ✓）、
          *   ★ 脚本（★ **与 C3/C4 是同一个 432** ✓，★ `:2613` ✓）⇒ ★ 差别只在 **C2 这条的传参/时序** ✓。
@@ -2621,7 +2621,7 @@ static void pofv_eb_ring_sync(int32_t *vm, float r)
          *   ★ 注：★ 一手的依据**当时被否掉了** ✓（★ owner 实跑见过**层 6** 的红环 ✓ —— 见
          *   `assets/ability/scripts/450_pofv109_ca_ring_l1.anm.txt` 的头注释 ✓）。*/
         const uint32_t id = ce_anm_spawn(CE_ABILITY_ANM(),
-                            CE_ANM_ABILITY_SCRIPT_POFV109_C_RING_ARC, 6);
+                            CE_ANM_ABILITY_SCRIPT_POFV109_C_RING_ARC, 13);
         if (!id) return;
         *vm = (int32_t)id;
     }
