@@ -6435,7 +6435,12 @@ static int on_tick_2(ce_card_t *c)
             }
             /* ★★ 一手 ✓ 同帧：★ 档位发完**紧接着**发这份 C1 ✓
              *   （⇒ 魔理沙 C2 设的 `EX+0xd4` 由**这一份** C1 消耗 ✓，不再拖到下一份 ✓）。*/
-            if (!s_c1_rel_latch && s_aura_charge > 0.0f
+            /* ★★★★★ 2026-10-13 **owner 实跑抓到的 bug** ✓：
+             *   ★ owner：★「★ **我看你 C1 是松手那一刻直接发的……你不蓄力到 C1 也能发 C1 啊**」✓
+             *   ★ 原因 = 这里原来的门槛是 `s_aura_charge > 0.0f` ✗ ⇒ ★ **只要有一丁点蓄力就发一份 C1** ✗
+             *   （★ 而 C1 是**一档**，★ 该有它的阈值 ✓）。
+             *   ⇒ ★ 改成 ★ **`s_aura_charge >= POFV_C1_THRESH`（= 500 ✓）** ✓ —— ★ 没蓄到 C1 就**不发** ✓。*/
+            if (!s_c1_rel_latch && s_aura_charge >= POFV_C1_THRESH
                 && !(s_aura_kind == 3 && s_aura_charge >= POFV_C2_THRESH
                      && s_aura_charge < POFV_C3_THRESH))
                 pofv_c1_fire();
