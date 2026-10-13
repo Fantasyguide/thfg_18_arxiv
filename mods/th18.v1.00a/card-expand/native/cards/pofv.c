@@ -5742,6 +5742,24 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
 static int on_tick_2(ce_card_t *c)
 {
     int i;
+    /* ★★★★★ 2026-10-13 owner 要求：★ **按空格 = 放 C3**（**调试用** ✓）——
+     *   ★ 接口 = `ce_key_down(CE_VK_SPACE)` ✓（`native/sdk.h:838` ✓）；★ 那个头文件里连
+     *   `CE_VK_CONTROL` 都注明「★ **调试组合键（Ctrl+空格）用**」✓ ⇒ ★ 这套是**现成的调试约定** ✓
+     *   （★ owner 要的是**纯空格** ✓，★ 没加 Ctrl ✓）。
+     *   ★ 取**上升沿**（局部 `static` ✓）⇒ ★ **按住不连发** ✗、★ **每按一次放一份** ✓。
+     *   ★ 直接调 ★ `pofv_c3_fire()`（★ = 正常"松手放 C3"走的那**同一个**函数 ✓，定义在 `:3742` ✓）
+     *   ⇒ ★ **完全复用正式路径** ✓（★ 不是另写一套 ✓）。
+     *   ★ 与档位/蓄力**无关** ✓ —— ★ 调试键不受蓄力门槛限制 ✓（★ 正是要能"跳过条件"单独看 C3 ✓）。*/
+    {
+        static int s_dbg_sp_prev = 0;                       /* ★ 只在按下的那一帧触发 ✓ */
+        const int sp = ce_key_down(CE_VK_SPACE) ? 1 : 0;
+        if (sp && !s_dbg_sp_prev) {
+            pofv_c3_fire();
+            ce_log("pofv: [DBG] 空格 ⇒ 放 C3 ✓（f=%d kind=%d charge=%.0f）",
+                   (int)s_card_frames, (int)s_aura_kind, (double)s_aura_charge);
+        }
+        s_dbg_sp_prev = sp;
+    }
     (void)c;
     /* ★★ A 路：出队**生成真敌机灵**（安全上下文 = 这里；死亡栈里只入过队）。
      *   生成后把它的 enemy_id 记进本卡的灵账 ⇒ 它**自然死亡**时 `on_enemy_death` 会认出来，
