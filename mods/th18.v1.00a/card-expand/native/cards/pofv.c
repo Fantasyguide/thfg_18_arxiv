@@ -4933,7 +4933,11 @@ typedef struct { int live, age, life, bounced; float x, y, ang, spd; int32_t vm;
  *   ★ 而本档原来 `b->y < 0.0f` **直接删弹** ✗（★ C4 / C4S 都有反弹 ✓ ⇒ 只有这一档漏 ✓）
  *   ⇒ ★ 按模型 ③ 补"**版顶反弹**" ✓（★ 与 C4 同款 ✓，★ 一次 = 对一手的**简化** ✗ 已登记 ✓）。*/
 static pofv_c4m_t s_c4m[POFV_C4M_MAX];
-static struct { int active, emitted, timer, laser_vm, laser_timer, level; float base; } s_c4m_st;
+/* ★ 2026-10-13（★ owner 定 ✓）：★ `ox/oy` = ★ **本波三束激光共用的出发点** ✓ ——
+ *   ★ owner：「★ 魔理沙的 C4 符卡，为了保证美观度，★ **同一波的三束激光发射位置是在第一支发射那一刻就确定的**」✓
+ *   ★ 归属 ★ **❓自定（owner 定）** ✓：★ 一手那边之所以看起来一致，是因为"★ **此时 boss 魔理沙不动**"✓
+ *   —— ★ 而那个机制 owner 说**不用核** ✓ ⇒ ★ **不包装成"复刻"** ✗（见 TUNING ✓）。*/
+static struct { int active, emitted, timer, laser_vm, laser_timer, level; float base; float ox, oy; } s_c4m_st;
 
 static void pofv_c4m_clear(void)
 {
@@ -4951,6 +4955,10 @@ static void pofv_c4m_fire(void)
 {
     const float *pp = ce_player_pos();
     s_c4m_st.active = 1; s_c4m_st.emitted = 0; s_c4m_st.timer = 0;
+    /* ★ 2026-10-13（★ owner 定 ✓）：★ **第一束发射这一刻**把出发点**钉住** ✓ —— ★ 后两束只读它 ✓，
+     *   ★ 不再各自读当时自机位 ✗（★ `pofv_c4m_emit()` 里原来就是那样 ✗）★ ⇒ ★ 三束同源 ✓。
+     *   ★ 首次调用若拿不到自机位（`pp == 0` ✓）则保留上一次的值 ✓（★ 与"第一束在 `if (pp)` 里才起"一致 ✓）。*/
+    if (pp) { s_c4m_st.ox = pp[0]; s_c4m_st.oy = pp[1]; }
     /* ★★★ 复核审计 `251ad3c6`（Q2）✓：★ 一手那张表（`ins_570($G, 25,30,15,20,30,30,30,30)` ✓，
      *   `pl01:401` ✓）是**按 rank 取**的 ✓ ⇒ ★ 与卡里三处 C3 同一套做法 ✓（`clamp(s_*_lv_n,0,7)` ✓）
      *   ⇒ ★ 原来是写死的 `0` ✗，★ 改成按 `s_c4_lv_n` ✓（★ 卡里那张 `cnt[8]` 正是这 8 个字面量 ✓）。*/
@@ -4987,11 +4995,12 @@ static void pofv_c4m_emit(float ang)
     s_c4m[k].live = 1; s_c4m[k].age = 0; s_c4m[k].life = 150;
     s_c4m[k].bounced = 0;                       /* ★ 2026-10-13（R2 ✓）：★ 新弹"已反弹"位清零 ✓ */
     s_c4m[k].ang = ang; s_c4m[k].spd = POFV_C4M_SPEED;
-    {
-        const float *pp = ce_player_pos();
-        s_c4m[k].x = pp ? pp[0] : 0.0f;
-        s_c4m[k].y = pp ? pp[1] : 0.0f;
-    }
+    /* ★ 2026-10-13（★ owner 定 ✓）：★ 出发点取 ★ **第一束发射那一刻钉住的那个** ✓
+     *   （★ `s_c4m_st.ox/oy` ✓，★ 在 `pofv_c4m_fire()` 里写入 ✓）★ —— ★ 原来这里**每束各自读**
+     *   `ce_player_pos()` ✗ ⇒ ★ 自机一动三束就散开 ✗（★ owner 说"★ 为了保证美观度"✓ 才要钉住 ✓）。
+     *   ★ 归属 ★ **❓自定（owner 定）** ✓，★ 一手那边靠"★ boss 不动"自然一致 ✓（★ 见结构声明处的注释 ✓）。*/
+    s_c4m[k].x = s_c4m_st.ox;
+    s_c4m[k].y = s_c4m_st.oy;
     s_c4m[k].vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), POFV_C_RING_SCRIPT, POFV_C4_VM_LAYER);
     if (s_c4m[k].vm) {
         ce_anm_set_color((uint32_t)s_c4m[k].vm, 0xffffffffu);
