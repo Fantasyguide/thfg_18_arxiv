@@ -3656,6 +3656,34 @@ static void pofv_c1_tick(void)
                                              *   ★「★ **单颗弹幕的伤害，暂时取 1**，等最终进行调整」✓
                                              *   ⇒ ★ 从 `14`（❓借 C1 主炮口径）改成 **1** ✓。
                                              *   ★ 待最终细调时按"人 × 招 × 等级"填表 ✓（见 goal ③ ✓）。*/
+/* ★★★★★ 2026-10-13（★ owner 口径 7 ✓）：「★ **伤害必须得每个人细调，甚至每个等级的都得细调**，
+ *   不过 ★ **LvN 的 Cm 的所有弹幕一个伤害没问题** ✓；★ **魔理沙涉及到激光的伤害也得单独拎出来**」✓
+ *   ⇒ ★ 结构 = ★ **`[角色][招][等级]`** ✓（★ 同一格 = 该招在该等级下**所有弹共用一个值** ✓）；
+ *   ★ **激光走另一张表**（`s_dmg_laser_over` ✓）⇒ ★ 不与弹混 ✓。
+ *   ★ 实现：★ **默认 1 + 稀疏覆盖表** ✓ —— ★ 因为 ★ owner 说"★ **暂时取 1**，等最终进行调整"✓
+ *   ⇒ ★ 现在覆盖表**留空** ✓（★ 全部落到默认 1 ✓）；★ 填表时只需加一行 ✓、**不动逻辑** ✓。
+ *   ★ ❓登记：★ 一手那边**没有**可直接引的"每角色每档伤害"表（★ 见 `TUNING.md` 的 C2 伤害条目 ✓）
+ *   ⇒ ★ 现在的 1 是**自定** ✓，★ 不是复刻 ✓。*/
+typedef struct { unsigned char ch, move, lv; short dmg; } pofv_dmg_row_t;
+/* ★ 哨兵行（★ `ch = 0xFF`，★ 角色号只到 3 ✓ ⇒ **永不匹配** ✓）—— ★ 这样表**非空** ✓、
+ *   ★ 加行时**直接往上加** ✓，★ 不用任何 `-N` 的技巧 ✓。*/
+static const pofv_dmg_row_t s_dmg_over[]       = { {0xFFu, 0xFFu, 0xFFu, 0} };   /* ★ 弹：留空（默认 1 ✓）*/
+static const pofv_dmg_row_t s_dmg_laser_over[] = { {0xFFu, 0xFFu, 0xFFu, 0} };   /* ★ 激光：留空 ✓ */
+static int pofv_dmg_lookup(const pofv_dmg_row_t *tab, int n, int ch, int move, int lv)
+{
+    int i;
+    for (i = 0; i < n; ++i)
+        if ((int)tab[i].ch == ch && (int)tab[i].move == move && (int)tab[i].lv == lv) return (int)tab[i].dmg;
+    return 1;                       /* ★ 未知 ⇒ 1 ✓（owner 口径 5 ✓）*/
+}
+static int pofv_dmg(int ch, int move, int lv)
+{
+    return pofv_dmg_lookup(s_dmg_over, (int)(sizeof(s_dmg_over) / sizeof(s_dmg_over[0])), ch, move, lv);
+}
+static int pofv_dmg_laser(int ch, int move, int lv)
+{
+    return pofv_dmg_lookup(s_dmg_laser_over, (int)(sizeof(s_dmg_laser_over) / sizeof(s_dmg_laser_over[0])), ch, move, lv);
+}
 #define POFV_C3_HIT_LIFE             2     /* 同 C1：伤害源每帧按当前位置重发 ⇒ life 2 */
 /* ★★★ C3/C4 审计 60f3724f ⑤（中）✓：★ 原来**同族弹两个盒** ✗ —— ★ C3 用 **32×32** ✓、
  *   ★ 而 C4 走的是通用 `POFV_C1_HIT_W/H` = **30×30** ✓（见本文件 C4 那处 ✓）。★ 而一手弹体是
@@ -3923,7 +3951,12 @@ static void pofv_c3_tick(void)
         }
         if (b->vm) ce_anm_set_pos((uint32_t)b->vm, b->x, b->y, 0.0f);
         pos[0] = b->x; pos[1] = b->y; pos[2] = 0.0f;
-        (void)ce_damage_rect(pos, 0.0f, POFV_C3_HIT_LIFE, POFV_C3_HIT_DMG, POFV_C3_HIT_W, POFV_C3_HIT_H);
+        /* ★ 2026-10-13（★ owner 口径 7 ✓）：★ 伤害改走**表** ✓ —— ★ `[角色][招][等级]` ✓
+         *   （★ 招 = 3 表示 C3 ✓；★ 等级 = `s_c3.level` ✓，★ 同一等级下**所有弹一个值** ✓）；
+         *   ★ 表里没有的 ⇒ ★ **默认 1** ✓。★ 激光走 `pofv_dmg_laser` ✓（魔理沙专用 ✓）。*/
+        (void)ce_damage_rect(pos, 0.0f, POFV_C3_HIT_LIFE,
+                             pofv_dmg((int)s_aura_kind, 3, (int)s_c3.level),
+                             POFV_C3_HIT_W, POFV_C3_HIT_H);
     }
 }
 
