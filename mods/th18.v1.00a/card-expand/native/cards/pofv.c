@@ -4041,7 +4041,14 @@ static void pofv_barrier_tick(void)
          *     ⇒ ★ 每帧位移（px）≈ `scale` ✓，累计峰值 ≈ 10.5 ⇒ ★ 归档记的是"≈10 世界单位 = **20 表面 px**" ✓
          *     ⇒ ★ 本卡用 `POFV_BARRIER_PUSH_W2S = 2.0f` 把峰值凑到 ≈ **20 px** ✓（❓登记 ✓）。*/
         float bt   = (float)(POFV_BARRIER_BREAK_N - s_barrier_brk);          /* ★ t: 0 → 39 ✓（一手 0 → 40 ✓）*/
-        float amp  = 1.0f - 2.0f * bt / (float)POFV_BARRIER_BREAK_N;         /* ★ 一手 `1 − 2t/40` ✓ */
+        /* ★★★★★ 2026-10-13（★ owner 两条实跑口径 ✓）：
+         *   ★「★ **罩子破的回弹一手表现不是回归原点，它的速度没有反向**」✓
+         *   ★「★ **罩子破不存在回弹，它应该是只有减速**」✓
+         *   ⇒ ★ 原来写的 `1 − **2**t/40` ✗ —— ★ 那个 **2** 让 t>20 后振幅**变负** = ★ **反向拉回** ✗
+         *     （★ 累计位移 = 40 − 40 = **0** ⇒ 真的"回到原点" ✗）；
+         *   ⇒ ★ 改成 `1 − t/40` ✓：★ **单调、只减速到 0** ✓、★ **全程不反向** ✓
+         *     （★ 累计 = **20** 单位 ⇒ ★ 推出去就停在那儿 ✓）。★ 这是**按 owner 的实跑口径**定的 ✓。*/
+        float amp  = 1.0f - bt / (float)POFV_BARRIER_BREAK_N;                /* ★ 只减速、不回弹 ✓（owner ✓）*/
         float bpx  = amp * POFV_BARRIER_PUSH_W2S;                            /* ★ 世界 → 表面 px ✓ */
         float *mult = CE_PLAYER() ? (float *)(CE_PLAYER() + CE_PLAYER_SPEED_MULT) : 0;
         int32_t *sub = CE_PLAYER() ? (int32_t *)(CE_PLAYER() + POFV_PLAYER_SUBPIXEL) : 0;
