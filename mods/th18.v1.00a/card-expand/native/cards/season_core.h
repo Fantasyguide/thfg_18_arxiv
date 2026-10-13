@@ -12,6 +12,7 @@
  */
 #pragma once
 #include <stdint.h>
+#include "dtap_core.h"   /* ★ P23：双击 Z 的共享状态机（本卡只做薄包装 ✓）*/
 
 /* 副季节（TH16 `SUBSEASON` 枚举顺序：0 春 / 1 夏 / 2 秋 / 3 冬 / 4 土用）*/
 #define SEASON_SUB_SPRING  0
@@ -97,19 +98,14 @@ int season_option_pos(int subseason, int level, int i, season_opt_pos_t *out);
  *   玩家手感不对就只调这一个常量。
  * 去重规则（❓自定）：**同一对按键只算一次**（触发后要等第二次按下松开才重新武装）⇒
  * 「按-放-按」= 1 次、「按-放-按-放-按-放-按」= 2 次（三连按 = 1 次，不会一次给两档）。*/
-#define SEASON_DTAP_WINDOW 8    /* ★ 对齐 TH11 缺口瞬移的二次窗口（8 帧，`th11:0x430e50`）
-                                 * —— 用户口径「双击窗口参考 111 灵梦特技穿墙」*/
-
-typedef struct {
-    uint8_t state;              /* 0 空闲 / 1 第一次按下 / 2 已松手等第二次 / 3 第一次按太久（作废）/ 4 已触发等松手 */
-    uint8_t win;                /* 剩余窗口（帧）*/
-} season_dtap_t;
-
-/* 状态清零（卡初始化 / 删卡时调；只写自己的字段）*/
-void season_dtap_init(season_dtap_t *d);
-
-/* 每帧推进；`z_held` = 本帧 Z 是否按住（非 0 即按住）。返回 1 = 本帧要切一档副季节。*/
-int season_dtap_tick(season_dtap_t *d, int z_held);
+#define SEASON_DTAP_WINDOW CE_DTAP_WINDOW_DEFAULT
+/* ★★★ 2026-10-14（P23）：实现**搬进共享件** `cards/dtap_core.{h,c}` ✓ ——
+ *   下面两行只是**薄包装**（行为与搬家前**逐字相同** ✓，`tests/test_season_core.c` 的
+ *   8 组用例继续覆盖它 ✓）。搬家的理由 = owner 要求 111 的手势与 116 一致 ⇒
+ *   两卡共用同一份实现 ✓（本仓反对"同一类表现、做法茫茫多" ✗）。*/
+typedef ce_dtap_t season_dtap_t;
+static inline void season_dtap_init(season_dtap_t *d) { ce_dtap_init(d, SEASON_DTAP_WINDOW); }
+static inline int  season_dtap_tick(season_dtap_t *d, int z_held) { return ce_dtap_tick(d, z_held); }
 
 /* 副季节循环（切季节用）*/
 static inline int season_next(int subseason) { return (subseason + 1) % SEASON_SUB_COUNT; }
