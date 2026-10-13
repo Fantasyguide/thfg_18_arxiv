@@ -2448,10 +2448,15 @@ static void pofv_c2_tick(uint32_t id)
         const float r = POFV_C2_RING_R0
                       + (POFV_C2_RING_R1 - POFV_C2_RING_R0)
                         * (float)(s_c2.age - POFV_C2_POINT_END) / POFV_C2_RING_FRAMES;
-        /* ★★ 一手 ✓：★ **age == 45**（= `POFV_C2_POINT_END`）时把 3 台可见物 `anm 中断 1` ✓
-         *   ⇒ ★ 触发 434 的 `interruptLabel(1)` 分支：**喷 24/26/28 各 2 台 + 白色爆发 22** ✓
-         *   = owner 说的「**然后"炸"**，还得有光效」✓（原来我**从没打断过**它们 ✗）。*/
-        if (s_c2.age == POFV_C2_POINT_END) {
+        /* ★★ 一手 ✓：★ 把 3 台可见物 `anm 中断 1` ✓ ⇒ ★ 触发 434 的 `interruptLabel(1)` 分支：
+         *   **喷 24/26/28 各 2 台 + 白色爆发 22** ✓ = owner 说的「**然后"炸"**，还得有光效」✓。
+         * ★★★★★ 2026-10-13（★ owner 实跑：「★ **在外侧炸**，★ 而且三个光球的**消失帧和炸开那一下不重合**」✗）：
+         *   ★ 原来这条判的是 **`age == POFV_C2_POINT_END`(45)** ✗ —— ★ 而"回中心"那 15 帧是 **45 → 60** ✓、
+         *   ★ 球自己的 `+60: delete()` 也在 **60** ✓ ⇒ ★ 于是 **45 帧时球还在外侧就炸了** ✗
+         *   （= "在外侧炸" ✓），★ 且 **炸开(45) ≠ 消失(60)** ✗ ✓。
+         *   ⇒ ★ 改成 ★ **球到达中心那一刻（`POFV_C2_ORB_END` = 60 ✓）炸** ✓ ⇒ ★ 与**消失同帧** ✓。
+         *   ★ 扩张环仍从 `POFV_C2_POINT_END`(45 ✓) 起 ✓ —— ★ 环是另一台 VM、与球的炸开**互不影响** ✓。*/
+        if (s_c2.age == POFV_C2_ORB_END) {
             int k4;
             for (k4 = 0; k4 < POFV_C2_POINTS; ++k4)
                 if (s_c2.orb_vm[k4]) ce_anm_interrupt((uint32_t)s_c2.orb_vm[k4], 1);
