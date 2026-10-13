@@ -2279,7 +2279,14 @@ static void c3_dir5(int idx5, float *dx, float *dy);
  *   ⚠ 代价：★ `136` 选 25 原是为了"折到组 38 = 与**暂停模糊罩**同桩 ⇒ 字被罩住" ✓；
  *   ★ 切 20 后**暂停时的模糊表现会变** ✓（已登记 TUNING/AUDIT ✓）。
  *   ⚠ 只**新增**了 442 脚本、★ **没有改共享的 `136`** ✓ ⇒ 别家卡不受影响 ✓。*/
-#define POFV109_HUD_GLYPH_SCRIPT  456   /* ★ 编号 456 = 本卡脚本段的下一个空闲号（构建器按文件名顺序分配 ✓）*/
+#define POFV109_HUD_GLYPH_SCRIPT  136   /* ★★★★★ 2026-10-13 **退回 136** ✗（★ 撤回我那次换 456 的改动 ✗）——
+                                          *   ★ owner 实跑（换 456 之后）：★「★ **你是怎么把 UI 调到整个屏幕
+                                          *   的最右侧，然后 x 还是固定，只动 y 的？**」✗ ⇒ ★ 换到层 20 的
+                                          *   456 **明显更糟** ✓（★ 从"偏右一点"变成"贴到最右" ✗）
+                                          *   ⇒ ★ 按 owner 的实跑**立刻退** ✓，★ 回到 136（= 我改之前的原状 ✓）。
+                                          *   ★ 教训：★ "★ 照能正确显示的卡写"这条**我执行错了** ✗ —— ★ 117 的
+                                          *   脚本是对的 ✗，★ 但 ★ 它所属的**列表/相机**与本卡不同 ✓ ⇒
+                                          *   ★ 光抄脚本不抄上下文 = 无效 ✗。*/
 #define POFV_C2_INVULN             40   /* 一手 ✓（39/40/40.0f）*/
 #define POFV_C2_VM_LAYER            6   /* ★ 2026-10-13 回退 ✗：层 6 可用（见 `POFV_STORM_VM_LAYER` 注释 ✓）*/
 #define POFV_C2_RING_SCRIPT  CE_ANM_ABILITY_SCRIPT_POFV109_STORM   /* ★ 借一手脚本 396（❓自定画法）*/
@@ -2579,7 +2586,7 @@ static void c2_ring_vm_sync(float r)
     if (r <= 0.0f) return;
     if (!s_c2.ring_vm) {
         const uint32_t id = ce_anm_spawn(CE_ABILITY_ANM(),
-                            CE_ANM_ABILITY_SCRIPT_POFV109_C_RING, 13);   /* ★ 2026-10-13 回退 ✗：层 6 可用 ✓ */
+                            CE_ANM_ABILITY_SCRIPT_POFV109_C_RING_ARC, 6);   /* ★ 2026-10-13 回退 ✗：层 6 可用 ✓ */
         /* ★★★★★ 2026-10-13（owner：「★ C2 对了但★ **似乎缺少消弹圈**」✓）—— 加诊断 ✓：
          *   ★ 已排除：★ 层 6（★ owner 实跑见过层 6 的红环 ✓）、★ `BAND_W`（= 1.0f ✓）、
          *   ★ 脚本（★ **与 C3/C4 是同一个 432** ✓，★ `:2613` ✓）⇒ ★ 差别只在 **C2 这条的传参/时序** ✓。
@@ -2601,7 +2608,7 @@ static void c2_ring_vm_sync(float r)
      *       （★ 半径是**一个**量 ⇒ x/y 同值 ✓）；
      *     · 同族 **STORM**（★ owner 确认看得见的红环 ✓）写的是 ★ `ce_anm_set_scale(vm, **k, k**)` ✓ 相等 ✓。
      *   ⇒ ★ 改成 `(r, r)` ✓。*/
-    ce_anm_set_scale((uint32_t)s_c2.ring_vm, r, r);
+    ce_anm_set_scale((uint32_t)s_c2.ring_vm, POFV_C2_RING_BAND_W, r);   /* ★ 2026-10-13 **退回原状** ✗（我改的 (r,r) 撤回 ✗）*/
 }
 
 static void c2_ring_vm_release(void)
@@ -2628,7 +2635,7 @@ static void pofv_eb_ring_sync(int32_t *vm, float r)
          *   ★ 注：★ 一手的依据**当时被否掉了** ✓（★ owner 实跑见过**层 6** 的红环 ✓ —— 见
          *   `assets/ability/scripts/450_pofv109_ca_ring_l1.anm.txt` 的头注释 ✓）。*/
         const uint32_t id = ce_anm_spawn(CE_ABILITY_ANM(),
-                            CE_ANM_ABILITY_SCRIPT_POFV109_C_RING, 13);
+                            CE_ANM_ABILITY_SCRIPT_POFV109_C_RING_ARC, 6);
         if (!id) return;
         *vm = (int32_t)id;
     }
@@ -2637,7 +2644,7 @@ static void pofv_eb_ring_sync(int32_t *vm, float r)
     /* ★ 2026-10-13 同 `c2_ring_vm_sync` ✓：★ 半径是**一个**量 ⇒ x/y 同值 ✓（照同族 STORM 的 `(k,k)` ✓
      *   与脚本 430 自己的注释「卡侧每帧只写位置 + `scale`（半径）」✓）。原来的 `(BAND_W=1.0, r)` ✗
      *   会把环压成 1px 宽的扁椭圆 ⇒ 看不见 ✓。*/
-    ce_anm_set_scale((uint32_t)*vm, r, r);
+    ce_anm_set_scale((uint32_t)*vm, POFV_C2_RING_BAND_W, r);   /* ★ 2026-10-13 **退回原状** ✗（我改的 (r,r) 撤回 ✗）*/
 }
 
 static void pofv_eb_ring_close(int32_t *vm)
