@@ -2267,7 +2267,7 @@ static void c3_dir5(int idx5, float *dx, float *dy);
                                          *   ★ 每帧 `+0x18 += +0x20`（★ = 实参 `a` ✓）：★ 环绕点 `a=0` ⇒ **恒 64** ✓；
                                          *   ★ 环 `a=1.0` ⇒ ★ **64 + 盒龄** ✓（★ 寿命 24 ⇒ ≤ **88** ✓）。
                                          *   ⚠ 原来写的 16（❓自定）**错** ✗；★ 而 `((age−45)*64)/60 + 128` 那个峰值 190
-                                         *   ★ **只是"消弹圈"半径** ✓（★ 喂 `FUN_004ee770` ✓）、★ **不是判定半径** ✗。*/*/
+                                         *   ★ **只是"消弹圈"半径** ✓（★ 喂 `FUN_004ee770` ✓）、★ **不是判定半径** ✗。*/
 #define POFV_C2_INVULN             40   /* 一手 ✓（39/40/40.0f）*/
 #define POFV_C2_VM_LAYER            6   /* ★ 2026-10-13 回退 ✗：层 6 可用（见 `POFV_STORM_VM_LAYER` 注释 ✓）*/
 #define POFV_C2_RING_SCRIPT  CE_ANM_ABILITY_SCRIPT_POFV109_STORM   /* ★ 借一手脚本 396（❓自定画法）*/
