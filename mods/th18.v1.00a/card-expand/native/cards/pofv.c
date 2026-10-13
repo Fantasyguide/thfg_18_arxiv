@@ -3630,6 +3630,12 @@ static void pofv_c1_tick(void)
  *   （`on_ctor` / `on_run_reset` / `on_delete` 三路共用 `clear_card()` ✓；伤害源 life=2 自灭、无残留 ✓）。
  */
 #define POFV_C3_LEVEL_DEFAULT       1      /* ❓①：档索引 0..7（一手 = 每局按难度取常数）*/
+/* ★★★★★ 2026-10-13（★ owner 口径 ✓）：
+ *   ★「★ **C4 的初始等级是 `max(3, 难度初始等级)`** ✓，★ **因为只有 Lv3 及以上的 C4 才会有符卡**」✓
+ *   ⇒ ★ 难度初值就是上面那个 `POFV_C3_LEVEL_DEFAULT`（★ 一手每局按难度取常数 ✓，★ 实测 `∈{1,3}` ✓）
+ *   ⇒ ★ `max(3, 它)` ✓。★ 于是 **N/E 等难度下 C4 也从 Lv3 起** ✓（★ 才有符卡段 ✓）。
+ *   ★ 若将来难度表细化（★ 一手的档位表 ★ 见 §10.2 ✓），★ 这个宏跟着它走 ✓。*/
+#define POFV_C4_LEVEL_DEFAULT       ((POFV_C3_LEVEL_DEFAULT) > 3 ? (POFV_C3_LEVEL_DEFAULT) : 3)
 #define POFV_C3_MAX_BULLETS        48      /* ❓自定：同屏弹池上限（一手无上限：最多 $D×$C = 4×8 = 32）*/
 #define POFV_C3_CARRIER_DY     (-128.0f)   /* ★ 一手 ✓ `ins_400(0.0f, 128.0f)`：环心 = 自机上方 128 */
 #define POFV_C3_SPEED              2.3f    /* ★ 一手 ✓ `ins_605($A, 2.3f, 1.0f)` 的第一层 */
@@ -5175,7 +5181,9 @@ static void clear_card(ce_card_t *c)
      *   `s_c1_win_age` 冻在 0 ⇒ 恒真 ⇒ 一进关就发弹"的 bug 正是这一类状态复用的问题 ✓）。*/
     s_c1_win_left = 0; s_c1_win_age = 0; s_c1_sanae_half = 0; s_c1_set_sel = 0; s_c2s_win = 0;
     s_c3_lv_n = POFV_C3_LEVEL_DEFAULT;
-    s_c4_lv_n = 0;
+    /* ★★★★★ 2026-10-13（★ owner 口径 ✓）：★ C4 的初值 = ★ **`max(3, 难度初值)`** ✓
+     *   （★ 只有 **Lv3+** 的 C4 才有**符卡段** ✓ —— ★ 一手那边正是如此 ✓）。原来写死 `0` ✗。*/
+    s_c4_lv_n = POFV_C4_LEVEL_DEFAULT;
     int i, k;
     (void)c;
     for (i = 0; i < POFV_STORM_MAX; ++i)
