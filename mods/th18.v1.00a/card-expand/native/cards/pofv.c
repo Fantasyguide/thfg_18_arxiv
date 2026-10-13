@@ -2593,8 +2593,15 @@ static void c2_ring_vm_sync(float r)
     }
     /* ★★ 圆心 = **第 1 个环绕点** ✓（一手 ✓；`s_c2_pt0x/y` 由 tick 每帧写 ✓）*/
     vm_set_world_pos((uint32_t)s_c2.ring_vm, s_c2_pt0x, s_c2_pt0y);
-    /* ★ 判定=绘制：`scale.y` = 半径（世界单位）；`scale.x` = 环带宽度 ✓ */
-    ce_anm_set_scale((uint32_t)s_c2.ring_vm, POFV_C2_RING_BAND_W, r);
+    /* ★★★★★ 2026-10-13（owner：「★ C2 对了但★ **似乎缺少消弹圈**」✓）—— **这里是看不见的直接原因** ✗：
+     *   ★ 原来写的是 `set_scale(vm, POFV_C2_RING_BAND_W (= 1.0f), r)` ✗ ⇒ ★ **x 只缩 1 倍、y 缩 128~192 倍**
+     *   ⇒ ★ 实际画出来是一颗 **1px 宽 × 128 高的扁椭圆** ✗ ⇒ ★ **看不见** ✓。
+     *   ★ 依据（★ 照同族能正确显示的那一支 ✓）：
+     *     · 脚本 `430_pofv109_c_ring` 自己的注释：★「★ 用法：卡侧每帧只写 **位置 + `scale`（半径）**」✓
+     *       （★ 半径是**一个**量 ⇒ x/y 同值 ✓）；
+     *     · 同族 **STORM**（★ owner 确认看得见的红环 ✓）写的是 ★ `ce_anm_set_scale(vm, **k, k**)` ✓ 相等 ✓。
+     *   ⇒ ★ 改成 `(r, r)` ✓。*/
+    ce_anm_set_scale((uint32_t)s_c2.ring_vm, r, r);
 }
 
 static void c2_ring_vm_release(void)
@@ -2627,7 +2634,10 @@ static void pofv_eb_ring_sync(int32_t *vm, float r)
     }
     if (!p) return;
     vm_set_world_pos((uint32_t)*vm, p[0], p[1]);
-    ce_anm_set_scale((uint32_t)*vm, POFV_C2_RING_BAND_W, r);
+    /* ★ 2026-10-13 同 `c2_ring_vm_sync` ✓：★ 半径是**一个**量 ⇒ x/y 同值 ✓（照同族 STORM 的 `(k,k)` ✓
+     *   与脚本 430 自己的注释「卡侧每帧只写位置 + `scale`（半径）」✓）。原来的 `(BAND_W=1.0, r)` ✗
+     *   会把环压成 1px 宽的扁椭圆 ⇒ 看不见 ✓。*/
+    ce_anm_set_scale((uint32_t)*vm, r, r);
 }
 
 static void pofv_eb_ring_close(int32_t *vm)
