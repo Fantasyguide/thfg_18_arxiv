@@ -435,7 +435,18 @@ static void tint_restore_all(void)
 {
     unsigned i;
     for (i = 0; i < s_tint_n; ++i) {
-        volatile uint32_t *p = (volatile uint32_t *)(s_tint_bullet[i] + CE_BULLET_VM + CE_ANM_VM_COLOR1);
+        volatile uint32_t *p;
+        /* ★★★ 2026-10-14（P29，修 P17 审计的 **F7d**）：**先判这颗弹还活着吗** ✗ ——
+         *   表里存的是**上一帧**的子弹指针 ✓，而子弹住在**2000 槽静态池**里、槽会被**新弹复用** ✓
+         *   ⇒ 旧弹死了以后，同一个指针现在指的是**另一颗弹** ✗ ⇒ 不判就写 = 把**别人**的颜色按旧快照
+         *   还原 ✗（观感上就是「某颗弹颜色突然错一下」✓）。
+         *   判据**照抄 109 已有的那一套** ✓（等价证据 ⇒ 不是新发明 ✓）：
+         *   `cards/pofv.c:1943-1945` —— 读 `zBullet.state`（`CE_BULLET_STATE` = `engine.h:837` = `+0xf68`，
+         *   `uint16` ✓），**`st == 0` ⇒ 死弹/空槽**（`pofv.c` 的老注释也记着「老判据只跳 `st == 0`」✓）。
+         *   ⚠ 只跳过、**不重排表** ✓：本函数结尾统一 `s_tint_n = 0` ✓，下一帧由 `tint_mark()` 重建 ✓。*/
+        if (!s_tint_bullet[i]) continue;
+        if (*(const uint16_t *)(s_tint_bullet[i] + CE_BULLET_STATE) == 0) continue;
+        p = (volatile uint32_t *)(s_tint_bullet[i] + CE_BULLET_VM + CE_ANM_VM_COLOR1);
         /* ★★ 2026-09-10 第三十三轮：**只还原 RGB，绝不碰 alpha**。
          * 用户实测（「敌方的生弹点在擦弹范围里 → 出圈后黄色褪去，但变得极其透明」）：
          * 原来把整条 `color_1`（含 alpha）写回「染色前那一帧的快照」，而弹的 alpha 是脚本
