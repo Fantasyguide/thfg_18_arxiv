@@ -582,7 +582,13 @@ static int   s_boss_prev;   /* ★ owner 2026-10-05：boss 表 0→1 的**边沿
  *     一手 `thanm -l 19` 逐条见 `local/th19.v1.10c/_ext/aura.txt` script1/2/3/5 ✓）；
  *   而**我们的脚本 422** 是 `layer(25) + resolutionMode(2)` = **1 单位 = 1 表面 px**（`HUD-LAYOUT.md` §4.1b ✓）
  *   ⇒ 卡侧必须把一手值整体 **×2** 才是同一表面尺寸：满宽 224→**448**、高 4→**8** ✓。*/
-#define POFV_HUD_CHG_X2          2.0f   /* ★ 640 空间 → 表面 px 的倍率（`HUD-LAYOUT.md` §1.1 / §4.1b ✓）*/
+#define POFV_HUD_CHG_X2          2.0f   /* ★ 2026-10-13 订正：★ 这里**只当"贴图尺寸"的倍率** ✓
+                                          *   （`FILL_W/H` ✓ = 一手 640 空间的尺寸 → VM 的 surface 尺寸 ✓）。
+                                          *   ★ **位置一律 1:1、不再用它** ✗（★ owner 口径：「★ 移动 dx/dy 和自机
+                                          *   是一比一的」✓ ⇒ 位置链见 `POFV_HUD_SURF_X/Y`（已去 ×2 ✓））。
+                                          *   ⚠ 原注释写"640 空间 → 表面 px 的倍率" ✗ 会让人以为位置也要 ×2 ✓ 已改 ✓。
+                                          *   （★ 另注：两套 API 吃的空间**不同** ✓ —— `hud_vm_spawn` = **640** ✓、
+                                          *   `ce_hud_vm_text_set_font` = **表面/1280** ✓（卡里给它 `× 0.5` ✓）。）*/*/
 #define POFV_HUD_CHG_FILL_W      (POFV_HUD_CHG_BLOCK_W * POFV_HUD_CHG_X2)   /* 448 表面 px：填充区满宽 */
 /* ★★❓**自定**（owner 2026-10-10 明令「**偏离一手**」✗）：
  *   「**把 109 的蓄力槽横向拉伸成整个屏幕宽度**，但是注意**避让主动卡槽**」✓
