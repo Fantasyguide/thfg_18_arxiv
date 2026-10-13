@@ -3695,6 +3695,13 @@ static int pofv_dmg_laser(int ch, int move, int lv)
  *   `pl00.anm` script10 的 **30×30** ✓ ⇒ ★ 统一到 **30×30** ✓。
  *   ❓ ★ **精确值仍是自定** ✓：★ ECL 的弹**不带命中盒字段** ✗ ⇒ ★ "一手这个盒到底多大"
  *   **证据不足** ✓ ⇒ ★ 只把"同族两值不一致"这条消掉 ✓，★ 数值本身照弹体贴图那一档 ✓。*/
+/* ★★★★★ 2026-10-13（★ owner 口径 4 ✓）：「★ **单颗弹幕必须自建伤害源，然后碰到敌方正常消失**」✓
+ *   ★ 命中**侦测**为什么得自己做：★ `ce_damage_rect` 的返回值是 ★ **1-based 槽号** ✗（★ `sdk.h:171` 原文 ✓），
+ *   ★ **不是"命中了几次"** ✗ ⇒ ★ 卡侧自己按距离判 ✓（★ 用 SDK 现成的遍历/取位 ✓，
+ *   ★ 先例 = 本卡灵圆/灵账那条链 ✓）。
+ *   ★ 半径：★ **❓自定** ✓ —— ★ 一手那边"弹碰到敌机"用的是引擎自己的 OBB ✓，★ 卡侧取不到 ✗
+ *   ⇒ ★ 先用一个略小于弹体可见尺寸的值 ✓（★ C3 的玉是 62×62 ✓ ⇒ 取 20 ✓；★ 待实跑调 ✓，★ 登记 TUNING ✓）。*/
+#define POFV_ORB_HIT_R            20.0f
 #define POFV_C3_HIT_W             30.0f
 #define POFV_C3_HIT_H             30.0f
 #define POFV_C3_VM_LAYER             6     /* ★ 2026-10-13 回退 ✗：层 6 可用（见 `POFV_STORM_VM_LAYER` 注释 ✓）*/
@@ -3968,6 +3975,28 @@ static void pofv_c3_tick(void)
         /* ★ 2026-10-13（★ owner 口径 7 ✓）：★ 伤害改走**表** ✓ —— ★ `[角色][招][等级]` ✓
          *   （★ 招 = 3 表示 C3 ✓；★ 等级 = `s_c3.level` ✓，★ 同一等级下**所有弹一个值** ✓）；
          *   ★ 表里没有的 ⇒ ★ **默认 1** ✓。★ 激光走 `pofv_dmg_laser` ✓（魔理沙专用 ✓）。*/
+        /* ★ 2026-10-13（★ owner 口径 4 ✓）：★ **碰到敌方就正常消失** ✓ —— ★ 卡侧自己判一次距离 ✓
+         *   （★ 判到 ⇒ ★ **立刻走"敌弹消失动画"**：★ `ce_anm_interrupt(vm, 1)` ✓ ⇒ ★ 脚本 458 的消失支 ✓，
+         *   ★ 且这颗**不再发伤害** ✓、★ 不再走后面的生命周期 ✓）。
+         *   ★ 遍历用 SDK 现成的 ✓（`CE_ENEMY_FOREACH` ✓ / `ce_enemy_pos` ✓ / `ce_enemy_lockable` ✓）。*/
+        {
+            uint8_t *em = CE_ENEMY_MGR();
+            uint8_t *e;
+            const float r2 = POFV_ORB_HIT_R * POFV_ORB_HIT_R;
+            CE_ENEMY_FOREACH(em, e) {
+                const float *ep;
+                float ddx, ddy;
+                if (!ce_enemy_lockable(e)) continue;
+                ep = ce_enemy_pos(e);
+                ddx = ep[0] - b->x; ddy = ep[1] - b->y;
+                if (ddx * ddx + ddy * ddy <= r2) {
+                    if (b->vm) { ce_anm_interrupt((uint32_t)b->vm, 1); b->vm = 0; }
+                    b->live = 0;
+                    break;
+                }
+            }
+            if (!b->live) continue;      /* ★ 命中了 ⇒ 本颗到此为止 ✓ */
+        }
         (void)ce_damage_rect(pos, 0.0f, POFV_C3_HIT_LIFE,
                              pofv_dmg((int)s_aura_kind, 3, (int)s_c3.level),
                              POFV_C3_HIT_W, POFV_C3_HIT_H);
