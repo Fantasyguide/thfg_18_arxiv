@@ -1,29 +1,21 @@
 #!/usr/bin/env python3
-"""卡 109 **C3/C4 的敌方弹幕弹体**贴图 —— **一手原生切图**（TH19 `bullet1.png` ✓）。
+"""卡 109 **C3/C4 的阴阳玉弹体**贴图 —— **一手原生切图**（TH19 `bullet6.png` ✓）。
     python3 make_pofv109_ball_art.py    # 出图 + 打印要抄进 entries/ORDER.txt 的三行
 
-★★★★ 一手出处（切图，不是烤的 ✓；★ 由独立转写 agent `14bdeb0f` 逐条确证 ✓）
+★★★★ 一手出处（切图，不是烤的 ✓）
 ────────────────────────────────────────
-★ 一手：TH19 v1.10c 的 **`bullet.anm`** entry0 **`bullet/bullet1.png`**（256×256 ✓）里，
-★ 脚本 38 / 327 用 **三帧**画同一颗弹 ✓（`_ext/bullet.txt` 的 sprite 声明 ✓）：
-| 帧 | sprite | 声明 | 用途 |
+★ 一手：TH19 v1.10c 的 `bullet.anm` **entry9 = `bullet/bullet6.png`** ✓（★ 30×30 的**阴阳玉** ✓）。
+★ 它的脚本 327（C4）/ 329·330（C3）正文（`_ext/bullet.txt` ✓）：
+| 脚本 | 出生 | 稳定 | 消失 |
 | --- | --- | --- | --- |
-| 出生 | `sprite1` | **(8, 240, 8, 8)** | 生成瞬间（C4 槽0 还会先放大 5–6 倍 ✓）|
-| 稳定 | `sprite0` | **(0, 240, 8, 8)** | 飞行中（脚本 329/330 = C3 只用这张 ✓）|
-| 消失 | `sprite2` | **(16, 240, 8, 8)** | 命中/收掉时（**只有这一支带 `blendMode(1)` 加算** ✓）|
-★ 弹体尺寸 = **8×8** ✓（★ **不是** 30×30 的阴阳玉 ✗ —— 那是别的脚本用的环 ✓）。
-
-★★★★ 为什么**可以直接切 TH18 的图**（省掉一切重画 ✓）
-────────────────────────────────────────
-★ 转写已证：★ **TH18 v1.00a 的 `anm/bullet/bullet/bullet1.png` 与 TH19 v1.10c 的
-`dat/bullet/bullet1.png` 逐像素完全相同** ✓（PIL `ImageChops.difference` 全图 bbox = None ✓；
-PNG 字节不同、像素同 ✓）⇒ ★ **同坐标、同像素** ✓。
-★ ⇒ ★ 本脚本**优先读 TH18 自己的那份**（★ 与 TH19 同像素 ✓，且不依赖 th19 的解包 ✓），
-★ 读不到再回退 TH19 的那份 ✓。
-
-★ 源（gitignored 的 `local/`，构建时现取 ✓）：
-  `local/th18.v1.00a/anm/bullet/bullet/bullet1.png`   ← 首选（与 TH19 逐像素相同 ✓）
-  `local/th19.v1.10c/dat/bullet/bullet1.png`           ← 回退
+| `script327`（C4）| `sprite(sprite1)` | `sprite(sprite0)` | （消失支另有）|
+| `script329/330`（C3）| — | `sprite(sprite0)` | 同上 |
+★ ★★ **编号口径更正（owner 2026-10-13 指出，我先前核错了 ✗）**：
+★ 这里 `sprite(N)` 是 ★ **该 entry 内的局部序号** ✓（★ 不是全文件全局号 ✗）——
+★ 证据：★ 本仓那条"全局号"的旁证（`engine/versus/th19/02-self-field-systems.md` §4.28）
+★ 引的是 **entry0 的脚本**（★ entry0 从 sprite0 起 ⇒ **local == global，区分不了** ✗）。
+★ ⇒ ★ entry9 里的 `sprite0/1/2` = ★ **`sprite580/581/582`** ✓（★ 即本文件的 3 个 rect ✓）。
+★ 源：`local/th19.v1.10c/dat/bullet/bullet6.png` ✓（★ TH18 也有一份同名文件 ✓，但**先按 TH19 切** ✓）。
 """
 import pathlib
 from PIL import Image
@@ -34,22 +26,19 @@ for _ in range(8):
     if (_r / "local").is_dir():
         break
     _r = _r.parent
-SRC_TH18 = _r / "local/th18.v1.00a/anm/bullet/bullet/bullet1.png"
-SRC_TH19 = _r / "local/th19.v1.10c/dat/bullet/bullet1.png"
+SRC = _r / "local/th19.v1.10c/dat/bullet/bullet6.png"
 OUTDIR = ROOT / "bball"
 
-# ★ 三帧的一手 rect（sprite1 / sprite0 / sprite2 ✓）
+# ★ entry9 的三张（sprite580/581/582 = 局部 0/1/2 ✓；声明都是 30×30 ✓）
 FRAMES = [
-    ("POFV109_BBALL_BORN", "BBALL_BORN.png", (8, 240, 16, 248)),    # sprite1：出生
-    ("POFV109_BBALL_IDLE", "BBALL_IDLE.png", (0, 240, 8, 248)),     # sprite0：稳定
-    ("POFV109_BBALL_DIE",  "BBALL_DIE.png",  (16, 240, 24, 248)),   # sprite2：消失
+    ("POFV109_BBALL_BORN", "BBALL_BORN.png", (33, 1, 63, 31)),    # sprite581（局部 1）：出生
+    ("POFV109_BBALL_IDLE", "BBALL_IDLE.png", (1, 1, 31, 31)),     # sprite580（局部 0）：稳定
+    ("POFV109_BBALL_DIE",  "BBALL_DIE.png",  (65, 1, 95, 31)),    # sprite582（局部 2）：消失
 ]
 
 
 def main() -> int:
-    src = SRC_TH18 if SRC_TH18.is_file() else SRC_TH19
-    print(f"# 源 = {src}")
-    im = Image.open(src).convert("RGBA")
+    im = Image.open(SRC).convert("RGBA")
     OUTDIR.mkdir(parents=True, exist_ok=True)
     for name, fn, rect in FRAMES:
         cut = im.crop(rect)
