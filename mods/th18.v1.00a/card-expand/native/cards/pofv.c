@@ -2279,7 +2279,7 @@ static void c3_dir5(int idx5, float *dx, float *dy);
  *   ⚠ 代价：★ `136` 选 25 原是为了"折到组 38 = 与**暂停模糊罩**同桩 ⇒ 字被罩住" ✓；
  *   ★ 切 20 后**暂停时的模糊表现会变** ✓（已登记 TUNING/AUDIT ✓）。
  *   ⚠ 只**新增**了 442 脚本、★ **没有改共享的 `136`** ✓ ⇒ 别家卡不受影响 ✓。*/
-#define POFV109_HUD_GLYPH_SCRIPT  444   /* ★ 编号 444：构建器按文件名顺序分配（442/443 已被 C1M 占用 ✓）*/
+#define POFV109_HUD_GLYPH_SCRIPT  456   /* ★ 编号 456 = 本卡脚本段的下一个空闲号（构建器按文件名顺序分配 ✓）*/
 #define POFV_C2_INVULN             40   /* 一手 ✓（39/40/40.0f）*/
 #define POFV_C2_VM_LAYER            6   /* ★ 2026-10-13 回退 ✗：层 6 可用（见 `POFV_STORM_VM_LAYER` 注释 ✓）*/
 #define POFV_C2_RING_SCRIPT  CE_ANM_ABILITY_SCRIPT_POFV109_STORM   /* ★ 借一手脚本 396（❓自定画法）*/
