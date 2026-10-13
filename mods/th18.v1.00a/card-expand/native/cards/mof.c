@@ -1577,6 +1577,19 @@ static void mof_clear(ce_card_t *c)
      * 重新装卡后的第一帧误判成「没换关」而带着旧计数走）。`mof_stage_frames()` 首帧见 -1 ⇒ 归零。*/
     s->stage_frames_ref = -1;
     s->stage_id_ref = -1;
+    /* ★★ 2026-10-14（P21，修 P17 审计 F2/F3）：**账本镜像与哨兵一起归零** ⇒ 之后无论哪个时序的 `ctor`
+     *   （`+0x4c` 之后紧跟的那次 ✓，或新拿卡时的分配 ✓）都必然走"新局"支路 ✓，两条时序结果一致 ✓。
+     *   修的正是下面两件事（`LIFECYCLE-AUDIT.md` §4）：
+     *     · **F2**：同一关 retry / 从第 1 关退主菜单再重进 ⇒ 关号**没变小** ⇒ 旧判据落进恢复支路，
+     *       把上一局的 Δ/连击（更早还叠加 `s_slot_keep` 的陈旧镜像）恢复进新局 ✗；
+     *     · **F3**：进程内第一次 ctor 时哨兵 = -1 ⇒ 旧判据 `> 0` 为假 ⇒ 同样走恢复 ⇒ 去恢复
+     *       **全零静态** ⇒ `base = 0`（110 本应恒 `FAITH_BASE_110`）⇒ `mof_declare_score()` 的耦合
+     *       声明恒 0 ✗（数值级 ✓）。
+     *   等价先例 = 112 把哨兵置 `NONE`（`ufo.c:6330`）✓；这里是"干净镜像 + 哨兵 -1"的等价写法 ✓。
+     *   ⚠ 副作用（有意 ✓）：被删掉后**又以同 id 回来**的卡也从干净账本起步 ✓ —— 与 `s_p_item` 那种
+     *     「绝对干净」的声明一致 ✓（此前它会继承被摧毁那张卡的旧 Δ ✗，见审计 F7g）。*/
+    faith_slot_init_110(&s_slot_keep);
+    s_slot_stage = -1;
 }
 
 /* ★★ 2026-09-18：把「注册共享池 + 认领组合 UI 块」抽出来 —— `on_load` 与 `on_tick_2` 都调它。
@@ -1640,7 +1653,12 @@ static int ctor(ce_card_t *c)
      * 机制：`on_run_reset` / 卡对象重建在**关卡切换**时也会跑（`mof_clear()` 那个 `memset` 会把
      *   Δ / 连击 / 信号一起抹掉）⇒ 账本**搬进文件静态**（卡是单例；与 `s_opt[]` / `s_tint_*` 同一层做法），
      *   `ctor` 从这里**恢复**，只有「关卡号变小」（回到第 1 关 / 重开一局 / 练习重选关）才重新初始化。*/
-    if (s_slot_stage > 0 && (int32_t)CE_CURRENT_STAGE() < s_slot_stage) {
+    if (s_slot_stage < 0 || (int32_t)CE_CURRENT_STAGE() < s_slot_stage) {
+        /* ★★ 2026-10-14（P21，修 P17 审计 F2/F3）：
+         *   · `s_slot_stage < 0` = **进程内第一次**（首次获得 / 新拿卡 / 刚被 `mof_clear` 归零）也算新局 ✓
+         *     —— 旧判据 `> 0` 让首局落进恢复支路、去恢复一个**全零静态** ⇒ `base = 0`（F3 ✗）；
+         *   · 「同关 retry / 从第 1 关退主菜单再重进」时关号**没变小** ⇒ 旧判据也落进恢复支路，
+         *     把上一局的 Δ/连击带进新局（F2 ✗）—— 现在由 `mof_clear()` 把哨兵置 -1 兜住 ✓。*/
         ce_log("mof: 新一局（stage %d -> %d）⇒ 信仰账本归零（原 Δ %d）",
                (int)s_slot_stage, (int)CE_CURRENT_STAGE(), (int)(s_slot_keep.delta / FAITH_FIXED));
         faith_slot_init_110(&s->slot);        /* 基础恒 50000、Δ 从 0 起算、下限 0 */
