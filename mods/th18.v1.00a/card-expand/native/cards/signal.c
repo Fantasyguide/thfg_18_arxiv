@@ -3984,7 +3984,11 @@ static void on_run_reset(ce_card_t *c)
     signal_declare_score(s);
 }
 
-static void on_delete(ce_card_t *c) { signal_clear(c); }
+/* ★★ 2026-10-14（P20）：**删卡时注销**灵击提供者（同 110）—— 理由见 `bomb10.h` 的
+ *   `bomb10_unregister_host()`：卡被删后 `ce_state` 的内存会被别的卡领走，而机器仍会拿这条注册
+ *   去调 `gate`/`on_start`/`on_cancel`（都写那块内存）⇒ 写进别人的活状态 ✗✗。
+ *   `on_run_reset`（retry）时卡**还在场** ⇒ 只在这里注销 ✓。*/
+static void on_delete(ce_card_t *c) { signal_clear(c); bomb10_unregister_host(&s_bomb_host); }
 
 /* ---- ★★ 2026-09-16q：**原生 B**（引擎自己那发炸弹花掉之后）⇒ 同一支河童罩子 ----
  * 用户口径（逐字）：「对于**原生的B**，河童特效也会引入**不撞破罩子 no miss 和一个罩子**」。

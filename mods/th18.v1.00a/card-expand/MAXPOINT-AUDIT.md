@@ -1,3 +1,6 @@
+> **版本**：TH18 v1.00a（`th18.exe`，imagebase `0x400000`）—— 本文裸地址属该版本；**引用其它作时一律带 `thNN:` 前缀** ✓
+> （各作一手出自 `engine/faith/thNN/01-point-item-value.md`，各文档自己的基准 build 见其开头 ✓ —— 见 §3 ▲4 ✓）。
+>
 # MAXPOINT-AUDIT —— 「额外最大得点（PIV）」数值核查（P16 / W5）
 
 > 工单 **P16**（见 [`WORK-PACKAGES.md`](WORK-PACKAGES.md) §0.1）；**只读核查，不改任何代码**（R4 ✓）。

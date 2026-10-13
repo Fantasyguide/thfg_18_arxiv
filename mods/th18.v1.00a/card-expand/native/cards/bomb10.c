@@ -182,6 +182,21 @@ void bomb10_register_host(const bomb10_host_t *host, void *user)
                 (int)BOMB10_HOST_MAX);
 }
 
+/* ★★ 2026-10-14（P20）：注销（理由与调用时机见 `bomb10.h` 的声明注释 ✓）。
+ *   三个派发点都有 `if (!h || …) continue;` 守卫 ⇒ **置空即干净摘除** ✓，不会留下 NULL 解引用。*/
+void bomb10_unregister_host(const bomb10_host_t *host)
+{
+    int i;
+    if (!host) return;
+    for (i = 0; i < BOMB10_HOST_MAX; ++i) {
+        if (s_reg[i].host == host) {
+            s_reg[i].host = (const bomb10_host_t *)0;
+            s_reg[i].user = (void *)0;
+            return;
+        }
+    }
+}
+
 void bomb10_nitori_declare(uint32_t card_id, int armed)
 {
     if (!card_id) return;

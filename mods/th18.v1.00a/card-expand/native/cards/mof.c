@@ -1662,7 +1662,11 @@ static int ctor(ce_card_t *c)
 }
 
 static void on_run_reset(ce_card_t *c) { mof_clear(c); }   /* ⚠ 不再清账本：`ctor` 会从 s_slot_keep 恢复 */
-static void on_delete(ce_card_t *c)    { mof_clear(c); }
+/* ★★ 2026-10-14（P20）：**删卡时注销**灵击提供者（唯一必须走 `on_delete` 而不是 `on_run_reset` 的一步 ✗）——
+ *   理由见 `bomb10.h` 的 `bomb10_unregister_host()`：卡被删后 `ce_state` 的内存会被别的卡领走，
+ *   而机器每帧仍会拿这条注册去调 `gate`/`on_start`/`on_cancel`（都写那块内存）⇒ 写进别人的活状态 ✗✗。
+ *   `on_run_reset`（retry）时卡**还在场**，注销会让它的灵击平白失效 ⇒ 只在 `on_delete` 调 ✓。*/
+static void on_delete(ce_card_t *c)    { mof_clear(c); bomb10_unregister_host(&s_bomb_host); }
 
 /* ★ 2026-09-15：换关时把**灵击**收掉（一手：TH10 的灵击是一个 per-stage 的对象 ——
  *   `Bomb` 的 anm VM 归关卡所有，换关时 bullet.anm 的 VM 被清 ⇒ VM 没了 `Bomb::on_tick` 就把
