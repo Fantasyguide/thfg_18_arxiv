@@ -1795,18 +1795,34 @@ static void senro_small_burst(senro_card_t *s, int32_t bullets)
 {
     const float *pp = ce_player_pos();
     const int32_t per = SENRO_SMALL_CHERRY_ADD + SENRO_SMALL_CHERRY_EXTRA;   /* 100 */
-    int32_t total, bundle;
+    int32_t total, bundle, extra_n;
     int k, i, made = 0;
 
     if (!pp || bullets <= 0) return;
-    total = bullets * per;                                  /* 一手的**总**樱点量 */
+    total = bullets * per;                                  /* 一手的**总**樱点量（恒为 per 的倍数 ✓）*/
     k = (bullets > SENRO_SMALL_MAX_SPAWN) ? SENRO_SMALL_MAX_SPAWN : (int)bullets;
-    bundle = total / k;                                     /* 每颗带的打包值（余数忽略，≤ k−1 点）*/
+    /* ★★★ 2026-10-14（P22，owner 实跑：「没开过森罗结界时，+C 与樱点的个位数不一致、樱点个位不是 0」）：
+     *   旧写法 `bundle = total / k` 是**整数除法** ✗ ⇒ 每颗携带的值不再是 `per`(100) 的倍数
+     *   （例：`bullets = 25`、`k = 24` ⇒ `2500/24 = 104` ✗）⇒ 拾取时
+     *   `plus_part = value×30/100 = 31` ✗ ⇒ **樱点 +104（个位 4）、+C +31（个位 1）**，
+     *   两条账的个位都不为 0 且彼此不等 ✗ —— 正是 owner 看到的现象 ✓。
+     *   一手的不变量 = 「**每一笔加值都是 10 的倍数**」（★=20 / 擦弹=80·30 / 大樱点=1000+100k，
+     *   见 `senro_core.h:125-129`）⇒ 打包这一层必须守住它 ✓。
+     *   改法：每颗先压成 **`per` 的倍数**（`k ≤ bullets` ⇒ `total/k ≥ per` ⇒ `bundle ≥ per` ✓），
+     *   再把余数**按 `per` 分摊给前 `extra_n` 颗**（`extra_n < k` ✓）：
+     *     ① 总值**精确不变** ✓（`bundle×k + extra_n×per == total` ✓）；
+     *     ② 每颗都是 `per` 的倍数 ⇒ `plus_part = value×30/100 = 30m` 也是 10 的倍数 ✓
+     *        ⇒ **樱点与 +C 的个位恒为 0** ✓；
+     *     ③ 单颗失败最多损失 `bundle + per` ✓（旧写法把余数全堆在最后一颗 ⇒ 失败时损失更大 ✗）。*/
+    bundle = (total / k) / per * per;
+    if (bundle < per) bundle = per;                         /* 兜底（数学上到不了：k ≤ bullets ⇒ total/k ≥ per）*/
+    extra_n = (total - bundle * k) / per;                   /* ∈ [0, k−1] ✓ */
 
     for (i = 0; i < k; ++i) {
         /* 自机为中心撒成一圈（❓ 自定：TH18 到这一刻弹已经没了，拿不到逐颗原位）——与灵击那 32 颗同形。*/
         const float ang = SENRO_ITEM_SPAWN_ANGLE + (6.2831853f * (float)i) / (float)k;
-        if (faith_spawn_art(pp[0], pp[1], FAITH_TIER_SMALL, 1 << FAITH_SLOT_107, bundle, ang,
+        const int32_t v = bundle + (i < extra_n ? per : 0);
+        if (faith_spawn_art(pp[0], pp[1], FAITH_TIER_SMALL, 1 << FAITH_SLOT_107, v, ang,
                             CE_ANM_ABILITY_SPRITE_SAKURA_SMALL,
                             CE_ANM_ABILITY_SCRIPT_SAKURA_SMALL)) {
             ++made;
@@ -1814,8 +1830,8 @@ static void senro_small_burst(senro_card_t *s, int32_t bullets)
     }
     s->stat_small += made;
     s->stat_small_bullets += bullets;
-    ce_log("senro: boss 死亡消弹 %d 颗 → 小樱点实体 %d 颗（每颗打包 %d；樱点总量 +%d）",
-           (int)bullets, made, (int)bundle, (int)(bundle * made));
+    ce_log("senro: boss 死亡消弹 %d 颗 → 小樱点实体 %d 颗（每颗 %d%s；樱点总量应 +%d）",
+           (int)bullets, made, (int)bundle, extra_n ? "（前若干颗 +100）" : "", (int)total);
 }
 
 /* ---- ★★ 2026-10-01：**逐敌大樱点**（一手 = 敌人自带掉落槽的 32 项轮转表）----
