@@ -3813,6 +3813,14 @@ static void signal_clear(ce_card_t *c)
      *   （那一刻 tick 全停）⇒ 不收它们就会钉在关卡里到本局结束。
      *   ⚠ 幂等：两卡同装时先被删的那张把表清空，另一张照旧每帧驱动 ⇒ 下一波照常补刷。*/
     faith_green_fairy_depart_all();
+    /* ★★★ 2026-10-14（P28，修 P17 审计的 **F5**）：**删卡时也要把「变绿的妖精」还原** ✓ ——
+     *   `faith_green_restore_all()`（`faith.c` ✓，内部调 `faith_green_nodes_release_all()` ✓）
+     *   原来全仓**只有 110 的 `mof_clear()` 一处调** ✗ ⇒ **只装 111** 时删卡/换局**没有任何钩子**
+     *   把改过的妖精还回原色 ✗ —— 因为 `faith_gf_skin_tick()` 只在有卡 tick 时跑，而**删卡那刻
+     *   tick 全停** ✗ ⇒ 场上那几只妖精会一直绿到本关结束 ✗。
+     *   ⚠ 与 110 **对称地无条件调** ✓：若 110 还在场，它下一帧的 `faith_gf_skin_tick()` 会**自己
+     *     重新上绿** ✓（自愈 ✓ —— 与「110 删卡时 111 仍在场」的情形同款 ✓）。*/
+    faith_green_restore_all();
     if (!s) return;
     /* ★ 支援特技的跨帧状态与**卡外**的那一个旋钮（`CE_PLAYER_SPEED_MULT`）先收掉：
      *   删卡发生在**商店**里（AbilityManager 冻住、Player tick 也停了）⇒ 只能靠这里，不能等下一帧。
