@@ -17,9 +17,10 @@ offset220:
     fsetMul(%F2, %RANDF2, 96.0f);
     fsetMul(%F3, %RANDF2, 96.0f);
     moveBezier(20, %F0, %F1, 0.0f, 0.0f, 0.0f, 0.0f, %F2, %F3, 0.0f);
+    fset(%F0, %F2);   // ★ 2026-10-13 照一手补 ✓（同 436 ✓）
+    fset(%F1, %F3);
 +20: // 20
-    jmp(offset220, 1);
+    jmp(offset220, 0);   // ★ 一手 = 0 ✓（卡原来写 1 ✗）
     interruptLabel(1);
-+10: // 30
-    delete();
+    delete();            // ★ 一手 ✓ 中断即删 ✗（卡原来 `+10: delete()` ⇒ "爆了两次" ✓）
 }
