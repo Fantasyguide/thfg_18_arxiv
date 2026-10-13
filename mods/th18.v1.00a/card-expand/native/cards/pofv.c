@@ -3888,18 +3888,23 @@ static void pofv_c3_tick(void)
          *   （★ 于是它会**往下飞出去** ✓）。★ 一手另有 `EX_OFFSCREEN(256,120)` ✓ 我方**没做** ✗
          *   ⇒ ★ "飞出屏后到底怎么收"**证据不足** ✓ ⇒ ★ 先由下面的 ❓兜底寿命收 ✓（已登记 TUNING ✓）。*/
         else if (b->y > POFV_FIELD_H + POFV_C1_OFF_MARGIN * 4.0f) {
-            /* ★ 只是给一个"远远出界就收"的兜底 ✓（★ 不是反弹 ✓）。*/
-            if (b->vm) { ce_anm_delete((uint32_t)b->vm); b->vm = 0; }
+            /* ★ 只是给一个"远远出界就收"的兜底 ✓（★ 不是反弹 ✓）。
+             * ★ 2026-10-13（★ owner 口径 4 ✓）：★ 改用 `ce_anm_interrupt` ✓ ⇒ ★ 走脚本 457 的**消失支**
+             *   （★ 消失帧 `sprite2` + 加算 + 淡出 ✓）= ★ owner 要的"★ **敌方弹碰到自机的消失动画**" ✓
+             *   （★ 原来 `ce_anm_delete` = **直接抹掉、没有动画** ✗）。*/
+            if (b->vm) { ce_anm_interrupt((uint32_t)b->vm, 1); b->vm = 0; }
             b->live = 0;
             continue;
         }
         if (hit && ++b->bounces > POFV_C3_BOUNCE_MAX) {
-            if (b->vm) { ce_anm_delete((uint32_t)b->vm); b->vm = 0; }
+            /* ★ 2026-10-13（口径 4 ✓）：★ 反弹耗尽 ⇒ 走**消失动画**（同出界那处 ✓）。*/
+            if (b->vm) { ce_anm_interrupt((uint32_t)b->vm, 1); b->vm = 0; }
             b->live = 0;
             continue;
         }
         if (b->age >= POFV_C3_BULLET_LIFE) {              /* ❓⑥ 兜底寿命 */
-            if (b->vm) { ce_anm_delete((uint32_t)b->vm); b->vm = 0; }
+            /* ★ 2026-10-13（口径 4 ✓）：★ 寿命到 ⇒ 也走**消失动画**（同出界那处 ✓）。*/
+            if (b->vm) { ce_anm_interrupt((uint32_t)b->vm, 1); b->vm = 0; }
             b->live = 0;
             continue;
         }
