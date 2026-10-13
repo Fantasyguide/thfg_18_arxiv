@@ -3990,6 +3990,13 @@ static void pofv_c3_tick(void)
                 ep = ce_enemy_pos(e);
                 ddx = ep[0] - b->x; ddy = ep[1] - b->y;
                 if (ddx * ddx + ddy * ddy <= r2) {
+                    /* ★ 2026-10-13（★ owner 口径 4 ✓）：「★ 命中敌机 ⇒ 走'**敌弹消失**'表现
+                     *   （★ 消失帧 + **粒子** ✓）」✓ ⇒ ★ 粒子**复用卡里现成的**一手火花 ✓：
+                     *   ★ `pofv_spark_spawn()` ✓（★ = 脚本 `431` ✓，★ 一手 `bullet.anm` `script162/163`
+                     *   的 8 帧 `effect/etbreak.png` ✓，★ 池化 32 ✓、★ 层级与脚本一致 ✓）★ **不新造** ✗。
+                     *   ❓ 一手那边 C4 两个槽的**粒子颜色不同**（★ 槽0 蓝 / ★ 槽1 粉 ✓）★ ——
+                     *   ★ 本 helper 现在**不吃颜色参数** ✗ ⇒ ★ 先都放同色 ✓，★ 待调（登记 TUNING ✓）。*/
+                    pofv_spark_spawn(b->x, b->y);
                     if (b->vm) { ce_anm_interrupt((uint32_t)b->vm, 1); b->vm = 0; }
                     b->live = 0;
                     break;
@@ -4617,6 +4624,13 @@ static void pofv_c4_tick(void)
                 ep = ce_enemy_pos(e);
                 ddx = ep[0] - b->x; ddy = ep[1] - b->y;
                 if (ddx * ddx + ddy * ddy <= r2) {
+                    /* ★ 2026-10-13（★ owner 口径 4 ✓）：「★ 命中敌机 ⇒ 走'**敌弹消失**'表现
+                     *   （★ 消失帧 + **粒子** ✓）」✓ ⇒ ★ 粒子**复用卡里现成的**一手火花 ✓：
+                     *   ★ `pofv_spark_spawn()` ✓（★ = 脚本 `431` ✓，★ 一手 `bullet.anm` `script162/163`
+                     *   的 8 帧 `effect/etbreak.png` ✓，★ 池化 32 ✓、★ 层级与脚本一致 ✓）★ **不新造** ✗。
+                     *   ❓ 一手那边 C4 两个槽的**粒子颜色不同**（★ 槽0 蓝 / ★ 槽1 粉 ✓）★ ——
+                     *   ★ 本 helper 现在**不吃颜色参数** ✗ ⇒ ★ 先都放同色 ✓，★ 待调（登记 TUNING ✓）。*/
+                    pofv_spark_spawn(b->x, b->y);
                     if (b->vm) { ce_anm_interrupt((uint32_t)b->vm, 1); b->vm = 0; }
                     b->live = 0;
                     break;
