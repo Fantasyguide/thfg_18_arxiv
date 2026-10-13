@@ -34,6 +34,43 @@
 | P10 | **#41 裁决**（站点数越线假说 vs `§BE-DW` 的窗口定案）| 悬着的达摩克里斯之剑 | **owner 正在做**（订阅已按「你改我跑」恢复，见 §2 末尾）| 见 §2 |
 | P11 | **统筹余项**：站点预算记账、`SITE_BUDGET` 口径、`TEST200` 去留、`118` 位置、提交归属 trailer | — | 我（统筹会话）| — |
 
+### 0.1 ★★ 2026-10-14 新一轮工单（owner 批的"一致性迭代"，**每单 = 一分支 + 一 PR** ✓）
+
+> owner 口径：**"最好只针对系统卡，但统一抽取 SDK 这样的可以连着所有附加卡一块做"**；**"重点清理注释漏洞、和各处文档矛盾"**；
+> **"checkout+pr 可以开得不那么勤，但开之前一定要明确我开是为了干什么"** ✓
+> 硬规则（该轮的 R1–R6）见本节末尾 ✓。
+
+| # | 工单（**PR 的粒度 = 这一行**）| 目的（一句话）| 验收判据 | 一手依据 / 依赖 | 状态 |
+| --- | --- | --- | --- | --- | :-: |
+| **P13** | 机械一致性检查（W1）| 让"注释数字 ↔ 代码常量""跨文档数字不变量"能被**脚本**查出来，不再靠人眼 | `doc_claims.py report` 误报清零后再转 `check`；产出 `DOC-CONTRADICTIONS.md` | 命名金矿 `type-structs-own.json`；既有 `capcheck.py`/`gen_drift.py` 模式 | ✅ 首轮（W1b 待收敛）|
+| **P14** | VM 写法收敛（W2）| 把"同一类表现、做法茫茫多"的 VM 操作收进 `ce_anm_*` 词汇 | `VM-IDIOM-MAP.md` 覆盖全部 226 处；只增词汇；有等价证据才迁移 | 卡侧 `CE_ANM_VM_*` 普查 | ⏳ |
+| **P14a** | **SDK 抽取**（W2 的子单，**独立 PR** ✓）| 抽共享件本身（影响全部卡）| `make check` rc=0 + `AUDIT.md` §BE 登记 + 影响面报告 | 同上 | ⏳ |
+| **P15** | 两本最终文档（W4）| 代码端"实现链路 + 用到的 SDK"、玩家端"这卡到底干什么"| 每卡各一节；**每个数字都能指回常量或一手地址** | per-card `HANDOFF-*`、`SDK.md`、`TUNING.md`、跨卡审计 | ⏳ |
+| **P16** | 额外最大得点数值核查（W5）| owner 从未核过这套数字 ⇒ 逐条复核 | `MAXPOINT-AUDIT.md`（值↔一手↔现值↔判定）；**不改代码** | `sdk_core.h:385–418` 既有断言 | ⏳ |
+| **P17** | 生命周期未测面（W6）| 换面**保持** / retry 与退主菜单**重置** 要有结论 | `LIFECYCLE-AUDIT.md` + `SINGLE-CARD-TEST.md` 固定条目 + log-only 观测件 | `on_run_reset` 覆盖表（现仅 10 张卡 ✓）| ⏳ |
+| **P18** | 逐卡行为审计（W3，只读）| 行为清单 ↔ 代码站点 ↔ 一手出处 的对照，只出台账 | 审计表；**不改码** | `SINGLE-CARD-TEST.md` | ⏳ |
+
+**该轮硬规则**（写死在这里，避免以后丢 ✓）：
+- **R1 只有证明为错才改代码** ✗ ——「读起来怪」不是理由；给不出等价证据就**只加注释** ✓。
+- **R2 只动系统卡 106–117**；共享件抽取可惠及全部卡，但必须登记 `AUDIT.md` §BE + 报影响面 ✓。
+- **R3 109 排除** ✗（另一会话在改）✓。
+- **R4 数值不擅自改**（P16 只出表）✓。
+- **R5 不新增站点**（`SITE_BUDGET` 余量 0/24）✓。
+- **R6 一个 PR = 一条工单**：**先登记工单（目的 + 验收 + 一手依据 + 依赖）再开工** ✓；目的变了就改工单或**拆新单**，不许静默扩范围 ✗。
+
+**git 留痕规约**（PR 仪式必做 ✓，即使代码都是自己的 ✓）：
+1. 每单开 **worktree** 起手：`git worktree add -b <type/topic> /tmp/rl-<单号> <base>` ✓；
+   **开工清单**（否则基线就红 ✗）：`ln -s <主树>/local` ✓ + 补 gitignore 的生成资产 ✓ +
+   补**被 tracked 文档引用但尚未提交**的文件 ✓ + `make anm` + `make sht` ⇒ `make check` rc=0 ✓
+   （完整命令与两个陷阱见 [`DOC-CONTRADICTIONS.md`](DOC-CONTRADICTIONS.md) §0 ✓）。
+2. 提交：一逻辑一提交，message 带**工单号 + ledger 号**（如 `P16/W5a` ✓）⇒ `git log` 即索引 ✓。
+3. **PR**：`gh pr create --repo Fantasyguide/renkolab --base Nipporita_dev --head Nipporita:<branch> --title "P<n>: 目的" --body-file …` ✓
+   （WSL `gh` 已登录 ✓，路径 `~/.local/bin/gh`，**不在 PATH** ✓）；正文六段：
+   `目的（工单号 + 验收判据）/ 范围与不动的东西 / 一手依据 / 证据（check 输出·日志行·对账数字）/ 行为差异（无或逐条）/ 回滚方式` ✓。
+4. **合并**：`gh pr merge <n> --merge` ✓；若因 `gh` 走 https、本机走 SSH 而本地同步失败 ⇒ **本地 merge + push**（PR 仍记为 merged ✓）✓。
+5. 合并后守不变量：`git push origin HEAD:main` **且** `git push upstream HEAD:Nipporita_dev` ✓（**fork ≥ 共享** ✓）。
+
+
 ## 1. 需要 owner 先拍口径的两条（否则子 agent 只能瞎猜）
 
 | 现象 | 需要定的口径 |
