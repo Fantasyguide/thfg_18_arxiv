@@ -5279,7 +5279,15 @@ static void pofv_c3s_tick(void)
                      *   ★ 它该带的副弹幕我方还没做 ✗ ⇒ 目前纯观感 ✓。*/
                     {   const float *pp3s = ce_player_pos();
                         pofv_c3s_spawn((pp3s ? pp3s[0] : 0.0f) + (float)s_c3s_st.side * s_c3s_st.f0,
-                                       (pp3s ? pp3s[1] : 128.0f) + (float)ry);
+                                       /* ★★★★★ 2026-10-13（★ owner 定 ✓）：「★ **早苗不涉及任何 boss 位置** ✓，
+                                        *    ★ 是**从'天上'下来** ✓，★ 对应咱们这里就是**得从版底往上发**」✓
+                                        *    ⇒ ★ 出生 y = ★ **版底 `POFV_FIELD_H`** ✓（★ 本卡 y 向下增 ✓，
+                                        *    ★ `y = POFV_FIELD_H` 就是底 ✓ —— 依据同"飞出下边界就收"那条 ✓）。
+                                        *    ★ 原来这里是"★ **自机 y** + 随机 `ry`" ✗ ⇒ ★ 从自机身上往外散 ✗。
+                                        *    ⚠ ★ **横向 x 那半还没改** ✗：★ 现在仍是"★ 自机 x + 侧向偏移"✗
+                                        *    —— ★ 你说"★ 不涉及任何 boss 位置"✓ ⇒ ★ x 也该脱离自机 ✓，
+                                        *    ★ 下一轮单独一笔（★ 一次一样 ✓，★ 账里已写 ✓）。*/
+                                       POFV_FIELD_H + (float)ry);
                     }
                 }
                 s_c3s_st.side = -s_c3s_st.side;
