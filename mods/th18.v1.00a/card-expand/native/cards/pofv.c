@@ -4467,8 +4467,16 @@ static void pofv_c4s_emit(float ang, float spd)
     if (k >= POFV_C4_MAX_BULLETS) return;
     {
         const float *pp = ce_player_pos();
-        s_c4_b[k].x = pp ? pp[0] : 0.0f;      /* ★ 中心 = 自机位置 ✓（模型 ① ✓）*/
-        s_c4_b[k].y = pp ? pp[1] : 128.0f;
+        /* ★★★★★ 2026-10-13（★ owner 定 ✓）：「★ **早苗不涉及任何 boss 位置** ✓，★ 是**从'天上'下来** ✓，
+         *    ★ 对应咱们这里就是**得从版底往上发**」✓
+         *    ⇒ ★ 出生点 = ★ **版底** ✓（★ 本卡 y 向下增 ✓：★ `y = 0` 是顶 ✓、★ `y = POFV_FIELD_H` 是底 ✓
+         *    —— ★ 依据 = 本文件里"飞出下边界就收"用的就是 `b->y > POFV_FIELD_H + …` ✓）。
+         *    ★ 横向位置仍取自机 x ✓（★ 一手是"从天上某处下来"✓ ⇒ ★ 翻 180° 后是"从版底某处上去"✓；
+         *    ★ 那个"某处"一手取的是**自机位置**的那一维 ✓ —— ★ 若复核/实跑说该固定，再调 ✓）。
+         *    ⚠ 方向那半**还没改** ✗：★ 现在仍由调用者 `pofv_c4s_fire()` 传进来的 `ang` 决定 ✓，
+         *    ★ 下一轮翻成"向上" ✓（★ 一次一样 ✓，★ 账里已写 ✓）。*/
+        s_c4_b[k].x = pp ? pp[0] : 0.0f;
+        s_c4_b[k].y = POFV_FIELD_H;            /* ★ 版底 ✓（owner 定 ✓）*/
     }
     s_c4_b[k].live = 1; s_c4_b[k].age = 0; s_c4_b[k].bounced = 0;
     s_c4_b[k].ang = ang; s_c4_b[k].spd = spd;
