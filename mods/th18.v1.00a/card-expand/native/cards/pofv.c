@@ -2852,7 +2852,16 @@ static void pofv_ca_ring_tick(void)
         }
         R->r += R->dr;                 /* ★ 一手 `fadd [eax+0x8]` ✓ 线性 ✓ */
         if (--R->life <= 0) {          /* ★ 一手 `dec [eax+0x24]` ✓ 到 0 释放 ✓ */
-            if (R->vm) pofv_eb_ring_close(&R->vm);
+            if (R->vm) {   /* ★★★★★ 2026-10-13（★ owner 实跑："★ **持续时间无限**" ✗）：
+                            *   ★ ★ **病根** ✗：★ 450/451/452（CA 环那三支 ✓）★ **有 `stop();` 与 `delete();`
+                            *   ★ 但★没有 `interruptLabel`** ✗✗ ⇒ ★ `stop()` 把时间线**冻住** ✓ ⇒
+                            *   ★ 脚本**永远走不到自己那句 `delete()`** ✗；★ 而 ★ `pofv_eb_ring_close()`
+                            *   ★ 发的是 ★ **`ce_anm_interrupt(vm, 1)`** ✗ ⇒ ★ **空操作**（没有 1 号处理器 ✓）
+                            *   ★ ⇒ ★ ★ **VM 永生在最大半径** ✓✓（★ 正是你看到的 ✓）。
+                            *   ★ ⇒ ★ CA 这一路改用 ★ **`ce_anm_delete`（硬删）** ✓ —— ★ 它本来就不吃 interrupt ✓。
+                            *   ★（★ `pofv_eb_ring_close` 仍留给 432 那路 ✓：★ 432 **有** `interruptLabel(1)` ✓
+                            *   ★ ⇒ ★ 那边 interrupt 有效、还能走淡出 ✓。）*/
+                ce_anm_delete((uint32_t)R->vm); R->vm = 0; }
             R->active = 0; R->r = 0.0f; R->dr = 0.0f; R->kind = 0;
         }
     }
