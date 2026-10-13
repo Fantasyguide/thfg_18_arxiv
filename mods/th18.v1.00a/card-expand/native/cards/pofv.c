@@ -4492,7 +4492,10 @@ static void pofv_c4_tick(void)
         if (b->x < -(POFV_FIELD_HALF_W + POFV_C1_OFF_MARGIN) ||
             b->x >  (POFV_FIELD_HALF_W + POFV_C1_OFF_MARGIN) ||
             b->y < -POFV_C1_OFF_MARGIN || b->y > (POFV_FIELD_H + POFV_C1_OFF_MARGIN) || b->age >= POFV_C4_BULLET_LIFE) {
-            if (b->vm) { ce_anm_delete((uint32_t)b->vm); b->vm = 0; }
+            /* ★ 2026-10-13（★ owner 口径 4 ✓）：★ 改用 `ce_anm_interrupt` ✓ ⇒ ★ 走脚本 457 的**消失支**
+             *   （★ 消失帧 + 加算 + 淡出 ✓）= ★ "★ **敌方弹碰到自机的消失动画**" ✓
+             *   （★ 原来 `ce_anm_delete` = 直接抹掉、无动画 ✗）；★ 与 C3 那三处同形 ✓。*/
+            if (b->vm) { ce_anm_interrupt((uint32_t)b->vm, 1); b->vm = 0; }
             b->live = 0;
             continue;
         }
