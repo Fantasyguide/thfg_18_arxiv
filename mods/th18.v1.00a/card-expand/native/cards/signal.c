@@ -3813,6 +3813,16 @@ static void signal_clear(ce_card_t *c)
     memset(s, 0, sizeof *s);
     s->last_graze = -1;
     s->last_lives = -1;
+    /* ★★ 2026-10-14（P21，修 P17 审计 F2/F3，与 110 对称）：**账本镜像与哨兵一起归零** ⇒
+     *   `ctor`（无论在 `+0x4c` 之后紧跟的那次 ✓，还是新拿卡时的分配 ✓）必然走"新局"支路 ✓。
+     *   修的两件事见 `LIFECYCLE-AUDIT.md` §4：
+     *     · **F2**：同关 retry / 从第 1 关退主菜单再重进 ⇒ 关号没变小 ⇒ 旧判据走恢复支路 ⇒
+     *       把上一局的信号账本带进新局 ✗（更早还叠加 `s_slot_keep111` 的陈旧镜像 ✗）；
+     *     · **F3**：首局哨兵 = -1 ⇒ 旧判据 `> 0` 为假 ⇒ 恢复全零静态 ⇒ `base = 0`、`delta_cap = 0` ✗
+     *       （111 的 Δ 声明用 `faith_score_unit - base` ⇒ 声明值仍等于 Δ ✓，受影响的是**上限与显示口径** ✗）。
+     *   ⚠ 不影响 `frag_idx`（它是卡内 `st` 的一部分，`memset` 上面已经清 ✓）。*/
+    faith_slot_init_111(&s_slot_keep111, signal_difficulty());
+    s_slot_stage111 = -1;
 }
 
 /* ★★ 2026-09-18：抽出「注册共享池 + 认领组合 UI 块」—— `on_load` 与 `on_tick_2` 都调它。
@@ -3876,7 +3886,13 @@ static int ctor(ce_card_t *c)
     signal_card_t *s = st(c);
 
     if (!s) return 0;
-    if (s_slot_stage111 > 0 && (int32_t)CE_CURRENT_STAGE() < s_slot_stage111) {
+    if (s_slot_stage111 < 0 || (int32_t)CE_CURRENT_STAGE() < s_slot_stage111) {
+        /* ★★ 2026-10-14（P21，修 P17 审计 F2/F3，与 110 对称）：
+         *   · `s_slot_stage111 < 0` = 进程内第一次（首次获得 / 新拿卡 / 刚被 `signal_clear` 归零）也算新局 ✓
+         *     —— 旧判据 `> 0` 让首局落进恢复支路 ⇒ 恢复全零静态 ⇒ `base = 0`、`delta_cap = 0`（F3 ✗）；
+         *   · 「同关 retry / 从第 1 关退主菜单再重进」关号没变小 ⇒ 旧判据落进恢复支路，
+         *     把上一局的信号账本带回来（F2 ✗）—— 现在由 `signal_clear()` 把哨兵置 -1 兜住 ✓。
+         *   ⚠ 进这个支路时**不动** `frag_idx` ✓（得分奖残索引只在一局开始清，见下面 `ctor` 尾注 ✓）。*/
         ce_log("signal: 新一局（stage %d -> %d）⇒ 信号账本归零（原 Δ %d）",
                (int)s_slot_stage111, (int)CE_CURRENT_STAGE(), (int)(s_slot_keep111.delta / FAITH_FIXED));
         faith_slot_init_111(&s->slot, signal_difficulty());   /* 基础按难度、Δ 上限 = 原版基础（§7.2）*/
