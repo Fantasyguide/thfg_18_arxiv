@@ -4311,10 +4311,15 @@ static void pofv_c4_emit(int dir)
     /* ★ 2026-10-13（★ 独立审计 `48e1d2c8` **R12** ✓）：★ 这里原来有个 `{ int a5 = …; (void)a5; }` 的块 ✗
      *   —— ★ 它的唯一作用是"算了个 `a5` 却没用" ✓（★ 旧版那两句"把位置写回 `(0,128)`"**早已删掉** ✓，
      *   见上一提交 ✓）⇒ ★ **整块删除** ✓（★ 纯死码 ✓）。*/
-    s_c4_b[k].vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), POFV_C_RING_SCRIPT, POFV_C4_VM_LAYER);
+    /* ★★★★★ 2026-10-13（★ owner：「★ C3/C4 的 VM 都得用**敌方弹幕的 VM**」✓）：★ 换成一手弹体 ✓
+     *   （★ 脚本 `457` ✓ = TH19 `bullet/bullet1.png` 的 8×8 三帧 ✓；★ 层 `8` ✓ —— ★ 层 13 是子弹那趟 ✓
+     *   ⇒ 8 在同列表内先画 ⇒ 被敌弹盖住 ✓）；★ **去掉 `set_color`** ✗（★ 它会连 `alpha` 一起覆盖 ✓
+     *   ⇒ ★ 会顶掉脚本里 owner 要的 `alpha ≤ 128` ✓）、★ **去掉 `set_scale(0.5)`** ✗
+     *   （★ 一手弹体是 **8×8 原尺寸** ✓）。★ C4 两个槽（一手 type44/type1 ✓）在**弹体**上同形 ✓
+     *   —— ★ 差别只在**粒子颜色**（★ 槽0 蓝 / 槽1 粉 ✓），★ 那部分在命中表现里做 ✓。*/
+    s_c4_b[k].vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), POFV109_BBALL_SCRIPT, POFV109_BBALL_LAYER);
     if (s_c4_b[k].vm) {
-        ce_anm_set_color((uint32_t)s_c4_b[k].vm, 0xffffffffu);
-        ce_anm_set_scale((uint32_t)s_c4_b[k].vm, 0.5f, 0.5f);
+        ce_anm_set_pos((uint32_t)s_c4_b[k].vm, s_c4_b[k].x, s_c4_b[k].y, 0.0f);
     }
 }
 
