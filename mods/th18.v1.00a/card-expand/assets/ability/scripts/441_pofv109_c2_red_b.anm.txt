@@ -17,8 +17,19 @@ script script441 {
     fmul(%F1, %F0);
     fmul(%F2, %F0);
     pos(%F1, %F2, 0.0f);
-    stop();
-    interruptLabel(1);
-+10: // 10
+    /* ★ 2026-10-13 照一手补后半段 ✓（`pl00.txt` script24 ✓ = 行 665–694 ✓；同 437 ✓）：
+     *   ★ 随机方向 + 半径 ≤255 的散开点 ⇒ `posTime(50,4,…)` + `scaleTime(50,1,0,0)` + `alphaTime(50,1,0)`
+     *   + `+50: delete()` ✓；★ 并去掉卡里多写的 `stop(); interruptLabel(1); +10: delete();` ✗
+     *   （★ 一手 script24 没有 `stop()`、也没有 `interruptLabel` ✓）。*/
+    fset(%F0, %RANDRAD);
+    fcos(%F1, %F0);
+    fsin(%F2, %F0);
+    fsetMul(%F0, %RANDF, 255.0f);
+    fmul(%F1, %F0);
+    fmul(%F2, %F0);
+    posTime(50, 4, %F1, %F2, 0.0f);
+    scaleTime(50, 1, 0.0f, 0.0f);
+    alphaTime(50, 1, 0);
++50: // 50
     delete();
 }
