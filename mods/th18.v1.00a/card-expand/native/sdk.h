@@ -1248,7 +1248,10 @@ void ce_hud_native_face_dim_tick(void);
 void ce_bullet_scan_probe(void);
 
 /* ★ z60：**可读性检查的 SDK 薄封装** —— 卡文件不引 `<windows.h>`（也不该引 ⇒ 那是平台头），
- *   所以迭代宏不能直接调 `IsBadReadPtr` ✓。实现见 `sdk.c`（内部就是 `IsBadReadPtr`）。*/
+ *   所以迭代宏不能直接调 `IsBadReadPtr` ✓。实现见 `sdk.c`（内部就是 `IsBadReadPtr`）。
+ *   ★★ 2026-10-14（P26）：**语义写清楚** —— `ce_ptr_readable()` 返回 **1 = 可读** ✓
+ *     （实现 = `p && !IsBadReadPtr(p, n)` ✓）⇒ 判"能不能走"要用 `ce_ptr_readable(...)` ✓，
+ *     **不是** `!ce_ptr_readable(...)` ✗（后者等于"指针坏" ✗）。*/
 int ce_ptr_readable(const void *p, unsigned n);
 
 /* ★ z58：**抽离出来的"怎么走"**（判据仍各卡自己写 ✓，owner 口径）——
@@ -1256,16 +1259,26 @@ int ce_ptr_readable(const void *p, unsigned n);
  *     `node.entry` = `zBullet*`）⇒ **只摸活弹** ✓（O(活弹)）；
  *   `CE_BULLET_POOL_FOR_EACH(b)`：走**2000 槽静态池**（老写法；顺序 = 数组下标 ✓）；
  *   两者都**不判断有效性** ⇒ 卡体里照旧 `if (!你的判据(b)) continue;` ✓。
- *   ⚠ 每一步都过 `IsBadReadPtr`（坏指针即停 ✓）、链表顺序 ≠ 数组顺序（顺序敏感的卡用 POOL ✓）。*/
+ *   ⚠ 每一步都过 `IsBadReadPtr`（坏指针即停 ✓）、链表顺序 ≠ 数组顺序（顺序敏感的卡用 POOL ✓）。
+ *
+ * ★★★ 2026-10-14（P26，**修一次真回归** ✗）：本宏原来把三处守卫写成了 `!ce_ptr_readable(...)` ✗
+ *   —— 而 `ce_ptr_readable()` 返回 **1 = 可读** ✓ ⇒ 原写法等于"要求指针**坏**才继续" ✗
+ *   ⇒ **链表一开头就退出、恒 0 次迭代** ✗（引入提交 = `8b8c9139`「敌弹扫描迁移继续」，
+ *     是 2026-10-12 那次抽取里我自己写反的 ✗）。后果：**所有走本宏的站点静默扫 0 次** ✗ ——
+ *     owner 实跑看到的「咲夜 111 支援特技 / 109 固灵结界 / 115 擦弹圈内的**敌弹变色失效**」✗
+ *     就是它 ✓（当时共 **11 个站点**：`lolk.c:488`、`signal.c:2100/2156`、`youkai.c:954/6936`、
+ *     `pofv.c:1944`、`season.c:714/1441`、`great_work.c:204/313`、`reverse.c:20` ✓）。
+ *   现在三处都改成 `ce_ptr_readable(...)` ✓：哨兵头可读 ⇒ 取 `head.next`；
+ *   节点可读、非空、且 ≠ 哨兵头（= 到尾）⇒ 取 `node.entry` 当 `b`；`b` 可读 ⇒ 进循环体 ✓。*/
 #define CE_BULLET_LIVE_FOR_EACH(b)                                                   \
     for (uint8_t *ce_bl_head = (CE_BULLET_MGR() ? (CE_BULLET_MGR() + CE_BM_TICK_LIST_HEAD) : 0), \
-                 *ce_bl_node = ((ce_bl_head && !ce_ptr_readable(ce_bl_head, 16))         \
+                 *ce_bl_node = ((ce_bl_head && ce_ptr_readable(ce_bl_head, 16))          \
                                     ? *(uint8_t *const *)(ce_bl_head + CE_BULLET_LIST_NEXT) : 0), \
                  *b = 0;                                                             \
              ce_bl_node && ce_bl_node != ce_bl_head &&                               \
-             !ce_ptr_readable(ce_bl_node, 16) &&                                        \
+             ce_ptr_readable(ce_bl_node, 16) &&                                        \
              ((b) = *(uint8_t *const *)ce_bl_node) != 0 &&                           \
-             !ce_ptr_readable((b), CE_BULLET_STATE + 2);                                \
+             ce_ptr_readable((b), CE_BULLET_STATE + 2);                                \
          ce_bl_node = *(uint8_t *const *)(ce_bl_node + CE_BULLET_LIST_NEXT))
 
 /* ★ z62：**带下标**的池遍历（给"按下标收集/消费"的卡用，例如 111 的 `counted[]`）——
