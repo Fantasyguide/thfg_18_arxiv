@@ -3649,6 +3649,15 @@ static void pofv_c1_tick(void)
 #define POFV_C3_HIT_W             30.0f
 #define POFV_C3_HIT_H             30.0f
 #define POFV_C3_VM_LAYER             6     /* ★ 2026-10-13 回退 ✗：层 6 可用（见 `POFV_STORM_VM_LAYER` 注释 ✓）*/
+/* ★★★★★ 2026-10-13（★ owner：「★ C3/C4 的 VM 都得用**敌方弹幕的 VM**」✓）：
+ *   ★ 弹体改用 ★ **一手原生的敌方弹幕弹体** ✓（脚本 `457` = `457_pofv109_bball.anm.txt` ✓，
+ *   ★ 三帧来自 TH19 `bullet/bullet1.png` 的 `sprite1/sprite0/sprite2` ✓，★ 8×8 小球 ✓）。
+ *   ★ 层 = **8** ✓（★ owner：「★ 层数最好在**敌方弹幕层数的下面**」✓ —— ★ 桩 `0x1c` = 层 13 = 子弹那趟 ✓
+ *   ★ ⇒ 8 同列表内先画 ✓ 被敌弹盖住 ✓；★ ❓跨列表次序未核 ⇒ 这是**旋钮** ✓）。
+ *   ★ 不再用 `POFV_C3_VM_LAYER`(6) + STORM 脚本 ✗（★ 那是 TH19 `ghost.anm` 的**可见圈** ✓，
+ *   ★ 圆心 `alpha(1)` 全透 + 边缘黑 ⇒ ★ 就是"**有伤害、零视觉**"的原因 ✓）。*/
+#define POFV109_BBALL_SCRIPT      457    /* ★ 本卡脚本段的下一个空闲号 ✓（最大 456 ✓）*/
+#define POFV109_BBALL_LAYER         8    /* ★ owner：层在敌弹下面 ✓（理由见脚本 457 的头部注释 ✓）*/
 #define POFV_C3_VM_SCALE_EVEN     0.25f    /* ❓⑤：偶波（一手 `etSprite(46)`）*/
 #define POFV_C3_VM_SCALE_ODD      0.35f    /* ❓⑤：奇波（一手 `etSprite(47)`）*/
 
@@ -3752,14 +3761,17 @@ static void c3_fire_wave(void)
         }
         b->spd = POFV_C3_SPEED;
         b->age = 0; b->bounces = 0; b->live = 1;
-        b->vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_POFV109_STORM, POFV_C3_VM_LAYER);
+        b->vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), POFV109_BBALL_SCRIPT, POFV109_BBALL_LAYER);
         POFV_DBGLOG("pofv: [DBGC3] bullet i=%d vm=%d spawn_ok=%d pos=(%.1f,%.1f) dir=(%.2f,%.2f) spd=%.2f",
                     i, (int)b->vm, b->vm ? 1 : 0, (double)b->x, (double)b->y,
                     (double)b->dx, (double)b->dy, (double)b->spd);
+        (void)scale;   /* ★ 2026-10-13：★ 8×8 的一手弹体用**原尺寸**（scale 1:1 ✓）⇒ 那两个奇偶 scale（0.25/0.35）
+                        *   ★ 是给旧的 STORM 大圈用的 ✗ ⇒ 本支不再使用 ✓（★ 保留变量只为少改一处 ✓）。*/
         if (b->vm) {
             ce_anm_set_pos((uint32_t)b->vm, b->x, b->y, 0.0f);
-            ce_anm_set_scale((uint32_t)b->vm, scale, scale);                     /* ❓⑤ 奇偶近似 */
-            ce_anm_set_color((uint32_t)b->vm, POFV_C_RING_COLOR);                /* ★ owner：红 ✓ */
+            /* ★ 不再 `set_scale` / `set_color` ✓：★ 一手弹体是 8×8 原尺寸 ✓，
+             *   ★ 颜色在贴图里 ✓（★ 并且 `set_color` 会**连 alpha 一起覆盖** ✗ ⇒ 会顶掉脚本里
+             *   ★ owner 要的 `alpha ≤ 128` ✓）。*/
         }
     }
 }
