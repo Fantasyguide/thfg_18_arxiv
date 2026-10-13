@@ -195,51 +195,6 @@ int32_t season_drop_native_tier(int32_t native_timed_count)
  *   state 4 已触发      ：必须看到松手才回 0 ⇒ 同一对按键只算一次（三连按 = 1 次，不是 2 次）
  *
  * ⚠ 与 TH16 无关（TH16 没有切季节键）；放这里的唯一理由是**可离线单测**（纯函数、不碰引擎地址）。*/
-void season_dtap_init(season_dtap_t *d)
-{
-    if (!d) return;
-    d->state = 0;
-    d->win = 0;
-}
-
-int season_dtap_tick(season_dtap_t *d, int z_held)
-{
-    if (!d) return 0;
-
-    switch (d->state) {
-    case 0:                                     /* 空闲：等第一次按下 */
-        if (z_held) {
-            d->state = 1;
-            d->win = SEASON_DTAP_WINDOW;        /* ★ 窗口从**第一次按下**这一刻起算 */
-        }
-        return 0;
-
-    case 1:                                     /* 第一次按下：等「放开」这一下 */
-        if (d->win > 0) --d->win;
-        if (!z_held) {
-            d->state = (d->win > 0) ? 2 : 0;    /* 窗口已经走完才松手 ⇒ 这次手势作废 */
-        } else if (d->win == 0) {
-            d->state = 3;                       /* 一直按着（窗口用光）⇒ 作废，等松手才重新武装 */
-        }
-        return 0;
-
-    case 2:                                     /* 已松手：等第二次按下（窗口内）*/
-        if (z_held) {
-            d->state = 4;                       /* ★ 触发；等这次松手才重新武装（防连发）*/
-            return 1;
-        }
-        if (d->win > 0) {
-            --d->win;
-            if (d->win == 0) d->state = 0;      /* 窗口内没等到第二次按下 ⇒ 清零 */
-        }
-        return 0;
-
-    case 3:                                     /* 第一次按太久：等松手 → 回空闲 */
-        if (!z_held) d->state = 0;
-        return 0;
-
-    default:                                    /* state 4：刚触发完，等松手 → 回空闲 */
-        if (!z_held) d->state = 0;
-        return 0;
-    }
-}
+/* ★★★ 2026-10-14（P23）：`season_dtap_init()` / `season_dtap_tick()` 的**实现已搬进
+ *   共享件 `cards/dtap_core.c`** ✓（逻辑逐字未改，只把写死的窗口换成结构里的字段 ✓）。
+ *   这里不再有定义；本卡的薄包装在 `season_core.h` 里（`static inline`）✓。*/

@@ -79,6 +79,7 @@
 #include <stddef.h>          /* sdk.h 的 ce_item_collect_all 用了 size_t（内置 Linux 头不带）*/
 #include <string.h>
 #include <stdio.h>
+#include "dtap_core.h"   /* ★ P23：双击 Z 的共享状态机（与 116 同一份 ✓）*/
 #include "sdk.h"
 #include "faith.h"
 #include "ufo_bounty.h"   /* ★ 112 压缩包的等价计数广播（owner：三张卡都接）*/
@@ -390,6 +391,7 @@ typedef struct {
     int32_t       opt_script;     /* 当前子机贴图脚本（-1 = 没申请）*/
     int32_t       opt_on;         /* 1 = 本帧本卡是子机声明层的落笔者（开火门的条件）*/
     int32_t       formation;      /* = `th11:0x8bac`，0..4；一手的循环是 `(n+1)%5` */
+    ce_dtap_t     dtap;           /* ★ 2026-10-14（P23）：**双击 Z** 状态机（与 116 共用实现 ✓）；零值即安全 ✓，`clear_card` 的 memset 已够 ✓ */
     int32_t       patch_latch;    /* ❓ 自定：换档的按下沿闩锁（一手是电平，会长按走马灯）*/
     int32_t       z_held;         /* ★ 2026-09-16：Z 已连续按住的帧数（0 = 这一帧没按）—— 换档的新鲜度门用 */
     int32_t       shift_held;     /*   同上，Shift。判据见 `signal_core_patchouli_fresh()` */
@@ -2414,14 +2416,20 @@ static void signal_support_patchouli(signal_card_t *s)
 {
     uint32_t in = CE_INPUT_HELD();
 
-    s->z_held     = (in & SIGNAL_IN_SHOT)  ? (s->z_held + 1)     : 0;
-    s->shift_held = (in & SIGNAL_IN_FOCUS) ? (s->shift_held + 1) : 0;
-    if (!signal_core_patchouli_fresh(in, s->z_held, s->shift_held)) { s->patch_latch = 0; return; }
-    if (s->patch_latch) return;
-    s->patch_latch = 1;
+    /* ★★★ 2026-10-14（P23，owner 需求）：「111 魔理沙特技**切换自机**请改成**双击 z**、
+     *   与 116 切换季节一致」✓
+     *   · 旧触发 = `signal_core_patchouli_fresh()`（要求 **Shift+Z 同时按下、且各自都在
+     *     5 帧内** ✗，一手 `th11:0x43605e`/`0x43606d` 那两个 `cmp …,5` 的门）⇒ 与 116 的手势不一致 ✗；
+     *   · 现在 = **与 116 同一份共享状态机** `ce_dtap_tick()`（实现 `cards/dtap_core.c` ✓）：
+     *     手势 = **不按 Z → 按 Z → 放开 → 再按**（窗口 8 帧 ✓，语义与出处见 `dtap_core.h` ✓）。
+     *   ⚠ 本卡**不再调** `signal_core_patchouli_fresh()` ✗ —— 那个函数仍留在 `signal_core.h`
+     *     （未删 ✓，只是本卡不用了 ✓）；`s->z_held` / `s->shift_held` / `s->patch_latch`
+     *     也不再参与换元素（字段保留 ✓，供日后核对历史行为 ✓）。
+     *   ⚠ `s->dtap` 的零值即安全（`window == 0` 会回落到默认 8 帧 ✓）⇒ 不依赖任何初始化调用 ✓。*/
+    if (!ce_dtap_tick(&s->dtap, (in & SIGNAL_IN_SHOT) != 0)) return;
     s->formation = signal_formation_wrap(s->formation + 1);
     ++s->stat_patchouli;
-    ce_log("signal: 帕秋莉·子机配置 -> 元素 %d（档 %d 的子机组 0x%02x / 主炮组 0x%02x）",
+    ce_log("signal: 帕秋莉·子机配置 -> 元素 %d（双击 Z；档 %d 的子机组 0x%02x / 主炮组 0x%02x）",
            (int)s->formation, signal_marisa_level(),
            (int)s_marisa_opt[signal_marisa_elem(s)][signal_marisa_level()][0],
            (int)s_marisa_main[signal_marisa_elem(s)][signal_marisa_level()]);

@@ -244,8 +244,12 @@ test-host:
 	./tests/build/test_vitem_batch
 	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_peashooter_core tests/test_peashooter_core.c cards/peashooter_core.c
 	./tests/build/test_peashooter_core
-	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_season_core tests/test_season_core.c cards/season_core.c
+	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_season_core tests/test_season_core.c cards/season_core.c cards/dtap_core.c
 	./tests/build/test_season_core
+## ★ 2026-10-14（P23）：「完整双击」共享状态机（116 与 111 同一份实现 ✓；
+##   语义与出处见 cards/dtap_core.h；用例①–⑦逐条对应 test_season_core 的原有用例 ✓）。
+	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_dtap_core tests/test_dtap_core.c cards/dtap_core.c
+	./tests/build/test_dtap_core
 	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_lolk_core tests/test_lolk_core.c cards/lolk_core.c
 	./tests/build/test_lolk_core
 	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_ouroboros_core tests/test_ouroboros_core.c cards/ouroboros_core.c
