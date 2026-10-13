@@ -8118,6 +8118,15 @@ static int on_tick_2(ce_card_t *c)
 static int on_load(ce_card_t *c)
 {
     (void)c;
+    /* ★★★★★ 2026-10-13（★ owner 口径 ✓）：★ **换面（新一关）⇒ 等级重置成初值** ✓ ——
+     *   ★ 挂 `on_load` 的**依据**：★ 它 **每关都会再跑一次** ✓（★ 仓内既有说明：
+     *   `cards/faith_hud.h:28`「★ `on_load`（**每关都会再跑一次**）」✓、
+     *   `cards/hud_dim.h:106`「★ **新开一关** / `on_run_reset` / `on_load` 要 …」✓）。
+     *   ★ 初值 = ★ **难度初值** ✓（★ C3 = `POFV_C3_LEVEL_DEFAULT` ✓；
+     *   ★ **C4 = `max(3, 难度初值)`** ✓ —— ★ 只有 Lv3+ 的 C4 才有符卡 ✓，见那两处常量注释 ✓）。
+     *   ★ 局末/删卡那条路仍走 `clear_card` ✓（★ 两边同值 ✓，★ 不会打架 ✓）。*/
+    s_c3_lv_n = POFV_C3_LEVEL_DEFAULT;
+    s_c4_lv_n = POFV_C4_LEVEL_DEFAULT;
     pofv_hud_chg_claim();
     return 0;
 }
