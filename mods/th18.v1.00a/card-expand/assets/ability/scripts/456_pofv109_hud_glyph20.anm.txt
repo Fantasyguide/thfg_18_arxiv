@@ -19,7 +19,11 @@ script script456 {
     type(1);
     layer(20);
     resolutionMode(2);
-    pos(0.0f, 0.0f, 0.0f);
+    /* ★★★★★ 2026-10-13：★ **去掉了 `pos(0.0f, 0.0f, 0.0f);`** ✗（owner：「★ n/m 的 **x 还是固定的**、
+     *   y 会正常运动」✓）—— ★ **依据 = 能正确显示的 117** ✓：★ `117_season_glyph.anm.txt` 里
+     *   **根本没有 `pos()`** ✓（★ 只有 sprite/ins_431/type/layer/resolutionMode/alpha/stop ✓）。
+     *   ★ 代码侧已核对：★ 卡里两个簇的 `bx` 都是 `SURF_X(自机x) + DX` ✓ 且**每帧** `set_pos` 都写 ✓
+     *   ⇒ ★ 卡侧**没有**常量锚住 x ✗ ⇒ ★ 能在下游覆盖它的只剩**脚本自己的 `pos()`** ✓ ⇒ 去掉 ✓。*/
     alpha(255);
     stop();
     interruptLabel(1);
