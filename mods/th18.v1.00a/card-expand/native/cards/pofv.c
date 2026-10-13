@@ -2649,7 +2649,11 @@ static void c2_ring_vm_sync(float r)
     if (r <= 0.0f) return;
     if (!s_c2.ring_vm) {
         const uint32_t id = ce_anm_spawn(CE_ABILITY_ANM(),
-                            CE_ANM_ABILITY_SCRIPT_POFV109_C_RING_ARC, 6);   /* ★ 2026-10-13 回退 ✗：层 6 可用 ✓ */
+                            CE_ANM_ABILITY_SCRIPT_POFV109_C_RING_ARC, 6);   /* ★ 2026-10-13 审计 `a39d612c` 订正 ✗：
+                            ★ **这个层实参是死参** ✗ —— ★ 脚本 432 自己写了 `layer(13)` ✓，★ 引擎里**脚本的
+                            ★ `layer()` 覆盖 instantiate 的层参数** ✓（★ `0x405c50` 写层 → ★ `0x405c91` 才
+                            ★ `AnmVm__run` ✓）★ ⇒ ★ 层由脚本决定、**此参数仅默认值** ✓；
+                            ★ 原来那句"★ 层 6 可用 ✓"✗ 与观感**无关** ✓。*/
         /* ★★★★★ 2026-10-13（owner：「★ C2 对了但★ **似乎缺少消弹圈**」✓）—— 加诊断 ✓：
          *   ★ 已排除：★ 层 6（★ owner 实跑见过层 6 的红环 ✓）、★ `BAND_W`（= 1.0f ✓）、
          *   ★ 脚本（★ **与 C3/C4 是同一个 432** ✓，★ `:2613` ✓）⇒ ★ 差别只在 **C2 这条的传参/时序** ✓。
@@ -8621,7 +8625,9 @@ static void pofv_barrier_break_fx(void)
     if (!p) return;
     for (i = 0; i < 3; ++i) {
         if (s_barrier_break_vm[i] && ce_anm_get_vm((uint32_t)s_barrier_break_vm[i])) continue;
-        s_barrier_break_vm[i] = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), fx[i], 6);   /* ★ 2026-10-13 回退 ✗：层 6 可用 ✓ */
+        s_barrier_break_vm[i] = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), fx[i], 6);   /* ★ 2026-10-13 审计 `a39d612c` 订正 ✗：
+                            ★ **层实参是死参** ✗ —— ★ 脚本 453/454/455 各自写了 `layer(6)` ✓ **覆盖**它 ✓
+                            ★ ⇒ ★ **层由脚本决定、此参数仅默认值** ✓；★ 原来那句"★ 层 6 可用 ✓"✗ 与观感无关 ✓。*/
         if (s_barrier_break_vm[i]) {
             vm_set_world_pos((uint32_t)s_barrier_break_vm[i], p[0], p[1]);   /* ★ 在玩家身上 ✓（一手 ✓）*/
             ++n;
