@@ -45,3 +45,19 @@ python3 native/tools/doc_claims.py check             # 有发现则 rc=1（**尚
 | C9 | `native/sdk_core.c:967` | 注释写「一手（**th12–th17 四作同形**）：每 +1 擦弹 ⇒ 最大得点 +1」✗；一手只有 **th12–th15** ✓（th16/th17 **两作独立证实擦弹不写 PIV** ✓；声明擦弹族的只有 112/113/114/115 ✓）| th16/th17 子代理 + `OVERVIEW.md:216/233` | 共享件（SDK）| **P14a** 批次改注释 + 按 R2 登记 `AUDIT.md` §BE ✓（本文只记录，不改 ✗ R4）|
 
 > 数值本身**全部一致**：六作（th12–th17）的 `init`/`cap` 与代码表**逐项 0 差** ✓ —— 详见 [`MAXPOINT-AUDIT.md`](MAXPOINT-AUDIT.md) ✓。
+
+### 0.2 开工清单的**第 4 个陷阱**（2026-10-14 实测，P20 批次踩到）
+
+- ⚠ **在 `local/` 下做 `git checkout` / `git restore`（例如 `git checkout -- local/README.md`）会把符号链接变成实体目录** ✗
+  ⇒ `sites.py check` 立刻报「**找不到样本**：<worktree>/local/th18.v1.00a/th18.exe」✗（`make release` 的发布闸 ① 变红 ✗）。
+  **修法**：`rm -rf local && ln -s <主树>/local local` ✓（`rm -rf` 不会跟随符号链接 ✓）。
+- **期望状态**：`local` 是**符号链接** ✓ + `git status` 里长期有一条 `D local/README.md` —— 因为 `local/README.md` 是 `local/` 下**唯一被跟踪**的例外 ✓；
+  它是**假删除** ✗（文件通过链接可见 ✓，只是 git 不跟随目录符号链接 ✓）⇒ **永不 stage 它** ✓（`git add` 只点名自己的文件 ✓）。
+- 另注：主树的 `native/th18_card_expand.dll` **会被别的会话重建** ✗ ⇒ `make release` 之后若 `local/sync_modkit_dll.sh` 读到的 md5 与发布闸记录的不同 ✗，
+  说明**别人刚在主树构建过** ✓ ⇒ 必须从**自己 worktree 的构建产物**显式 `cp` 到各处并逐一 `md5sum` 核对 ✓（本轮即如此：闸记 `3e23c44a…`，主树已变成 `ae55d165…` ✗）。
+
+## 1c. 流程失误留痕（2026-10-14，P16 的版本声明漏提交）
+
+| # | 现象 | 根因 | 处置 |
+| :-: | --- | --- | --- |
+| C10 | **共享线 `check-docs` 曾为红** ✗：`MAXPOINT-AUDIT.md` 引了 13 个地址但**没有版本声明**（`[version]` 闸）| P16 批次里我在 worktree 补了这行、跑绿 ✓，但**没 commit** ✗ 就直奔开 PR ⇒ PR 里的版本仍是旧的 ✗（`0ccee42f` 里只有正文那 2 处「版本」字样）| 已在 **P20 批次**（`fix/p17-f1-bomb10-unregister`）补回 ✓；**教训**：*闸绿的是「工作区」，提交的是「索引」* —— 每次 `check-docs` 绿之后必须**再看一眼 `git status` 有没有未提交的修改** ✓ |
