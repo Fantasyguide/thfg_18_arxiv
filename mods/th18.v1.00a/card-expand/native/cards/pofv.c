@@ -2488,6 +2488,14 @@ static void pofv_c2_tick(uint32_t id)
          *   ★ ⇒ ★ 我先前把"同帧"的对象当成了**父级** ✗ ⇒ 才误改到 60 ✗。*/
         if (s_c2.age == POFV_C2_POINT_END) {
             int k4;
+            /* ★★★★★ 2026-10-13 owner 报「C2 还是炸了两次」⇒ ★ 加**存活/复用**诊断 ✓：
+             *   ★ 在**发中断那一刻**把 3 个句柄与它们的**存活状态**打出来 ✓ ⇒ 与 60 / 105 两处对照，
+             *   ★ 就能判出"第二次"是不是**句柄被复用**（★ 死句柄被别的 VM 接管）造成的 ✓。*/
+            ce_log("pofv: [C2ORB] 中断@45 vm=(%d,%d,%d) live=(%d,%d,%d)",
+                   (int)s_c2.orb_vm[0], (int)s_c2.orb_vm[1], (int)s_c2.orb_vm[2],
+                   s_c2.orb_vm[0] ? (ce_anm_get_vm((uint32_t)s_c2.orb_vm[0]) ? 1 : 0) : -1,
+                   s_c2.orb_vm[1] ? (ce_anm_get_vm((uint32_t)s_c2.orb_vm[1]) ? 1 : 0) : -1,
+                   s_c2.orb_vm[2] ? (ce_anm_get_vm((uint32_t)s_c2.orb_vm[2]) ? 1 : 0) : -1);
             for (k4 = 0; k4 < POFV_C2_POINTS; ++k4)
                 if (s_c2.orb_vm[k4]) ce_anm_interrupt((uint32_t)s_c2.orb_vm[k4], 1);
         }
@@ -2505,6 +2513,12 @@ static void pofv_c2_tick(uint32_t id)
     /* ⑤ 收尾（105 帧到 ⇒ 环淡出、无敌撤声明、状态归零 ✓）*/
     if (++s_c2.age >= POFV_C2_TOTAL) {
         c2_ring_vm_release();  /* ★ 范围圈：随 C2 一起收（淡出后由 clear 兜底 ✓）*/
+        ce_log("pofv: [C2ORB] 收尾@105 vm=(%d,%d,%d) live=(%d,%d,%d)（★ 若某台还 live=1 ✗ ⇒ 那台没按 +60 自删 ✓，"
+               "★ 与 45 那条对照即可判【爆两次】是否句柄复用 ✓）",
+               (int)s_c2.orb_vm[0], (int)s_c2.orb_vm[1], (int)s_c2.orb_vm[2],
+               s_c2.orb_vm[0] ? (ce_anm_get_vm((uint32_t)s_c2.orb_vm[0]) ? 1 : 0) : -1,
+               s_c2.orb_vm[1] ? (ce_anm_get_vm((uint32_t)s_c2.orb_vm[1]) ? 1 : 0) : -1,
+               s_c2.orb_vm[2] ? (ce_anm_get_vm((uint32_t)s_c2.orb_vm[2]) ? 1 : 0) : -1);
         {   int k2;                                     /* ★ 3 台可见物：**只清句柄、不再中断** ✗ */
             /* ★★★★★ 2026-10-13（★ 排除"爆两次"的嫌疑 A ✓）：
              *   ★ 一手**只在 45 帧**对 3 台父级发 `中断 1` ✓（`0x53b3e1`–`0x53b3f5` ✓）——
