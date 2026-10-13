@@ -24,19 +24,19 @@
 
 | 行为 | 何时触发 | 代码站点 | 一手出处 / 理由 | 等级 |
 | --- | --- | --- | --- | :-: |
-| 聚焦/低速时不显示判定点（把判定点指示 VM 的 color_1 alpha 写 0） | 每帧绘制阶段 on_draw 被调、游戏线程在、自机指针非空、自机处于聚焦、且 player+0x476b0 的 anm 句柄非 0 | native/cards/th06rank.c:491, native/cards/th06rank.c:495, native/cards/th06rank.c:497 | th18:0x45b433（聚焦且 player+0x476b0==0 时建 script 0x1a / layer 0xe 的 VM 并写回句柄，0x45b45d 每帧写 scale）；隐藏手段「alpha=0」= … | 复刻 |
-| PlayRank 的每帧上升通道：帧数条件 +1.00 与擦弹 +0.06 | 每个正常游玩帧（ce_item_frame 0x446ee3）且无对话框 ⇒ stage_frame++；当 stage_frame % (2400−残机×240) == 0 且 stage_frame != 0 时 … | native/cards/th06rank.c:213, native/cards/th06rank.c:398, native/cards/th06rank_core.c:94 | th06:EnemyManager.cpp:162-170（`subrankIncreaseFrame = 2400 − livesRemaining*240`、`Inc(100)`，整段被 `g_HasCurrent… | 复刻 |
-| 逐颗道具的 rank 增：小 P / 蓝点（金钱） / 命碎 / B 碎 | on_item_collect（0x44625f，type 分派前）逐颗道具；type 1 = 小 P、2 = 蓝点、4/0x10 = 命碎、6/0x11 = B 碎；type 3 大 P 与其它 type 不加 | native/cards/th06rank.c:263, native/cards/th06rank.c:288, native/cards/th06rank_core.c:124 | th06:ItemManager.cpp:205 `Inc(1)`（小 P）/ 234 `Inc(30)` / 238 `Inc(3)`（蓝点两档）；th18 道具 type 分派表 = 0x44625f + 跳表 0… | 复刻 |
-| 出屏 −0.03 与「整合资源」正向库存增量（整命 +2.00 / 整炸 +0.05，含同窗口碎片净减抑制） | on_item_frame 每帧扫道具池：槽 state != 0 且（\|pos.x\| ≥ 200.0 或 pos.y > 472.0）即记一次 −0.03；on_tick_2 每帧对 CURRENT_LIVES … | native/cards/th06rank.c:244, native/cards/th06rank.c:411, native/cards/th06rank_core.c:196 | th06:ItemManager.cpp:145 `Dec(3)`（出屏）、291 `Inc(5)`（整炸）、299 `Inc(200)`（整命）；出屏几何一手 = th18:0x445e13/0x445e20/0x4… | 复刻 |
-| 放 Bomb −2.00（含决死 B）与非决死 Miss −16.00（看救援层 acc 让位） | on_bomb_spent（0x4203bc）每次炸弹消耗；on_death_after_deathbomb（虚表 +0x0c）在决死窗口后仍死时触发，且传入的 acc == 0（前面没有卡取消这次死亡） | native/cards/th06rank.c:422, native/cards/th06rank.c:438, native/cards/th06rank.c:442 | th06:Player.cpp:185 `Dec(200)`、225 `Dec(1600)`；救援层 acc 契约一手 = th18:0x45c116 `push edi` / 0x45c121 `or edi,eax… | 复刻 |
-| 每关开场按 th06 重置 rank 状态（subRank = 0、关卡帧计数 = 0、min/max 按难度重设并撤销库存差分基准） | on_stage_start；另在 on_tick_2 每帧检测难度位 0x4ccd00 变化，变了就按新难度表重设（练习/特别模式切档保险） | native/cards/th06rank.c:455, native/cards/th06rank.c:180, native/cards/th06rank_core.c:155 | th06:GameManager.cpp:357 `mgr->subRank = 0;`（每关开场）+ 345-347（rank/min/max 只在开新 run/通关时按难度表重设，关卡之间保留）；spec §2.2… | 复刻 |
-| 收点线控制：不满 P 时过线不吸道具（对 PoC 高度层声明「遮」，落笔值 = min(语义高度, 自机 y)）+ 106 在场整局不画那条开局收点指示线 | on_tick_2 每帧算 gate = (CURRENT_POWER < [0x4ccd3c] MAX_POWER)，gate=1 时 ce_poc_declare_mask(c,1) 并 ce_full_p_gat… | native/cards/th06rank.c:380, native/cards/th06rank.c:157, native/cards/th06rank.c:521 | ① 一手：TH06 ItemManager.cpp 的道具 tick「state==1 或（128 ≤ currentPower 且 positionCenter.y < 128.0）⇒ 进吸引态」⇒ 满 P + 在线… | 自定 |
+| 聚焦/低速时不显示判定点（把判定点指示 VM 的 color_1 alpha 写 0） | 每帧绘制阶段 on_draw 被调、游戏线程在、自机指针非空、自机处于聚焦、且 player+`0x476b0` 的 anm 句柄非 0 | native/cards/th06rank.c:491, native/cards/th06rank.c:495, native/cards/th06rank.c:497 | `th18:0x45b433`（聚焦且 player+`0x476b0`==0 时建 script 0x1a / layer 0xe 的 VM 并写回句柄，`0x45b45d` 每帧写 scale）；隐藏手段「alpha=0」= … | 复刻 |
+| PlayRank 的每帧上升通道：帧数条件 +1.00 与擦弹 +0.06 | 每个正常游玩帧（ce_item_frame `0x446ee3`）且无对话框 ⇒ stage_frame++；当 stage_frame % (2400−残机×240) == 0 且 stage_frame != 0 时 … | native/cards/th06rank.c:213, native/cards/th06rank.c:398, native/cards/th06rank_core.c:94 | th06:EnemyManager.cpp:162-170（`subrankIncreaseFrame = 2400 − livesRemaining*240`、`Inc(100)`，整段被 `g_HasCurrent… | 复刻 |
+| 逐颗道具的 rank 增：小 P / 蓝点（金钱） / 命碎 / B 碎 | on_item_collect（`0x44625f`，type 分派前）逐颗道具；type 1 = 小 P、2 = 蓝点、4/0x10 = 命碎、6/0x11 = B 碎；type 3 大 P 与其它 type 不加 | native/cards/th06rank.c:263, native/cards/th06rank.c:288, native/cards/th06rank_core.c:124 | th06:ItemManager.cpp:205 `Inc(1)`（小 P）/ 234 `Inc(30)` / 238 `Inc(3)`（蓝点两档）；th18 道具 type 分派表 = `0x44625f` + 跳表 0… | 复刻 |
+| 出屏 −0.03 与「整合资源」正向库存增量（整命 +2.00 / 整炸 +0.05，含同窗口碎片净减抑制） | on_item_frame 每帧扫道具池：槽 state != 0 且（\|pos.x\| ≥ 200.0 或 pos.y > 472.0）即记一次 −0.03；on_tick_2 每帧对 CURRENT_LIVES … | native/cards/th06rank.c:244, native/cards/th06rank.c:411, native/cards/th06rank_core.c:196 | th06:ItemManager.cpp:145 `Dec(3)`（出屏）、291 `Inc(5)`（整炸）、299 `Inc(200)`（整命）；出屏几何一手 = `th18:0x445e13`/`0x445e20`/0x4… | 复刻 |
+| 放 Bomb −2.00（含决死 B）与非决死 Miss −16.00（看救援层 acc 让位） | on_bomb_spent（`0x4203bc`）每次炸弹消耗；on_death_after_deathbomb（虚表 +0x0c）在决死窗口后仍死时触发，且传入的 acc == 0（前面没有卡取消这次死亡） | native/cards/th06rank.c:422, native/cards/th06rank.c:438, native/cards/th06rank.c:442 | th06:Player.cpp:185 `Dec(200)`、225 `Dec(1600)`；救援层 acc 契约一手 = `th18:0x45c116` `push edi` / `0x45c121` `or edi,eax… | 复刻 |
+| 每关开场按 th06 重置 rank 状态（subRank = 0、关卡帧计数 = 0、min/max 按难度重设并撤销库存差分基准） | on_stage_start；另在 on_tick_2 每帧检测难度位 `0x4ccd00` 变化，变了就按新难度表重设（练习/特别模式切档保险） | native/cards/th06rank.c:455, native/cards/th06rank.c:180, native/cards/th06rank_core.c:155 | th06:GameManager.cpp:357 `mgr->subRank = 0;`（每关开场）+ 345-347（rank/min/max 只在开新 run/通关时按难度表重设，关卡之间保留）；spec §2.2… | 复刻 |
+| 收点线控制：不满 P 时过线不吸道具（对 PoC 高度层声明「遮」，落笔值 = min(语义高度, 自机 y)）+ 106 在场整局不画那条开局收点指示线 | on_tick_2 每帧算 gate = (CURRENT_POWER < [`0x4ccd3c`] MAX_POWER)，gate=1 时 ce_poc_declare_mask(c,1) 并 ce_full_p_gat… | native/cards/th06rank.c:380, native/cards/th06rank.c:157, native/cards/th06rank.c:521 | ① 一手：TH06 ItemManager.cpp 的道具 tick「state==1 或（128 ≤ currentPower 且 positionCenter.y < 128.0）⇒ 进吸引态」⇒ 满 P + 在线… | 自定 |
 | 冴月麟彩蛋：往本 DLL 自己的静态字符串上再写一次同值「冴月麟」 | on_load 一次（sakuyue_write_once），零逻辑影响、不进任何判定、卡面文案不提 | native/cards/th06rank.c:82, native/cards/th06rank.c:91, native/cards/th06rank.c:167 | spec §2.4（用户 2026-09-10 新加：选一块不被读取、不参与任何判定的区域，优先 = 本卡 DLL 的 static const char）——无原作一手（TH06 无此物） | 自定 |
 
 **成本 / 冷却**：
 - 发动成本 / 冷却：无（被动卡，CE_CARD 只挂回调，没有 on_activate / active_recharge / 充能字段）（触发：—（被动常在，无发动动作）；站点：native/cards/th06rank.c:534, native/cards/th06rank.c:536；实现即此（CE_CARD(106, …) 的钩子集合里无主动卡字段）；卡表 patch/th18/cards.js 的 "106"（internal_name EOSD_PLAYRANK、price_tier 10））
 - Miss（非决死）代价：rank −16.00（触发：决死窗口过后仍死亡、且前面的卡没有取消这次死亡（acc == 0）；站点：native/cards/th06rank.c:442, native/cards/th06rank_core.c:69；th06:Player.cpp:225 `DecreaseSubrank(1600)`；挂槽语义 = 虚表 +0x0c on_death_after_deathbomb（非决死），spec §4）
-- 放 Bomb（含决死 B）代价：rank −2.00（触发：每次炸弹消耗（ce_bomb_spent 0x4203bc）；站点：native/cards/th06rank.c:422, native/cards/th06rank_core.c:69；th06:Player.cpp:185 `DecreaseSubrank(200)`（决死 B 与普通 B 走同一条），spec §3）
+- 放 Bomb（含决死 B）代价：rank −2.00（触发：每次炸弹消耗（ce_bomb_spent `0x4203bc`）；站点：native/cards/th06rank.c:422, native/cards/th06rank_core.c:69；th06:Player.cpp:185 `DecreaseSubrank(200)`（决死 B 与普通 B 走同一条），spec §3）
 - 不满 P 的代价：过收点线不吸道具，且 111「线上补满信号强度」同时被关（协同效应的负面侧）（触发：CURRENT_POWER < MAX_POWER（随 sht 变，如 128/400）时的每一帧；站点：native/cards/th06rank.c:377, native/cards/th06rank.c:380, native/cards/signal.c…；TH06 ItemManager.cpp 吸引态的充要条件（满 P + 线上）；TUNING §2.8 ②（用户口径「除非满 P，不加信号强度」）；AUDIT §BE-ET）
 
 | 数值 | 值 | 单位 | 站点 | 出处 |
@@ -48,20 +48,20 @@
 | 小 P（item type 1）rank 加成，及 110/111 在场合的 ×5 | 基础 +0.002 rank（存 1000 ÷ 5 = 200）；装了 110 或 111 时 ×5 ⇒ +0.01 rank | 存储（PERMILLE） | native/cards/th06rank_core.h:82, native/cards/th06rank_core.c:111, native/cards/th06rank.… | th06:ItemManager.cpp:205 `Inc(1)`；×5 = 用户 2026-09-11 定、spec §8（判据 ce_owned(110)\|\|ce_owned(111)） |
 | 碎片通道（TH18 自有，不读难度表）：命碎 / B 碎的逐颗 rank 加成 | 命碎 +0.70 rank（存 70000）；B 碎 +0.02 rank（存 2000） | 存储（PERMILLE）；命碎 3 颗 = +2.1 rank，B 碎 3 颗 = 1 张 | native/cards/th06rank_core.h:75, native/cards/th06rank_core.h:77, native/cards/th06rank.c… | spec §3 / §3.1（用户 2026-09-10 定的定值；「每命碎片数 = 3」一手见 spec §3 的 `0x4b40c8`/`0x4b3ff4` 表）；type 4/0x10 与 6/0x11 同通道 … |
 | 12 条增减里的其余六条（整命 / 整炸 / 出屏 / Miss / Bomb 的量） | 整命 +2.00（存 200000）；整炸 +0.05（存 5000）；出屏 −0.03（存 3000）；Miss −16.00（存 1600000）；Bomb −2.00（存 … | 存储（PERMILLE；单位锚点 = th06 原值 × 1000） | native/cards/th06rank_core.h:74, native/cards/th06rank_core.h:85, native/cards/th06rank_c… | th06:ItemManager.cpp:291 `Inc(5)` / 299 `Inc(200)` / 145 `Dec(3)`；th06:Player.cpp:185 `Dec(200)` / 225 `Dec(1… |
-| 出屏的几何判据（决定 −0.03 何时记一次） | \|pos.x\| ≥ 200.0 或 pos.y > 472.0 | 世界坐标 float（常量 0x4b9340 = 200.0f、0x4b93a4 = 472.0f） | native/cards/th06rank.c:71, native/cards/th06rank.c:238, native/cards/th06rank.c:240 | th18:0x445e13 `comiss`(y vs 472.0) + `ja 0x445e38`；th18:0x445e20 `movss xmm0,[edi+0xc2c]` + `andps`（清符号位）+ 0x… |
+| 出屏的几何判据（决定 −0.03 何时记一次） | \|pos.x\| ≥ 200.0 或 pos.y > 472.0 | 世界坐标 float（常量 `0x4b9340` = 200.0f、`0x4b93a4` = 472.0f） | native/cards/th06rank.c:71, native/cards/th06rank.c:238, native/cards/th06rank.c:240 | `th18:0x445e13` `comiss`(y vs 472.0) + `ja ``0x445e38```；`th18:0x445e20` `movss xmm0,[edi+0xc2c]` + `andps`（清符号位）+ 0x… |
 
 **跨卡协同**：
 - **110 风神录 / 111 地灵殿（小 P 的 rank 加成 ×5）**：两张卡把 P 点改成 +0.05 火力 = 5× ⇒ 106 的小 P rank 也 ×5（+0.002 → +0.01）；判据只用 SDK 存在性查询 ce_owned(110) \|\| ce_owned(111)（站点：native/cards/th06rank.c:263, native/cards/th06rank_core.c:112；spec §8「小 P 的 ×5 规则」（用户 2026-09-11 定）；spec-review §3.1 把它列为「不算跨卡耦合」的例外条）
 - **111 地灵殿（共享件「未满 P」声明层）**：106 每帧 ce_full_p_gate_declare(106, gate)；111 读 ce_full_p_gate_active() 置 signal_step_mod_t.no_line_topup ⇒ 关掉「线上未满就补满并钳到 100.00」那一支（擦弹 / 衰减照旧）；声明是粘性的、按卡 id 记账，删卡/局末 106 显式撤（站点：native/cards/th06rank.c:377, native/cards/signal.c:2194, native/sdk_core.h:560；TUNING §2.8（用户 2026-09-16za 口径「协同效应：除非满 P，不加信号强度」+ 边界表）；AUDIT §BE 详录 #38 / §BE-ET）
-- **原生卡 22（Kanako）与任何 PoC 高度声明者（收点线 / 指示线）**：两条：① 不满 P 时 106 的「遮」是覆盖位，无条件压过别家（原生卡 22 / 111）声明的收点线高度，落笔 min(语义高度, 自机 y)；② 106 在场整局清 `Gui+0x194` bit 0x2000 ⇒ 不画那条开局指示线（该 bit 的唯一原生置位者就是原生卡 22 的 on_load，且只置不清；106 每帧的落笔会把它重新清掉，幂等）（站点：native/cards/th06rank.c:380, native/cards/th06rank.c:157, native/sdk_core.h:211；WORK-PACKAGES §7-A / A2 / A4；一手 = th18:0x40c288（原生卡 22 置位，engine.h 记「只置不清」）与 th18:0x43af0b（唯一读点）；AUDIT §BE-ET）
+- **原生卡 22（Kanako）与任何 PoC 高度声明者（收点线 / 指示线）**：两条：① 不满 P 时 106 的「遮」是覆盖位，无条件压过别家（原生卡 22 / 111）声明的收点线高度，落笔 min(语义高度, 自机 y)；② 106 在场整局清 `Gui+0x194` bit `0x2000` ⇒ 不画那条开局指示线（该 bit 的唯一原生置位者就是原生卡 22 的 on_load，且只置不清；106 每帧的落笔会把它重新清掉，幂等）（站点：native/cards/th06rank.c:380, native/cards/th06rank.c:157, native/sdk_core.h:211；WORK-PACKAGES §7-A / A2 / A4；一手 = `th18:0x40c288`（原生卡 22 置位，engine.h 记「只置不清」）与 `th18:0x43af0b`（唯一读点）；AUDIT §BE-ET）
 - **36 CardNarumi / 37 CardPatchouli（每关开场的碎片补货）**：不经过道具池、on_item_collect 抓不到 ⇒ on_stage_start 里按 ce_owned(36) 补 +0.70（命碎）、ce_owned(37) 补 +0.02（B 碎），每次关卡开场各一次（站点：native/cards/th06rank.c:459, native/cards/th06rank.c:460；spec §8「每关开场补货」（用户 2026-09-11 定：算获得、给 rank）；无 th06 一手（TH18 侧接缝））
-- **原生救援卡 23 Eirin / 35 ShikiEiki（虚表 +0x0c 的 acc 契约）**：106 的 on_death_after_deathbomb 收到 acc != 0 时不记 Miss、不扣 −16.00（引擎把前面卡的返回值 OR 进 acc）；残余 = 排在 106 之后的救援者救下时 106 仍会记一笔假 Miss（原生 35 不看 acc）（站点：native/cards/th06rank.c:438, native/cards/th06rank.c:439；th18:0x45c116 `push edi` / 0x45c121 `or edi,eax` / 0x45c127 `test edi,edi`；原生样板 th18:0x40a4f3（CardEirin 第一条 `cmp [ebp+8…）
+- **原生救援卡 23 Eirin / 35 ShikiEiki（虚表 +0x0c 的 acc 契约）**：106 的 on_death_after_deathbomb 收到 acc != 0 时不记 Miss、不扣 −16.00（引擎把前面卡的返回值 OR 进 acc）；残余 = 排在 106 之后的救援者救下时 106 仍会记一笔假 Miss（原生 35 不看 acc）（站点：native/cards/th06rank.c:438, native/cards/th06rank.c:439；`th18:0x45c116` `push edi` / `0x45c121` `or edi,eax` / `0x45c127` `test edi,edi`；原生样板 `th18:0x40a4f3`（CardEirin 第一条 `cmp [ebp+8…）
 
 **已知未测**：
 - 判定点 alpha=0 的实跑观感：ANM 脚本若每帧重设颜色需靠 on_draw 每帧重写压住，AUDIT §AN6 只标 🟡 待实跑，仓库里没有 106 的实跑回报。
 - 满 P 闸改走「遮」之后的四条实跑验收（不满 P 过线不吸 / 满 P 照吸 / 计分逐位不变 / 开局看不到那条线）—— AUDIT §BE-ET §4 明文交给 owner，未见回报；SINGLE-CARD-TEST §th06 #1 仍写着旧的 §BE-EP 修法，状态陈旧。
 - 每帧扫 CE_ITEM_SLOTS = 4696 槽道具池做「已越界未删」预测的帧耗：无任何实测数据（同池的 112 在 AUDIT §AT 里也标「帧耗未测」）。
-- 「遮」的两个自定值本身没有实跑验证：CE_POC_TINY_BITS = 0x00800000（最小正规 float）与「钳位上限 = 自机 y、余量 0」都只在 TUNING §2.0t 自标 ❓自定 + 一条帧内载荷假设上成立。
+- 「遮」的两个自定值本身没有实跑验证：CE_POC_TINY_BITS = `0x00800000`（最小正规 float）与「钳位上限 = 自机 y、余量 0」都只在 TUNING §2.0t 自标 ❓自定 + 一条帧内载荷假设上成立。
 - 擦弹差分里 `if (d > 200) d = 200` 的阈值 200 无一手来源，代码注释自承是「一场对话/一帧挤进太多」的防溢出护栏。
 - 帧内顺序的未知量：ItemManager 的 UpdateFunc 优先级全仓无记载（th06rank.c:319-320 自承）⇒「碎片窗口」跨帧收口正确性只有推理；碎片净减抑制的边界（3 碎 = 2.1、净 0 不抑制）只在主机单测里验过，没有实跑对账。
 
@@ -73,31 +73,31 @@
 
 | 行为 | 何时触发 | 代码站点 | 一手出处 / 理由 | 等级 |
 | --- | --- | --- | --- | :-: |
-| 收下原生消弹小分道具（★ 通道）与自机弹命中 → 樱点与 +C 上涨 | on_item_collect 收到 TH18 type 9–0xe；on_shot_damage_any（断点 0x45f2a2） | cards/senro.c:1424, cards/senro_core.c:219, cards/senro.c:1448 | th07:0x43370b→0x433712（★ = 樱点/+C 各 +20，type 号 2026-09-15 按跳表块归属订正）；命中 th07:0x420638–0x420660 定 p、0x4211bd–0x4… | 一手 |
-| 自建樱点实体（挂共享点池）：满 P 转换与敌机掉落槽轮转表出「大樱点」，符卡结束那一大笔消弹出「小樱点」 | faith_convert_full_p_items() 满 P 每帧；on_enemy_death 且 32 项轮转表轮到 7；符卡结束下降沿 + 本帧无人认领消弹 ≥ 8 | cards/senro.c:1913, cards/senro.c:1847, cards/senro.c:1376 | 大樱点值 th07:0x433886/0x433895（1000+100×符卡奖励）；掉落轮转表 th07:0x49efa0 逐字节（engine/item/th07/01-sakura-items.md §4.3）；… | 复刻 |
-| +C 满 50000 自动展开森罗结界（540 帧）；正在放炸弹则排队到炸弹结束 | 樱点加法器里 plus ≥ 50000；或已排队且本帧不在放炸弹 | cards/senro_core.c:120, cards/senro_core.c:172, cards/senro.c:1341 | th07:0x42f5f7 闸门 / 0x42f623 cmp +C,0xc350 / 0x42f647 夹 / 0x42f652 call 0x441960；排队 th07:0x44196c/0x441983；时长 … | 一手 |
-| 结界持续期三件：每帧全屏自动回收道具（含自建绿点）、背景层压暗、自机贴图红/白每 2 帧闪 | senro_border_active() 为真时每帧（on_tick_2 / on_item_frame / on_draw） | cards/senro.c:1342, cards/senro.c:941, cards/senro.c:979 | 压暗曲线 th07:0x44158d–0x44162f（engine/spirit/th07/01-barrier-visual.md §4.3）；红白闪 th07:0x441553–0x44158a（同文 §4.2）… | 复刻 |
-| 结界中擦弹 → 樱点与最大樱点各 +80（高速）/ +30（低速），不动 +C | 原生擦弹计数（0x4ccd0c）差分 > 0 且结界展开中 | cards/senro.c:1353, cards/senro_core.c:205, cards/senro_core.c:207 | th07:0x43ed5f–0x43eda9（高速 0x50、低速 0x1e，两条分别走 0x42f789 / 0x42f736，都不动 plus）；低速位 = [player+0x240b]（senro_core.h… | 一手 |
-| 中弹 / 按 B = 灵击：结束结界 + 全屏消弹（引擎 mode 1 撒原生小分道具）+ 40 帧无敌；中弹时取消本次死亡 | on_death_before_deathbomb（卡虚表 +0x10）或 X 键上升沿（CE_ADDR_INPUT_PRESSED bit 0x002），且当时在结界中 | cards/senro.c:1195, cards/senro.c:1211, cards/senro.c:1224 | th07:0x441bd0（打断收尾）/0x441d8e（[player+0x23fc]=0x28）/0x440d1d（中弹门）/0x4419d2（按 B 门）；消弹 mode 1 的真值表 = engine/bull… | 一手 |
-| 结界自然到期结算：樱点与最大樱点各 +10000、得分 += 樱点、播公告 `Border Bonus %7d` 与 SE | 结界计时递减到 0（非中弹、非按 B 的收结界） | cards/senro_core.c:180, cards/senro.c:1083, cards/senro.c:1090 | th07:0x441670（0x44167a 最大樱点 +10000 / 0x441689 樱点 +10000 / 0x44169d–0x4416c6 分数 / 0x4416ee Plus=基准）；公告 kind 4 … | 一手 |
-| 左下角原版版式 HUD：上行 +C（5 位）、下行 樱点 / 最大樱点（6 位，≥1000000 时 7 位）+ 固定标签贴图；结界中 +C 变色放大 + 脉动花；樱点满值弹 `CherryPoint Max!` | 每游玩帧 on_draw（主菜单/商店里先收 VM 再返回） | cards/senro.c:1606, cards/senro.c:1620, cards/senro.c:1644 | th07:0x404690（AsciiManager::sub_404690）逐指令版式 / 定宽右对齐 / 结界指示三件：engine/spirit/th07/02-cherry-counter-hud.md §2、… | 复刻 |
+| 收下原生消弹小分道具（★ 通道）与自机弹命中 → 樱点与 +C 上涨 | on_item_collect 收到 TH18 type 9–0xe；on_shot_damage_any（断点 `0x45f2a2`） | cards/senro.c:1424, cards/senro_core.c:219, cards/senro.c:1448 | `th07:0x43370b`→`0x433712`（★ = 樱点/+C 各 +20，type 号 2026-09-15 按跳表块归属订正）；命中 `th07:0x420638`–`0x420660` 定 p、`0x4211bd`–0x4… | 一手 |
+| 自建樱点实体（挂共享点池）：满 P 转换与敌机掉落槽轮转表出「大樱点」，符卡结束那一大笔消弹出「小樱点」 | faith_convert_full_p_items() 满 P 每帧；on_enemy_death 且 32 项轮转表轮到 7；符卡结束下降沿 + 本帧无人认领消弹 ≥ 8 | cards/senro.c:1913, cards/senro.c:1847, cards/senro.c:1376 | 大樱点值 `th07:0x433886`/`0x433895`（1000+100×符卡奖励）；掉落轮转表 `th07:0x49efa0` 逐字节（engine/item/th07/01-sakura-items.md §4.3）；… | 复刻 |
+| +C 满 50000 自动展开森罗结界（540 帧）；正在放炸弹则排队到炸弹结束 | 樱点加法器里 plus ≥ 50000；或已排队且本帧不在放炸弹 | cards/senro_core.c:120, cards/senro_core.c:172, cards/senro.c:1341 | `th07:0x42f5f7` 闸门 / `0x42f623` cmp +C,`0xc350` / `0x42f647` 夹 / `0x42f652` call `0x441960`；排队 `th07:0x44196c`/`0x441983`；时长 … | 一手 |
+| 结界持续期三件：每帧全屏自动回收道具（含自建绿点）、背景层压暗、自机贴图红/白每 2 帧闪 | senro_border_active() 为真时每帧（on_tick_2 / on_item_frame / on_draw） | cards/senro.c:1342, cards/senro.c:941, cards/senro.c:979 | 压暗曲线 `th07:0x44158d`–`0x44162f`（engine/spirit/th07/01-barrier-visual.md §4.3）；红白闪 `th07:0x441553`–`0x44158a`（同文 §4.2）… | 复刻 |
+| 结界中擦弹 → 樱点与最大樱点各 +80（高速）/ +30（低速），不动 +C | 原生擦弹计数（`0x4ccd0c`）差分 > 0 且结界展开中 | cards/senro.c:1353, cards/senro_core.c:205, cards/senro_core.c:207 | `th07:0x43ed5f`–`0x43eda9`（高速 0x50、低速 0x1e，两条分别走 `0x42f789` / `0x42f736`，都不动 plus）；低速位 = [player+`0x240b`]（senro_core.h… | 一手 |
+| 中弹 / 按 B = 灵击：结束结界 + 全屏消弹（引擎 mode 1 撒原生小分道具）+ 40 帧无敌；中弹时取消本次死亡 | on_death_before_deathbomb（卡虚表 +0x10）或 X 键上升沿（CE_ADDR_INPUT_PRESSED bit `0x002`），且当时在结界中 | cards/senro.c:1195, cards/senro.c:1211, cards/senro.c:1224 | `th07:0x441bd0`（打断收尾）/`0x441d8e`（[player+`0x23fc`]=0x28）/`0x440d1d`（中弹门）/`0x4419d2`（按 B 门）；消弹 mode 1 的真值表 = engine/bull… | 一手 |
+| 结界自然到期结算：樱点与最大樱点各 +10000、得分 += 樱点、播公告 `Border Bonus %7d` 与 SE | 结界计时递减到 0（非中弹、非按 B 的收结界） | cards/senro_core.c:180, cards/senro.c:1083, cards/senro.c:1090 | `th07:0x441670`（`0x44167a` 最大樱点 +10000 / `0x441689` 樱点 +10000 / `0x44169d`–`0x4416c6` 分数 / `0x4416ee` Plus=基准）；公告 kind 4 … | 一手 |
+| 左下角原版版式 HUD：上行 +C（5 位）、下行 樱点 / 最大樱点（6 位，≥1000000 时 7 位）+ 固定标签贴图；结界中 +C 变色放大 + 脉动花；樱点满值弹 `CherryPoint Max!` | 每游玩帧 on_draw（主菜单/商店里先收 VM 再返回） | cards/senro.c:1606, cards/senro.c:1620, cards/senro.c:1644 | `th07:0x404690`（AsciiManager::sub_404690）逐指令版式 / 定宽右对齐 / 结界指示三件：engine/spirit/th07/02-cherry-counter-hud.md §2、… | 复刻 |
 
 **成本 / 冷却**：
-- Miss（真死）扣樱点：按 1/2 扣、上限 100000、向下取整到 10；不动 +C、不动最大樱点（触发：on_death_frame2（卡虚表 +0x14，死亡结算之后）；站点：cards/senro.c:1494, cards/senro_core.c:360, cards/senro_core.h:150；th07:0x440e84–0x440ef0（比例来自 [SHT+0x1c]：灵梦/魔理沙 0.5、咲夜 0.33；CAP 0x440eb2/0x440ec4）——TH18 不读 SHT 表，本卡 ❓自定取 1/2（senro_core.…）
-- Bomb 扣樱点：❓自定按 1/4 扣（一手是十二个炸弹各自 0.17–0.41）（触发：on_bomb_spent（断点 0x4203bc，consume_bomb 之后）；站点：cards/senro.c:1461, cards/senro_core.c:377, cards/senro_core.h:155；th07:0x440ad9（扣完夹回基准）；各炸弹 ratio 表见 review §9.3 —— 本卡未逐炸弹取值，senro_core.h:155-157 标 ❓自定 / TODO(th07)）
-- 灵击的代价：整条结界被消耗（结界结束、计时清零、+C 归零）（触发：中弹 / 按 B 灵击；站点：cards/senro_core.c:338, cards/senro_core.c:341, cards/senro.c:1184；th07:0x441bd0（0x441d4f [player+0x240d]=0 / 0x441d5c [player+0x2408]=3 / 0x441da4 Plus=基准）；无结界时按 B 只放原生炸弹（senro.c:1184））
+- Miss（真死）扣樱点：按 1/2 扣、上限 100000、向下取整到 10；不动 +C、不动最大樱点（触发：on_death_frame2（卡虚表 +0x14，死亡结算之后）；站点：cards/senro.c:1494, cards/senro_core.c:360, cards/senro_core.h:150；`th07:0x440e84`–`0x440ef0`（比例来自 [SHT+0x1c]：灵梦/魔理沙 0.5、咲夜 0.33；CAP `0x440eb2`/`0x440ec4`）——TH18 不读 SHT 表，本卡 ❓自定取 1/2（senro_core.…）
+- Bomb 扣樱点：❓自定按 1/4 扣（一手是十二个炸弹各自 0.17–0.41）（触发：on_bomb_spent（断点 `0x4203bc`，consume_bomb 之后）；站点：cards/senro.c:1461, cards/senro_core.c:377, cards/senro_core.h:155；`th07:0x440ad9`（扣完夹回基准）；各炸弹 ratio 表见 review §9.3 —— 本卡未逐炸弹取值，senro_core.h:155-157 标 ❓自定 / TODO(th07)）
+- 灵击的代价：整条结界被消耗（结界结束、计时清零、+C 归零）（触发：中弹 / 按 B 灵击；站点：cards/senro_core.c:338, cards/senro_core.c:341, cards/senro.c:1184；`th07:0x441bd0`（`0x441d4f` [player+`0x240d`]=0 / `0x441d5c` [player+`0x2408`]=3 / `0x441da4` Plus=基准）；无结界时按 B 只放原生炸弹（senro.c:1184））
 - 救援层的代价：中弹那一刻无条件烧掉结界（不看是否抢到任何闩锁），与 117 同时、顺序 107 → 117（触发：on_death_before_deathbomb（救援层）；站点：cards/senro.c:1481, cards/senro.c:1482, cards/senro.c:1475；EVENTS-CONTRACT.md §5.2（用户 2026-09-12 定案「一次中弹把救援者全部烧掉、顺序 107 → 117」，:212–:253）；代码里必须丢弃 ce_rescue_note_claim 返回值的理由见 sen…）
 
 | 数值 | 值 | 单位 | 站点 | 出处 |
 | --- | --- | --- | --- | --- |
-| +C 满槽阈值（开结界门） | 50000 | 存储（+C 绝对值，0..50000） | cards/senro_core.h:106, cards/senro_core.c:120 | th07:0x42f623 的 0xc350；senro_core.h:57-58 记全 exe 只有 4 处 |
-| 森罗结界时长 | 540 | 帧（= 9 s @60fps） | cards/senro_core.h:107, cards/senro_core.c:98 | th07:0x4419fa mov [结界对象+0x16a08],0x21c（senro_core.h:107-119 逐指令；同处推翻旧的 420 帧口径） |
-| 灵击后的无敌 | 40 | 帧（≈0.67 s） | cards/senro_core.h:120, cards/senro_core.c:342 | th07:0x441d8e [player+0x23fc]=0x28；走 SDK 无敌声明层（取 max） |
-| 结界自然结束加值 | 10000（樱点与最大樱点各一次） | 存储 | cards/senro_core.h:121, cards/senro_core.c:180 | th07:0x44167a（最大樱点）/ 0x441689（樱点） |
-| ★（消弹小分道具）加值 | 20 | 存储（樱点与 +C 各 +20） | cards/senro_core.h:127, cards/senro_core.c:222 | th07:0x43370b→0x433712（type 号按跳表块归属订正为 type 6） |
-| 大樱点（type 7）加值 | 1000 + 100×符卡奖励次数 | 存储（樱点与 +C 各一份） | cards/senro_core.h:125, cards/senro.c:1878 | th07:0x433886 起、0x433895 imul ecx,ecx,0x64 |
-| 结界中擦弹加值 | 80（高速）/ 30（低速） | 存储（同时加到樱点与最大樱点） | cards/senro_core.h:130, cards/senro_core.c:205 | th07:0x43ed96 的 0x50 / th07:0x43ed7c 的 0x1e |
-| 点道具（蓝点）分值 = 本卡的「最大得点」 | 50000 + max(0, 樱点−50000)/5，向下取整到 10 | 显示 / 得分 | cards/senro_core.h:134, cards/senro_core.c:315 | th07:0x43310a 的 0xc350（线上满额）/ 0x4331c8 idiv 5 / 0x4331db 起 idiv 10 取整；不做 th07 的线下按高度递减（本卡 spec §4.2 偏差表） |
+| +C 满槽阈值（开结界门） | 50000 | 存储（+C 绝对值，0..50000） | cards/senro_core.h:106, cards/senro_core.c:120 | `th07:0x42f623` 的 `0xc350`；senro_core.h:57-58 记全 exe 只有 4 处 |
+| 森罗结界时长 | 540 | 帧（= 9 s @60fps） | cards/senro_core.h:107, cards/senro_core.c:98 | `th07:0x4419fa` mov [结界对象+`0x16a08`],`0x21c`（senro_core.h:107-119 逐指令；同处推翻旧的 420 帧口径） |
+| 灵击后的无敌 | 40 | 帧（≈0.67 s） | cards/senro_core.h:120, cards/senro_core.c:342 | `th07:0x441d8e` [player+`0x23fc`]=0x28；走 SDK 无敌声明层（取 max） |
+| 结界自然结束加值 | 10000（樱点与最大樱点各一次） | 存储 | cards/senro_core.h:121, cards/senro_core.c:180 | `th07:0x44167a`（最大樱点）/ `0x441689`（樱点） |
+| ★（消弹小分道具）加值 | 20 | 存储（樱点与 +C 各 +20） | cards/senro_core.h:127, cards/senro_core.c:222 | `th07:0x43370b`→`0x433712`（type 号按跳表块归属订正为 type 6） |
+| 大樱点（type 7）加值 | 1000 + 100×符卡奖励次数 | 存储（樱点与 +C 各一份） | cards/senro_core.h:125, cards/senro.c:1878 | `th07:0x433886` 起、`0x433895` imul ecx,ecx,0x64 |
+| 结界中擦弹加值 | 80（高速）/ 30（低速） | 存储（同时加到樱点与最大樱点） | cards/senro_core.h:130, cards/senro_core.c:205 | `th07:0x43ed96` 的 0x50 / `th07:0x43ed7c` 的 0x1e |
+| 点道具（蓝点）分值 = 本卡的「最大得点」 | 50000 + max(0, 樱点−50000)/5，向下取整到 10 | 显示 / 得分 | cards/senro_core.h:134, cards/senro_core.c:315 | `th07:0x43310a` 的 `0xc350`（线上满额）/ `0x4331c8` idiv 5 / `0x4331db` 起 idiv 10 取整；不做 th07 的线下按高度递减（本卡 spec §4.2 偏差表） |
 
 **跨卡协同**：
 - **110 风神录 / 111 地灵殿（共享信仰点池 cards/faith.c）**：107 以 FAITH_SLOT_107=3 注册成第三个消费者：满 P 转换时一颗 P 道具同帧给每个 conv_value>0 的注册者各撒一颗（107 撒大樱点）；结界全屏收点也调 faith_collect_all(~0) 顺手收绿点；删卡/换关按「先 faith_unregister 再清自己那一槽」的顺序收（站点：cards/senro.c:1895, cards/senro.c:1913, cards/senro.c:1698；faith_core.h:29（FAITH_SLOT_107 = 3）；SENRO-107-CHERRY-ENTITY.md §2.3/§3；用户口径「同时转化出来」）
@@ -109,7 +109,7 @@
 **已知未测**：
 - 「结界中每帧全屏自动收点」在 cards/senro.c:1141 只引到区间 th07:0x4414xx + 用户口径，没有逐指令地址 ⇒ 一手性未核。
 - 注释与代码/文档漂移，未对账：头注「7 s」（cards/senro.c:20）vs cards/senro_core.h:107 的 540 帧 = 9 s；HUD 块宽注释仍写 200/286（cards/senro.c:303-306、:1746）vs 代码 SENRO_HUD_W 280（:308）；SENRO_HUD_PIN_Y 注释史与 AUDIT.md §BE #241 记的 932 对不上代码的 928（cards/senro.c:324）。
-- SENRO_DIM_ENABLE 代码为 1（cards/senro.c:198），而同文件 :902-905 注释仍写「默认关」；且压暗一手曲线的触发值 ds:0x4d44e0 全 exe 找不到写点、原文自标 🟡（engine/spirit/th07/01-barrier-visual.md §4.3）⇒ 遮罩是否等于原版未实跑验证。
+- SENRO_DIM_ENABLE 代码为 1（cards/senro.c:198），而同文件 :902-905 注释仍写「默认关」；且压暗一手曲线的触发值 ds:`0x4d44e0` 全 exe 找不到写点、原文自标 🟡（engine/spirit/th07/01-barrier-visual.md §4.3）⇒ 遮罩是否等于原版未实跑验证。
 - ❓自定数值无一手：小樱点触发的 ≥8 颗门与 24 颗封顶（cards/senro.c:108-109）、樱点满值公告 30 帧节流（cards/senro.c:424）、震屏 20/12/0（cards/senro.c:149-153）、Miss 1/2 与 Bomb 1/4（cards/senro_core.h:150-157）。
 - cards/senro.c（1999 行）没有卡侧单测：tests/test_senro_core.c 只覆盖纯逻辑 senro_core.c（:1-35）；HUD VM 池、faith 池、世界层特效、公告通道的引擎侧行为无主机证据。
 - 中弹灵击的消弹推迟一帧、且 claim 失败只记日志（cards/senro.c:1230-1250）——当前靠「117 只在后续帧消弹」的现状成立，AUDIT.md §AX3 已登记为跨卡缺口，未实跑验证将来有卡在 +0x10 就消弹的情形。
@@ -122,29 +122,29 @@
 
 | 行为 | 何时触发 | 代码站点 | 一手出处 / 理由 | 等级 |
 | --- | --- | --- | --- | :-: |
-| 人/妖形态整机切换（本体脚本 + 出弹组 + 低速子机一起换） | 按/松 Shift（真实聚焦 = player+0x476cc）；放真 B 的持续期内、或 113 灵界 / 117 暴走咆哮进行中时侧别被锁住 | youkai.c:7251, youkai.c:7127, youkai.c:4351 | 一手：换本体脚本 th08:0x44b12b push 5 / th08:0x44b385 push 0；按 player+3 选 plyNNas.sht = th08:0x450f6f；youkai_core.h §… | 一手 |
-| 敌人发射口 1:1 映射成「使魔」真敌人（NoEnemyDebug 惰性空壳 + 卡侧跟随 VM 画四色原生切图） | ECL etOn 把一个发射口槽写活（站点 th18:0x433ffa，人/妖两侧都建） | youkai.c:1247, youkai.c:7484, youkai.c:1392 | spawn 参数表 docs/superpowers/plans/2026-09-10-ufo-card-feasibility.md §1.1；壳 = NoEnemyDebug(wait(1000))、免出框删除 t… | 复刻 |
-| 打死使魔 ⇒ 那个发射口哑火（夹闸 + 主复位口） | on_enemy_death 收到 KILLED / BOMB_KILL 且死者是我们建的壳；放开只在波次边沿（enmKillAll）、etOn 间隔边沿、符卡结束下降沿、或 600 帧 TTL 到期 | youkai.c:7791, youkai.c:7834, youkai.c:7667 | ❓自定：闸本身是 owner 2026-10-01 口径，一手只给了 th08:0x42adc4「使魔数 == 0 就不吐点」这条参照；TTL 600 帧见 youkai_core.h:1046（标 ❓自定） | 自定 |
-| 使魔挨的伤害转嫁给母机（现行 100%，一手 1/2 旋钮保留） | 每帧差分使魔 life.current(enemy+0x6220)；时符/耐久符卡/母机无敌时整笔丢进 dropped 不转 | youkai.c:3805, youkai.c:3898, youkai.c:3938 | ❓自定：youkai_core.h:1455 明写「TH08 没有这条管线，不是复刻，spec §3.7」；1/2 出处 local/_scratch/research-108-damage-transfer.md，🟡… | 自定 |
-| 给没有发射口的大怪补「只绕转、不发弹、无体术」的使魔 | 扫场见到 HP 档/面数达标的大怪；台数 = clamp(HP 档 + 面加成, 1, 18) | youkai.c:2506, youkai.c:2362, youkai.c:2671 | owner 2026-09-28 口径（youkai.c:1720 起长注）；壳/「打得掉但无体术」照一手 familiarCreate（th08:0x41a840 hitboxSet 24.0、无 hurtboxSe… | 自定 |
-| 人妖槽（走槽/击破/收刻符/擦弹/死亡清零）+ 逢魔（+100 分/帧、掉 1 颗刻符、自机弹命中掉 1 颗、妖侧弹染红）+ HUD | 每帧（聚焦↔高速边沿、按住/松开射击、放 B）；gauge ≤ −8000 或 ≥ +8000 = 逢魔 | youkai.c:5797, youkai.c:6074, youkai.c:9396 | 一手：漂移状态机 th08:0x44bdf0–0x44bffb；击破 ±200 = th08:0x42da2a；收刻符 ±111 = th08:0x4413cb；擦弹 +100 = th08:0x44aa81；逢魔 1… | 一手 |
-| 永点（刻符）：击破撒环 / 死亡点吸收区消弹吐符 / 收集 → PIV → 额外最大得点 | 击破敌机、敌人死亡点、擦弹、極人时自机弹命中（经 on_bullet_hit 队列）、刻符被自机抓取 | youkai.c:6099, youkai.c:5967, youkai.c:9412 | 一手：击破批 = th08:0x42b048（环 R=128、state 3 先上抛）；吸收区 = th08:0x42b1b8 push 7/0x10（R=32.5、16 帧）；收集 = th08:0x4412b0；P… | 一手 |
-| 人侧撞到使魔 = 一次普通 MISS（妖侧可穿梭） | 人侧、自机存活态（player state 1）、与映射使魔的距离进判定半径；同一只只触发一次 | youkai.c:3150, youkai.c:3174, youkai.c:3181 | owner 口径（TH08-ITEMS-AND-SC.md §2b）；一手半径 = player+0x4799c 非聚焦 3.0 + 使魔 hurtbox 24.0 的一半 12.0；调 th18:0x45d3a0 P… | 一手 |
+| 人/妖形态整机切换（本体脚本 + 出弹组 + 低速子机一起换） | 按/松 Shift（真实聚焦 = player+`0x476cc`）；放真 B 的持续期内、或 113 灵界 / 117 暴走咆哮进行中时侧别被锁住 | youkai.c:7251, youkai.c:7127, youkai.c:4351 | 一手：换本体脚本 `th08:0x44b12b` push 5 / `th08:0x44b385` push 0；按 player+3 选 plyNNas.sht = `th08:0x450f6f`；youkai_core.h §… | 一手 |
+| 敌人发射口 1:1 映射成「使魔」真敌人（NoEnemyDebug 惰性空壳 + 卡侧跟随 VM 画四色原生切图） | ECL etOn 把一个发射口槽写活（站点 `th18:0x433ffa`，人/妖两侧都建） | youkai.c:1247, youkai.c:7484, youkai.c:1392 | spawn 参数表 docs/superpowers/plans/2026-09-10-ufo-card-feasibility.md §1.1；壳 = NoEnemyDebug(wait(1000))、免出框删除 t… | 复刻 |
+| 打死使魔 ⇒ 那个发射口哑火（夹闸 + 主复位口） | on_enemy_death 收到 KILLED / BOMB_KILL 且死者是我们建的壳；放开只在波次边沿（enmKillAll）、etOn 间隔边沿、符卡结束下降沿、或 600 帧 TTL 到期 | youkai.c:7791, youkai.c:7834, youkai.c:7667 | ❓自定：闸本身是 owner 2026-10-01 口径，一手只给了 `th08:0x42adc4`「使魔数 == 0 就不吐点」这条参照；TTL 600 帧见 youkai_core.h:1046（标 ❓自定） | 自定 |
+| 使魔挨的伤害转嫁给母机（现行 100%，一手 1/2 旋钮保留） | 每帧差分使魔 life.current(enemy+`0x6220`)；时符/耐久符卡/母机无敌时整笔丢进 dropped 不转 | youkai.c:3805, youkai.c:3898, youkai.c:3938 | ❓自定：youkai_core.h:1455 明写「TH08 没有这条管线，不是复刻，spec §3.7」；1/2 出处 local/_scratch/research-108-damage-transfer.md，🟡… | 自定 |
+| 给没有发射口的大怪补「只绕转、不发弹、无体术」的使魔 | 扫场见到 HP 档/面数达标的大怪；台数 = clamp(HP 档 + 面加成, 1, 18) | youkai.c:2506, youkai.c:2362, youkai.c:2671 | owner 2026-09-28 口径（youkai.c:1720 起长注）；壳/「打得掉但无体术」照一手 familiarCreate（`th08:0x41a840` hitboxSet 24.0、无 hurtboxSe… | 自定 |
+| 人妖槽（走槽/击破/收刻符/擦弹/死亡清零）+ 逢魔（+100 分/帧、掉 1 颗刻符、自机弹命中掉 1 颗、妖侧弹染红）+ HUD | 每帧（聚焦↔高速边沿、按住/松开射击、放 B）；gauge ≤ −8000 或 ≥ +8000 = 逢魔 | youkai.c:5797, youkai.c:6074, youkai.c:9396 | 一手：漂移状态机 `th08:0x44bdf0`–`0x44bffb`；击破 ±200 = `th08:0x42da2a`；收刻符 ±111 = `th08:0x4413cb`；擦弹 +100 = `th08:0x44aa81`；逢魔 1… | 一手 |
+| 永点（刻符）：击破撒环 / 死亡点吸收区消弹吐符 / 收集 → PIV → 额外最大得点 | 击破敌机、敌人死亡点、擦弹、極人时自机弹命中（经 on_bullet_hit 队列）、刻符被自机抓取 | youkai.c:6099, youkai.c:5967, youkai.c:9412 | 一手：击破批 = `th08:0x42b048`（环 R=128、state 3 先上抛）；吸收区 = `th08:0x42b1b8` push 7/0x10（R=32.5、16 帧）；收集 = `th08:0x4412b0`；P… | 一手 |
+| 人侧撞到使魔 = 一次普通 MISS（妖侧可穿梭） | 人侧、自机存活态（player state 1）、与映射使魔的距离进判定半径；同一只只触发一次 | youkai.c:3150, youkai.c:3174, youkai.c:3181 | owner 口径（TH08-ITEMS-AND-SC.md §2b）；一手半径 = player+`0x4799c` 非聚焦 3.0 + 使魔 hurtbox 24.0 的一半 12.0；调 `th18:0x45d3a0` P… | 一手 |
 
 **成本 / 冷却**：
 - 共享低速子机池：12 格公共池里本卡最多占 4 格，拿不到槽就等 60 帧重试（触发：低速时按机体/档声明 1..4 台子机；池被别人占满或关卡中途装卡；站点：youkai.c:169, youkai.c:170, youkai.c:3991；上界 4 = 数量表最大值（youkai_core.h:144–149）；「12 格公共池要和 71/77/116 分」是 youkai.c:170 的登记（🟡 未实跑）；重试 60 帧 = youkai.c:168（照 77））
 - 各文件级静态表上限：映射使魔 32 / 绕转使魔 48 / 外部使魔采样 32 / 刻符 1024，满即静默放弃（触发：同时存在的实体数超过表容量；站点：youkai_core.h:947, youkai_core.h:2402, youkai.c:3687；YK_FAM_MAX 注里明写「工程护栏，不是游戏性数值，spec 没给上限」；YK_ORBIT_MAX/YK_XFAM_MAX 同为 ❓自定；表满路径分别在本文件里（绕转=宁可不补 youkai_core.h:1279、xfam=只放弃…）
-- 击破魔使的代价：人妖槽 −gauge/12、掉 1 颗刻符、之后 50 帧内收刻符不给槽（触发：我们的使魔被玩家弹/炸弹打死（且妖侧因免伤位打不动 ⇒ 只在人侧发生）；站点：youkai.c:7852, youkai.c:7854, youkai_core.h:2220；一手：th08:0x42b213 neg / :0x42b216 mov ecx,0xc / idiv ⇒ delta = −gauge/12（没有 10%/5% 分支）；th08:0x42b29b SpawnItem(type7,sta…）
+- 击破魔使的代价：人妖槽 −gauge/12、掉 1 颗刻符、之后 50 帧内收刻符不给槽（触发：我们的使魔被玩家弹/炸弹打死（且妖侧因免伤位打不动 ⇒ 只在人侧发生）；站点：youkai.c:7852, youkai.c:7854, youkai_core.h:2220；一手：`th08:0x42b213` neg / :`0x42b216` mov ecx,0xc / idiv ⇒ delta = −gauge/12（没有 10%/5% 分支）；`th08:0x42b29b` SpawnItem(type7,sta…）
 - 转嫁落空：读不到母机或 boss 时整笔 pending 进 dropped（这部分伤害白打）（触发：使魔掉血但母机已消失/查不到，且全局 boss 也取不到；站点：youkai.c:3704, youkai.c:3698, youkai.c:3699；一手实跑证据写在 youkai.c:3699：owner 那局 `xfer[tick 5706 map 0/0 orb 538/11391 ext 0/0 rect 0 … noboss 275]` ⇒ 11391 点伤害全被 nobos…）
 
 | 数值 | 值 | 单位 | 站点 | 出处 |
 | --- | --- | --- | --- | --- |
 | 低速子机数量表（机体 × 火力档） | 霊夢 {1,1,1,1,1} / 魔理沙 {1,1,1,1,1} / 咲夜 {4,4,4,4,4} / 早苗 {0,1,1,1,1} | 台（存储） | youkai_core.h:144, youkai_core.h:145, youkai_core.h:148 | 各机体妖侧各自的原作数量：TH08 pl00/pl01/pl02 妖侧（八雲紫/アリス/レミリア）与 TH16 pl03（射命丸文）；位置另取自本作 pl0X.sht 原生阵型（youkai_core.h:157 起） |
-| 人妖槽量程 / 上限 | ±10000（span 10000） | 槽值（存储；HUD 条宽 112px、图标 56px 相对它算） | youkai_core.h:1521, youkai_core.h:1522, youkai_core.h:1523 | th08:0x44d9ee 0xd8f0（−10000）/ th08:0x44da09 0x2710（+10000） |
-| 逢魔（极人/极妖）判定门 | 极人 gauge ≤ −8000 / 极妖 gauge ≥ +8000 | 槽值（阈值，含等号） | youkai_core.h:1524, youkai_core.h:1525 | th08:0x44d9f7 0xe0c0 / th08:0x44da12 0x1f40；谓词 th08:0x406d10 / 0x406d70 |
-| 击破敌机的人妖槽增量 | 聚焦 +200 / 非聚焦 −200 | 槽值（每只） | youkai.c:6074, youkai.c:6071 | 一手 decomp EnemyManager.cpp:670-677 + th08:0x42da2a 一族；youkai.c:6071 说明 AddToYoukaiGauge 第一道闸读的全局恒 0 ⇒ 不做闸 |
-| 收一颗刻符的人妖槽增量 | ±111（聚焦 + / 否则 −） | 槽值（每颗） | youkai_core.h:1529, youkai.c:5324 | th08:0x44139e :0x4413b0 → th08:0x4413cb；被击破魔使后的 50 帧静默门挡（th08:0x44138e–0x44139c） |
-| 击破魔使的人妖槽增量 | −gauge/12（除数立即数 0xc，向零截断） | 槽值（每台魔使） | youkai_core.h:2218, youkai.c:7852 | th08:0x42b213 neg / :0x42b216 mov ecx,0xc / :0x42b21b idiv —— owner 的「10%（妖梦 5%）」口径与一手不同，裁「按一手」 |
+| 人妖槽量程 / 上限 | ±10000（span 10000） | 槽值（存储；HUD 条宽 112px、图标 56px 相对它算） | youkai_core.h:1521, youkai_core.h:1522, youkai_core.h:1523 | `th08:0x44d9ee` `0xd8f0`（−10000）/ `th08:0x44da09` `0x2710`（+10000） |
+| 逢魔（极人/极妖）判定门 | 极人 gauge ≤ −8000 / 极妖 gauge ≥ +8000 | 槽值（阈值，含等号） | youkai_core.h:1524, youkai_core.h:1525 | `th08:0x44d9f7` `0xe0c0` / `th08:0x44da12` `0x1f40`；谓词 `th08:0x406d10` / `0x406d70` |
+| 击破敌机的人妖槽增量 | 聚焦 +200 / 非聚焦 −200 | 槽值（每只） | youkai.c:6074, youkai.c:6071 | 一手 decomp EnemyManager.cpp:670-677 + `th08:0x42da2a` 一族；youkai.c:6071 说明 AddToYoukaiGauge 第一道闸读的全局恒 0 ⇒ 不做闸 |
+| 收一颗刻符的人妖槽增量 | ±111（聚焦 + / 否则 −） | 槽值（每颗） | youkai_core.h:1529, youkai.c:5324 | `th08:0x44139e` :`0x4413b0` → `th08:0x4413cb`；被击破魔使后的 50 帧静默门挡（`th08:0x44138e`–`0x44139c`） |
+| 击破魔使的人妖槽增量 | −gauge/12（除数立即数 0xc，向零截断） | 槽值（每台魔使） | youkai_core.h:2218, youkai.c:7852 | `th08:0x42b213` neg / :`0x42b216` mov ecx,0xc / :`0x42b21b` idiv —— owner 的「10%（妖梦 5%）」口径与一手不同，裁「按一手」 |
 | 伤害转嫁比例 | 100（%）；一手 1/2 的旋钮值 50 保留可切回 | %（存储；YK_TRANSFER_DEN=2 是一手分母） | youkai_core.h:1467, youkai_core.h:1456, youkai_core.c:1132 | 100 = owner 2026-10-01 定案（「使魔多 ⇒ 不能减伤」）；50 = 一手 1/2，出处 local/_scratch/research-108-damage-transfer.md，🟡 th08:… |
 | 发射口哑火后的自动重建期限（TTL） | 600 | 帧（≈10 s @60fps，存储） | youkai_core.h:1046, youkai.c:9674 | ❓自定（owner 2026-10-01）；一手环境里使魔是每波 familiarCreate 重建，没有「按时间自动放开」这一条 |
 
@@ -156,8 +156,8 @@
 - **88（Jera 杰拉）刻符复制代数闸**：108 每帧 ce_dup_publish 上报活着的刻符数；Jera 的代数一变，ce_dup_should_run 为真 ⇒ 108 把每个活刻符按同坐标/同出生态/同「逢魔直接吃掉」标志各重撒一颗（站点：youkai.c:8697, youkai.c:8698, youkai.c:8673；youkai.c:8666 起的说明：语义见 sdk_core.h 末节与 cards/jera.c 文件头；唯一出生口是 yk_orb_spawn_ex）
 
 **已知未测**：
-- 使魔皮肤的两个偏移 enemy+0x1490 / +0x149c 全反汇编里一条内存引用都没有，且 0x149c 与本仓记的 ECL 局部变量 I1 撞址 ⇒ 语义未证实（当前是死代码，占位 −1，youkai.c:99–116）。
-- 文件头写明的 abs_pos 双写（每帧同时钉 enemy+0x1270/+0x1274 与 +0x12b4/+0x12b8）：哪一格才是可见位置的源头没有一手证据，🟡 待实跑（youkai.c:24–28、youkai.c:1392–1401）。
+- 使魔皮肤的两个偏移 enemy+`0x1490` / +`0x149c` 全反汇编里一条内存引用都没有，且 `0x149c` 与本仓记的 ECL 局部变量 I1 撞址 ⇒ 语义未证实（当前是死代码，占位 −1，youkai.c:99–116）。
+- 文件头写明的 abs_pos 双写（每帧同时钉 enemy+`0x1270`/+`0x1274` 与 +`0x12b4`/+`0x12b8`）：哪一格才是可见位置的源头没有一手证据，🟡 待实跑（youkai.c:24–28、youkai.c:1392–1401）。
 - 使魔跟随 VM 的层号 7 与「VM 位置 = 实体 final_pos」只在代码层对过账，未实跑（文件尾占位清单 4，youkai.c:9758–9762）。
 - 绕转使魔的台数阈值表与 HP 缩放旋钮是 ❓自定（YK_ORBIT_HP_SCALE=1，表 {100,100,300,600} 取自 TH08 familiarCreate 实参），阈值本身待 TH08 一手统计替换（youkai_core.h:2420–2512）。
 - 发射口闸的两条自定时间参数未实跑：600 帧自动重建 TTL 与波次间隔阈值（YK_EMIT_WAVE_GAP 24 帧 / YK_EMIT_WAVE_RATIO 3×）（youkai_core.h:1046、youkai_core.h:1072、youkai_core.h:1087）。
@@ -212,11 +212,11 @@
 
 | 行为 | 何时触发 | 代码站点 | 一手出处 / 理由 | 等级 |
 | --- | --- | --- | --- | :-: |
-| 收绿点 → 信仰 + 连击槽 + 蓝点分入卡内奖残 | 点被自机收集 | mof.c:460-510、517-528 | 一手 th10:0x41b5ae / 0x41b602（值、绿色）；蓝点分按 §7.6 口径 | 复刻 |
-| 击破宿主表敌人 → 撒大信仰点 + 绿色 `+N` 弹窗 | 敌人真死亡 | mof.c:679-779、411-453 | 一手 th10:0x41b8cc 值表；判据换成 TH18 宿主表 `(anm 源, 主脚本)` | 复刻 |
-| 逐帧信仰衰减（三条门 + 有/无击破两档速率） | 每帧 | mof.c:1280-1300、354-367 | 一手 th10:0x418740-0x41875d；门③帧源 TH18 无对位（🟡 自定） | 自定 |
-| 灵击：库存 0 按 B（上升沿）/ 主动卡 C | 按键上升沿 | mof.c:1355-1363、1728-1745 | 一手 th10:0x425964 链；救命 th18:0x45d590 | 复刻 |
-| 决死窗口内发动 ⇒ 决死形态（救命 + 不扣信仰） | 窗口 `state==4` | mof.c:1355-1361、1140 | 一手 th18:0x45d4e4 窗口；决死支无 `call 0x412e70` | 复刻 |
+| 收绿点 → 信仰 + 连击槽 + 蓝点分入卡内奖残 | 点被自机收集 | mof.c:460-510、517-528 | 一手 `th10:0x41b5ae` / `0x41b602`（值、绿色）；蓝点分按 §7.6 口径 | 复刻 |
+| 击破宿主表敌人 → 撒大信仰点 + 绿色 `+N` 弹窗 | 敌人真死亡 | mof.c:679-779、411-453 | 一手 `th10:0x41b8cc` 值表；判据换成 TH18 宿主表 `(anm 源, 主脚本)` | 复刻 |
+| 逐帧信仰衰减（三条门 + 有/无击破两档速率） | 每帧 | mof.c:1280-1300、354-367 | 一手 `th10:0x418740`-`0x41875d`；门③帧源 TH18 无对位（🟡 自定） | 自定 |
+| 灵击：库存 0 按 B（上升沿）/ 主动卡 C | 按键上升沿 | mof.c:1355-1363、1728-1745 | 一手 `th10:0x425964` 链；救命 `th18:0x45d590` | 复刻 |
+| 决死窗口内发动 ⇒ 决死形态（救命 + 不扣信仰） | 窗口 `state==4` | mof.c:1355-1361、1140 | 一手 `th18:0x45d4e4` 窗口；决死支无 `call 0x412e70` | 复刻 |
 | P 点 +0.05 档火力（两卡同装 id 最小者落笔） | 道具 commit | mof.c:891-917、900 | 用户 2026-09-15 裁决；门槛/下限非 TH10 原版 | 自定 |
 
 **成本 / 冷却**：
@@ -227,9 +227,9 @@
 | 数值 | 值 | 单位 | 站点 | 出处 |
 | --- | --- | --- | --- | --- |
 | 信仰基础 | 50000 | 显示值 | faith_core.h:37 | 一手 th10 存储钳 5000 的显示形态 |
-| 大信仰点 | 5000 / 8000 / 10000 | 信仰（E/N · H · L/EX） | mof_core.h:119 | 一手 th10:0x41b57f |
-| 小信仰点 | 100 | 信仰 | faith_core.h:259 | 一手 th10:0x41b602 |
-| 连击槽满 | 130 | 帧 | faith_core.h:308 | 一手 th10:0x413035 |
+| 大信仰点 | 5000 / 8000 / 10000 | 信仰（E/N · H · L/EX） | mof_core.h:119 | 一手 `th10:0x41b57f` |
+| 小信仰点 | 100 | 信仰 | faith_core.h:259 | 一手 `th10:0x41b602` |
+| 连击槽满 | 130 | 帧 | faith_core.h:308 | 一手 `th10:0x413035` |
 | 灵击持续 | 296 | 帧 | mof_core.h:683 | 🟡 脚本 `time` 累加，非逐条 |
 | 灵击半档门槛 | 150 | 火力单位（1 档 = 100） | mof_core.h:746 | owner 2026-09-24；mof.c:1091 文案写 1.55，与常量不符 |
 
@@ -376,12 +376,12 @@
 
 | 行为 | 何时触发 | 代码站点 | 一手出处 / 理由 | 等级 |
 | --- | --- | --- | --- | :-: |
-| 开批 / 计数 | 收集 type∈{1,2} 且道具 state==3（V 门真空飞行） | collect2x.c:449-453 | TH18 分派 0x44625f + V 门 0x445f63（注释内） | 一手 |
-| 原生在飞续批 | 批开期每游玩帧池内有 state==3 的批集道具 | collect2x.c:284-296 | TH14 每帧重载 timer 0x8：th14:0x43898e | 一手 |
+| 开批 / 计数 | 收集 type∈{1,2} 且道具 state==3（V 门真空飞行） | collect2x.c:449-453 | TH18 分派 `0x44625f` + V 门 `0x445f63`（注释内） | 一手 |
+| 原生在飞续批 | 批开期每游玩帧池内有 state==3 的批集道具 | collect2x.c:284-296 | TH14 每帧重载 timer 0x8：`th14:0x43898e` | 一手 |
 | 自建绿点入批 / 续批 | 绿点被「真空飞行中收」、或在飞 | collect2x.c:256-267 / 285-296 | 生产者 faith.c；引擎无对应物 ⇒ 用户 B1 口径 | 自定 |
-| 批闭 → 结算 | 无在飞且无新收后 8 游玩帧 | collect2x.c:300；core.h:112 | th14:0x4f5884=8 / 0x439d60 归零即结 | 一手 |
-| 档位倍率补差 + 碎片 | 批闭时按 count 20/30/40/50/60 | collect2x.c:340-360；core.h:36-48 | 档位/倍率照 TH14 计划真值（站点无地址）；碎片载体一手 0x4b4020 | 复刻 |
-| 非聚焦命中掉 P | 高速射击命中（聚焦/bomb 被断点挡掉） | collect2x.c:480-487 | 断点 0x45f2a2；落点＝该敌人中心 0x45f0f0 | 一手 |
+| 批闭 → 结算 | 无在飞且无新收后 8 游玩帧 | collect2x.c:300；core.h:112 | `th14:0x4f5884`=8 / `0x439d60` 归零即结 | 一手 |
+| 档位倍率补差 + 碎片 | 批闭时按 count 20/30/40/50/60 | collect2x.c:340-360；core.h:36-48 | 档位/倍率照 TH14 计划真值（站点无地址）；碎片载体一手 `0x4b4020` | 复刻 |
+| 非聚焦命中掉 P | 高速射击命中（聚焦/bomb 被断点挡掉） | collect2x.c:480-487 | 断点 `0x45f2a2`；落点＝该敌人中心 `0x45f0f0` | 一手 |
 
 **成本 / 冷却**：
 - 被动卡（cards.js 无 `category` / `active_recharge`）：无发动成本、无充能，唯一金钱开销 = 商店价 300。
@@ -391,7 +391,7 @@
 | 数值 | 值 | 单位 | 站点 | 出处 |
 | --- | --- | --- | --- | --- |
 | 售价档 | 10（=300 金钱） | 档 | patch/th18/cards.js:493 | 一手 engine/card/th18/08-catalog.md:6 |
-| 批闭 idle | 8 | 游玩帧 | collect2x_core.h:112 | 一手 th14:0x4f5884 / 0x439d60 |
+| 批闭 idle | 8 | 游玩帧 | collect2x_core.h:112 | 一手 `th14:0x4f5884` / `0x439d60` |
 | 掉落间隔 | 96 − 火力×16/100（钳 ≥1） | 帧 | collect2x_core.h:114-116 | ❓自定（2026-09-08 设计变更） |
 | 碎片弹出延迟 | 20 | 游玩帧 | collect2x.c:195 | ❓自定（TUNING §2.9b #4） |
 | 档位 → 倍率 | 20/30/40/50/60 → ×0.5/0.8/1.2/1.6/2.0 | 批数 → 倍率 | collect2x_core.h:36-46 | 复刻（TH14 计划真值） |
