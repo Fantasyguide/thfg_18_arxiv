@@ -4602,6 +4602,28 @@ static void pofv_c4_tick(void)
         /* ★ 2026-10-13（★ owner 口径 7 ✓）：★ 伤害改走**表** ✓ —— ★ `[角色][招][等级]` ✓
          *   （★ 招 = 4 表示 C4 ✓；★ 等级 = `s_c4_lv_n` ✓ —— ★ C4 的档就是它 ✓）；
          *   ★ 原来硬编码 `14.0f` ✗ ⇒ ★ 表里没有 ⇒ **默认 1** ✓（★ 口径 5 ✓）。*/
+        /* ★ 2026-10-13（★ owner 口径 4 ✓）：★ C4 的弹**同样**"碰到敌方就正常消失" ✓ —— ★ 与 C3 那处同形 ✓
+         *   （★ 判到 ⇒ ★ `ce_anm_interrupt(vm,1)` ✓ 走脚本 459 的消失支 ✓；★ 该颗不再发伤害 ✓）。
+         *   ⚠ 半径仍用 ★ `POFV_ORB_HIT_R`(20.0f ❓自定) ✓ —— ★ C4 的玉是 30×30 ✓（★ 比 C3 的 62×62 小 ✓）
+         *   ⇒ ★ 严格说该更小 ✓；★ 先共用 ✓，★ **待实跑一起调** ✓（★ 已登记 ❓ ✓）。*/
+        {
+            uint8_t *em = CE_ENEMY_MGR();
+            uint8_t *e;
+            const float r2 = POFV_ORB_HIT_R * POFV_ORB_HIT_R;
+            CE_ENEMY_FOREACH(em, e) {
+                const float *ep;
+                float ddx, ddy;
+                if (!ce_enemy_lockable(e)) continue;
+                ep = ce_enemy_pos(e);
+                ddx = ep[0] - b->x; ddy = ep[1] - b->y;
+                if (ddx * ddx + ddy * ddy <= r2) {
+                    if (b->vm) { ce_anm_interrupt((uint32_t)b->vm, 1); b->vm = 0; }
+                    b->live = 0;
+                    break;
+                }
+            }
+            if (!b->live) continue;      /* ★ 命中了 ⇒ 本颗到此为止 ✓ */
+        }
         (void)ce_damage_rect(pos, 0.0f, POFV_C1_HIT_LIFE,
                              pofv_dmg((int)s_aura_kind, 4, (int)s_c4_lv_n),
                              POFV_C1_HIT_W, POFV_C1_HIT_H);
