@@ -3985,7 +3985,7 @@ static int on_tick_2(ce_card_t *c)
 
 #if ANIMAL_DEBUG_KEY
     {   /* 调试：拍空格 → 画面中央召唤一只随机动物灵（本卡在卡组里才会跑到这里）*/
-        int down = ce_key_down(CE_VK_SPACE) ? 1 : 0;
+        int down = (CE_DEBUG_SPACE_KEYS && ce_key_down(CE_VK_SPACE)) ? 1 : 0;
         int ctrl = ce_key_down(CE_VK_CONTROL) ? 1 : 0;
         int shift = ce_key_down(CE_VK_SHIFT) ? 1 : 0;
         if (down && !s->dbg_key_prev) {

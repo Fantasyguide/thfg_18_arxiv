@@ -562,6 +562,25 @@
     "sprite_large": 186,
     "sprite_small": 187
   },
+  "119": {
+    "name": "调试・定向删卡",
+    "desc": [
+      "调试卡：A/S 左右切换目标，",
+      "空格（或 C）删除目标卡。",
+      "目标 = 本局在场卡（按卡号升序）。",
+      "收工时连同其他测试卡一起删掉。"
+    ],
+    "internal_name": "DEBUG_DEL",
+    "category": 0,
+    "initial_unlocked": 1,
+    "deck_visible": 1,
+    "repeatable": 1,
+    "hud_show": 1,
+    "price_tier": 1,
+    "weight": 0,
+    "sprite_large": 214,
+    "sprite_small": 215
+  },
   "200": {
     "name": "测试卡 200",
     "desc": [

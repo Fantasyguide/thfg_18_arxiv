@@ -786,7 +786,7 @@ static int trance_time_flash(int32_t gauge, int32_t frame)
  * 用途 = 肉眼验收**逐型配色**与两种样式（普通态 / 灵界态）—— 这批美术刚换成原版切图，
  * 而这四种颜色只有当场看才知道对不对。
  *
- * 机制与 117 的调试键**同一套**（`cards/animal.c`）：`ce_key_down(CE_VK_SPACE)` 走
+ * 机制与 117 的调试键**同一套**（`cards/animal.c`）：`(CE_DEBUG_SPACE_KEYS && ce_key_down(CE_VK_SPACE))` 走
  * `GetKeyboardState`（user32）—— **空格不在游戏键位表里、也不进 replay 输入流**，所以只作调试用。
  * 发布版把 `TRANCE_DEBUG_KEY` 置 0 即可整段消失（`#if` 包着）。
  *
@@ -3668,7 +3668,7 @@ static void on_item_frame(ce_card_t *c)
      *   边沿触发（`dbg_key_prev`），只在游玩帧跑 ⇒ 不会在菜单/商店里误触发。*/
 #if TRANCE_DEBUG_KEY
     {
-        const int down = ce_key_down(CE_VK_SPACE) ? 1 : 0;
+        const int down = (CE_DEBUG_SPACE_KEYS && ce_key_down(CE_VK_SPACE)) ? 1 : 0;
         if (down && !s->dbg_key_prev) {
             if (ce_key_down(CE_VK_SHIFT)) {
                 /* Shift+空格：灌一格（200）。走 core 的加法 ⇒ 跨格判定与一手同一条路。*/
