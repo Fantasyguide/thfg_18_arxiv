@@ -3639,7 +3639,10 @@ static void pofv_c1_tick(void)
 #define POFV_C3_ANGACCEL_SIN   0.03489950f
 #define POFV_C3_INVULN           240
 #define POFV_C3_BULLET_LIFE        600     /* ❓⑥：兜底寿命（= 加速时长）*/
-#define POFV_C3_HIT_DMG             14     /* ❓②：借 C1 的一手口径（灵梦主炮 14）*/
+#define POFV_C3_HIT_DMG              1     /* ★★★★★ 2026-10-13（★ owner 口径 5 ✓）：
+                                             *   ★「★ **单颗弹幕的伤害，暂时取 1**，等最终进行调整」✓
+                                             *   ⇒ ★ 从 `14`（❓借 C1 主炮口径）改成 **1** ✓。
+                                             *   ★ 待最终细调时按"人 × 招 × 等级"填表 ✓（见 goal ③ ✓）。*/
 #define POFV_C3_HIT_LIFE             2     /* 同 C1：伤害源每帧按当前位置重发 ⇒ life 2 */
 /* ★★★ C3/C4 审计 60f3724f ⑤（中）✓：★ 原来**同族弹两个盒** ✗ —— ★ C3 用 **32×32** ✓、
  *   ★ 而 C4 走的是通用 `POFV_C1_HIT_W/H` = **30×30** ✓（见本文件 C4 那处 ✓）。★ 而一手弹体是
