@@ -789,7 +789,7 @@ static int yk_emit_coord_seen(uint32_t enemy_id, int slot)
 }
 
 /* ★ 调试键（owner：「**一直以来的空格键都是调试**」）：开关 + 电平边沿状态。
- *   触发 = `ce_key_down(CE_VK_SPACE)`（`sdk.h:832`/`sdk.c:397`，`GetKeyboardState`）；
+ *   触发 = `(CE_DEBUG_SPACE_KEYS && ce_key_down(CE_VK_SPACE))`（`sdk.h:832`/`sdk.c:397`，`GetKeyboardState`）；
  *   ⛔ 旧的 `0x4ca428` 掩码方案（`YK_DEBUG_KEY_MASK/…_MASK2`）**已退役**（该掩码没有空格位）。*/
 #define YK_DEBUG_SPACE_KILL 1
 static int      s_dbg_space_prev;       /* 空格电平边沿 */
@@ -8852,9 +8852,9 @@ static int on_tick_2(ce_card_t *c)
      *     输入掩码变化（`held=0x…`）⇒ 若按空格不出 `SPACE` 行，用那行掩码即可定出正确位。*/
     if (YK_DEBUG_SPACE_KILL) {
         /* ★★★★ 2026-10-01 晚（owner：「**一直以来的空格键都是调试**」）——改用 SDK 现成接口：
-         *   **`ce_key_down(CE_VK_SPACE)`**（`sdk.h:832` / `sdk.c:397` = `GetKeyboardState`，
+         *   **`(CE_DEBUG_SPACE_KEYS && ce_key_down(CE_VK_SPACE))`**（`sdk.h:832` / `sdk.c:397` = `GetKeyboardState`，
          *   **user32 原始键盘状态**，不是游戏输入掩码、**不进 replay 输入流**；只给**电平** ⇒
-         *   **边沿自己记**（先例：`animal.c:3988` `ce_key_down(CE_VK_SPACE)`；`input_synth.c:162`）。
+         *   **边沿自己记**（先例：`animal.c:3988` `(CE_DEBUG_SPACE_KEYS && ce_key_down(CE_VK_SPACE))`；`input_synth.c:162`）。
          *   为什么不用 `0x4ca428`：它的掩码里**没有空格位**（log 只见 `0x10/0x20/0x40/0x80`+`0x008`），
          *   且 `sdk.h:822` 说明那批键**不进 replay 输入流**。
          *   ⇒ 按下那一刻触发（长按不连发）；**只读电平、不吞键、不改键**。*/
@@ -8881,7 +8881,7 @@ static int on_tick_2(ce_card_t *c)
                 s_pl_state_prev = st;
             }
         }
-        int down = ce_key_down(CE_VK_SPACE) ? 1 : 0;
+        int down = (CE_DEBUG_SPACE_KEYS && ce_key_down(CE_VK_SPACE)) ? 1 : 0;
         if (down && !s_dbg_space_prev) {
             unsigned m = 0, k = 0, j;
             /* ★★★★★ 2026-10-01 晚（owner：「我空格**直接带走道中 boss** 了」）——**只杀我们注册过的壳**：

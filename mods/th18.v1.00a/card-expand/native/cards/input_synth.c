@@ -159,7 +159,7 @@ static int      s_set_from, s_set_to;
  *   （106 只是读键做别的事，不会抢我们的输入位）。要换键只改这一行。 */
 static inline int input_synth_key_down(void)
 {
-    return ce_key_down(CE_VK_SPACE);
+    return (CE_DEBUG_SPACE_KEYS && ce_key_down(CE_VK_SPACE));
 }
 
 /* 调试键按下期间的状态复位 / 快照。只在"按下"那一帧调一次。 */

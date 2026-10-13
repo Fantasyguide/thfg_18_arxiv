@@ -4854,6 +4854,7 @@ UI 列表尾插、组内后生成者后画（§2b.4）。
 | 2026-10-13 | **109 卡专属（未改共享件 ✓）** | ★ 新增脚本 `456` + 本卡 7 处 spawn 换引用 ⇒ 详见下方小节「§BE-109-HUD20」✓ |
 | 2026-10-12 | **所有卡（共享件：shooterset 生成器）** | 见下方小节「§BE-109 两格」 |
 | 2026-10-12 | **111 地灵殿（咲夜×大小姐支援特技的"靠近弹幕变红"）** | `native/cards/signal.c` （`signal_tint_restore_all` 与 `signal_tint_sync` 的**两处还原**）| 还原改成**只还原 RGB、保留当前 alpha** ✓ （`*col = (*col & 0xff000000u) | (s_tint_orig[i] & 0x00ffffffu);` ✓）| owner 指出「111 咲夜特技也可能有这个 bug」⇒ 我只读核实：★ **同病** ✗ —— 该卡的 `signal_tint_apply` 本来就保留 alpha ✓，但**两处还原**是"整条写回染色前的快照"✗ ⇒ 弹**在擦弹圈内出生**时 alpha 被旧快照覆盖 ⇒ **变暗** ✗（与 109/115 同一成因 ✓；115 的已修版式见 `lolk.c:446` ✓）| `make check` 459 全绿 ✓ + `check-docs` ✓ + 四处 DLL 同 md5 ✓；★ 只改这两行、不动其它逻辑 ✓ |
+| 2026-10-14 | **所有卡（调试空格键统一摘除）+ 新调试卡 119** | `sdk.h`（新增 `CE_DEBUG_SPACE_KEYS 0`）+ 7 个文件 13 处空格读点惰性化（`animal.c`/`pofv.c`/`th06rank.c`/`trance.c`/`ufo.c`/`youkai.c`/`input_synth.c`）+ 新卡 `cards/debu…（详见 §BE 小节） | ★ 新增**调试用「定向删卡」主动卡 119**（A/S 切目标、空格或 C 删除 ✓）；按 owner 要求**先摘除全仓调试空格键** ✓（改键读、不删代码 ✓）⇒ 详见下方「§BE-DEBUG-DELETE-CARD」✓ | **owner 需求 A1（原话）**：「最好是能弄一张**主动卡**…效果是**删卡**，debug 期间的**定向删卡**」+「添加 hud，按 **A S** 左右切换目标，**空格键删除**…但需要**提前摘除所有卡的调试空格键**」✓ | `make check` **rc=0** ✓（含卡表契约 / 容量台账 / 全闸）+ `make release` 发布闸全过 ✓ + DLL 三处同 md5 `59b20fe5e4adb52c7723d2a7094b7cc1` ✓；**站点新增 0** ✓（删卡用既有 `ce_destroy_card`）
 | 2026-10-14 | **所有卡（共享件 `sdk.h`：子弹扫描宏）** | `native/sdk.h` 的 `CE_BULLET_LIVE_FOR_EACH`（只改宏里三处守卫 + 注释）| ★ 三处 `!ce_ptr_readable(...)` → `ce_ptr_readable(...)` ✓（`ce_ptr_readable` 返回 **1 = 可读** ✓）⇒ 详见下方「§BE-BULLET-LIVE-MACRO」✓ | **owner 实跑**：咲夜 111 支援特技 / 109 固灵结界 / 115 擦弹圈内的**敌弹变色全失效** ✗；**根因是我早前**的迁移提交 `8b8c9139` 把守卫写反 ✗ ⇒ 恒 0 次迭代 ✗ | `make check` rc=0 ✓；**11 个站点**同时复活（`lolk.c:488`、`signal.c:2100/2156`、`youkai.c:954/6936`、`pofv.c:1944`、`season.c:714/1441`、`great_work.c:204/313`、`reverse.c:20` ✓）；实跑判据见小节 △ |
 | 2026-10-14 | **116 与 111（共享件：新增 `dtap_core.*` + `Makefile`）** | 新增 `cards/dtap_core.{h,c}`；`season_core.h/.c` 改薄包装；`signal.c` 换触发（+ 新 `tests/test_dtap_core.c` + Makefile 规则）| ★ 抽出「**完整双击 Z**」共享状态机（语义**逐字**取自 116 ✓）；116 薄包装化、111 改用它 ⇒ 详见下方「§BE-DTAP-CORE」✓ | **owner 需求（原话）**：「111 魔理沙特技切换自机请改成**双击 z**，与 116 切换季节一致」✓ —— 111 旧触发要 Shift+Z **同时**按下且都在 5 帧内 ✗ | `make check` **rc=0** ✓；**116 的 8 组旧单测全过**（`test_season_core: 140 passed, 0 failed` ✓）+ 新 `test_dtap_core: 33 passed, 0 failed` ✓；发布闸全过 + DLL 四处同 md5 ✓；**影响面只有 116/111** ✓ |
 | 2026-10-14 | **所有卡（共享件 `bomb10.*`）** | `bomb10.c`/`bomb10.h` + `mof.c`/`signal.c` 的 `on_delete` | ★ 新增 `bomb10_unregister_host(host)`（摘除注册表那一格）；**两卡的 `on_delete` 各调一次** ⇒ 详见下方「§BE-BOMB10-UNREGISTER」✓ | **P17 审计 F1（踩内存 ✗✗）**：卡被删后 `user` 指向**已释放、且会被别的卡领走**的 `ce_state` 块，机器仍拿它调回调（三个回调都写那块内存）✗ ⇒ 详见下节 | `make check` rc=0 + 4 处 DLL 同 md5 ✓；**影响面只有 110/111** ✓；实跑建议见下节 △ |
@@ -4892,6 +4893,32 @@ UI 列表尾插、组内后生成者后画（§2b.4）。
   DLL 三处同 md5 ✓；**主机单测覆盖不到**（宏依赖引擎的 `IsBadReadPtr` 与弹管理器 ✗）⇒ 只能靠**实跑** ✓。
 - **建议实跑（交 owner）** △：① 111 咲夜支援特技靠近敌弹 ⇒ **应变红** ✓；② 109 固灵结界碰敌弹 ⇒ **应染色** ✓；
   ③ 115 擦弹圈内 ⇒ **应变黄** ✓；④ 顺带看 108 逢魔染红 ✓；⑤ 92（伟大之作）与 reverse 的对应表现（它们也吃这个宏 ✓）。
+
+
+#### §BE-DEBUG-DELETE-CARD —— 调试用「定向删卡」卡 119 + 调试空格键统一摘除（2026-10-14，P27）
+
+- **文件 → 改了什么**：
+  ① **`native/sdk.h`** 新增总开关 `#define CE_DEBUG_SPACE_KEYS 0` ✓；
+  ② **7 个文件 13 处**把 `ce_key_down(CE_VK_SPACE)` 包成 `(CE_DEBUG_SPACE_KEYS && ce_key_down(CE_VK_SPACE))` ✓
+     —— `animal.c`(117) / `pofv.c`(109) / `th06rank.c`(106) / `trance.c`(113) / `ufo.c`(112) / `youkai.c`(108) / `input_synth.c` ✓
+     （**只关空格** ✗；108 的 `'I'` 无敌、`CE_VK_CONTROL` 组合等**没动** ✓，按 owner 范围 ✓）；
+  ③ **新增 `native/cards/debug_del.c`（卡 119）**：主动卡 ✓（`A`/`S` 切目标、`SPACE` 或 `C` 删除 ✓，左下角一行 HUD 显示目标卡号/位次 ✓）；
+     删除 = SDK 既有的 **`ce_destroy_card()`**（倒吊人同款 ✓）⇒ **0 条新增站点** ✓；目标 = 卡链表遍历（`ce_pick_random_card()` 同一路 ✓）按卡号升序成环、排除自己 ✓；
+     生命周期按铁律：文件静态在 `on_run_reset`/`on_delete` 都清 ✓（P17/P21 的教训 ✓）；
+  ④ `patch/th18/cards.js` 加 `"119"`（`deck_visible: 1` 可进初始卡组 ✓、`weight: 0` 不会被随机刷到 ✓、`category: 0` 主动卡契约 ✓、贴图 214/215 ✓）；
+  ⑤ `assets/cards/ORDER.txt` + `DEBUG_DEL_max/min.png`（拷自 `HANGED_MAN` 那对 ✓）+ `CAPACITY.md` 附录 A（`capcheck.py --gen-appendix` ✓）。
+- **为什么**：owner 需求 A1 —— 「倒吊人是随机的，做不了定向删卡」✗ ⇒ 要一张能**指定**删哪张的调试卡 ✓；
+  owner 追加设计：`A`/`S` 切目标 + `空格` 删除 ✓，并**明确要求先摘除全仓的调试空格键** ✗（避免与新卡抢键 ✓）。
+- **谁改的**：P27 批次（工单见 [`WORK-PACKAGES.md`](WORK-PACKAGES.md) §0.1 的 P27 ✓）。
+- **怎么验的**：`make check` **rc=0** ✓（走过卡表契约 `contract_check.py`、容量台账 `capcheck.py`、`test-host`、anm/sht 与 DLL 各闸 ✓；
+  期间修掉的四道：新卡贴图索引须由 `ORDER.txt` 推出（150/151 → **214/215** ✓）、`CE_CARD` 必须写裸 id（`119u` ✗）、
+  `on_tick_2`/`on_draw` 要 `int (ce_card_t *)` 而 `on_run_reset`/`on_delete` 要 `void (ce_card_t *)` ✓、主动卡 `category` 必须为 0 ✓）；
+  `make release` 发布闸全过 ✓、DLL 三处同 md5 `59b20fe5e4adb52c7723d2a7094b7cc1` ✓。
+- **影响面**：① **空格键**：7 张卡的调试动作**全部停用** ✓（代码保留 ⇒ 把 `CE_DEBUG_SPACE_KEYS` 改回 1 即恢复 ✓）；
+  ② **卡 119**：新卡，只在玩家自己编进卡组时出现 ✓（`weight: 0` ⇒ 商店不会随机刷 ✓）。
+- **建议实跑（交 owner）** △：① 把 119 装进初始卡组 ⇒ 进游戏 ⇒ 左下角应有一行 `[dbg] 删除目标: …` ✓；
+  ② `A`/`S` 切换目标（日志 `dbgdel: 目标 -> …` ✓）③ 空格删掉目标 ⇒ 该卡应消失、日志 `dbgdel: [SPACE] 已删除卡 …` ✓、HUD 位次刷新 ✓；
+  ④ **重点**：删卡正好用来复测 `on_delete` 收尾 ✓（F1 的 `bomb10` 注销 ✓、A3 的账本 ✓、绿皮/VM 收尾 ✓）。
 
 | 2026-09-26 | **112 星莲船（UFO 载体皮）** | `assets/ability/scripts/352_ufo_carrier_fairy.anm.txt`、`356_ufo_carrier_fairy_side_r.anm.txt`、`357_ufo_carrier_fairy_side_l.anm.txt` | 三支脚本的贴图从本卡自己的 `@CARRIER_FAIRY_0..11@`（TH12 妖精切图）换成 **TH18 原生 `enemy_g.png` 倒数第二行**那支**黄色辉光妖精**的 sprite **256..267**（正面 256..259、转身 260..267；帧**时序未动**）| **owner 2026-09-26 逐字指示**：「3 面…圣域…妖精种类特殊，贴图外面有一层辉光…**包括 112 改的黄色妖精也得改成这里面倒数第二行的**」| `make anm` 追加脚本检查全过、`make check` 全绿；**实跑待 112 那条线复核**（他们的载体皮判据/掉落逻辑一行未动，只换图）|
 | 2026-09-12 | **69 加倍** | 见下方「§BE 详录 #1」 |

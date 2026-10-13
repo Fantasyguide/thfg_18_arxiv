@@ -49,6 +49,7 @@
 | **P16** | 额外最大得点数值核查（W5）| owner 从未核过这套数字 ⇒ 逐条复核 | `MAXPOINT-AUDIT.md`（值↔一手↔现值↔判定）；**不改代码** | `sdk_core.h:385–418` 既有断言 | ✅ 已合并（PR #3 / `aa2a55c9`）|
 | **P17** | 生命周期未测面（W6）| 换面**保持** / retry 与退主菜单**重置** 要有结论 | `LIFECYCLE-AUDIT.md` + `SINGLE-CARD-TEST.md` 固定条目 + log-only 观测件 | `on_run_reset` 覆盖表（现仅 10 张卡 ✓）| ✅ 已合并（PR #4 / `7a0f778d`；挖出 F1–F7 ⇒ 见 P20 起）|
 | **P18** | 逐卡行为审计（W3，只读）| 行为清单 ↔ 代码站点 ↔ 一手出处 的对照，只出台账 | `CARD-BEHAVIOR-AUDIT.md` ✓（12 张卡各一节；每条给 `文件:行号` + 一手出处 + 等级）| 12 份只读报告（**前台 workflow 扇出** ✓，一卡一 agent）；**不改码** ✓ | ✅ 已合并（PR #10 / `docs/p18-card-behavior-audit`）|
+| **P27** | **调试用「定向删卡」主动卡**（owner 需求 A1 ✓，**新卡** ✓）| owner：「最好是能弄一张**主动卡**，类似于挑战：十二合一，效果是**删卡**，debug 期间的**定向删卡**」✓ （因为 A1 的删卡路径实跑做不到 ✓）| 新卡按 `ce_destroy_card()`（倒吊人同款原语 ✓）删除**选定**的一张在场卡；卡表条目照 `74` 的模板（`deck_visible:0`/`hud_show:0` ✓）；`make check` rc=0；实跑判据 = 删掉某卡后该卡的 `on_delete` 收尾表现正常 ✓（正好用来复测 F1/A3 那些钩子 ✓）| `cards/hanged.c:18`（`ce_destroy_card` ✓）、`patch/th18/cards.js` 的 `"74"` 条（模板 ✓）、SDK 的主动卡框架（`active_recharge` ✓）；⚠ **设计待 owner 定**：目标怎么选（见下 ✓）| 🟡 待定设计 |
 | **P26** | **`CE_BULLET_LIVE_FOR_EACH` 守卫反相**（owner 报 bug2 ✓，**代码** ✓）| owner：「113 咲夜特技 / 109 固灵结界 / 115 的**子弹变色**在『抽出统一 sdk』后失效了」✗ —— 实际是**我早前**的迁移（提交 `8b8c9139`「敌弹扫描迁移继续」）把宏的三个守卫**写反了** ✗ | 把 `sdk.h` 该宏里三处 `!ce_ptr_readable(...)` 改成 `ce_ptr_readable(...)` ✓（`ce_ptr_readable` 返回 **1 = 可读** ✓，原写法要求"指针坏"才继续 ⇒ 恒 0 次迭代 ✗）；`make check` rc=0；实跑：111 咲夜 / 109 结界 / 115 染黄应**恢复** ✓ | `sdk.h:1260-1269`（宏 ✓）、`sdk.c:1203-1206`（`ce_ptr_readable` = `p && !IsBadReadPtr` ✓）、受影响 **11 个站点**（`lolk.c:488`/`signal.c:2100,2156`/`youka…（详见工单表下方注） | ⏳ |
 | **P25** | **111 retry 时账本不重置**（owner 实跑 A3 ✓，**代码** ✓）| owner：「111 retry **信仰和信号均保留**，110 正常」✗ —— 111 的 `on_run_reset` **故意不调 `signal_clear()`** ✓（要保留账本注册/HUD 认领 ✓），而 P21 的重置补丁写在 `signal_clear` 里 ✗ ⇒ **retr…（详见工单表下方注） | 在 111 的 `on_run_reset` 末尾补 `faith_slot_init_111(&s_slot_keep111, signal_difficulty())` + `s_slot_stage111 = -1` ✓（与 `signal_clear` 尾部同款 ✓）；`make check…（详见工单表下方注） | `signal.c` 的 `on_run_reset`（`:3962` 起 ✓）与 `signal_clear` 尾部（P21 补丁处 ✓）；对照 110 的 `on_run_reset == mof_clear` ✓（所以 110 正常 ✓）| ⏳ |
 | **P24** | **左下角 HUD 入场动画在换面重播**（owner 报 bug ✓，**代码** ✓）| owner：「**换面重新播放左下角 hud 的入场动画**这个显然不太对」✗ | ① `faith_hud_on_load()` 的换面分支**不再重置 `s_age`** ✓（C 侧照常写满 alpha ⇒ 重建出来的 VM 不再显出脚本的 20 帧淡入 ✓）；② `s_age` 只在 VM 首次起用（`fh_kill` ✓）与删卡收尾时归零 ✓；`make check` rc …（详见正文） | `faith_hud.c:391-395`（旧行为 ✗）、`:422`（`fh_kill` 归零 ✓）、`:655`/`:674`（20 帧门 ✓）、`:456-460`（每帧按需 spawn ✓）；根因 = 换面时引擎拆 anm 管理器 ⇒ UI VM 全死 ⇒ 下一帧重建 ⇒ 脚本淡入重播 ✗ | ⏳ |
@@ -68,6 +69,8 @@
 > - **111 的新接线**：`ce_dtap_tick(&s->dtap, (CE_INPUT_HELD() & SIGNAL_IN_SHOT) != 0)` ⇒ 触发时 `formation = (n+1)%5` ✓；
 >   `dtap` 的**零值即安全**（`window == 0` 回落默认 8 ✓）⇒ 不依赖初始化调用 ✓；旧字段/旧函数**保留不删** ✓（只是不再参与换元素 ✓）。
 > - **影响面**：全仓只有 **116 与 111** 两处调用 ✓（`grep -rn season_dtap` / `patchnouli_fresh` 可复现 ✓）。
+
+> **P27 设计待定（问 owner）** ✓：① 目标选择方式 —— (a) 按一次删一张（按卡组顺序、日志报出删了谁 ✓ 最简 ✓）、(b) **D 切换目标 + C 确认删除**（HUD 显示当前目标 ✓ 最"定向" ✓）、(c) 删"当前选中的那张"（用原作选择 UI ✗ 最复杂 ✓）；② 这张卡**默认出现在商店**（价格 0/1、随时能拿 ✓）还是**编译期开关**（默认关 ✗ 要用才开 ✓）。
 
 **该轮硬规则**（写死在这里，避免以后丢 ✓）：
 - **R1 只有证明为错才改代码** ✗ ——「读起来怪」不是理由；给不出等价证据就**只加注释** ✓。

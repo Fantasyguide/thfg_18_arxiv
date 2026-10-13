@@ -6135,7 +6135,7 @@ static int on_tick_2(ce_card_t *c)
 {
     int i;
     /* ★★★★★ 2026-10-13 owner 要求：★ **按空格 = 放 C3**（**调试用** ✓）——
-     *   ★ 接口 = `ce_key_down(CE_VK_SPACE)` ✓（`native/sdk.h:838` ✓）；★ 那个头文件里连
+     *   ★ 接口 = `(CE_DEBUG_SPACE_KEYS && ce_key_down(CE_VK_SPACE))` ✓（`native/sdk.h:838` ✓）；★ 那个头文件里连
      *   `CE_VK_CONTROL` 都注明「★ **调试组合键（Ctrl+空格）用**」✓ ⇒ ★ 这套是**现成的调试约定** ✓
      *   （★ owner 要的是**纯空格** ✓，★ 没加 Ctrl ✓）。
      *   ★ 取**上升沿**（局部 `static` ✓）⇒ ★ **按住不连发** ✗、★ **每按一次放一份** ✓。
@@ -6144,7 +6144,7 @@ static int on_tick_2(ce_card_t *c)
      *   ★ 与档位/蓄力**无关** ✓ —— ★ 调试键不受蓄力门槛限制 ✓（★ 正是要能"跳过条件"单独看 C3 ✓）。*/
     {
         static int s_dbg_sp_prev = 0;                       /* ★ 只在按下的那一帧触发 ✓ */
-        const int sp = ce_key_down(CE_VK_SPACE) ? 1 : 0;
+        const int sp = (CE_DEBUG_SPACE_KEYS && ce_key_down(CE_VK_SPACE)) ? 1 : 0;
         if (sp && !s_dbg_sp_prev) {
             pofv_c3_fire();
             ce_log("pofv: [DBG] 空格 ⇒ 放 C3 ✓（f=%d kind=%d charge=%.0f）",

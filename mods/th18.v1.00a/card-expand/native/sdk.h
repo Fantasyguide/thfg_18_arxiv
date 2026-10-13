@@ -838,6 +838,15 @@ void ce_hud_digit_clear(ce_hud_digit_t *d);
 #define CE_VK_SPACE 0x20
 #define CE_VK_CONTROL 0x11   /* VK_CONTROL：调试组合键（Ctrl+空格）用 */
 #define CE_VK_SHIFT 0x10
+
+/* ★★★ 2026-10-14（P27，owner 口径）：「**需要提前摘除所有卡的调试空格键**」✗ ——
+ *   因为新的调试卡要**独占空格**（删除目标卡 ✓）与 **A / S**（左右切换目标 ✓），
+ *   而各卡历史上都用 `ce_key_down(CE_VK_SPACE)` 做过调试动作：117 出动物灵 / 108 杀使魔 /
+ *   109 造弹 / 113 造神灵 / 106 补 P / 112 造令牌 / `input_synth` 的合成键 ✓。
+ *   ⇒ 这里给一个**总开关**：置 `0` 后**所有**读空格的地方一律视为没按 ✓（代码保留、随时开回 ✓）。
+ *   ⚠ 只关**空格** ✗；别的调试键（如 108 的 `'I'` 无敌、`CE_VK_CONTROL` 组合键）**不在**本开关范围 ✓。
+ *   ⚠ 这些键都不进 replay 输入流（`GetKeyboardState`）⇒ 回放里本来也不会触发 ✓。*/
+#define CE_DEBUG_SPACE_KEYS 0
 int ce_key_down(int vk);
 
 /* 在 HUD 上写一行字（只能在虚表 `+0x48 on_draw` 里调 —— 原生 `CardMomoyo__on_draw` 同款，AUDIT §AC）。

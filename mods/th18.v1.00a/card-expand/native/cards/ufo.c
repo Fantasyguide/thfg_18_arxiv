@@ -906,7 +906,7 @@ _Static_assert(UFO_HUD_BLOCK_W > 0.0f && UFO_HUD_BLOCK_H > 0.0f,
 
 /* ============================ ★ 调试键（2026-09-18；★ 2026-09-23 改键位）================================
  * 形状**完全照抄 117（TH17 动物灵）`animal.c` 的那一套**（`ANIMAL_DEBUG_KEY` 那一块）：
- *   · `ce_key_down(CE_VK_SPACE)` + 卡状态里一个 `dbg_key_prev` 做**边沿检测**（拍一下出一批，按住不连发）；
+ *   · `(CE_DEBUG_SPACE_KEYS && ce_key_down(CE_VK_SPACE))` + 卡状态里一个 `dbg_key_prev` 做**边沿检测**（拍一下出一批，按住不连发）；
  *   · 固定落点 + **一行日志**；
  *   · 一个宏开关：`UFO_DEBUG_KEY`（发布前改 0 即可全部停用 —— 117 的发布版就是 0）。
  * ⚠ 为什么能用空格：`ce_key_down` 走 `GetKeyboardState`（user32），空格**不在游戏配置里、也不进 replay
@@ -5880,7 +5880,7 @@ static void on_item_frame(ce_card_t *c)
          *   ★ 2026-09-24 第 21 轮键位（owner）：「**调试改成：Ctrl+空格，掉落一个满 B**」
          *   ⇒ **空格 = 1 枚固定色令牌** / **Shift+空格 = 爆一批 P 点+金钱点** /
          *      **Ctrl+空格 = 掉一颗满 B**（原来那件"1 枚变色令牌"退役；要验证变色链就直接看满 B 那条路）。*/
-        int down  = ce_key_down(CE_VK_SPACE) ? 1 : 0;
+        int down  = (CE_DEBUG_SPACE_KEYS && ce_key_down(CE_VK_SPACE)) ? 1 : 0;
         int shift = ce_key_down(CE_VK_SHIFT) ? 1 : 0;
         int ctrl  = ce_key_down(CE_VK_CONTROL) ? 1 : 0;
         if (down && !s->dbg_key_prev && shift) {
