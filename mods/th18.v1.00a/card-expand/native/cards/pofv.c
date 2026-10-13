@@ -7330,6 +7330,13 @@ static int on_tick_2(ce_card_t *c)
              *   ⇒ ★ 宽度回**一手值** 448 ✓（`POFV_HUD_CHG_FILL_W` ✓，底槽 452 本来就是它 ✓ ⇒ 两者重新对齐 ✓）；
              *   ⇒ ★ `bx` 改**水平居中** ✓（★ 不再跟随自机 ✗、★ 不再拉伸 ✗）。★ 底槽也吃同一个 `bx` ✓。
              *   ★ 表面屏宽 = 640×480 × 2 = **1280** ✓（`POFV_HUD_CHG_X2` / `HUD-LAYOUT.md` §1.1 ✓）。*/
+            /* ★★★★★ 2026-10-13（★ owner 实跑 ✓）：「★ **蓄力 n/m 的指示依旧 x 被定死**」✗（★"★ 这都一次一次修了多少次了"✓）
+             *   ★ ★ **真根因就是下面那行** ✗：★ `:7322` 明明算了**跟自机**的 `bx` ✓，★ 但下面为了"★ 整槽居中"（★ 你当时的
+             *   要求 ✓）★ 把它**整个覆盖成居中常数** ✗ ⇒ ★ **n/m 那一簇也一起吃这个常数** ✗（★ 它们共用 `bx` ✗）
+             *   ⇒ ★ x 被钉死 ✓ —— ★ 与层 / 脚本 / `pos()` **都无关** ✗（★ 所以我改那三样全都没用 ✓）。
+             *   ★ 修法：★ **居中之前先把"跟自机的那份"存下来** ✓，★ 只给 ★ **n/m 那 4 颗字**（★ 4 处 spawn + 4 处每帧
+             *   `set_pos`，共 8 处 ✓）★ 用它 ✓；★ ★ **底槽 / 填充条继续用居中的 `bx`** ✓（★ 不动你当时定下的观感 ✓）。*/
+            const float gx = bx;   /* ★ 跟自机的 x ✓（只给 n/m 字用 ✓，见上 ✓）*/
             bx = (POFV_HUD_SCREEN_W_SURF - POFV_HUD_CHG_BLOCK_W_SURF) * 0.5f
                + POFV_HUD_CHG_BORDER;
             int32_t tier = 0;
@@ -7341,13 +7348,13 @@ static int on_tick_2(ce_card_t *c)
             if (tier > POFV_HUD_CHG_MAX_TIER) tier = POFV_HUD_CHG_MAX_TIER;
             const int flash = ((s_card_frames / 10) & 1) ? 1 : 0;   /* 一手：每 10 帧一轮 ✓ */
             if (!s_hud_chg_label_vm)   /* 标签 (0,−40) → 表面 (0,−80) ✓ ×2 */
-                s_hud_chg_label_vm = (int32_t)hud_vm_spawn(POFV109_HUD_GLYPH_SCRIPT, bx, by - 80.0f);
+                s_hud_chg_label_vm = (int32_t)hud_vm_spawn(POFV109_HUD_GLYPH_SCRIPT, gx, by - 80.0f);
             if (!s_hud_chg_cur_vm)     /* 当前档 (−12,−28) → 表面 (−24,−56) ✓ ×2 */
-                s_hud_chg_cur_vm   = (int32_t)hud_vm_spawn(POFV109_HUD_GLYPH_SCRIPT, bx - 24.0f, by - 56.0f);
+                s_hud_chg_cur_vm   = (int32_t)hud_vm_spawn(POFV109_HUD_GLYPH_SCRIPT, gx - 24.0f, by - 56.0f);
             if (!s_hud_chg_slash_vm)   /* 斜杠 (0,−28) → 表面 (0,−56) ✓ ×2 */
-                s_hud_chg_slash_vm = (int32_t)hud_vm_spawn(POFV109_HUD_GLYPH_SCRIPT, bx, by - 56.0f);
+                s_hud_chg_slash_vm = (int32_t)hud_vm_spawn(POFV109_HUD_GLYPH_SCRIPT, gx, by - 56.0f);
             if (!s_hud_chg_max_vm)     /* 上限档 (+12,−28) → 表面 (+24,−56) ✓ ×2 */
-                s_hud_chg_max_vm   = (int32_t)hud_vm_spawn(POFV109_HUD_GLYPH_SCRIPT, bx + 24.0f, by - 56.0f);
+                s_hud_chg_max_vm   = (int32_t)hud_vm_spawn(POFV109_HUD_GLYPH_SCRIPT, gx + 24.0f, by - 56.0f);
 
             /* ★★ ② 三行字（一手 ✓）：tier 2 ⇒ Skill ✓、tier 3 ⇒ Ex.Attack Lv n ✓、
              *   tier 4 ⇒ Boss Lv n ✓；tier <= 1 ⇒ 清空（一手 C1 没有这行 ✓）。
@@ -7371,20 +7378,20 @@ static int on_tick_2(ce_card_t *c)
                 } else ce_hud_vm_text_clear(&s_hud_chg_lv_text);
             }
             if (s_hud_chg_label_vm) {
-                ce_anm_set_pos((uint32_t)s_hud_chg_label_vm, bx, by - 80.0f, 0.0f);
+                ce_anm_set_pos((uint32_t)s_hud_chg_label_vm, gx, by - 80.0f, 0.0f);
                 ce_anm_set_scale((uint32_t)s_hud_chg_label_vm, 2.0f, 2.0f);   /* ★ 一手 640 空间 1:1 → 表面 ×2 ✓ */
                 ce_anm_set_sprite(CE_ABILITY_ANM(), (uint32_t)s_hud_chg_label_vm, CE_ANM_ABILITY_SPRITE_POFV109_TH09_UI_CHARGE);
                 ce_anm_set_color((uint32_t)s_hud_chg_label_vm, flash ? 0xFF80FF80u : 0xFFFFFFFFu);
             }
             if (s_hud_chg_cur_vm) {
-                ce_anm_set_pos((uint32_t)s_hud_chg_cur_vm, bx - 24.0f, by - 56.0f, 0.0f);
+                ce_anm_set_pos((uint32_t)s_hud_chg_cur_vm, gx - 24.0f, by - 56.0f, 0.0f);
                 ce_anm_set_scale((uint32_t)s_hud_chg_cur_vm, 2.0f, 2.0f);     /* ★ 同上 ×2 ✓ */
                 ce_anm_set_sprite(CE_ABILITY_ANM(), (uint32_t)s_hud_chg_cur_vm,
                                   CE_ANM_ABILITY_SPRITE_POFV109_TH09_UI_DIGIT_0 + (uint32_t)tier);
                 ce_anm_set_color((uint32_t)s_hud_chg_cur_vm, flash ? 0xFF80FF80u : 0xFFFFFFFFu);
             }
             if (s_hud_chg_slash_vm) {
-                ce_anm_set_pos((uint32_t)s_hud_chg_slash_vm, bx, by - 56.0f, 0.0f);
+                ce_anm_set_pos((uint32_t)s_hud_chg_slash_vm, gx, by - 56.0f, 0.0f);
                 ce_anm_set_scale((uint32_t)s_hud_chg_slash_vm, 2.0f, 2.0f);   /* ★ 同上 ×2 ✓ */
                 ce_anm_set_sprite(CE_ABILITY_ANM(), (uint32_t)s_hud_chg_slash_vm, CE_ANM_ABILITY_SPRITE_POFV109_TH09_UI_SLASH);
                 ce_anm_set_color((uint32_t)s_hud_chg_slash_vm, 0xFFC0C0C0u);   /* 灰静态 ✓ */
@@ -7398,7 +7405,7 @@ static int on_tick_2(ce_card_t *c)
                 if (s_reiryoku >= POFV_C2_THRESH) ++mreach;
                 if (s_reiryoku >= POFV_C3_THRESH) ++mreach;
                 if (s_reiryoku >= POFV_C4_THRESH) ++mreach;
-                ce_anm_set_pos((uint32_t)s_hud_chg_max_vm, bx + 24.0f, by - 56.0f, 0.0f);
+                ce_anm_set_pos((uint32_t)s_hud_chg_max_vm, gx + 24.0f, by - 56.0f, 0.0f);
                 ce_anm_set_scale((uint32_t)s_hud_chg_max_vm, 2.0f, 2.0f);     /* ★ 同上 ×2 ✓ */
                 ce_anm_set_sprite(CE_ABILITY_ANM(), (uint32_t)s_hud_chg_max_vm,
                                   CE_ANM_ABILITY_SPRITE_POFV109_TH09_UI_DIGIT_0 + (uint32_t)mreach);
