@@ -2749,10 +2749,10 @@ static void pofv_ca_ring_tick(void)
                                    : (R->kind == 3) ? CE_ANM_ABILITY_SCRIPT_POFV109_CA_RING_L2
                                                     : CE_ANM_ABILITY_SCRIPT_POFV109_CA_RING_L3;
                 /* ★ 到这里的 kind 只可能是 2/3/4 ✓（1 已在上面被挡掉 ✓）⇒ 192 / 256 / 448 ✓*/
-                const uint32_t id = ce_anm_spawn(CE_ABILITY_ANM(), sid, 8);   /* ★ 2026-10-13 **改回 8** ✓（撤回那次回退成 6 ✗）
-                                                                               *   ★ 依据 = **卡内日志定案** ✓（本文件 `:6814` ✓）：
-                                                                               *   「★ **层 6 在这台 ability-anm 上渲染不出来** ✗
-                                                                               *    ⇒ ★ **改成 8** ✓，★ 与「能渲染的圆/灵」同层 ✓」。*/
+                const uint32_t id = ce_anm_spawn(CE_ABILITY_ANM(), sid, 6);   /* ★ 2026-10-13 **回退我那次"改成 8"** ✗：
+                                                                               *   ★ 没有 owner 依据 ✗；★ 而同层的可见物
+                                                                               *   （C2 光球 / C1 暴风 / 罩子内层，全在层 6 ✓）
+                                                                               *   ★ owner 都看得见 ✓ ⇒ ★ 恢复 6 ✓。*/
                 if (id) {
                     R->vm = (int32_t)id;
                     ce_log("pofv: [CA_RING] 环 VM 已起 slot=%d script=%u ✓", i, (unsigned)sid);
