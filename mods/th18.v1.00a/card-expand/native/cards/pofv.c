@@ -3736,6 +3736,9 @@ typedef struct {
     float x, y;
     float dx, dy;       /* 单位方向 */
     float spd;          /* 当前速率（2.3 → 每帧 +0.01）*/
+    int   spin;         /* ★ 2026-10-13（★ 修"鬼畜" ✓）：★ **本弹自己的自转方向** ✓
+                         *   （★ 一手 = 出生时在 `etExSet` 里定死 `±0.034906585f` ✓，★ 之后**不随波变** ✗）
+                         *   ★ 原来读全局 `s_c3.parity` ✗ ⇒ ★ 新波一来**天上的旧弹一起翻方向** ✗ = 抽搐 ✓。*/
     int32_t vm;
 } pofv_c3_bullet_t;
 static pofv_c3_bullet_t s_c3_b[POFV_C3_MAX_BULLETS];
@@ -3805,6 +3808,7 @@ static void c3_fire_wave(void)
         }
         b->spd = POFV_C3_SPEED;
         b->age = 0; b->bounces = 0; b->live = 1;
+        b->spin = s_c3.parity ? 1 : 0;   /* ★ 出生时定死自转方向 ✓（一手 `etExSet` ✓；★ 之后不随波变 ✓）*/
         b->vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), POFV109_BBALL_SCRIPT, POFV109_BBALL_LAYER);
         POFV_DBGLOG("pofv: [DBGC3] bullet i=%d vm=%d spawn_ok=%d pos=(%.1f,%.1f) dir=(%.2f,%.2f) spd=%.2f",
                     i, (int)b->vm, b->vm ? 1 : 0, (double)b->x, (double)b->y,
@@ -3910,7 +3914,7 @@ static void pofv_c3_tick(void)
          *   速率 = `0.01f + %B*0.02f`（%B ❓= 0.0）⇒ 每帧 +0.01 ✓。*/
         /* ★ ⑪ ✓ EX_ANGLE_ACCEL：方向每帧转 +-2 度（符号 = 本波奇偶）。*/
         {
-            const float sg = s_c3.parity ? POFV_C3_ANGACCEL_SIN : -POFV_C3_ANGACCEL_SIN;
+            const float sg = b->spin ? POFV_C3_ANGACCEL_SIN : -POFV_C3_ANGACCEL_SIN;
             const float cC = POFV_C3_ANGACCEL_COS;
             const float ndx = b->dx * cC - b->dy * sg;
             const float ndy = b->dx * sg + b->dy * cC;
@@ -4815,7 +4819,7 @@ static void pofv_c3m_tick(void)
          *   ⇒ ★ 盒只覆盖 `y=[238,448]` ✓、★ **一半在屏外** ✗。
          *   ★ 照**同卡 C4M** 的写法（`pp[1] − 210.0f` ✓，见本文件上面那处 ✓）⇒ ★ 改成 `b->y − h/2` ✓。*/
         pos[0] = b->x; pos[1] = b->y - 210.0f; pos[2] = 0.0f;
-        (void)ce_damage_rect(pos, 0.0f, 2, 14.0f, 12.0f, 420.0f);   /* ❓③ 竖直长盒（宽 12 / 高 420 ✓）*/
+        (void)ce_damage_rect(pos, 0.0f, 2, pofv_dmg_laser(1, 3, (int)s_c3m_st.level), 12.0f, 420.0f);   /* ★ 2026-10-13：★ **激光走激光表** ✓（owner 口径 7「魔理沙涉及到激光的伤害也得单独拎出来」✓；★ 角色 = 1 魔理沙 ✓、★ 招 = 3 ✓、★ 等级 = `s_c3m_st.level` ✓）；★ 原来硬编码 `14.0f` ✗ ⇒ ★ 表里没有 ⇒ **默认 1** ✓ */
     }
 }
 
@@ -4952,7 +4956,7 @@ static void pofv_c4m_tick(void)
                 ce_anm_set_pos((uint32_t)s_c4m_st.laser_vm, pp[0], pp[1], 0.0f);
             if (pp) {
                 pos[0] = pp[0]; pos[1] = pp[1] - 210.0f; pos[2] = 0.0f;
-                (void)ce_damage_rect(pos, 0.0f, 2, 14.0f, 16.0f, 420.0f);   /* ❓③ 竖直长盒 ✓ */
+                (void)ce_damage_rect(pos, 0.0f, 2, pofv_dmg_laser(1, 4, (int)s_c4_lv_n), 16.0f, 420.0f);   /* ★ 2026-10-13：★ **激光走激光表** ✓（同 C3M ✓；★ 等级按 `s_c4_lv_n` ✓ —— 卡里 C4M 的 rank 就是这么取的 ✓）*/
             }
         }
     }
