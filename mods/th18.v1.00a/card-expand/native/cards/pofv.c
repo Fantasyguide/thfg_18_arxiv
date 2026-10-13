@@ -6623,7 +6623,13 @@ static int on_tick_2(ce_card_t *c)
                  *   ★ **"★ 我这次派出去的 C4 还活着"** ✓ 当门（★ = `s_c4.live` ✓，★ 复核明确说
                  *   ★ **不能拿限时 buff/冷却代替** ✗ ⇒ ★ 这里用的正是"★ 它活着"这个状态 ✓）。
                  *   ★ ⚠ 只覆盖 ★ **灵梦的 C4** ✓（`s_c4` ✓）；★ 魔理沙 / 早苗的 C4 状态各自另有 ✓（★ 待补 ✓）。*/
-                else if (s_c4.live) pofv_c3_fire();   /* ★ C4 进行中 ⇒ 改放 C3 ✓（★ 一手：对面已注册 boss ✓）*/
+                /* ★★ 2026-10-13：★ 按角色各自判"★ **我派的 C4 还活着**" ✓ ——
+                 *   ★ 一手那边**19 个角色全走同一条链** ✓（★ 复核 `86d147f1` ✓：★ 角色 ECL 都经
+                 *   ★ `BossAttack → Boss00Boss → @BossStartInit → ins_512(0)` ✓ ⇒ ★ 门对每个角色都成立 ✓）
+                 *   ⇒ ★ 所以降级也要**按角色**放各自的 C3 ✓（★ 路由同 `:6603/:6604` 那两行 ✓）。*/
+                else if (s_aura_kind == 1 && s_c4m_st.active) pofv_c3m_fire();   /* ★ 魔理沙 ✓ */
+                else if (s_aura_kind == 3 && s_c4s.active)    pofv_c3s_fire();   /* ★ 早苗 ✓ */
+                else if (s_c4.live) pofv_c3_fire();   /* ★ 灵梦 / 咲夜（用通用 C4 状态 ✓）：C4 进行中 ⇒ 改放 C3 ✓ */
                 else pofv_c4_fire();
             }
             /* ★★★★★ 2026-10-12 **TH09 一手：CA 消弹环**（锚定场 ✓ —— 见 `s_ca_ring` 定义处的长注释 ✓）：
