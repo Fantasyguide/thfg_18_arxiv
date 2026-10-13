@@ -1523,14 +1523,25 @@ static int      s_spirit_next;
 static int pofv_spirit_body_sprite(int32_t kind, int32_t level, int disabled, int frame)
 {
     static const int base[POFV_SPIRIT_KIND__COUNT] = {
-        CE_ANM_ABILITY_SPRITE_SPIRIT_PURE_0,
+        /* ★★★★★ 2026-10-13（★ owner 实跑 ✓）：「★ **纯净灵的颜色还是红色**」✗ ⇒ ★ **真因 = 贴图** ✗：
+         *   ★ `SPIRIT_PURE_*` 那张的平均 RGB = **(220,179,179)** ✓（★ R 明显高于 G/B ⇒ **红/粉** ✗）；
+         *   ★ 而固化态那张 `SPIRIT_DISP4_*` = **(232,222,174)** ✓（★ R≈G ≫ B ⇒ **黄** ✓）；
+         *   ★ 两张的**不透明像素数完全相同（348 ✓）** ⇒ ★ **同一只灵的"红版 / 黄版"** ✓✓。
+         *   ★ owner：「★ **纯净灵正常的颜色就是其固化状态的颜色，都应该是黄的**」✓
+         *   ⇒ ★ **换上"黄版"这张** ✓ —— ★ **不是**调 `set_color` ✗（★ 红贴图 × 黄 tint **仍是红** ✗，
+         *   ★ 这正是我以前改了 tint 却没用的原因 ✓）。
+         *   ⚠ ★ 帧数跟着变 ✗：★ `SPIRIT_PURE_*` 是 **8 帧** ✓、★ `SPIRIT_DISP4_*` 是 **5 帧** ✓
+         *   ⇒ ★ 下一行的 `n` 也从 8 改成 5 ✓（★ 否则帧索引越界 ✗）。*/
+        CE_ANM_ABILITY_SPRITE_SPIRIT_DISP4_0,
         CE_ANM_ABILITY_SPRITE_SPIRIT_WOLF_0,
         CE_ANM_ABILITY_SPRITE_SPIRIT_OTTER_0,
         CE_ANM_ABILITY_SPRITE_SPIRIT_EAGLE_0,
         CE_ANM_ABILITY_SPRITE_SPIRIT_GHOSTG_0
     };
     int k = (kind >= 0 && kind < POFV_SPIRIT_KIND__COUNT) ? (int)kind : (int)POFV_SPIRIT_KIND_PURE;
-    int n = (k == (int)POFV_SPIRIT_KIND_PURE) ? 8 : 4;
+    int n = (k == (int)POFV_SPIRIT_KIND_PURE) ? 5 : 4;   /* ★ 2026-10-13：★ 纯净灵改用**黄版**贴图 ✓
+                                                          *   （★ `SPIRIT_DISP4_*` ✓ 是 **5 帧** ✗ 不是 8 帧 ✓
+                                                          *   —— ★ 见上一行 `base[]` 里那段注释 ✓）。*/
     if (frame < 0) frame = 0;
     /* ★★★ owner 2026-10-06：「**固化的时候 sprite 也会变**」✓ ＋ 核实方：一手**每族一档** ✓
      *   ⇒ 补上此前缺失的**純霊档**（`ATLAS_SPIRIT_DISABLE_PURE` ✓，8 帧 = 一手 TH19 `enemy.anm`
