@@ -2343,6 +2343,11 @@ static int     s_c1_rel_latch;   /* ★ 「每次释放放一份 C1」的闩锁 
  * ★ 画法：ce_hud_vm_text_set_font ✓（sdk.h:811）；坐标 = 640 空间 ✓；align_h 0 = 居中 ✓（sdk.h:774）。*/
 static ce_hud_vm_text_t s_hud_chg_lv_text;
 static int s_c3_lv_n, s_c4_lv_n;
+/* ★ 2026-10-13（★ owner：「★ **小彩弹也发**」✓；★ 一手 `Boss00BossCard1_at` 里 **两个槽交替** ✓）：
+ *   ★ 一手的两个发射口 = ★ 槽 0（`etSprite(0,44,3)` = **阴阳玉** ✓）与 ★ 槽 1（`etCopy(1,0)` 后
+ *   `etSprite(1,1,2)` = ★ **type 1 → 脚本 38 → 经典 8×8 彩弹** ✓）✓；
+ *   ★ 一手是"★ **每 2 帧一发、`$E` 奇偶交替两槽**"✓ ⇒ ★ 本卡用这个**发射计数**的奇偶来交替 ✓。*/
+static int s_c4_emit_parity;
 /* ★★ 2026-10-11 补一手（子 agent 核实 ✓）：★ C3/C4 各有一个**使用计数** ✓
  *   （一手 `S+0x4c`（C3）/ `S+0x50`（C4），**clamp 0..999** ✓）—— 与 LV（0..7）**不是同一个量** ✗。*/
 static int s_c3_uses, s_c4_uses;
@@ -4380,7 +4385,12 @@ static void pofv_c4_emit(int dir)
      *   ⇒ ★ 会顶掉脚本里 owner 要的 `alpha ≤ 128` ✓）、★ **去掉 `set_scale(0.5)`** ✗
      *   （★ 一手弹体是 **8×8 原尺寸** ✓）。★ C4 两个槽（一手 type44/type1 ✓）在**弹体**上同形 ✓
      *   —— ★ 差别只在**粒子颜色**（★ 槽0 蓝 / 槽1 粉 ✓），★ 那部分在命中表现里做 ✓。*/
-    s_c4_b[k].vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), POFV109_C4_ORB_SCRIPT, POFV109_BBALL_LAYER);
+    /* ★ 2026-10-13（★ owner：「★ **小彩弹也发**」✓）：★ 一手两个槽**交替** ✓ ⇒ ★ 本卡按发射奇偶交替 ✓：
+     *   ★ 偶数发 = **阴阳玉**（脚本 459 = 一手槽 0 / type44 ✓）；
+     *   ★ 奇数发 = **8×8 彩弹**（脚本 457 = 一手槽 1 / type1 → 脚本 38 ✓）。*/
+    s_c4_b[k].vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
+                                         (s_c4_emit_parity++ & 1) ? POFV109_BBALL_SCRIPT : POFV109_C4_ORB_SCRIPT,
+                                         POFV109_BBALL_LAYER);
     if (s_c4_b[k].vm) {
         ce_anm_set_pos((uint32_t)s_c4_b[k].vm, s_c4_b[k].x, s_c4_b[k].y, 0.0f);
     }
