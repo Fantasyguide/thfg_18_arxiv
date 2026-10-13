@@ -4551,7 +4551,12 @@ static void pofv_c4_tick(void)
                              0.5f + (float)b->age * 0.004f);
         }
         pos[0] = b->x; pos[1] = b->y; pos[2] = 0.0f;
-        (void)ce_damage_rect(pos, 0.0f, POFV_C1_HIT_LIFE, 14.0f, POFV_C1_HIT_W, POFV_C1_HIT_H);
+        /* ★ 2026-10-13（★ owner 口径 7 ✓）：★ 伤害改走**表** ✓ —— ★ `[角色][招][等级]` ✓
+         *   （★ 招 = 4 表示 C4 ✓；★ 等级 = `s_c4_lv_n` ✓ —— ★ C4 的档就是它 ✓）；
+         *   ★ 原来硬编码 `14.0f` ✗ ⇒ ★ 表里没有 ⇒ **默认 1** ✓（★ 口径 5 ✓）。*/
+        (void)ce_damage_rect(pos, 0.0f, POFV_C1_HIT_LIFE,
+                             pofv_dmg((int)s_aura_kind, 4, (int)s_c4_lv_n),
+                             POFV_C1_HIT_W, POFV_C1_HIT_H);
     }
 }
 
