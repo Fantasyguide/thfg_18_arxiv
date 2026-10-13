@@ -10,6 +10,9 @@ script script451 {
     resampleMode(1);
     blendMode(1);
     iset($I0, 64);
+    iset($I1, 5);               // ★★ 2026-10-13：★ 一手原文（见 `450` 的 `:5` ✓）就有 `iset($I1,5);` ✗
+                                //   ★ 原先逐条照抄时漏了它 ⇒ ★ 缺 `I1` ⇒ `dv=0` ⇒ 弧画不出来 ✓
+                                //   （★ 机制依据 = 卡内对照组 `406_pofv109_aura_sakuya.anm.txt:4` ✓ 的注释 ✓）
     texArcEven($I0);
     scrollY(0.02f);
     color(255, 255, 255);
