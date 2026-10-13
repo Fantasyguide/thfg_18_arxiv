@@ -6149,7 +6149,14 @@ static int on_tick_2(ce_card_t *c)
                         const int32_t age = s_spirit_dis_age[z];
                         const int32_t fast_from = POFV_DISABLE_JOUMON_FRAMES - 73;
                         const int32_t warn_from = fast_from - 16;
-                        uint32_t tint = 0xFFFFFFFFu;                     /* 白 ✓ */
+                        uint32_t tint = POFV_EX_ALPHA_RGBA;              /* ★★★★★ 2026-10-13 owner：「★ **纯净灵正常的颜色
+                                                                          *   就是其固化状态的颜色，都应该是黄的**」✓
+                                                                          *   ★ 原来写 `0xFFFFFFFF`（**白** ✗）⇒ ★ 改成
+                                                                          *   `POFV_EX_ALPHA_RGBA` = **`0xFFFFFF80`** ✓
+                                                                          *   ★ ⚠ 本卡颜色格式 = **`0xAARRGGBB`** ✓
+                                                                          *   ★ ⇒ 它是 `A=FF / R=FF / G=FF / B=80` = ★ **不透明的黄** ✓
+                                                                          *   （★ 那个宏名与它自己的注释写着"50% 透明（α=0x80）"**都是错的** ✗
+                                                                          *   —— ★ 同一误会我在 `:7081` 也栽过一次 ✓，那里已写明 ✓）。*/
                         if (age >= fast_from)        tint = (age & 1) ? 0xFFFFFFFFu : 0xFFFF0000u;   /* 全速：每 1 帧 ✓ */
                         else if (age >= warn_from)   tint = (((age - warn_from) / 2) & 1) ? 0xFFFFFFFFu : 0xFFFF0000u;  /* 预警：每 2 帧 ✓ */
                         if (s_spirit_body[z]) {
