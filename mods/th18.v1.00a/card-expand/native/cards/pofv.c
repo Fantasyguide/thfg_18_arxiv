@@ -2268,6 +2268,18 @@ static void c3_dir5(int idx5, float *dx, float *dy);
                                          *   ★ 环 `a=1.0` ⇒ ★ **64 + 盒龄** ✓（★ 寿命 24 ⇒ ≤ **88** ✓）。
                                          *   ⚠ 原来写的 16（❓自定）**错** ✗；★ 而 `((age−45)*64)/60 + 128` 那个峰值 190
                                          *   ★ **只是"消弹圈"半径** ✓（★ 喂 `FUN_004ee770` ✓）、★ **不是判定半径** ✗。*/
+/* ★★★★★ 2026-10-13（owner 报"那簇随自机运动但整块偏右 ≈ 自身宽度"）：
+ *   ★ **跟人**的 HUD 字形改用**层 20** 的副本 ✓（脚本 `442` = `136_hud_glyph` 的逐字副本，★ 只把
+ *   `layer(25)` 换成 **`layer(20)`** ✓）。★ 依据 = 文档 + "能正确显示的卡"两边都对上 ✓：
+ *   · `engine/anm/th18/02-render-stages.md:11–15`：★ **层 20–23 → 相机 1** ✓、★ **层 24+ → 相机 2** ✓；
+ *     且明写「★ **只有相机 2 的 2D 精灵偏移（`camera+0x104/+0x108` → `AnmManager+0xd8/+0xdc`）非零**」✓
+ *     ⇒ ★ 层 25 的 VM 会吃**相机 2 的固定偏移** ✗、★ 层 20 不吃 ✓。
+ *   · 实证：117 卡**跟着自机**的 `117_season_glyph` = **layer(20)** ✓、`118/119` = 20/21 ✓；
+ *     而 `104/105`（**不跟人**的货架件）= 25 ✓ ⇒ ★ **规律 = 跟人的用 20/21** ✓。
+ *   ⚠ 代价：★ `136` 选 25 原是为了"折到组 38 = 与**暂停模糊罩**同桩 ⇒ 字被罩住" ✓；
+ *   ★ 切 20 后**暂停时的模糊表现会变** ✓（已登记 TUNING/AUDIT ✓）。
+ *   ⚠ 只**新增**了 442 脚本、★ **没有改共享的 `136`** ✓ ⇒ 别家卡不受影响 ✓。*/
+#define POFV109_HUD_GLYPH_SCRIPT  444   /* ★ 编号 444：构建器按文件名顺序分配（442/443 已被 C1M 占用 ✓）*/
 #define POFV_C2_INVULN             40   /* 一手 ✓（39/40/40.0f）*/
 #define POFV_C2_VM_LAYER            6   /* ★ 2026-10-13 回退 ✗：层 6 可用（见 `POFV_STORM_VM_LAYER` 注释 ✓）*/
 #define POFV_C2_RING_SCRIPT  CE_ANM_ABILITY_SCRIPT_POFV109_STORM   /* ★ 借一手脚本 396（❓自定画法）*/
@@ -7008,13 +7020,13 @@ static int on_tick_2(ce_card_t *c)
             if (tier > POFV_HUD_CHG_MAX_TIER) tier = POFV_HUD_CHG_MAX_TIER;
             const int flash = ((s_card_frames / 10) & 1) ? 1 : 0;   /* 一手：每 10 帧一轮 ✓ */
             if (!s_hud_chg_label_vm)   /* 标签 (0,−40) → 表面 (0,−80) ✓ ×2 */
-                s_hud_chg_label_vm = (int32_t)hud_vm_spawn(CE_ANM_ABILITY_SCRIPT_HUD_GLYPH, bx, by - 80.0f);
+                s_hud_chg_label_vm = (int32_t)hud_vm_spawn(POFV109_HUD_GLYPH_SCRIPT, bx, by - 80.0f);
             if (!s_hud_chg_cur_vm)     /* 当前档 (−12,−28) → 表面 (−24,−56) ✓ ×2 */
-                s_hud_chg_cur_vm   = (int32_t)hud_vm_spawn(CE_ANM_ABILITY_SCRIPT_HUD_GLYPH, bx - 24.0f, by - 56.0f);
+                s_hud_chg_cur_vm   = (int32_t)hud_vm_spawn(POFV109_HUD_GLYPH_SCRIPT, bx - 24.0f, by - 56.0f);
             if (!s_hud_chg_slash_vm)   /* 斜杠 (0,−28) → 表面 (0,−56) ✓ ×2 */
-                s_hud_chg_slash_vm = (int32_t)hud_vm_spawn(CE_ANM_ABILITY_SCRIPT_HUD_GLYPH, bx, by - 56.0f);
+                s_hud_chg_slash_vm = (int32_t)hud_vm_spawn(POFV109_HUD_GLYPH_SCRIPT, bx, by - 56.0f);
             if (!s_hud_chg_max_vm)     /* 上限档 (+12,−28) → 表面 (+24,−56) ✓ ×2 */
-                s_hud_chg_max_vm   = (int32_t)hud_vm_spawn(CE_ANM_ABILITY_SCRIPT_HUD_GLYPH, bx + 24.0f, by - 56.0f);
+                s_hud_chg_max_vm   = (int32_t)hud_vm_spawn(POFV109_HUD_GLYPH_SCRIPT, bx + 24.0f, by - 56.0f);
 
             /* ★★ ② 三行字（一手 ✓）：tier 2 ⇒ Skill ✓、tier 3 ⇒ Ex.Attack Lv n ✓、
              *   tier 4 ⇒ Boss Lv n ✓；tier <= 1 ⇒ 清空（一手 C1 没有这行 ✓）。
@@ -7124,11 +7136,11 @@ static int on_tick_2(ce_card_t *c)
             const uint32_t c_gf    = (a << 24) | (flash ? 0x00FFFFFFu : 0x00E0E0E0u);
             const uint32_t c_label = (a << 24) | (flash ? 0x00FFFFFFu : 0x00A0A0A0u);
             if (!s_hud_lv_gf_vm)       /* 标签 (0,−40) → 表面 (0,−80) ✓ ×2 */
-                s_hud_lv_gf_vm    = (int32_t)hud_vm_spawn(CE_ANM_ABILITY_SCRIPT_HUD_GLYPH, bx, by - 80.0f);
+                s_hud_lv_gf_vm    = (int32_t)hud_vm_spawn(POFV109_HUD_GLYPH_SCRIPT, bx, by - 80.0f);
             if (!s_hud_lv_label_vm)    /* 标签 (−8,−28) → 表面 (−16,−56) ✓ ×2 */
-                s_hud_lv_label_vm = (int32_t)hud_vm_spawn(CE_ANM_ABILITY_SCRIPT_HUD_GLYPH, bx - 16.0f, by - 56.0f);
+                s_hud_lv_label_vm = (int32_t)hud_vm_spawn(POFV109_HUD_GLYPH_SCRIPT, bx - 16.0f, by - 56.0f);
             if (!s_hud_lv_digit_vm)    /* 档位数字 (+18,−28) → 表面 (+36,−56) ✓ ×2 */
-                s_hud_lv_digit_vm = (int32_t)hud_vm_spawn(CE_ANM_ABILITY_SCRIPT_HUD_GLYPH, bx + 36.0f, by - 56.0f);
+                s_hud_lv_digit_vm = (int32_t)hud_vm_spawn(POFV109_HUD_GLYPH_SCRIPT, bx + 36.0f, by - 56.0f);
             if (s_hud_lv_gf_vm) {
                 ce_anm_set_pos((uint32_t)s_hud_lv_gf_vm, bx, by - 80.0f, 0.0f);
                 ce_anm_set_scale((uint32_t)s_hud_lv_gf_vm, 2.0f, 2.0f);      /* ★ 一手 640 空间 1:1 → 表面 ×2 ✓ */
