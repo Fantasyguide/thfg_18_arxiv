@@ -2210,9 +2210,15 @@ static void c3_dir5(int idx5, float *dx, float *dy);
  *   那段用的是 **`×1000 ÷192`** 换算（常量 `0x5aa478 = 1000.0` ✓、`0x5aa3dc = 192.0` ✓，
  *   另有 π / −π / 2.0 / 3.0 ✓）⇒ ★ 子 agent 报的「**±100 × 1000/192 = 520.833**」**有出处** ✓
  *   —— ★ 即：★ 一手那边**真正的半径 = `100`** ✓（520.833 是**换算后的内部值** ✗）。
- *   ★ 我先前那个 `64.0f` 是 `+0x788` 的**另一个字段** ✗（不是环绕半径 ✗）。
- *   ★ 且一手是**恒定半径** ✓（不是从 0 缓动到满 ✗）⇒ 卡里改成常数 ✓。*/
-#define POFV_C2_ORBIT_MAX       100.0f
+ *   ★★★★★ 2026-10-13（★ 独立转写 agent `427a0bf4` ✓）：★ **上面那两句全错** ✗ ——
+ *   ★ 一手 = `EXReigekiInf` 里的**半径 tween** ✓：★ 帧 **0→22** 从 0 涨到 **64** ✓（ease = f² ✓）、
+ *   ★ 帧 **22→44** 从 64 **收回 0** ✓、★ ≥44 恒 **0** ✓（★ `0x53b443`–`0x53b4c4` + 求值器 `0x402c30` ✓）。
+ *   ★ 而 `100 / 520.833` 是**爆炸音效的 pan** ✗（★ `(side?+100:−100)×1000÷192` ✓ `0x53b407`–`0x53b435` ✓）；
+ *   ★ `96.0` 是**子粒子随机散布幅度** ✗（★ opcode 117 = `fsetMul` ✓）。★ **真半径峰值 = 64** ✓。
+ *   ★ ⇒ ★ 本卡改为按 tween 算半径 ✓；★ 名字保留（★ 免得别处引用踩空 ✓）但**值改成 64** ✓。*/
+#define POFV_C2_ORBIT_MAX        64.0f   /* ★ 一手 ✓ **tween 峰值**（不是 100 ✗）*/
+#define POFV_C2_TWEEN_IN_FRAMES  22      /* ★ 一手 ✓ 0→64 用 22 帧 ✓ */
+#define POFV_C2_TWEEN_OUT_FRAMES 22      /* ★ 一手 ✓ 64→0 用 22 帧 ✓（= 帧 22→44 ✓，这就是"回中心" ✓）*/
 #define POFV_C2_ORBIT_FRAMES     22.0f  /* 一手 ✓ 22 帧到终点（缓动曲线 ❓自定，见下）*/
 #define POFV_C2_POINT_CANCEL_R   64.0f  /* 一手 ✓ 每点的消弹圈半径（`FUN_004ee770(…, 64.0f, …)`）*/
 #define POFV_C2_RING_R0         128.0f  /* 一手 ✓ 扩张环起点 */
@@ -2396,7 +2402,21 @@ static void pofv_c2_tick(uint32_t id)
         if (f > 1.0f) f = 1.0f;
         /* ❓缓动曲线：一手未给 ⇒ 取本卡结界同款的 ease-out 二次（模式 4 同族 ✓）*/
         (void)f;
-        orbit = POFV_C2_ORBIT_MAX;   /* ★ 一手 ✓ **恒定**半径（原来是 0→满 缓动 ✗）*/
+        /* ★★★★★ 2026-10-13（★ 转写 ✓）：★ 半径 = **tween** ✓ —— ★ 帧 0→22 涨到峰值 ✓、★ 帧 22→44 **收回 0** ✓
+         *   （★ ease 都是 **f²** ✓）⇒ ★ **这一段就是 owner 说的"甩出去绕转 → 快速回到中心"** ✓，
+         *   ★ 而 ★ 帧 45 炸开时半径**已经 = 0** ✓（★ 所以一手是"**在中心炸**" ✓ = "在外侧炸"的真因 ✓）。*/
+        {
+            const int a22 = s_c2.age;
+            if (a22 < POFV_C2_TWEEN_IN_FRAMES) {
+                const float f22 = (float)a22 / (float)POFV_C2_TWEEN_IN_FRAMES;
+                orbit = POFV_C2_ORBIT_MAX * f22 * f22;             /* ★ 一手 ✓ 0 → 64，ease f² ✓ */
+            } else if (a22 < POFV_C2_TWEEN_IN_FRAMES + POFV_C2_TWEEN_OUT_FRAMES) {
+                const float f22 = (float)(a22 - POFV_C2_TWEEN_IN_FRAMES) / (float)POFV_C2_TWEEN_OUT_FRAMES;
+                orbit = POFV_C2_ORBIT_MAX * (1.0f - f22 * f22);    /* ★ 一手 ✓ 64 → 0（f²），即"回中心" ✓ */
+            } else {
+                orbit = 0.0f;                                       /* ★ 一手 ✓ ≥44 恒 0 ✓ */
+            }
+        }
         for (i = 0; i < POFV_C2_POINTS; ++i) {
             const int di = (POFV_C2_POINT_BASE_STEP * i + POFV_C2_SPIN_STEP * s_c2.age) % 36;
             float pos[3];
@@ -2460,9 +2480,13 @@ static void pofv_c2_tick(uint32_t id)
          *   ★ 原来这条判的是 **`age == POFV_C2_POINT_END`(45)** ✗ —— ★ 而"回中心"那 15 帧是 **45 → 60** ✓、
          *   ★ 球自己的 `+60: delete()` 也在 **60** ✓ ⇒ ★ 于是 **45 帧时球还在外侧就炸了** ✗
          *   （= "在外侧炸" ✓），★ 且 **炸开(45) ≠ 消失(60)** ✗ ✓。
-         *   ⇒ ★ 改成 ★ **球到达中心那一刻（`POFV_C2_ORB_END` = 60 ✓）炸** ✓ ⇒ ★ 与**消失同帧** ✓。
-         *   ★ 扩张环仍从 `POFV_C2_POINT_END`(45 ✓) 起 ✓ —— ★ 环是另一台 VM、与球的炸开**互不影响** ✓。*/
-        if (s_c2.age == POFV_C2_ORB_END) {
+         *   ★★★★★ 2026-10-13 **改回 45** ✓（★ 撤回我第 1 轮那笔"改到 60" ✗）——
+         *   ★ 一手：★ **`age == 45`** 时对 3 台父级各发 `中断 1` ✓（`0x53b3e1`–`0x53b3f5` ✓），
+         *   ★ 而 ★ **同帧消失的是那 6 台"球"**（★ 中断沿 `[vm+0x540]` **子级链递归** ✓ ⇒ 球各自
+         *   `interruptLabel(1): delete()` ✓，见 `0x4cb874`–`0x4cb89c` + `pl00.txt:660-662` ✓）；
+         *   ★ **父管家**才在 **60** 自删 ✓（`+60: delete()` ✓）。
+         *   ★ ⇒ ★ 我先前把"同帧"的对象当成了**父级** ✗ ⇒ 才误改到 60 ✗。*/
+        if (s_c2.age == POFV_C2_POINT_END) {
             int k4;
             for (k4 = 0; k4 < POFV_C2_POINTS; ++k4)
                 if (s_c2.orb_vm[k4]) ce_anm_interrupt((uint32_t)s_c2.orb_vm[k4], 1);
