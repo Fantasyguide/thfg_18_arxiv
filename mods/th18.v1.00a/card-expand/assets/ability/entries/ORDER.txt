@@ -1309,3 +1309,6 @@ POFV109_C1S_HIT              ability/POFV109_C1S_HIT.png          14x14
 POFV109_BARRIER_FULL        ability/POFV109_BARRIER_FULL.png        72x72
 POFV109_C2M_BEAM           ability/POFV109_C2M_BEAM.png          768x32
 POFV109_C2S_FROG           ability/POFV109_C2S_FROG.png           30x30
+POFV109_BBALL_BORN           ability/bball/BBALL_BORN.png           8x8
+POFV109_BBALL_IDLE           ability/bball/BBALL_IDLE.png           8x8
+POFV109_BBALL_DIE            ability/bball/BBALL_DIE.png            8x8
