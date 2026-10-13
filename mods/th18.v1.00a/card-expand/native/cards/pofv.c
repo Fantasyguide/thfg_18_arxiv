@@ -3693,6 +3693,11 @@ static void pofv_c1_tick(void)
 #define POFV_C4_LEVEL_DEFAULT       ((POFV_C3_LEVEL_DEFAULT) > 3 ? (POFV_C3_LEVEL_DEFAULT) : 3)
 #define POFV_C3_MAX_BULLETS        48      /* ❓自定：同屏弹池上限（一手无上限：最多 $D×$C = 4×8 = 32）*/
 #define POFV_C3_CARRIER_DY     (-128.0f)   /* ★ 一手 ✓ `ins_400(0.0f, 128.0f)`：环心 = 自机上方 128 */
+/* ★★★★ 2026-10-13（★ 独立审计 `a39d612c` §B ✓ 一手定死）：★ `120` = ★ **EX_ANGLE_ACCEL 的持续帧数 `a`** ✓
+ *   （★ `pl00.txt:657` 的 `ins_611($A,0,8,**120**,…)` ✓）★ —— ★ 到第 120 帧引擎 ★ **`and [bullet+0x6a8],~0x8`** ✓
+ *   （★ `0x4f0b2f-4d` ✓）★ ⇒ ★ **停转** ✓（★ 角冻结、★ 速度/方向不变 ✓）★ ⇒ ★ 卡侧得自己加这个时限 ✓
+ *   （★ 我原来是**永远转** ✗ = owner 的"★ **120 帧之后的不再转动没有生效**"✗）。*/
+#define POFV_C3_SPIN_FRAMES      120
 #define POFV_C3_SPEED              2.3f    /* ★ 一手 ✓ `ins_605($A, 2.3f, 1.0f)` 的第一层 */
 #define POFV_C3_ACCEL_RATE        0.01f    /* ★ 一手 ✓ `0.01f + %B*0.02f`，而 %B ❓= 0.0 */
 #define POFV_C3_ACCEL_FRAMES       600     /* ★ 一手 ✓ `ins_611($A, 0, 4, 600, …)` 的 600 */
@@ -4007,20 +4012,31 @@ static void pofv_c3_tick(void)
         /* ★ 一手 ✓ `EX_ACCEL`（600 帧）：**只改速率、不改方向**（⇒ 不必重算三角 ✓）。
          *   速率 = `0.01f + %B*0.02f`（%B ❓= 0.0）⇒ 每帧 +0.01 ✓。*/
         /* ★ ⑪ ✓ EX_ANGLE_ACCEL：方向每帧转 +-2 度（符号 = 本波奇偶）。*/
-        {
+        /* ★★★★ 2026-10-13（★ owner #2："★ **120 帧之后的不再转动没有生效**"✗ ⇒ ★ 审计 `a39d612c` §B ✓）：
+         *   ★ 一手：★ `EX_ANGLE_ACCEL` 的 `a = **120**` ✓ ⇒ ★ 只转 120 帧 ✓（★ `0x4f0b2f-4d` 到点清 bit 0x8 ✓）
+         *   ⇒ ★ 这里加时限门 ✓（★ 原来**永远转** ✗）。*/
+        if (b->age < POFV_C3_SPIN_FRAMES) {
             const float sg = b->spin ? POFV_C3_ANGACCEL_SIN : -POFV_C3_ANGACCEL_SIN;
             const float cC = POFV_C3_ANGACCEL_COS;
             const float ndx = b->dx * cC - b->dy * sg;
             const float ndy = b->dx * sg + b->dy * cC;
             b->dx = ndx; b->dy = ndy;
         }
-        if (b->age <= POFV_C3_ACCEL_FRAMES) b->spd += POFV_C3_ACCEL_RATE;
+        /* ★ 2026-10-13 审计 `a39d612c` §B7 ✓：★ 一手 `a = 600` ✓ ⇒ 用 `<`（★ 原来 `<=` 会多跑第 601 帧 ✗）。*/
+        if (b->age < POFV_C3_ACCEL_FRAMES) b->spd += POFV_C3_ACCEL_RATE;
         b->x += b->dx * b->spd;
         b->y += b->dy * b->spd;
         /* ★ 一手 ✓ `EX_BOUNCE`（4 次撞墙）：自己判撞墙改向；**第 5 次撞墙 ⇒ 收掉** ✓
          *   （一手是引擎弹 VM 的 `wall_bounce`，本卡照 owner 路线**卡侧逐帧驱动** ✓）*/
+        /* ★★★★ 2026-10-13（★ owner #2："★ **在那个所谓的 120 帧之前应当关闭碰撞反弹**"✓）：
+         *   ⚠ ★ ★ **这是卡侧门，不是一手字段** ✗ ✓ —— ★ 审计 `a39d612c` §B 明确：
+         *   ★ 引擎里 ★ **反弹没有任何时限开关** ✗（★ 编译点 `0x4f1fec` ✓，★ 状态块**无计时器** ✓），
+         *   ★ 只有 ★ **次数上限 `a = 4`** ✓ ⇒ ★ "★ 前 120 帧不反弹"★ **是 owner 的口径** ✓，
+         *   ★ 必须卡侧自己加 ✓（★ 一手若是"同步效果按序执行"✓ 也得到同一观感 ✓）。*/
+        if (b->age >= POFV_C3_SPIN_FRAMES) {
         if (b->x < -POFV_FIELD_HALF_W)     { b->x = -POFV_FIELD_HALF_W; b->dx = -b->dx; hit = 1; }
         else if (b->x > POFV_FIELD_HALF_W) { b->x =  POFV_FIELD_HALF_W; b->dx = -b->dx; hit = 1; }
+        }
         /* ★★★★★ 2026-10-13（★ owner 实跑："★ **灵梦 C3 怎么还是版顶反弹版底出去？**" ✗）：
          *   ★ owner 的定案（★ 本次会话开头就说了 ✓）：「★ **只有灵梦的符卡涉及到一点运动学** ✓，
          *   ★ 在她是 boss 的时候，★ 阴阳玉**在版顶会反弹、版底漏走** ✓，
@@ -4029,7 +4045,7 @@ static void pofv_c3_tick(void)
          *   ★ —— ★ 于是画面上就是"★ **版顶反弹、版底漏走**"✗ ✓（★ 正是你看到的现象 ✓）。
          *   ★ 本卡 y **向下增** ⇒ ★ **版底 = `y = POFV_FIELD_H`** ✓（★ 依据 = 本文件"飞出下边界就收"那条 ✓）
          *   ★ ⇒ ★ **在 `y = POFV_FIELD_H` 处反弹** ✓（★ 与左右两侧同一套写法 ✓）。*/
-        if (b->y > POFV_FIELD_H)           { b->y = POFV_FIELD_H; b->dy = -b->dy; hit = 1; }
+        if (b->age >= POFV_C3_SPIN_FRAMES && b->y > POFV_FIELD_H) { b->y = POFV_FIELD_H; b->dy = -b->dy; hit = 1; }   /* ★ 审计 §B6：★ 反弹同样只在 120 帧后 ✓（★ 卡侧门 ✓）*/
         /* ★★★ C3/C4 审计 60f3724f ⑪（低）✓：★ 一手这条弹的 `walls = **13**` ✓（= 上/左/右 ✓）
          *   —— ★ **不含"下"** ✗；★ 而卡原来**四面都反** ✗ ⇒ ★ 去掉底部那次反弹 ✓
          *   （★ 于是它会**往下飞出去** ✓）。★ 一手另有 `EX_OFFSCREEN(256,120)` ✓ 我方**没做** ✗
