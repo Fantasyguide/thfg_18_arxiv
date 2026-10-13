@@ -34,3 +34,14 @@ python3 native/tools/doc_claims.py report --only W1b # 未收敛的那条，手�
 python3 native/tools/doc_claims.py check             # 有发现则 rc=1（**尚未**挂进 make check ✓）
 ```
 ⚠ 按 P13 纪律：**误报未收敛前不转闸** ✗ ⇒ 目前 `make check` 里没有它 ✓；等 owner 看过首轮结论再决定是否 `check` ✓。
+
+## 1b. P16（额外最大得点数值核查）带来的新条目（2026-10-14）
+
+| # | 位置 | 冲突内容 | 一手依据 | 归属 | 处置 |
+| :-: | --- | --- | --- | --- | --- |
+| C6 | `engine/faith/th15/01-point-item-value.md` §4.4（`:336`/`:344`/`:350-351`/`:557`/`:560`）| 旧文仍写「miss 撒 **type 9** ⇒ 每颗 +2」✗，而权威 §4.6（`:719-736`）+ `:627` 已订正「**miss 不涨 PIV**（撒 **type 1 ×7**）」✓ ⇒ **同一份文档两个口径** | th15 子代理一手穷举（`thecl -d 15 -x` 全解 23 个 `.ecl`）| 引擎文档（非系统卡）| **不改**（他人文档 ✓）；读者**只看 §4.6** ✓ |
+| C7 | `engine/faith/OVERVIEW.md:163` | 写「★ **读值时夹**（`min(池, cap_i)`）」✗，实现却是**写侧闸**（`sdk_core.c:849` 按 `cap_i − init_i` 累计封顶 ✓，`ce_piv_reading()` 不夹 ✓）；`:170`/`:180` 措辞又不同 ⇒ 读闸 vs 写闸是**两种机制** ✗ | 代码 + th15 子代理 | 引擎文档 / 共享件 | 待 owner 定**权威口径** ✓ |
+| C8 | `native/sdk_core.c:861` 引的 4 份出处 | `engine/faith/{th12,th15,th16,th17}/` 全是 **untracked** ✗（只有 th13/th14 已入库 ✓）⇒ **干净 clone 按注释找不到** ✓ | `git status --porcelain`（th15/th16/th17 三份子代理各自独立确认 ✓）| 另一会话在途 | 等那几份提交后自然消解 ✓；在此之前任何引用都应标「未入库」 ✗ |
+| C9 | `native/sdk_core.c:967` | 注释写「一手（**th12–th17 四作同形**）：每 +1 擦弹 ⇒ 最大得点 +1」✗；一手只有 **th12–th15** ✓（th16/th17 **两作独立证实擦弹不写 PIV** ✓；声明擦弹族的只有 112/113/114/115 ✓）| th16/th17 子代理 + `OVERVIEW.md:216/233` | 共享件（SDK）| **P14a** 批次改注释 + 按 R2 登记 `AUDIT.md` §BE ✓（本文只记录，不改 ✗ R4）|
+
+> 数值本身**全部一致**：六作（th12–th17）的 `init`/`cap` 与代码表**逐项 0 差** ✓ —— 详见 [`MAXPOINT-AUDIT.md`](MAXPOINT-AUDIT.md) ✓。
