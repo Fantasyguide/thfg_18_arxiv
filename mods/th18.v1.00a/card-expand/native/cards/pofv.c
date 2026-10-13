@@ -2580,6 +2580,14 @@ static void c2_ring_vm_sync(float r)
     if (!s_c2.ring_vm) {
         const uint32_t id = ce_anm_spawn(CE_ABILITY_ANM(),
                             CE_ANM_ABILITY_SCRIPT_POFV109_C_RING_ARC, 6);   /* ★ 2026-10-13 回退 ✗：层 6 可用 ✓ */
+        /* ★★★★★ 2026-10-13（owner：「★ C2 对了但★ **似乎缺少消弹圈**」✓）—— 加诊断 ✓：
+         *   ★ 已排除：★ 层 6（★ owner 实跑见过层 6 的红环 ✓）、★ `BAND_W`（= 1.0f ✓）、
+         *   ★ 脚本（★ **与 C3/C4 是同一个 432** ✓，★ `:2613` ✓）⇒ ★ 差别只在 **C2 这条的传参/时序** ✓。
+         *   ★ 这条日志在**首次起环**时打一次 ✓（含 spawn 成功与否 ✓ + 当时半径 ✓）★ ⇒ 与
+         *   `[C2RING] 收` 那条一起看 ✓，★ 一次实跑即可判：★ 是"**没起来**" ✗ 还是"**起来了但看不见**" ✗。*/
+        ce_log("pofv: [C2RING] 起环 id=%u r=%.1f pos=(%.1f,%.1f) band=%.2f",
+               (unsigned)id, (double)r, (double)s_c2_pt0x, (double)s_c2_pt0y,
+               (double)POFV_C2_RING_BAND_W);
         if (!id) return;
         s_c2.ring_vm = (int32_t)id;
     }
@@ -2592,6 +2600,9 @@ static void c2_ring_vm_sync(float r)
 static void c2_ring_vm_release(void)
 {
     if (!s_c2.ring_vm) return;
+    /* ★ 2026-10-13 诊断（配 `[C2RING] 起环` 那条 ✓）：★ 看环是被**谁/什么时候**收掉的 ✓ */
+    ce_log("pofv: [C2RING] 收环 id=%d live=%d", (int)s_c2.ring_vm,
+           ce_anm_get_vm((uint32_t)s_c2.ring_vm) ? 1 : 0);
     if (ce_anm_get_vm((uint32_t)s_c2.ring_vm)) ce_anm_interrupt((uint32_t)s_c2.ring_vm, 1);
     s_c2.ring_vm = 0;
 }
