@@ -77,6 +77,15 @@
 /* ★★ 层号必须是**世界层 3–19**（24+ = UI 层、1 单位 = 1 表面 px；且 `layer(20..32)` 会派生
  * `resolutionMode` 模式 1 ⇒ 位置三分量 ×2 —— 旧版 `layer(28)` 就是这样把暴风画偏的）。
  * 取 **6**（一手 `effect.anm` script20 的层号同支）。脚本里也写 `layer(6)`，两边一致。 */
+/* ★★★★★ 2026-10-13 **调试日志总开关**（阶段 A ✓；★ 发布默认 **0** ⇒ 零开销 ✓）——
+ *   ★ 用途（owner 要求「对消弹圈加 log，这事儿不是一次两次了」✓）：★ 一次实跑就能判
+ *   "**发了没有 / 起了没有 / 活了多久 / 坐标是多少 / 伤害多少**" ✓，★ 不再靠猜 ✗。*/
+#define POFV_DBG 1
+#if POFV_DBG
+#  define POFV_DBGLOG(...) ce_log(__VA_ARGS__)
+#else
+#  define POFV_DBGLOG(...) ((void)0)
+#endif
 #define POFV_STORM_VM_LAYER          6    /* ★ 2026-10-13 **回退** ✗：曾改 13 又撤回 ✓ —— ★ owner 实跑见过层 6 的红色环 ✓（「C2-C4 有随时间扩张的红色消弹圈」✓）⇒ 层 6 **没问题** ✗，换层是**无据猜测** ✓ */
 
 /* 一次消弹最多认几颗（原版 `FUN_004ee770` 传 99999）。 */
@@ -734,6 +743,10 @@ static uint32_t hud_vm_spawn(int script, float x640, float y640)
     p[0] = x640;
     p[1] = y640;
     p[2] = 0.0f;
+    /* ★ 阶段 A：HUD 每次起 VM 都记**入参**（★ 用来定死"UI 列表到底吃哪套空间" ✓，见计划阶段 B ✓）。
+     *   ⚠ 这里**不能**引用等级/帧号字段（它们在文件后面才声明 ✗）。*/
+    POFV_DBGLOG("pofv: [DBGHUD] spawn script=%d 入参=(%.1f,%.1f)",
+                script, (double)x640, (double)y640);
     return ce_anm_spawn_ui(CE_ABILITY_ANM(), script, p);
 }
 
@@ -3714,6 +3727,9 @@ static void c3_fire_wave(void)
     const float scale = (s_c3.parity & 1) ? POFV_C3_VM_SCALE_ODD : POFV_C3_VM_SCALE_EVEN;
     int i;
     if (!p) return;
+    POFV_DBGLOG("pofv: [DBGC3] wave=%d/%d n=%d base5=%d 中心=(%.1f,%.1f) scale=%.2f layer=%d",
+                (int)s_c3.wave, (int)s_c3_waves[s_c3.level], n, base5,
+                (double)p[0], (double)p[1], (double)scale, (int)POFV_C3_VM_LAYER);
     for (i = 0; i < n; ++i) {
         pofv_c3_bullet_t *b = 0;
         int k;
@@ -3737,6 +3753,9 @@ static void c3_fire_wave(void)
         b->spd = POFV_C3_SPEED;
         b->age = 0; b->bounces = 0; b->live = 1;
         b->vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_POFV109_STORM, POFV_C3_VM_LAYER);
+        POFV_DBGLOG("pofv: [DBGC3] bullet i=%d vm=%d spawn_ok=%d pos=(%.1f,%.1f) dir=(%.2f,%.2f) spd=%.2f",
+                    i, (int)b->vm, b->vm ? 1 : 0, (double)b->x, (double)b->y,
+                    (double)b->dx, (double)b->dy, (double)b->spd);
         if (b->vm) {
             ce_anm_set_pos((uint32_t)b->vm, b->x, b->y, 0.0f);
             ce_anm_set_scale((uint32_t)b->vm, scale, scale);                     /* ❓⑤ 奇偶近似 */
@@ -3758,6 +3777,9 @@ static void pofv_c3_fire(void)
     s_c3.wait = 0;
     s_c3.parity = 0;
     s_c3.eb = 0;   /* ★ 一手的 `Ecl_EtBreakLv3`（16/24/32）从这一帧起 ✓ */
+    POFV_DBGLOG("pofv: [DBGC3] fire 等级=%d invuln=%d f=%d kind=%d charge=%.0f",
+                (int)s_c3.level, (int)s_c3.invuln, (int)s_card_frames,
+                (int)s_aura_kind, (double)s_aura_charge);
 }
 
 /* 每帧：① 波次机（发波 / 波末 wait）② 每颗弹（加速 + 撞墙反弹 + 伤害源）。
@@ -3794,6 +3816,17 @@ static void pofv_c3_tick(void)
     int k, busy = 0;
     for (k = 0; k < POFV_C3_MAX_BULLETS; ++k) if (s_c3_b[k].live) { busy = 1; break; }
     if (!s_c3.active && !busy) return;
+    /* ★ 阶段 A：每 10 帧一行"还在不在动"（含最远一颗的坐标 ⇒ 判"飞出屏被收"还是"没动" ✓）。*/
+    if ((s_card_frames % 10) == 0) {
+        int live = 0, far = 0; float fx = 0.0f, fy = 0.0f;
+        for (k = 0; k < POFV_C3_MAX_BULLETS; ++k) if (s_c3_b[k].live) {
+            ++live;
+            if (s_c3_b[k].age > far) { far = s_c3_b[k].age; fx = s_c3_b[k].x; fy = s_c3_b[k].y; }
+        }
+        POFV_DBGLOG("pofv: [DBGC3] tick active=%d wave=%d/%d wait=%d live=%d newest=(%.1f,%.1f) age=%d",
+                    (int)s_c3.active, (int)s_c3.wave, (int)s_c3_waves[s_c3.level], (int)s_c3.wait,
+                    live, (double)fx, (double)fy, far);
+    }
 
     /* ① 波次（一手：`$D` 波；每波末 wait —— **最后一波也等完才收** ✓）*/
     if (s_c3.active) {
