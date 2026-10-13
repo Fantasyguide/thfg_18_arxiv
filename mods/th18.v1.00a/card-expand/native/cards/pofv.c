@@ -3700,8 +3700,13 @@ static int pofv_dmg_laser(int ch, int move, int lv)
  *   ★ ⇒ 8 同列表内先画 ✓ 被敌弹盖住 ✓；★ ❓跨列表次序未核 ⇒ 这是**旋钮** ✓）。
  *   ★ 不再用 `POFV_C3_VM_LAYER`(6) + STORM 脚本 ✗（★ 那是 TH19 `ghost.anm` 的**可见圈** ✓，
  *   ★ 圆心 `alpha(1)` 全透 + 边缘黑 ⇒ ★ 就是"**有伤害、零视觉**"的原因 ✓）。*/
-#define POFV109_BBALL_SCRIPT      457    /* ★ 本卡脚本段的下一个空闲号 ✓（最大 456 ✓）*/
-#define POFV109_BBALL_LAYER         8    /* ★ owner：层在敌弹下面 ✓（理由见脚本 457 的头部注释 ✓）*/
+#define POFV109_C3_ORB_SCRIPT     458    /* ★ C3 阴阳玉 ✓（一手 script329/330 的等价 ✓：62×62 大红玉 ✓、
+                                          *   scale 3→1 ✓、t=48 稳定 ✓、中断后 12 帧淡出缩掉 ✓）*/
+#define POFV109_C4_ORB_SCRIPT     459    /* ★ C4 阴阳玉 ✓（一手 script327 的等价 ✓：30×30 淡蓝→实蓝 ✓、
+                                          *   scale 5→1 ✓、t=63 换实心 ✓、中断后 14 帧加算放大淡出 ✓）*/
+#define POFV109_BBALL_SCRIPT      457    /* ★ 8×8 彩弹 ✓ —— ★ C4 **第二发射口**用（一手 `etSprite(1,1,2)` = type1 → script38 ✓）
+                                          *   ⇒ ★ 待接（owner：「★ **小彩弹也发**」✓）*/
+#define POFV109_BBALL_LAYER         8    /* ★ owner：层在敌弹下面 ✓（两个阴阳玉脚本里也各自写了 `layer(8)` ✓）*/
 #define POFV_C3_VM_SCALE_EVEN     0.25f    /* ❓⑤：偶波（一手 `etSprite(46)`）*/
 #define POFV_C3_VM_SCALE_ODD      0.35f    /* ❓⑤：奇波（一手 `etSprite(47)`）*/
 
@@ -3809,7 +3814,7 @@ static void c3_fire_wave(void)
         b->spd = POFV_C3_SPEED;
         b->age = 0; b->bounces = 0; b->live = 1;
         b->spin = s_c3.parity ? 1 : 0;   /* ★ 出生时定死自转方向 ✓（一手 `etExSet` ✓；★ 之后不随波变 ✓）*/
-        b->vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), POFV109_BBALL_SCRIPT, POFV109_BBALL_LAYER);
+        b->vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), POFV109_C3_ORB_SCRIPT, POFV109_BBALL_LAYER);
         POFV_DBGLOG("pofv: [DBGC3] bullet i=%d vm=%d spawn_ok=%d pos=(%.1f,%.1f) dir=(%.2f,%.2f) spd=%.2f",
                     i, (int)b->vm, b->vm ? 1 : 0, (double)b->x, (double)b->y,
                     (double)b->dx, (double)b->dy, (double)b->spd);
@@ -4375,7 +4380,7 @@ static void pofv_c4_emit(int dir)
      *   ⇒ ★ 会顶掉脚本里 owner 要的 `alpha ≤ 128` ✓）、★ **去掉 `set_scale(0.5)`** ✗
      *   （★ 一手弹体是 **8×8 原尺寸** ✓）。★ C4 两个槽（一手 type44/type1 ✓）在**弹体**上同形 ✓
      *   —— ★ 差别只在**粒子颜色**（★ 槽0 蓝 / 槽1 粉 ✓），★ 那部分在命中表现里做 ✓。*/
-    s_c4_b[k].vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), POFV109_BBALL_SCRIPT, POFV109_BBALL_LAYER);
+    s_c4_b[k].vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), POFV109_C4_ORB_SCRIPT, POFV109_BBALL_LAYER);
     if (s_c4_b[k].vm) {
         ce_anm_set_pos((uint32_t)s_c4_b[k].vm, s_c4_b[k].x, s_c4_b[k].y, 0.0f);
     }
