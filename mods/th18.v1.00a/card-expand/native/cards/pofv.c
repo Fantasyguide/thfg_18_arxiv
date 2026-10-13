@@ -2250,7 +2250,14 @@ static void c3_dir5(int idx5, float *dx, float *dy);
 #define POFV_C2_TWEEN_OUT_FRAMES 22      /* ★ 一手 ✓ 64→0 用 22 帧 ✓（= 帧 22→44 ✓，这就是"回中心" ✓）*/
 #define POFV_C2_ORBIT_FRAMES     22.0f  /* 一手 ✓ 22 帧到终点（缓动曲线 ❓自定，见下）*/
 #define POFV_C2_POINT_CANCEL_R   64.0f  /* 一手 ✓ 每点的消弹圈半径（`FUN_004ee770(…, 64.0f, …)`）*/
-#define POFV_C2_RING_R0         128.0f  /* 一手 ✓ 扩张环起点 */
+/* ★★★★★ 2026-10-13（★ owner：「★ **半径明显不对**」✗ ⇒ ★ 一手复核 `20b27cfe` **闭环** ✓）：
+ *   ★ 一手 TH09 `etama.anm` script91/92/93（= 蓄力 L1/L2/L3 的消弹圈 ✓）★ 的环带**中线半径**是
+ *   ★ **线性 R(t) = 16 → 192 / 48 帧** ✓（★ 92 = 16→256/64 ✓、★ 93 = 16→448/128 ✓，
+ *   ★ 三档终值与**判定半径逐项相等** ✓）★ —— ★ 起点是 ★ **16** ✓（★ `pos(16.0f,0,0)` ✓）。
+ *   ★ ★ **原来是 `128.0f`** ✗，★ 而那句注释的"一手 ✓"**是错的** ✗（★ 复核原话：
+ *   ★「★ 这三个脚本里**没有 128** 这个数」✓）★ ⇒ ★ ★ **这就是你看到的"半径明显不对"** ✓。
+ *   ★ ⇒ ★ 改成 ★ **16.0f** ✓（★ 与一手同起点 ✓；★ 终点那维由 `POFV_C2_RING_R1` 决定 ✓ 待核 ✓）。*/
+#define POFV_C2_RING_R0          16.0f  /* ★ 一手 ✓ TH09 `pos(16.0f,0,0)`（原 128 ✗ 出处是错的 ✓）*/
 #define POFV_C2_RING_R1         192.0f  /* 一手 ✓ 终点（60 帧线性 ⇒ `+0x40`/`0x3c`）*/
 #define POFV_C2_RING_FRAMES      60.0f  /* 一手 ✓ */
 /* ★ C2-③ ✓：★ `FUN_005200f0(...,0x18,1)` 的 **24 是寿命** ✓，**不是伤害** ✗
@@ -2620,7 +2627,14 @@ static void pofv_c2_tick(uint32_t id)
  *   ★ 原来 `6.0f` ✗（★ 更早还 `1.0f` ✗）⇒ ★ 画面上就是**发丝** ✓；★ 一手带厚约 **48→32 px** ✓
  *   （★ `scale(24,24)` → `scaleTime(32,0,16,16)` ✓；★ 你当时那句"★ **横向拉得还挺宽**"≈ **3×** ✓ 正对上 ✓）。
  *   ★ ⇒ ★ 取 **16** ✓（★ 1:1 基准 ✓）；★ 若还想更像一手（≈48 ✓）★ 再乘 3 即可 ✓，★ **待你一眼定** ✓。*/
-#define POFV_C2_RING_BAND_W  16.0f     /* ★★★★★ 2026-10-13（★ owner 实跑：「★ 只能看见消弹效果、
+/* ★★★★★ 2026-10-13（★ owner：「★ **C2 的环…半径明显不对，还是很细**」✗ ⇒ ★ 一手复核 `20b27cfe` **闭环** ✓）：
+ *   ★ ★ **带厚（全宽）**：★ TH18 口径 = ★ `scale.x` ✓（★ `r_out = scale.y + scale.x/2` ✓）
+ *   ★ ⇒ ★ 一手 TH09 的对应量 = ★ **2 × TH09 的 `scale.x`** ✓ = ★ **48 → 32** ✓
+ *   ★ （★ TH09 的 `scale.x` 只是**半**宽 24→16 ✓ —— ★ `scale(24,24)`→`scaleTime(32,0,16,16)` ✓；
+ *   ★ 它那条 **16px** 宽的带被拉到 ★ **48px** 用 = ★ **3× 拉伸** ✓ ⇒ ★ 正对上你早先那句
+ *   ★ "★ **横向拉得还挺宽**"✓）★ ⇒ ★ ★ **我原来的 `16` 只有一手的 1/3 ~ 1/2** ✓✓ = ★ 你报的"★ **还是很细**"✓。
+ *   ★ ⇒ ★ 取 ★ **48** ✓（★ 一手起点全宽 ✓）。*/
+#define POFV_C2_RING_BAND_W  48.0f     /* ★★★★★ 2026-10-13（★ owner 实跑：「★ 只能看见消弹效果、
                                        *   **看不见任何圈** —— ★ 好像 C2 能看见**一点点细细的圈**」✓）：
                                        *   ★ 环是**画出来了、但太细** ✓ ⇒ ★ 照**能正确显示的先例**定带宽 ✓：
                                        *   ★ `assets/ability/scripts/228_ufo_gauge_arc.anm.txt`（★ UFO 计量弧 ✓，
@@ -2635,7 +2649,11 @@ static void c2_ring_vm_sync(float r)
     if (r <= 0.0f) return;
     if (!s_c2.ring_vm) {
         const uint32_t id = ce_anm_spawn(CE_ABILITY_ANM(),
-                            CE_ANM_ABILITY_SCRIPT_POFV109_C_RING_ARC, 6);   /* ★ 2026-10-13 回退 ✗：层 6 可用 ✓ */
+                            CE_ANM_ABILITY_SCRIPT_POFV109_C_RING_ARC, 6);   /* ★ 2026-10-13 审计 `a39d612c` 订正 ✗：
+                            ★ **这个层实参是死参** ✗ —— ★ 脚本 432 自己写了 `layer(13)` ✓，★ 引擎里**脚本的
+                            ★ `layer()` 覆盖 instantiate 的层参数** ✓（★ `0x405c50` 写层 → ★ `0x405c91` 才
+                            ★ `AnmVm__run` ✓）★ ⇒ ★ 层由脚本决定、**此参数仅默认值** ✓；
+                            ★ 原来那句"★ 层 6 可用 ✓"✗ 与观感**无关** ✓。*/
         /* ★★★★★ 2026-10-13（owner：「★ C2 对了但★ **似乎缺少消弹圈**」✓）—— 加诊断 ✓：
          *   ★ 已排除：★ 层 6（★ owner 实跑见过层 6 的红环 ✓）、★ `BAND_W`（= 1.0f ✓）、
          *   ★ 脚本（★ **与 C3/C4 是同一个 432** ✓，★ `:2613` ✓）⇒ ★ 差别只在 **C2 这条的传参/时序** ✓。
@@ -2736,11 +2754,21 @@ static pofv_ca_ring_t s_ca_ring[POFV_CA_RING_MAX];
 
 /* ★ 一手三元组表（§1.4 ✓）：`{r₀, dr, 寿命}` —— ★ 终点 = r₀ + dr × 寿命（与 §1.4 表逐个相等 ✓）*/
 static const float s_ca_ring_tab[5][3] = {
+    /* ★★★★★ 2026-10-13（★ owner #3："★ **C3 还有那个细环，空格释放 C3 能看见一个极小的消弹圈 VM**"✗
+     *   ⇒ ★ 独立审计 `a39d612c` ✓ **定案**）：
+     *   ★ ★ **起点必须是 16，不是 0** ✗✗ —— ★ 一手 TH09 `etama.anm` script91/92/93 ✓ 的环带中线半径是
+     *   ★ **`pos(16.0f,0,0)` → `posTime(T,0,R_end,0,0)`** ✓（★ 复核 `20b27cfe` ✓：★ **线性** ✓，
+     *   ★ 三档终值 ★ **192 / 256 / 448** ✓ 与判定半径**逐项相等** ✓）；★ 而 ★ 一手 TH19 的 C3 消弹
+     *   ★ `Ecl_EtBreakLv3`（★ `_ext/ecl/default.txt:287` ✓）= ★ `A=16; do{ ins_615(A); A+=8 }while(A<40)` ✓
+     *   ★ ⇒ ★ **半径 16/24/32、压根没有 0 半径起手** ✓（★ 且 `ins_615` 在 eclm 里是 ★ **`etCancel`** ✓
+     *   ★ **不是画环** ✓）★ ⇒ ★ 卡里 `r₀ = 0` ✗ 就是那团"★ **极小的细环**"✓（★ 半径 0/4/8 配带厚 48 ✓）。
+     *   ★ ⇒ ★ 起点全部改成 ★ **16** ✓，★ 并**按同比例重算 `dr`** ✓ 保持终值 ★ **192/256/448 不变** ✓
+     *   ★（★ `dr = (终值 − 16) / life` ✓）。*/
     {  0.0f, 0.0f,   0.0f },   /* 0 = 不用 ✓ */
     { 16.0f, 20.0f,  8.0f },   /* kind 1 = CA 释放那一下 ⇒ 16 + 20×8 = 176 ✓ */
-    {  0.0f,  4.0f, 48.0f },   /* kind 2 = L1 ⇒ 0 + 4.0×48 = 192 ✓ */
-    {  0.0f,  4.0f, 64.0f },   /* kind 3 = L2 ⇒ 0 + 4.0×64 = 256 ✓ */
-    {  0.0f,  3.5f, 128.0f },  /* kind 4 = L3 ⇒ 0 + 3.5×128 = 448 ✓ */
+    { 16.0f,  3.667f, 48.0f },  /* kind 2 = L1 ⇒ ★ 起点 16 ✓（一手 ✓）；16 + 3.667×48 ≈ 192 ✓（终值不变 ✓）*/
+    { 16.0f,  3.75f, 64.0f },   /* kind 3 = L2 ⇒ ★ 起点 16 ✓（一手 ✓）；16 + 3.75×64 = 256 ✓（终值不变 ✓）*/
+    { 16.0f,  3.375f, 128.0f }, /* kind 4 = L3 ⇒ ★ 起点 16 ✓（一手 ✓）；16 + 3.375×128 = 448 ✓（终值不变 ✓）*/
 };
 
 static void pofv_ca_ring_clear(void)
@@ -3679,6 +3707,11 @@ static void pofv_c1_tick(void)
 #define POFV_C4_LEVEL_DEFAULT       ((POFV_C3_LEVEL_DEFAULT) > 3 ? (POFV_C3_LEVEL_DEFAULT) : 3)
 #define POFV_C3_MAX_BULLETS        48      /* ❓自定：同屏弹池上限（一手无上限：最多 $D×$C = 4×8 = 32）*/
 #define POFV_C3_CARRIER_DY     (-128.0f)   /* ★ 一手 ✓ `ins_400(0.0f, 128.0f)`：环心 = 自机上方 128 */
+/* ★★★★ 2026-10-13（★ 独立审计 `a39d612c` §B ✓ 一手定死）：★ `120` = ★ **EX_ANGLE_ACCEL 的持续帧数 `a`** ✓
+ *   （★ `pl00.txt:657` 的 `ins_611($A,0,8,**120**,…)` ✓）★ —— ★ 到第 120 帧引擎 ★ **`and [bullet+0x6a8],~0x8`** ✓
+ *   （★ `0x4f0b2f-4d` ✓）★ ⇒ ★ **停转** ✓（★ 角冻结、★ 速度/方向不变 ✓）★ ⇒ ★ 卡侧得自己加这个时限 ✓
+ *   （★ 我原来是**永远转** ✗ = owner 的"★ **120 帧之后的不再转动没有生效**"✗）。*/
+#define POFV_C3_SPIN_FRAMES      120
 #define POFV_C3_SPEED              2.3f    /* ★ 一手 ✓ `ins_605($A, 2.3f, 1.0f)` 的第一层 */
 #define POFV_C3_ACCEL_RATE        0.01f    /* ★ 一手 ✓ `0.01f + %B*0.02f`，而 %B ❓= 0.0 */
 #define POFV_C3_ACCEL_FRAMES       600     /* ★ 一手 ✓ `ins_611($A, 0, 4, 600, …)` 的 600 */
@@ -3876,8 +3909,15 @@ static void c3_fire_wave(void)
          *   （★ 一手写的是 boss 本体 `(0, 128)` ✗ —— ★ 直接照搬就是"**没翻**" ✓，也就是你看到的那版 ✗）。*/
         {
             const float *pp3 = ce_player_pos();
-            b->x = pp3 ? pp3[0] : 0.0f;
-            b->y = pp3 ? pp3[1] : 128.0f;
+            /* ★★★★★ 2026-10-13（★ owner 第二次实跑："★ **你灵梦 C3 还是自机位置**" ✗）：
+             *   ★ ★ **病根就是这两行** ✗✗ —— ★ 我上一轮改的是 `c3_fire_wave()` 的发射点 ✓，
+             *   ★ 而 ★ **每一帧的 tick 又在这里把弹位置重新按 `ce_player_pos()` 写回去** ✗
+             *   ★ ⇒ ★ 出生那一下对了 ✓、★ 之后**立刻被拽回自机** ✗ ✓
+             *   ⇒ ★ 改成 ★ **一手的固定点** ✓（★ 与 `c3_fire_wave` 同一处 ✓：
+             *   ★ `(0.0f, POFV_FIELD_H − 128.0f)` ✓ = ★ 一手 `ins_400(0,128)` 绕场心 180° ✓，
+             *   ★ 依据 = 复核 `264d680e` ✓）。*/
+            b->x = 0.0f;
+            b->y = POFV_FIELD_H - 128.0f;
         }
         b->spd = POFV_C3_SPEED;
         b->age = 0; b->bounces = 0; b->live = 1;
@@ -3986,20 +4026,31 @@ static void pofv_c3_tick(void)
         /* ★ 一手 ✓ `EX_ACCEL`（600 帧）：**只改速率、不改方向**（⇒ 不必重算三角 ✓）。
          *   速率 = `0.01f + %B*0.02f`（%B ❓= 0.0）⇒ 每帧 +0.01 ✓。*/
         /* ★ ⑪ ✓ EX_ANGLE_ACCEL：方向每帧转 +-2 度（符号 = 本波奇偶）。*/
-        {
+        /* ★★★★ 2026-10-13（★ owner #2："★ **120 帧之后的不再转动没有生效**"✗ ⇒ ★ 审计 `a39d612c` §B ✓）：
+         *   ★ 一手：★ `EX_ANGLE_ACCEL` 的 `a = **120**` ✓ ⇒ ★ 只转 120 帧 ✓（★ `0x4f0b2f-4d` 到点清 bit 0x8 ✓）
+         *   ⇒ ★ 这里加时限门 ✓（★ 原来**永远转** ✗）。*/
+        if (b->age < POFV_C3_SPIN_FRAMES) {
             const float sg = b->spin ? POFV_C3_ANGACCEL_SIN : -POFV_C3_ANGACCEL_SIN;
             const float cC = POFV_C3_ANGACCEL_COS;
             const float ndx = b->dx * cC - b->dy * sg;
             const float ndy = b->dx * sg + b->dy * cC;
             b->dx = ndx; b->dy = ndy;
         }
-        if (b->age <= POFV_C3_ACCEL_FRAMES) b->spd += POFV_C3_ACCEL_RATE;
+        /* ★ 2026-10-13 审计 `a39d612c` §B7 ✓：★ 一手 `a = 600` ✓ ⇒ 用 `<`（★ 原来 `<=` 会多跑第 601 帧 ✗）。*/
+        if (b->age < POFV_C3_ACCEL_FRAMES) b->spd += POFV_C3_ACCEL_RATE;
         b->x += b->dx * b->spd;
         b->y += b->dy * b->spd;
         /* ★ 一手 ✓ `EX_BOUNCE`（4 次撞墙）：自己判撞墙改向；**第 5 次撞墙 ⇒ 收掉** ✓
          *   （一手是引擎弹 VM 的 `wall_bounce`，本卡照 owner 路线**卡侧逐帧驱动** ✓）*/
+        /* ★★★★ 2026-10-13（★ owner #2："★ **在那个所谓的 120 帧之前应当关闭碰撞反弹**"✓）：
+         *   ⚠ ★ ★ **这是卡侧门，不是一手字段** ✗ ✓ —— ★ 审计 `a39d612c` §B 明确：
+         *   ★ 引擎里 ★ **反弹没有任何时限开关** ✗（★ 编译点 `0x4f1fec` ✓，★ 状态块**无计时器** ✓），
+         *   ★ 只有 ★ **次数上限 `a = 4`** ✓ ⇒ ★ "★ 前 120 帧不反弹"★ **是 owner 的口径** ✓，
+         *   ★ 必须卡侧自己加 ✓（★ 一手若是"同步效果按序执行"✓ 也得到同一观感 ✓）。*/
+        if (b->age >= POFV_C3_SPIN_FRAMES) {
         if (b->x < -POFV_FIELD_HALF_W)     { b->x = -POFV_FIELD_HALF_W; b->dx = -b->dx; hit = 1; }
         else if (b->x > POFV_FIELD_HALF_W) { b->x =  POFV_FIELD_HALF_W; b->dx = -b->dx; hit = 1; }
+        }
         /* ★★★★★ 2026-10-13（★ owner 实跑："★ **灵梦 C3 怎么还是版顶反弹版底出去？**" ✗）：
          *   ★ owner 的定案（★ 本次会话开头就说了 ✓）：「★ **只有灵梦的符卡涉及到一点运动学** ✓，
          *   ★ 在她是 boss 的时候，★ 阴阳玉**在版顶会反弹、版底漏走** ✓，
@@ -4008,7 +4059,7 @@ static void pofv_c3_tick(void)
          *   ★ —— ★ 于是画面上就是"★ **版顶反弹、版底漏走**"✗ ✓（★ 正是你看到的现象 ✓）。
          *   ★ 本卡 y **向下增** ⇒ ★ **版底 = `y = POFV_FIELD_H`** ✓（★ 依据 = 本文件"飞出下边界就收"那条 ✓）
          *   ★ ⇒ ★ **在 `y = POFV_FIELD_H` 处反弹** ✓（★ 与左右两侧同一套写法 ✓）。*/
-        if (b->y > POFV_FIELD_H)           { b->y = POFV_FIELD_H; b->dy = -b->dy; hit = 1; }
+        if (b->age >= POFV_C3_SPIN_FRAMES && b->y > POFV_FIELD_H) { b->y = POFV_FIELD_H; b->dy = -b->dy; hit = 1; }   /* ★ 审计 §B6：★ 反弹同样只在 120 帧后 ✓（★ 卡侧门 ✓）*/
         /* ★★★ C3/C4 审计 60f3724f ⑪（低）✓：★ 一手这条弹的 `walls = **13**` ✓（= 上/左/右 ✓）
          *   —— ★ **不含"下"** ✗；★ 而卡原来**四面都反** ✗ ⇒ ★ 去掉底部那次反弹 ✓
          *   （★ 于是它会**往下飞出去** ✓）。★ 一手另有 `EX_OFFSCREEN(256,120)` ✓ 我方**没做** ✗
@@ -8574,7 +8625,9 @@ static void pofv_barrier_break_fx(void)
     if (!p) return;
     for (i = 0; i < 3; ++i) {
         if (s_barrier_break_vm[i] && ce_anm_get_vm((uint32_t)s_barrier_break_vm[i])) continue;
-        s_barrier_break_vm[i] = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), fx[i], 6);   /* ★ 2026-10-13 回退 ✗：层 6 可用 ✓ */
+        s_barrier_break_vm[i] = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), fx[i], 6);   /* ★ 2026-10-13 审计 `a39d612c` 订正 ✗：
+                            ★ **层实参是死参** ✗ —— ★ 脚本 453/454/455 各自写了 `layer(6)` ✓ **覆盖**它 ✓
+                            ★ ⇒ ★ **层由脚本决定、此参数仅默认值** ✓；★ 原来那句"★ 层 6 可用 ✓"✗ 与观感无关 ✓。*/
         if (s_barrier_break_vm[i]) {
             vm_set_world_pos((uint32_t)s_barrier_break_vm[i], p[0], p[1]);   /* ★ 在玩家身上 ✓（一手 ✓）*/
             ++n;
