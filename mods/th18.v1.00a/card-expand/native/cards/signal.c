@@ -4005,6 +4005,17 @@ static void on_run_reset(ce_card_t *c)
      *   ⇒ 块与 VM 一个都不动，用户 ③）。⚠ 上面那行注释里说的「不用 signal_clear()」现在只针对
      *   **信仰槽的注册**（那个仍归 `on_delete`），HUD 这一支两者都可以调（幂等）。*/
     faith_hud_departed();
+    /* ★★★ 2026-10-14（P25，owner 实跑 A3：「111 retry **信仰和信号均保留**，110 正常」✗）：
+     *   上面这一路**故意不调 `signal_clear()`** ✓（要保住信仰槽注册与 HUD 认领 ✓），
+     *   而 P21 修的「账本镜像归零 + 哨兵置 -1」那两行**写在 `signal_clear()` 的尾部** ✗
+     *   ⇒ **retry 这条路根本没跑到它们** ✗ ⇒ 紧接着的 `ctor`（`+0x00`，每关都会跑 ✓）
+     *   又从**旧的** `s_slot_keep111` 把上一局的 Δ/连击/信号**恢复回来** ✗
+     *   ⇒ 用户看到的「信仰与信号都保留」✓（110 正常 ✓ 正是因为它 `on_run_reset == mof_clear` ✓）。
+     *   这里补齐**与 `signal_clear()` 尾部同款**的两行 ✓：镜像重设成干净账本 + 哨兵置 `-1`
+     *   ⇒ 之后无论是 retry 后紧跟的 `ctor` ✓ 还是新拿卡的分配 ✓，都会走 `ctor` 的「新局」支路 ✓。
+     *   ⚠ `faith_slot_init_111()` 就是「一局开始」的账本初值（`base` 按难度、Δ/连击/小绿点余数归零 ✓）。*/
+    faith_slot_init_111(&s_slot_keep111, signal_difficulty());
+    s_slot_stage111 = -1;
     signal_declare_score(s);
 }
 
