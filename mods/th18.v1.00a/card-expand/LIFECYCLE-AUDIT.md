@@ -193,7 +193,7 @@
 - 实跑判据：首局 `mof: faith %d (Δ %d)` 的 **total 是否 == Δ**（不含 50000）⇒ 是即坐实 ✓。
 - 建议：`s_slot_stage < 0` 也算新局，补一次 `faith_slot_init_*` ✓。
 
-### F4 ✗ 110 的 run 级奖残账 `mof_bonus` 被**换面**清（① 违反）
+### F4 ✅ **已修**（P30 批次，`fix/p30-mof-bonus-run-ledger`）—— 110 的奖残账本换面被 ctor 清（镜像 `s_bonus_keep`，与 `s_slot_keep` 同款）
 - 现状：`ctor`（每关都跑 ✓）在 `mof.c:1653` **无条件** `mof_bonus_init(&s->bonus)` ✗；而阈值 20m/40m/80m/150m 是 MoF 的**一局**奖残（`docs/superpowers/specs/2026-09-10-mof-faith-design.md:117-121` ✓）⇒ 换面保持失败 ✗。
 - 实跑判据：换面前后日志 `mof: … bonus %d …`（`mof.c:1403`）**应不回落** ✓ ⇒ 回落即坐实 ✗。
 - 建议：照 `slot` 的做法 —— 搬进静态账本 + ctor 恢复，只在新局 `mof_bonus_init` ✓。
