@@ -1123,23 +1123,25 @@ int32_t yk_half_with_carry(int32_t delta, int32_t *carry)
     return half;
 }
 
-void yk_transfer_feed(yk_transfer_t *t, int32_t delta)
+void yk_transfer_feed(yk_transfer_t *t, int32_t delta, int32_t pct)
 {
     if (!t || delta <= 0) return;
     if (delta > YK_TRANSFER_DELTA_MAX) {          /* ★ 防御：异常大的差分（表复用/复活）⇒ 整笔丢掉 */
         ++t->rejected;
         return;
     }
-#if YK_TRANSFER_PCT == 100
-    /* ★ owner 2026-10-01 口径：**全额转**（逐字节 = delta，**不丢任何余数**、也不动进位器）。*/
-    t->carry = 0;
-    t->pending += delta;
-#elif YK_TRANSFER_PCT == 50
-    t->pending += yk_half_with_carry(delta, &t->carry);         /* 一手 1/2（保留可切回；半整数进位器）*/
-#else
-    /* ❓其它百分比（旋钮）：注意整数除法会**丢余数**（要精确就改回 50/100 两条之一）。*/
-    t->pending += (int32_t)((int64_t)delta * (int64_t)YK_TRANSFER_PCT / 100);
-#endif
+    /* ★★ P59（owner 2026-10-14 口径：「**附加使魔全额转伤，发弹口使魔 1/2**」✓）：
+     *   pct 由**调用点按使魔类别**给 ✓ —— 绕转（附加）使魔 100 ✓、映射（发弹口）使魔 50 ✓。
+     *   100 保留"逐字节 = delta、不丢余数、不动进位器"的语义 ✓；50 走一手半整数进位器 ✓；
+     *   其它百分比仍走整数缩放（有余数，旋钮用 ✓）。*/
+    if (pct == 100) {
+        t->carry = 0;
+        t->pending += delta;
+    } else if (pct == 50) {
+        t->pending += yk_half_with_carry(delta, &t->carry);
+    } else {
+        t->pending += (int32_t)((int64_t)delta * (int64_t)pct / 100);
+    }
     if (t->pending > YK_TRANSFER_PENDING_MAX) {   /* ★ 防御：总量上限（别把天文数字喂给 dmg 参数）*/
         t->pending = YK_TRANSFER_PENDING_MAX;
         ++t->clamped;

@@ -3850,7 +3850,7 @@ static void __attribute__((noinline)) yk_transfer_tick(yk_card_t *s)
                 ++s_xfer_mapped_feed; s_xfer_mapped_delta += d;
                 s_xfer_parent = sl->enemy_id;                /* ★ 落点 = 映射槽的母机 */
             }
-            yk_transfer_feed(&s->tr, d); }
+            yk_transfer_feed(&s->tr, d, YK_TRANSFER_PCT_MAP); }   /* ★ P59：映射（发弹口）使魔 ⇒ 1/2 ✓ */
     }
 
     /* ===== ★ 第二遍：**绕转 + 外部子敌人**的同一套 1/2 转嫁（owner 2026-09-30 口径）=====
@@ -3900,7 +3900,7 @@ static void __attribute__((noinline)) yk_transfer_tick(yk_card_t *s)
                         {   int32_t d = x->life - life;
                             ++s_xfer_ext_feed; s_xfer_ext_delta += d;
                             s_xfer_parent = parent;              /* ★ 落点 = 外部子敌人的母机 */
-                            yk_transfer_feed(&s->tr, d); }
+                            yk_transfer_feed(&s->tr, d, YK_TRANSFER_PCT_MAP); }   /* ★ P59：映射（发弹口）使魔 ⇒ 1/2 ✓ */
                         ++s_xfam_fed;
                     }
                 }
@@ -3935,7 +3935,7 @@ static void __attribute__((noinline)) yk_transfer_tick(yk_card_t *s)
                     int32_t d = x->life - lc;
                     ++s_xfer_orbit_feed; s_xfer_orbit_delta += d;
                     s_xfer_parent = o->parent_id;            /* ★ 落点 = 这只绕转使魔的母机 */
-                    yk_transfer_feed(&s->tr, d);
+                    yk_transfer_feed(&s->tr, d, YK_TRANSFER_PCT);       /* ★ P59：绕转（附加）使魔 ⇒ 全额 ✓ */
                     ++s_xfam_fed;
                 }
                 x->life = lc;

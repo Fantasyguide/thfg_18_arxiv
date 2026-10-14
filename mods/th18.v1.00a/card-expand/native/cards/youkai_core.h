@@ -1464,7 +1464,8 @@ int32_t    yk_clamp_spawn_life(int32_t life);
  *   · **100** = owner 口径（使魔多 ⇒ 不能减伤）；
  *   · **50** = 一手 1/2（`research-108-damage-transfer.md`，🟡 `th08:0x451670`/`0x4517f6` 未逐指令复核）
  *     —— **保留可切回**（旋钮不删），对照用。*/
-#define YK_TRANSFER_PCT 100
+#define YK_TRANSFER_PCT       100   /* ★ P59：**附加（绕转）使魔**的转伤比例 —— owner 2026-10-14 口径「附加使魔**全额**转伤」✓ */
+#define YK_TRANSFER_PCT_MAP    50   /* ★ P59：**发弹口（映射）使魔**的转伤比例 —— 同口径「发弹口使魔 **1/2**」✓（一手 1/2 的半整数进位器 ✓）*/
 #define YK_TRANSFER_CAP_PER_FRAME 0             /* ★ TODO(决策 §7.5-1)：单帧转嫁上限。0 = 无上限（占位）。
                                                  *   研究提醒：使魔一刀 2000 ⇒ boss 一帧 1000，会顶掉 boss 的
                                                  *   每帧配额并放大计分 ⇒ 要不要封顶由用户定。*/
@@ -1488,7 +1489,7 @@ typedef struct {
 void    yk_transfer_reset(yk_transfer_t *t);
 /* delta 的一半（向下取整），余数进 `*carry` ⇒ 连续两帧的奇数伤害**不丢半分**。 */
 int32_t yk_half_with_carry(int32_t delta, int32_t *carry);
-void    yk_transfer_feed(yk_transfer_t *t, int32_t delta);
+void    yk_transfer_feed(yk_transfer_t *t, int32_t delta, int32_t pct);   /* ★ P59：pct = 100（附加）/ 50（发弹口）✓ */
 /* cap <= 0 = 无上限（占位默认）；否则钳到 cap。 */
 int32_t yk_transfer_clamp(int32_t pending, int32_t cap);
 /* 采样一只使魔的 life.current：返回本帧掉血量（>0）。
