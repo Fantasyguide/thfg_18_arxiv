@@ -78,7 +78,7 @@ int  pea_needs_cap(const pea_state_t *s);
 
 typedef struct {
     float    x, y;        /* 位置（px）*/
-    float    vy;          /* 速度（负 = 向上 ✓）*/
+    float    vx, vy;      /* 速度（px/帧；屏幕坐标 y 向下 ⇒ 向上是 vy < 0 ✓）。★ P44：开大的扇形弹幕要方向 ✓*/
     int      set;         /* PE_SET_NORMAL / _GATLING ✓ */
     int      dmg;         /* 每次结算的伤害 ✓ */
     int      alive;
@@ -86,7 +86,10 @@ typedef struct {
 } pe_proj_t;
 
 void pe_proj_clear_all(pe_proj_t *a, int n);                       /* 局末 / 删卡：全收 ✓ */
-int  pe_proj_spawn(pe_proj_t *a, int n, float x, float y, int set); /* 起一颗 ⇒ 下标；满了 = -1 ✓ */
+int  pe_proj_spawn(pe_proj_t *a, int n, float x, float y, float vx, float vy, int set, int dmg);
+                                                       /* ★ P44：起一颗（显式方向/伤害 ✓）⇒ 下标；满了 = -1 ✓ */
+int  pe_proj_new(pe_proj_t *a, int n, float x, float y, int set);
+                                                       /* 便捷版：照那一组的默认速度/伤害、正上方 ✓ */
 void pe_proj_move(pe_proj_t *p);                                   /* 一帧：挪 + 递减 cd ✓ */
 int  pe_proj_hit_now(const pe_proj_t *p);                          /* 1 = 本帧该出伤害源 ✓ */
 void pe_proj_fired(pe_proj_t *p);                                  /* 出过源 ⇒ 重置 cd ✓ */

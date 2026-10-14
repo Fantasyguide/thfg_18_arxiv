@@ -130,7 +130,7 @@ void pe_proj_clear_all(pe_proj_t *a, int n)
     for (i = 0; i < n; ++i) { a[i].alive = 0; a[i].cd = 0; }
 }
 
-int pe_proj_spawn(pe_proj_t *a, int n, float x, float y, int set)
+int pe_proj_spawn(pe_proj_t *a, int n, float x, float y, float vx, float vy, int set, int dmg)
 {
     int i;
     if (!a || n <= 0) return -1;
@@ -138,18 +138,27 @@ int pe_proj_spawn(pe_proj_t *a, int n, float x, float y, int set)
         if (a[i].alive) continue;
         a[i].alive = 1;
         a[i].x = x; a[i].y = y;
+        a[i].vx = vx; a[i].vy = vy;
         a[i].set = set;
-        a[i].vy = (set == PE_SET_GATLING) ? -PE_SPD_GATLING : -PE_SPD_NORMAL;
-        a[i].dmg = (set == PE_SET_GATLING) ? PE_DMG_GATLING : PE_DMG_NORMAL;
+        a[i].dmg = dmg;
         a[i].cd = 0;                       /* 出生当帧就能结算（与 89 一致 ✓）*/
         return i;
     }
     return -1;                             /* 满了（只影响数量 ✓，不炸 ✓）*/
 }
 
+/* 便捷版：照那一组的默认速度/伤害、正上方 ✓（正常 = 1 颗大豌豆 / 机枪 = 小豌豆 ✓）。*/
+int pe_proj_new(pe_proj_t *a, int n, float x, float y, int set)
+{
+    int gat = (set == PE_SET_GATLING);
+    return pe_proj_spawn(a, n, x, y, 0.0f, gat ? -PE_SPD_GATLING : -PE_SPD_NORMAL, set,
+                         gat ? PE_DMG_GATLING : PE_DMG_NORMAL);
+}
+
 void pe_proj_move(pe_proj_t *p)
 {
     if (!p || !p->alive) return;
+    p->x += p->vx;
     p->y += p->vy;
     if (p->cd) --p->cd;
 }

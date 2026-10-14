@@ -58,6 +58,14 @@
 #define PS_BEAM_TEX_W  256.0f          /* 71 的电弧贴图宽（scale.x = 距离 / 它 ✓）*/
 #define PS_CHAIN_TRIG_R 26.0f          /* ❓自定：电弹离敌多近算"到了身上"（≈ 半个豌豆判定 ✓）*/
 #define PS_ARC_MAX        32           /* ❓自定：弧表容量（按敌人对去重 ✓，表满宁可不建 ✓）*/
+/* ★★ P44（owner 逐字）：「**大招也得是电版，但就做发一堆普通弹幕即可**」✓ 随后澄清：「**发一堆的普攻电球**」✓
+ *   ⇒ 开大时不搞新花样 ✗：就是**把普攻那颗电球一次发一堆** ✓（同 `PE_SET_NORMAL` 的速度/伤害 ✓，横向铺开 ✓）。
+ *   ❓自定（等 owner 调）：一轮 `PS_BALL_COLS` 颗、开大期间每 `PS_FAN_EVERY` 帧一轮 ✓；
+ *   ⚠ 一颗 = 90 伤害 ✓ ⇒ 一轮 7 颗同帧 = 630 ✗（比开大那排 7 颗小豌豆的 49 大得多 ✓，owner 要调就调这里 ✓）。*/
+#define PS_FAN_N          13           /* ❓自定：扇形里几颗普攻电球 ✓（奇数 ⇒ 正中一颗朝正上方 ✓）*/
+#define PS_FAN_HALF_DEG 50.0f          /* ❓自定：扇形半角（度 ✓；±50° 的扇面 ✓）*/
+#define PS_FAN_SPEED    14.0f          /* = 普攻那颗的速度（PE_SPD_NORMAL ✓）*/
+#define PS_FAN_EVERY      20           /* ❓自定：开大期间每几帧来一扇 ✓（100 帧的 burst ⇒ 5 扇 ✓）*/
 
 /* 卡侧电弹的状态（纯逻辑在 `peashooter_core` ✓，这里只放引擎侧的那半：VM id ✓）*/
 static pe_proj_t s_proj[PE_MAX];
@@ -66,6 +74,8 @@ static uint32_t  s_arc_keys[PS_ARC_MAX];   /* (敌A,敌B) 无序对 ✓ */
 static uint32_t  s_arc_vms[PS_ARC_MAX];    /* 那一对对应的电弧 VM ✓ */
 static uint8_t   s_arc_alive[PS_ARC_MAX];  /* 本帧该 VM 还活着吗（每帧刷 ✓）*/
 static uint32_t  s_chain_cd;
+static int       s_ball_last;   /* P44：上一扇"大招电球"是在哪个射击帧 ✓ */
+static int       s_log_fan = 1;  /* P44：第一扇打一行日志（省得每次刷屏 ✓；clear 时复位 ✓）*/
 
 static int ps_elec_on(void) { return ce_owned(PS_ELEC_CARD) ? 1 : 0; }   /* 同装判据 ✓（每帧现算 ✓）*/
 
@@ -83,6 +93,8 @@ static void ps_elec_clear(void)
         s_arc_keys[i] = 0; s_arc_vms[i] = 0; s_arc_alive[i] = 0;
     }
     s_chain_cd = 0;
+    s_ball_last = -1000000;   /* P44：起手那一下必发 ⇒ 用一个很远的初值 ✓ */
+    s_log_fan = 1;
 }
 
 /* ★ P42 ③：一对敌（A,B）**只建一个**电弧 VM ✓；同对再链**只刷新** ✓；表满且无同对 ⇒ 宁可不建 ✓。*/
@@ -171,7 +183,7 @@ static void ps_proj_fire(void *o, int set)
     int i, n = gat ? PEA_GAT_ROWS : 1;
     for (i = 0; i < n; ++i) {
         float dx = (n == 1) ? 0.0f : (-48.0f + 16.0f * (float)i);
-        int k = pe_proj_spawn(s_proj, PE_MAX, ox + dx, oy, gat ? PE_SET_GATLING : PE_SET_NORMAL);
+        int k = pe_proj_new(s_proj, PE_MAX, ox + dx, oy, gat ? PE_SET_GATLING : PE_SET_NORMAL);
         uint32_t vm;
         if (k < 0) return;                          /* 满了 ⇒ 少几颗（不炸 ✓）*/
         vm = ce_anm_spawn(CE_ABILITY_ANM(),
@@ -182,6 +194,48 @@ static void ps_proj_fire(void *o, int set)
             ce_anm_set_color_rgb(vm, PS_ELEC_RGB);  /* 电光色 ✓（P14a 抽出来的词汇 ✓）*/
         }
     }
+}
+
+/* ★ P44 扇形方向表（**离线算好的常量** ✓ —— 现场不调 libm ✓，x87 闸干净 ✓、replay 确定 ✓）。
+ *   角度 a 是从**正上方**往右为正 ✓；vx/vy 是屏幕坐标（y 向下 ✓）。
+ *   ⚠ 改 `PS_FAN_N` / `PS_FAN_HALF_DEG` / `PS_FAN_SPEED` 时，这张表要**重新生成** ✗。*/
+static const struct { float vx, vy, ang; } s_fan[PS_FAN_N] = {
+    {   -10.7246f,    -8.9990f,    -0.8727f },
+    {    -9.3071f,   -10.4584f,    -0.7272f },
+    {    -7.6931f,   -11.6968f,    -0.5818f },
+    {    -5.9167f,   -12.6883f,    -0.4363f },
+    {    -4.0152f,   -13.4119f,    -0.2909f },
+    {    -2.0290f,   -13.8522f,    -0.1454f },
+    {     0.0000f,   -14.0000f,     0.0000f },
+    {     2.0290f,   -13.8522f,     0.1454f },
+    {     4.0152f,   -13.4119f,     0.2909f },
+    {     5.9167f,   -12.6883f,     0.4363f },
+    {     7.6931f,   -11.6968f,     0.5818f },
+    {     9.3071f,   -10.4584f,     0.7272f },
+    {    10.7246f,    -8.9990f,     0.8727f },
+};
+
+/* ★ P44：大招 = **发一扇普攻电球** ✓（owner：「**发一堆的普攻电球**」+「**得是扇形**」✓）。
+ *   就是普攻那颗（速度 14 / 伤害 90 ✓），按 `s_fan` 的方向往扇面里铺 ✓；
+ *   不做"巨球分裂小球" ✗、不做横向一排 ✗。*/
+static void ps_proj_fan(void *o)
+{
+    float ox = ce_option_x(o), oy = ce_option_y(o), pz = ce_player_pos()[2];
+    int i;
+    for (i = 0; i < PS_FAN_N; ++i) {
+        int k = pe_proj_spawn(s_proj, PE_MAX, ox, oy, s_fan[i].vx, s_fan[i].vy,
+                              PE_SET_NORMAL, PE_DMG_NORMAL);      /* 普攻那颗 ✓ */
+        uint32_t vm;
+        if (k < 0) return;
+        vm = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_PEA, PS_OPT_LAYER);
+        s_proj_vm[k] = vm;
+        if (vm) {
+            ce_anm_set_pos(vm, s_proj[k].x, s_proj[k].y, pz);
+            ce_anm_set_rotation(vm, 0.0f, 0.0f, s_fan[i].ang);   /* 贴图朝上 ⇒ 转 a 就是扇面方向 ✓ */
+            ce_anm_set_color_rgb(vm, PS_ELEC_RGB);
+        }
+    }
+    if (s_log_fan) { s_log_fan = 0; ce_log("peashooter: 电大哥 大招 —— %d 颗普攻电球 扇形 ±%.0f°", PS_FAN_N, PS_FAN_HALF_DEG); }
 }
 
 static void ps_proj_kill(int i)
@@ -319,6 +373,12 @@ static int on_tick_shooters(ce_card_t *c, uint32_t short_timer, uint32_t long_ti
          * 发射判定照 SHT 那条：`timer % fire_rate == start_delay`（两组 start_delay 都是 0 ✓）。*/
         int rate = (out.set == PEA_SET_GATLING) ? PEA_GAT_INTERVAL : PEA_INTERVAL;
         if (rate > 0 && ((int)out.timer % rate) == 0) ps_proj_fire(o, out.set);
+        /* ★ P44：大招 —— 起手必来一轮，开大期间再每 PS_FAN_EVERY 帧来一轮（都是普攻电球 ✓）*/
+        if (out.burst_start) { ps_proj_fan(o); s_ball_last = (int)out.timer; }
+        else if (out.set == PEA_SET_GATLING && (int)out.timer - s_ball_last >= PS_FAN_EVERY) {
+            ps_proj_fan(o);
+            s_ball_last = (int)out.timer;
+        }
     } else {
         ce_tick_shooters_for_card(o, (int)out.timer, 0,
                                   out.set == PEA_SET_GATLING ? CE_SHT_SET_PEA_GATLING : CE_SHT_SET_PEA_NORMAL);
