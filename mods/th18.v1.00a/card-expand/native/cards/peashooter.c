@@ -45,7 +45,9 @@
  *   · **麻痹不做** ✓（owner：「2、不要麻痹」✓ —— 一行都没写 ✓）。
  *   · **0 条新增站点** ✓（`ce_owned` / `ce_anm_*` / `ce_damage_rect` 全是现成的 ✓，无新 BP ✓）。*/
 #define PS_ELEC_CARD      71
-#define PS_ELEC_RGB       0x00a0d0ffu  /* 电弹/电弧的颜色（电光蓝 ✓，只改 RGB 保 alpha ✓）*/
+#define PS_ELEC_RGB       0x00a0d0ffu  /* 电弹/电弧的 RGB（电光蓝 ✓）*/
+#define PS_ELEC_RGBA      0xffa0d0ffu  /* ★ P49：**带 alpha** 的整色（0xff = 不透明 ✓）—— 直接 spawn 的 VM 必须自己写 alpha ✗ */
+#define PS_BALL_SCALE     0.6f         /* ❓自定：电球缩放（71 的 orb 是子机大小 ✓，缩到弹那样 ✓）*/
 #define PS_OPT_LAYER      13           /* anm 层（与 71 同一层 ✓）*/
 #define PS_CHAIN_HOPS      4           /* ❓自定：链最多跳几段（含第一跳 ✓）*/
 #define PS_CHAIN_RADIUS 150.0f         /* ❓自定：每跳半径（把 PvZ 的"上下行"换成 360° 半径 ✓）*/
@@ -202,8 +204,8 @@ static void ps_proj_fire(void *o, int set)
         int k = pe_proj_new(s_proj, PE_MAX, ox + dx, oy, gat ? PE_SET_GATLING : PE_SET_NORMAL);
         uint32_t vm;
         if (k < 0) return;                          /* 满了 ⇒ 少几颗（不炸 ✓）*/
-        vm = ce_anm_spawn(CE_ABILITY_ANM(),
-                          gat ? CE_ANM_ABILITY_SCRIPT_PEA_SMALL : CE_ANM_ABILITY_SCRIPT_PEA, PS_OPT_LAYER);
+        /* ★ P49：用 71 那套**已验证可见**的电球脚本 ✓（原来的子弹脚本直接 spawn 会画不出来 ✗）*/
+        vm = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_BROKEN_CORE_ORB, PS_OPT_LAYER);
         s_proj_vm[k] = vm;
         if (vm) {
             ce_anm_set_pos(vm, s_proj[k].x, s_proj[k].y, pz);
@@ -243,13 +245,13 @@ static void ps_proj_fan(void *o)
                               PE_SET_NORMAL, PE_DMG_NORMAL);      /* 普攻那颗 ✓ */
         uint32_t vm;
         if (k < 0) return;
-        vm = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_PEA, PS_OPT_LAYER);
+        vm = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_BROKEN_CORE_ORB, PS_OPT_LAYER);   /* ★ P49 电球 ✓ */
         s_proj_vm[k] = vm;
         if (vm) {
             ce_anm_set_pos(vm, s_proj[k].x, s_proj[k].y, pz);
             ce_anm_set_rotation(vm, 0.0f, 0.0f, s_fan[i].ang);   /* 贴图朝上 ⇒ 转 a 就是扇面方向 ✓ */
-            ce_anm_set_scale(vm, 1.0f, 1.0f);                    /* ★ P46：显式缩放 ✓ */
-            ce_anm_set_color_rgb(vm, PS_ELEC_RGB);
+            ce_anm_set_scale(vm, PS_BALL_SCALE, PS_BALL_SCALE);  /* ★ P49 */
+            *(volatile uint32_t *)(ce_anm_get_vm(vm) + CE_ANM_VM_COLOR1) = PS_ELEC_RGBA;   /* ★ P49 带 alpha ✓ */
         }
     }
     ++s_fan_n;
@@ -278,9 +280,22 @@ static void ps_proj_tick(void)
             ce_log("peashooter: 电大哥 门 = %s（ce_owned(71)=%d）", on ? "开" : "关", on);
         }
         /* ② 约每 5 秒一行：在飞弹 / 已起弹 / 补过几次 VM / 大招扇数 ✓ */
-        if (on && (g_frames_ps_diag++ % 300u) == 0u)
-            ce_log("peashooter: 电大哥 诊断 在飞弹=%d 已起=%u 补VM=%u 大招扇=%u 源失败=%u",
-                   ps_proj_live(), s_spawn_n, s_respawn_n, s_fan_n, s_src_fail);
+        if (on && (g_frames_ps_diag++ % 300u) == 0u) {
+            /* ★ P49：顺手把**第一颗在飞弹的 VM** 的颜色/缩放读回来 ✓ —— 隐形时这里会立刻现形 ✓ */
+            uint32_t vc = 0; float vs = 0.0f; int vi;
+            for (vi = 0; vi < PE_MAX; ++vi) {
+                if (s_proj[vi].alive && s_proj_vm[vi]) {
+                    uint8_t *vm = ce_anm_get_vm(s_proj_vm[vi]);
+                    if (vm) {
+                        vc = *(volatile uint32_t *)(vm + CE_ANM_VM_COLOR1);
+                        vs = *(const float *)(vm + CE_ANM_VM_SCALE);
+                    }
+                    break;
+                }
+            }
+            ce_log("peashooter: 电大哥 诊断 在飞弹=%d 已起=%u 补VM=%u 大招扇=%u 源失败=%u VM色=%08x VM缩放=%.2f",
+                   ps_proj_live(), s_spawn_n, s_respawn_n, s_fan_n, s_src_fail, vc, vs);
+        }
     }
     for (i = 0; i < PE_MAX; ++i) {
         pe_proj_t *p = &s_proj[i];
@@ -294,8 +309,8 @@ static void ps_proj_tick(void)
         }
         if (s_proj_vm[i] && ce_anm_get_vm(s_proj_vm[i])) {
             ce_anm_set_pos(s_proj_vm[i], p->x, p->y, pz);
-            ce_anm_set_scale(s_proj_vm[i], 1.0f, 1.0f);
-            ce_anm_set_color_rgb(s_proj_vm[i], PS_ELEC_RGB);
+            ce_anm_set_scale(s_proj_vm[i], PS_BALL_SCALE, PS_BALL_SCALE);
+            *(volatile uint32_t *)(ce_anm_get_vm(s_proj_vm[i]) + CE_ANM_VM_COLOR1) = PS_ELEC_RGBA;
         }
         if (pe_proj_out(p)) { ps_proj_kill(i); continue; }
         if (pe_proj_hit_now(p)) {                   /* 定点伤害源（与 89 同口径 ✓，命中不销毁 ✓）*/
