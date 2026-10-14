@@ -6226,6 +6226,8 @@ UI 列表尾插、组内后生成者后画（§2b.4）。
 - **回归**：`make sht` rc=0、`make sht-verify` rc=0、`make check` rc=0（含 `capcheck` 三方对账、
   `check_player_anm_bounds.py`）、`python3 tooling/check-docs.py` 269 文件全过。
 
+| 2026-10-14 | **测试卡 200（`TEST200`）** —— 整张删除 | `native/cards/test200.c` 删除、`patch/th18/cards.js` 的 200 条目删除、`CARDS.md` 的 200 行删除 | owner 2026-10-14 直接裁定「**测试卡 200 可以直接删**」；它是 id>127 链路的测试卡，卡面写着 `>127 链路验证` / `test200: loaded` 这类内部话 ✗（卡面审计也判它是异物）| P63（父 agent）| `make check` rc=0；`>127` 链路的活体由 **201（调试删卡）** 继续覆盖 ✓ |
+
 ## §BF. 112 的用户裁决实装（2026-09-12：金=蓝 / 两同一异 / HUD 第一版 / 五边形钩子）
 
 | # | 断言 | 可信度 | 证据 |

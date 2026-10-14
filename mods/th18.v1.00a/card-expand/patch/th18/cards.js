@@ -582,22 +582,6 @@
     "sprite_large": 214,
     "sprite_small": 215
   },
-  "200": {
-    "name": "测试卡 200",
-    "desc": [
-      "id = 200 的测试卡（>127 链路验证）。",
-      "效果：自机弹伤害 ×2。",
-      "装进卡组后同一敌人死得更快；",
-      "日志里有一行 test200: loaded。"
-    ],
-    "internal_name": "TEST200",
-    "category": 2,
-    "initial_unlocked": 1,
-    "price_tier": 1,
-    "weight": 4,
-    "sprite_large": 4,
-    "sprite_small": 5
-  },
   "81": {
     "name": "黑莲花",
     "desc": [
