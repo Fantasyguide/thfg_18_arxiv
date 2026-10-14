@@ -1,7 +1,9 @@
 # OWNER-TEST-LIST —— 当前版本的实跑清单（只剩这一件事）
 
 > **版本**：TH18 v1.00a（mod 侧 `th18:0x400000`）✓。
-> **本清单对应的 DLL**：`342f6c38c5166cf3082c47ba6f9708f9`（896512 B ✓）
+> **本清单对应的 DLL**：**以部署为准** ✓ —— 别照抄本文的数字 ✗（构建带时间戳 ⇒ md5 每次都不同 ✓，
+>   而并发会话会覆盖 modkit ⚠）。**正确做法**：`md5sum` 下面三条路径，**三者一致**就是当时那一版 ✓；
+>   再用日志的 `youkai: build <日期> <时间>` 对上它的编译时间 ✓。
 > · 三处路径**必须同 md5**：`th18_modkit/mods/th18_card_expand.dll` ✓、`th18_modkit/thcrap/bin/mod_th18_card_expand.dll` ✓、
 >   `th18_modkit/thcrap/repos/Renko_1055/th18_card_expand_255/th18_card_expand.dll` ✓。
 > **共享线**：`origin/main` == `upstream/Nipporita_dev` ✓。
