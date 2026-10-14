@@ -1523,15 +1523,17 @@ static int      s_spirit_next;
 static int pofv_spirit_body_sprite(int32_t kind, int32_t level, int disabled, int frame)
 {
     static const int base[POFV_SPIRIT_KIND__COUNT] = {
-        /* ★★★★★ 2026-10-13（★ owner 实跑 ✓）：「★ **纯净灵的颜色还是红色**」✗ ⇒ ★ **真因 = 贴图** ✗：
-         *   ★ `SPIRIT_PURE_*` 那张的平均 RGB = **(220,179,179)** ✓（★ R 明显高于 G/B ⇒ **红/粉** ✗）；
-         *   ★ 而固化态那张 `SPIRIT_DISP4_*` = **(232,222,174)** ✓（★ R≈G ≫ B ⇒ **黄** ✓）；
-         *   ★ 两张的**不透明像素数完全相同（348 ✓）** ⇒ ★ **同一只灵的"红版 / 黄版"** ✓✓。
-         *   ★ owner：「★ **纯净灵正常的颜色就是其固化状态的颜色，都应该是黄的**」✓
-         *   ⇒ ★ **换上"黄版"这张** ✓ —— ★ **不是**调 `set_color` ✗（★ 红贴图 × 黄 tint **仍是红** ✗，
-         *   ★ 这正是我以前改了 tint 却没用的原因 ✓）。
-         *   ⚠ ★ 帧数跟着变 ✗：★ `SPIRIT_PURE_*` 是 **8 帧** ✓、★ `SPIRIT_DISP4_*` 是 **5 帧** ✓
-         *   ⇒ ★ 下一行的 `n` 也从 8 改成 5 ✓（★ 否则帧索引越界 ✗）。*/
+        /* ★★★★★ 2026-10-13（★ 订正 ✓ —— 原来的理由**已被证伪** ✗，见下 ✓）：
+         *   ★ 原话（★ 已作废 ✗）：★「★ 两张的**不透明像素数完全相同（348 ✓）** ⇒ ★ 同一只灵的"红版 / 黄版"」✗
+         *   ★ ★ **为什么错** ✗（★ 复核 `ab9b54e5` 逐帧量 ✓ 高置信 ✓）：
+         *   ★ `SPIRIT_PURE_*` 的**逐帧**不透明像素 = ★ **540 / 541 / 560 / 542 / 417 / 398 / 499 / 587** ✓
+         *   ★ —— ★ ★ **不是 348** ✗；★ 348 只量到"★ 球"那一层 ✓ ⇒ ★ 它**回答不了"外环是不是另一张 sprite"** ✗。
+         *   ★ ★ **一手真值** ✓：★ 标准纯灵 = ★ `GhostPure()` → ★ `ins_303(0,106)` → ★ **script106**
+         *   ★ → ★ **`enemy.anm` entry1 `enemy2.png` 的 sprite 144–151（黄、8 帧）** ✓
+         *   ★（★ 而 ★ `SPIRIT_PURE_*` = sprite **120–127（红）** ✓，★ 只被 ★ `GhostPureOrinDisable`/★ `GhostTest*` 用 ✓
+         *   ★ ⇒ ★ **不是标准纯灵** ✗）；★ **固化态 = `GhostPureDisable()` → 同一支 script106** ✓
+         *   ★ ⇒ ★ **一手"固化不换族、颜色也一样"** ✓（★ 你说的"★ 正常色 = 固化色"字面成立 ✓）。
+         *   ★ ⚠ ★ **换黄的这一步本身是对的** ✓（★ 红 ✗ → 黄 ✓），★ 只是**理由要换成上面的一手** ✓。*/
         CE_ANM_ABILITY_SPRITE_SPIRIT_DISP4_0,
         CE_ANM_ABILITY_SPRITE_SPIRIT_WOLF_0,
         CE_ANM_ABILITY_SPRITE_SPIRIT_OTTER_0,
@@ -1543,17 +1545,23 @@ static int pofv_spirit_body_sprite(int32_t kind, int32_t level, int disabled, in
                                                           *   （★ `SPIRIT_DISP4_*` ✓ 是 **5 帧** ✗ 不是 8 帧 ✓
                                                           *   —— ★ 见上一行 `base[]` 里那段注释 ✓）。*/
     if (frame < 0) frame = 0;
-    /* ★★★ owner 2026-10-06：「**固化的时候 sprite 也会变**」✓ ＋ 核实方：一手**每族一档** ✓
-     *   ⇒ 补上此前缺失的**純霊档**（`ATLAS_SPIRIT_DISABLE_PURE` ✓，8 帧 = 一手 TH19 `enemy.anm`
-     *     `sprite112–119` 的「4 帧实心球 + 4 帧空心环」✓；来源与 UV 见 `AUDIT.md` §BE-167 ✓）。*/
+    /* ★★★ owner 2026-10-06：「**固化的时候 sprite 也会变**」✓ ＋ 核实方：一手**每族一档** ✓ */
     if (disabled && k == (int)POFV_SPIRIT_KIND_PURE) {
-        /* ★★★ owner 2026-10-06 修正（一手链 ✓）：`ins_303(0, 106)` 的 **106 是 anm「脚本号」而非 sprite 号** ✗
-         *   —— opcode 303 → `FUN_004fe980` → `FUN_004cb960(&vm, …, arg1(脚本号), …, *(enemy+0x28c)+7, 2, 0)` ✓
-         *   （与光环同机制：`FUN_004cb960(…, 0xf, …)` = `pl00.anm` **script15** ✓）。
-         *   ⇒ **純霊固化 = `enemy.anm` script106** ✓，其 sprite = **144–148**（`enemy2.png`，y=96，**32×32、5 帧** ✓）
-         *   ⇒ 本卡的 `SPIRIT_DISP4_0..4` 即按此重切 ✓（旧的 8 帧「球/环」是切错来源 ✗，已删）。*/
+        /* ★★★★★ 2026-10-13（★ 订正 ✓ —— 下面原注释里"★ 旧的 8 帧已删"✗ **查无实据** ✗）：
+         *   ★ ★ **证伪** ✗：★ 我查了 ★ `entries/ORDER.txt` 的**历史** ✓ —— ★ 在引入本表的
+         *   ★ `48fe29bf` 的**父提交**里 ★ **根本没有** `ATLAS_SPIRIT_DISABLE_PURE` / `SPIRIT_PURE_*` /
+         *   ★ `SPIRIT_DISP4_*` 任何一条 ✓（★ 同段只有 `ATLAS_TRANCE_SPIRIT` ✓）★ ⇒ ★ 那句
+         *   ★「★ **旧的 8 帧「球/环」是切错来源 ✗，已删**」✗ ★ **没有出处** ✓（★ 与审计 `a39d612c`
+         *   ★ 点名的病同款 ✗）。
+         *   ★ ★ **一手真值**（★ 复核 `ab9b54e5` ✓）：★ script106 的 sprite = ★ **144–151 = 8 帧** ✗
+         *   ★（★ 不是 5 帧 ✗）★ ⇒ ★ 本卡只切了 **144–148 这 5 帧** ✗ ★ ⇒ ★ ★ **"环"的那三帧
+         *   ★ 149/150/151 从来没被切进来** ✓✓ —— ★ 而 ★ 一手那个循环是 ★ **球 → … → 空心环** ✓
+         *   ★ ⇒ ★ ★ **这就是 owner 报的「固化态出生时外面那圈蓝环没了」** ✓✓（★ 见本 goal 的待办 1 ✓）。
+         *   ⚠ ★ 修法已定 ✓：★ 按 ★ `enemy2.png` **y=96**、★ x = **0/32/64/96/128/160/192/224** ✓
+         *   ★ 重切 **8 张** ✓、★ 本函数 ★ **`% 5` → `% 8`** ✓、★ `ORDER.txt` 那 5 行 → **8 行** ✓
+         *   ★（★ 2026-10-13：★ 等 owner 一句"B 可以"✓ 即落 ✓）。*/
         int b = (int)CE_ANM_ABILITY_SPRITE_SPIRIT_DISP4_0;
-        return b + ((frame < 0 ? 0 : frame) % 5);   /* 5 帧循环 ✓ */
+        return b + ((frame < 0 ? 0 : frame) % 5);   /* ⚠ 5 帧循环 —— ★ 应为 8 ✗（见上 ✓）*/
     }
     if (disabled && (k == (int)POFV_SPIRIT_KIND_WOLF || k == (int)POFV_SPIRIT_KIND_OTTER ||
                      k == (int)POFV_SPIRIT_KIND_EAGLE)) {
