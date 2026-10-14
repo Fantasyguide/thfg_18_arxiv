@@ -250,6 +250,8 @@ test-host:
 ##   语义与出处见 cards/dtap_core.h；用例①–⑦逐条对应 test_season_core 的原有用例 ✓）。
 	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_dtap_core tests/test_dtap_core.c cards/dtap_core.c
 	./tests/build/test_dtap_core
+	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_sdk_color tests/test_sdk_color.c
+	./tests/build/test_sdk_color
 	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_lolk_core tests/test_lolk_core.c cards/lolk_core.c
 	./tests/build/test_lolk_core
 	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_ouroboros_core tests/test_ouroboros_core.c cards/ouroboros_core.c

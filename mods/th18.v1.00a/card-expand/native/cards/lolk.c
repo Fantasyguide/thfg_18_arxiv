@@ -454,7 +454,7 @@ static void tint_restore_all(void)
          * 一还原就把弹钉死在那条低 alpha 上。alpha 归引擎的插值器管，我们只借 RGB 染黄。
          * （旧版还留着「守卫」问题：颜色被别处改过就跳过还原 → 一直黄；无条件还原 + 只动 RGB
          * 两件事一起才干净。）*/
-        *p = (*p & 0xff000000u) | (s_tint_orig[i] & 0x00ffffffu);
+        ce_color_set_rgb(p, s_tint_orig[i]);          /* ★ P14a：I1 词汇 ✓ */
     }
     s_tint_n = 0;
 }
@@ -465,7 +465,7 @@ static void tint_mark(uint8_t *b, uint32_t *col)
     s_tint_bullet[s_tint_n] = b;
     s_tint_orig[s_tint_n] = *col;
     s_tint_n++;
-    *(volatile uint32_t *)col = (*col & 0xff000000u) | (LOLK_GRAZED_COLOR & 0x00ffffffu);   /* ★ 只改 RGB */
+    ce_color_set_rgb((volatile uint32_t *)col, LOLK_GRAZED_COLOR);   /* ★ P14a：只改 RGB ✓ */
 }
 
 static int bullet_in_graze_zone(void)

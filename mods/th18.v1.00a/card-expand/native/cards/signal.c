@@ -2043,7 +2043,7 @@ static int       s_tint_n;
 static void signal_tint_apply(uint8_t *b)
 {
     volatile uint32_t *col = (volatile uint32_t *)(b + SIGNAL_BULLET_VM_OFF + CE_ANM_VM_COLOR1);
-    *col = (*col & 0xff000000u) | (SIGNAL_REMILIA_TINT_COLOR & 0x00ffffffu);
+    ce_color_set_rgb(col, SIGNAL_REMILIA_TINT_COLOR);        /* ★ P14a：I1 词汇 ✓ */
 }
 
 /* 还原整张表（删卡 / 换关 / 换机体时走）*/
@@ -2059,7 +2059,7 @@ void signal_tint_restore_all(void)
              *   早就保留了 alpha ✓（`(*col & 0xff000000u) | RGB` ✓），★ 但**还原这两处**是整条写回 ✗
              *   ⇒ ★ 弹在擦弹圈内**出生**时，其 alpha 会被旧快照覆盖 ⇒ **变暗** ✗（与 109 同因 ✓）。
              *   ★ 改动已登记 `AUDIT.md §BE`（动的是**别人的卡** ✓）。*/
-        *col = (*col & 0xff000000u) | (s_tint_orig[i] & 0x00ffffffu);
+        ce_color_set_rgb(col, s_tint_orig[i]);              /* ★ P14a：I1 词汇 ✓ */
     }
     s_tint_n = 0;
 }
@@ -2141,7 +2141,7 @@ static void signal_tint_tick(void)
         } else {
             volatile uint32_t *col = (volatile uint32_t *)(b + SIGNAL_BULLET_VM_OFF + CE_ANM_VM_COLOR1);
             /* ★ 同上：★ 保留当前 alpha ✓（`§BE` 已登记 ✓）。*/
-            *col = (*col & 0xff000000u) | (s_tint_orig[i] & 0x00ffffffu);
+            ce_color_set_rgb(col, s_tint_orig[i]);              /* ★ P14a：I1 词汇 ✓ */
         }
     }
     s_tint_n = w;

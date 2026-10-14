@@ -1,6 +1,7 @@
 /* youkai_core.c —— 108「永夜抄」的纯逻辑（主机单测：tests/test_youkai_core.c）。
  * 每条规则的出处写在 youkai_core.h；这里只写实现上的取舍。无引擎依赖、无浮点库依赖（只用 < > 比较）。*/
 #include "youkai_core.h"
+#include "../sdk_color.h"   /* ★ P14a：I1 词汇（纯函数；本 core 是主机可测的 ⇒ 不能 include sdk.h ✗）*/
 
 /* ------------------------------------------------------------------ §3.1 止射闸 */
 int yk_should_suppress_native(int player_present, int focused, int character, int power_level)
@@ -1697,12 +1698,12 @@ int yk_deathbomb_window(int32_t player_state)
 
 uint32_t yk_tint_apply(uint32_t cur)
 {
-    return (cur & 0xff000000u) | (YK_TINT_RED & 0x00ffffffu);
+    return ce_color_keep_alpha(cur, YK_TINT_RED);           /* ★ P14a：I1 词汇 ✓ */
 }
 
 uint32_t yk_tint_restore(uint32_t cur, uint32_t orig)
 {
-    return (cur & 0xff000000u) | (orig & 0x00ffffffu);
+    return ce_color_keep_alpha(cur, orig);                 /* ★ P14a：I1 词汇 ✓ */
 }
 
 /* ============ ★★★ 2026-09-22 夜（owner 工单 P-A · 夜点）：两条纯逻辑 ==========================
@@ -1850,7 +1851,7 @@ int yk_fengma_tint_set(int set_index)
 
 uint32_t yk_fengma_tint_dword(uint32_t color_in)
 {
-    return (color_in & 0xff000000u) | YK_FENGMA_TINT_RGB;   /* 保 alpha（高 8 位），只换 BGR */
+    return ce_color_keep_alpha(color_in, YK_FENGMA_TINT_RGB);   /* ★ P14a：保 alpha、只换 RGB ✓ */
 }
 
 /* ------------- ★★★ 第二十八批：束根光斑 / 束端命中特效 / 极妖染红的三个纯函数（一手见 `youkai_core.h`）--

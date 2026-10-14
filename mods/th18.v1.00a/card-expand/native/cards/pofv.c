@@ -1966,7 +1966,7 @@ static void pofv_aura_tint_tick(void)
              *   ★ 即 ★ **只还原 RGB（低 24 位）** ✓、★ **保留当前 alpha（高 8 位）** ✓
              *   ⇒ ★ 不再把"染色前那一帧的 alpha 快照"写回去 ✗ —— ★ 那正是"**领域内出生的弹被降透明**"的成因 ✓
              *     （★ 出生时快照就已经是被染过的低 alpha ✓ ⇒ 还原时又把它写回 ⇒ 永久偏暗 ✗）。*/
-            *col = (*col & 0xff000000u) | (pofv_aura_tint_color(0) & 0x00ffffffu);
+            ce_color_set_rgb(col, pofv_aura_tint_color(0));   /* ★ P14a：I1 词汇（与上面一行注释里的写法等价 ✓）*/
 #if POFV_AURA_BULLET_SHAKE
             pofv_aura_shake_apply(b);
 #endif
