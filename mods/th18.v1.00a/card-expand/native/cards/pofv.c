@@ -4128,12 +4128,17 @@ static void pofv_c3_tick(void)
             b->live = 0;
             continue;
         }
-        if (hit && ++b->bounces > POFV_C3_BOUNCE_MAX) {
-            /* ★ 2026-10-13（口径 4 ✓）：★ 反弹耗尽 ⇒ 走**消失动画**（同出界那处 ✓）。*/
-            if (b->vm) { ce_anm_interrupt((uint32_t)b->vm, 1); b->vm = 0; }
-            b->live = 0;
-            continue;
-        }
+        /* ★★★★★ 2026-10-13（★ 一手复核 `b886c051` ✓ **定案**）：★ ★ **停用"反弹耗尽就收"** ✗ ——
+         *   ★ 一手：★ `EX_BOUNCE` 的 `a = **4**` ✓（★ `pl00.txt:659` ✓）**只有次数上限** ✓，
+         *   ★ 到点引擎做的是 ★ **`andl $0xffffffbf,0x6a8`（清反弹位）后** ★ ★ **继续飞、不回收** ✓
+         *   ★（★ `th19:0x4f0310-0x4f0323` ✓）★ ⇒ ★ 卡侧原来"★ 超了就 `interrupt + live=0`" ✗
+         *   ★ **没有一手依据** ✗（★ 复核原话：★「★ **数的来源对、"到点就收"错**」✓）。
+         *   ⚠ ★ 行号已因前几笔改动漂移 ✓，★ 判据文字与原读到的整行一致 ✓。*/
+        /* if (hit && ++b->bounces > POFV_C3_BOUNCE_MAX) { */
+        /*     if (b->vm) { ce_anm_interrupt((uint32_t)b->vm, 1); b->vm = 0; } */
+        /*     b->live = 0; */
+        /*     continue; */
+        /* } */
         if (b->age >= POFV_C3_BULLET_LIFE) {              /* ❓⑥ 兜底寿命 */
             /* ★ 2026-10-13（口径 4 ✓）：★ 寿命到 ⇒ 也走**消失动画**（同出界那处 ✓）。*/
             if (b->vm) { ce_anm_interrupt((uint32_t)b->vm, 1); b->vm = 0; }
