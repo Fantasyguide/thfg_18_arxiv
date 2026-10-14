@@ -242,7 +242,7 @@ esi ≤ 0 → 10
 
 | 事项 | 状态 |
 | --- | --- |
-| **type 8 道具（满 power 时 `+10000 PIV`）在本作怎么产出** | ❓ 反向穷举：`spawn_item` `0x434740` 全 exe 17 个调用点里没有 `push 8`；本地解包 ECL（`local/_scratch/ecltxt/`：st01..st07 + 各 bs/mbs + default）里**没有** `dropExtra(8)`/`dropMain(8)`。⇒ 该分支在 v1.00b 可能是死代码（TH16 同款 handler 叫 `Globals__collect_furu_powah`，真会掉） |
+| **type 8 道具（满 power 时 `+10000 PIV`）在本作怎么产出** | ❓ 反向穷举：`spawn_item` `0x434740` 全 exe 17 个调用点里没有 `push 8`；本地解包 ECL（`local/_scratch/ecltxt/`：st01..st07 + 各 bs/mbs + default）里**没有** `dropExtra(8)`/`dro…（详见本节正文） |
 | `LINE = 148` 对应哪个自机 | 🟡 `CHARACTER == 1`（ExpHP 结构体顺序 0/1/2）；一手只坐实「索引 1」，自机名未核 |
 | item `state == 3` 的完整语义 | 🟡 一手：`0x433819` 由「自机在线上」`0x43358a` 置位；另有 `0x433599`（炸弹中）/ `0x4335b1` 两个入口未解；TH11 的 `state 3` 是「满槽全屏回收」，**未在 TH17 复核** |
 | `DIFFICULTY` 索引 4 / 5 的归属 | 🟡 见 §3 |
@@ -292,7 +292,7 @@ mod 侧一律用 **TH18 的实际 POC**（`player+0x47998`，live 128 ↔ 224）
 
 | 项 | 一手 | 结论 |
 | --- | --- | --- |
-| 载体 / 量纲 | `GLOBALS = th17:0x4b59c0`（vendor），`inner` 在 `+0x1c` ⇒ `CURRENT_PIV` = `inner+0x48` = **`th17:0x4b5a24`** ✅、`MINIMUM_PIV` = `+0x4c` = `th17:0x4b5a28`（只写不读）、`MAXIMUM_PIV` = `+0x50` = **`th17:0x4b5a2c`** ✅ | 与旧记录一致 |
+| 载体 / 量纲 | `GLOBALS = th17:0x4b59c0`（vendor），`inner` 在 `+0x1c` ⇒ `CURRENT_PIV` = `inner+0x48` = **`th17:0x4b5a24`** ✅、`MINIMUM_PIV` = `+0x4c` = `th17:0x4b5a28`（只…（详见本节正文） | 与旧记录一致 |
 | 线高 | `th17:0x43423e` `cmp ds:0x4b59f4,1` → `eax=0x80` / `edx=0x94` / `cmove` ⇒ 线 **128，条件为 1 时 148**；`ds:0x4b59f4` = `GLOBALS+0x34` = `inner+0x18` = vendor **`CHARACTER`** | ★ 与 th14 / th15 同：**按角色**切换 |
 | 判谁 | `th17:0x434219` `eax = [ds:0x4b77d0]`（vendor = **`PLAYER_PTR`**）、`xmm1 = [eax+0x614]` ⇒ **自机 y** | 自机 y |
 | 线上 / 线下 | 线 ≥ 自机 y ⇒ 满值（`trunc10(PIV/100)`）；否则 `(3/4)·trunc10(PIV/100) × (1 − t/450)`，`t = (int)自机 y − 线` | ⇒ **0.75 族** |
