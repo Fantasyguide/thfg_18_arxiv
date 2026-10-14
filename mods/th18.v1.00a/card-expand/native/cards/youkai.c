@@ -6685,10 +6685,52 @@ static void yk_gauge_hud_update(yk_card_t *s)
 }
 
 static void yk_hud_claim(ce_card_t *c, yk_card_t *s);   /* ★ z7：定义在本文件后面（on_load 之后）*/
+/* ★★★ 2026-10-14（P31a，owner 口径逐字：「所有东西**除了一个之外**换面不清空：**单面的夜点计数** …
+ *   **总夜点计数和刻符没有理由清空**」✓）：**run 级字段在换面时原样带回** ✓。
+ *   做法（最稳的一种，不靠"猜哪一行清的" ✗）：`on_ctor` 在**换面**这一路上把 run 级字段先存进
+ *   局部、跑完原有初始化、再写回 ✓ —— 于是无论中间哪一支抹了它们，出来都是上一关的值 ✓；
+ *   新局照旧（`s_run_fresh` = 1 ✓）。
+ *   ⚠ **不**恢复的东西：HUD 字形 VM 句柄（`hud_digit[]` / `hud_night[]` ✓）—— 引擎换关会拆掉
+ *     UI VM ✓，恢复了就是死句柄 ✗ ⇒ 让 `yk_gauge_hud_kill()` 与重建那一支照旧跑 ✓。
+ *   ⚠ owner 说的「**单面的夜点计数**」= 每关那一格（TH08 里给 LS 奖励符卡用 ✓，本 mod 没有它 ✓）
+ *     ⇒ 本批**不特意保留**（它本来就是每关一份 ✓）；其余（总夜点 / 刻符 / 人妖槽 / 各项计数）全部带回 ✓。*/
+typedef struct {
+    int32_t  piv, piv_base, orbs, gauge;
+    uint16_t gauge_focus_run, gauge_hold, orb_peak, gauge_ram, gauge_idle, orb_silence;
+    uint32_t orb_taken, orb_full;
+} yk_run_keep_t;
+static yk_run_keep_t s_run_keep108;
+static int           s_run_fresh = 1;   /* 1 = 下一次 on_ctor 属于「新局」（on_run_reset / on_delete 置回 1 ✓）*/
+
+static void yk_run_save108(const yk_card_t *s)
+{
+    s_run_keep108.piv = s->piv;               s_run_keep108.piv_base = s->piv_base;
+    s_run_keep108.orbs = s->orbs;             s_run_keep108.gauge = s->gauge;
+    s_run_keep108.gauge_focus_run = s->gauge_focus_run; s_run_keep108.gauge_hold = s->gauge_hold;
+    s_run_keep108.orb_peak = s->orb_peak;     s_run_keep108.gauge_ram = s->gauge_ram;
+    s_run_keep108.gauge_idle = s->gauge_idle; s_run_keep108.orb_silence = s->orb_silence;
+    s_run_keep108.orb_taken = s->orb_taken;   s_run_keep108.orb_full = s->orb_full;
+}
+
+static void yk_run_restore108(yk_card_t *s)
+{
+    s->piv = s_run_keep108.piv;               s->piv_base = s_run_keep108.piv_base;
+    s->orbs = s_run_keep108.orbs;             s->gauge = s_run_keep108.gauge;
+    s->gauge_focus_run = s_run_keep108.gauge_focus_run; s->gauge_hold = s_run_keep108.gauge_hold;
+    s->orb_peak = s_run_keep108.orb_peak;     s->gauge_ram = s_run_keep108.gauge_ram;
+    s->gauge_idle = s_run_keep108.gauge_idle; s->orb_silence = s_run_keep108.orb_silence;
+    s->orb_taken = s_run_keep108.orb_taken;   s->orb_full = s_run_keep108.orb_full;
+}
+
 static int on_ctor(ce_card_t *c)
 {
     if (!YK_ENABLE_CARD || !YK_ENABLE_CB_LIFECYCLE) return 0;   /* ★ 总开关 + 回调族 ⑨ */
     yk_card_t *s = ce_state(c, yk_card_t);
+    {   /* ★ P31a：换面 ⇒ 出来时把 run 级字段写回上一关的值 ✓ */
+        yk_run_keep_t keep108;
+        const int was_fresh108 = s_run_fresh;
+        s_run_fresh = 0;
+        if (!was_fresh108) keep108 = s_run_keep108;
     if (!s) return 0;
     /* ★ 先收跟随 VM 再复位静态表：本函数**在局中被重建时也会跑**（每关开始引擎对卡组每张卡
      * 再调一次 ctor）—— 那时 `yk_map_reset` 会把使魔一并忘掉，它们身上的 VM 若不复位就永久留下
@@ -6829,6 +6871,8 @@ static int on_ctor(ce_card_t *c)
         blk.side = CE_HUD_SIDE_PINNED;
         yk_hud_claim(c, s);
     }
+        if (!was_fresh108) yk_run_restore108(s);
+    }
     if (s->hud_ready) yk_gauge_hud_spawn(c, s);
     return 0;
 }
@@ -6968,6 +7012,7 @@ static int on_load(ce_card_t *c)
 
 static void on_run_reset(ce_card_t *c)
 {
+    s_run_fresh = 1;   /* ★ P31a：新局 ✓ */
     if (!YK_ENABLE_CARD || !YK_ENABLE_CB_LIFECYCLE) return;   /* ★ 总开关 + 回调族 ⑨ */
     yk_card_t *s = ce_state(c, yk_card_t);
     /* ★ 2026-10-01（owner：这次发版就为拿这个数）—— **emitkey 收尾汇总**：
@@ -7005,6 +7050,7 @@ static void on_run_reset(ce_card_t *c)
  * tick 回调全停）—— 只有这里收得到。使魔是**真敌人**，必须在这里交代清楚。*/
 static void on_delete(ce_card_t *c)
 {
+    s_run_fresh = 1;   /* ★ P31a：删卡 ⇒ 下次拿到是新局 ✓ */
     if (!YK_ENABLE_CARD || !YK_ENABLE_CB_LIFECYCLE) return;   /* ★ 总开关 + 回调族 ⑨ */
     yk_card_t *s = ce_state(c, yk_card_t);
     s_side_lock = -1;                     /* ★ owner ④：删卡 ⇒ 解锁（形态不再钉住）*/

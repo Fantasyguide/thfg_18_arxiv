@@ -41,8 +41,8 @@
 | 卡 | 文件 | file-scope static | `on_run_reset` | `on_stage_start` | `on_delete` |
 | :-: | --- | :-: | :-: | :-: | :-: |
 | 106 | `th06rank.c` | 见下 | 见下 | 见下 | 见下 |
-| 107 | `senro.c` | 3 | 12 ✓ | 7 | 12 |
-| 108 | `youkai.c` | 207 | 14 ✓ | 1 | 16 |
+| 107 | `senro.c` | 3 | 12 ✓ | 7 | 12 | ← ✅ **P31a 已修**
+| 108 | `youkai.c` | 207 | 14 ✓ | 1 | 16 | ← ✅ **P31a 已修**
 | 109 | `pofv.c` | 198 | 13 ✓ | **0** ✗ | 15 |
 | 110 | `mof.c` | 6 | 6 ✓ | 3 | 8 |
 | 111 | `signal.c` | 21 | 18 ✓ | 9 | 15 |
@@ -50,7 +50,7 @@
 | — | `faith_hud.c`（HUD 层）| 见下 | 见下 | 见下 | 见下 |
 | 112 | `ufo.c` | 79 | 8 ✓ | 9 | 20 |
 | 113 | `trance.c` | 99 | 9 ✓ | 6 | 7 |
-| **108** | ❌ **违反**：无 `on_stage_start` ✓，但 `on_load`(`youkai.c:6966`) **无条件调 `on_ctor`**(`:6688-6834`) ⇒ 成了**每关复位** ✗（详情见下）| ⚠ 私有字段 ✅ / 文件级 static ❌（`on_delete` 明确**不调** `on_ctor` ✗）| 约 40 组 file-static 跨局残留 ✗（风险前 5 见下）|
+| **108** | ❌ **违反**：无 `on_stage_start` ✓，但 `on_load`(`youkai.c:6966`) **无条件调 `on_ctor`**(`:6688-6834`) ⇒ 成了**每关复位** ✅（P31a 已修）（详情见下）| ⚠ 私有字段 ✅ / 文件级 static ❌（`on_delete` 明确**不调** `on_ctor` ✗）| 约 40 组 file-static 跨局残留 ✗（风险前 5 见下）|
 | **109** | **owner 豁免** ⓘ（你原话：「换面数据应保持（**除 109**）」✓；它自己的 `MODEL-109-SPIRIT-MIRROR.md:111-114` 也写「**跨面 ⇒ 全清**」✓ ⇒ 两者吻合 ✓ 不算冲突 ✓）| ✅ **主账干净**：`on_run_reset`(`:8477`) 与 `on_delete`(`:8478`) **逐字相同**（都只调 `clear_card` ✓）⇒ **无"只靠 on_delete"的状态** ✓ | ⚠ 无钩子清的缺口：① **7 台 HUD VM** ✗（`n/m` 四字 + 档位弹出 3 台，只在显示条件转假时删 ⇒ 商店删卡 tick 停 ⇒ 留残影 ❓）② **`s_c4s` 无 clear 函数** ✗（早苗 C4 会从旧相位续 ✗）③ 咲夜 `s_aura_sec_deg` 只增不清 ✗ ④ **灵本体的真敌机**两钩子都不收 ✗（靠它自己 ECL `$I0=999` 离场 ✓）|
 | **110** | ✅ **范本**：ctor 从 `s_slot_keep` **恢复**账本 ✓ + 只在「关卡号变小」时归零 ✓（`on_stage_start` 只做 `bomb10_reset`/spell_watch ✓）| ✅ `on_run_reset` 与 `on_delete` **都**接 `mof_clear()` ✓ + 新局判据 `s_slot_stage` ✓ | 无（当年它被这条 bug 打过，也修得最全 ✓）|
 | **111** | ✅（`on_stage_start` 里的"每关归零"是**复刻一手** ✓ `th11:0x41fb24` ✓；且**余数与诊断计数刻意保留** ✓）| ✅（18 处 `on_run_reset` ✓ + 新局判据 `s_slot_stage111` ✓）| 无（信号每关归零 = 复刻 ✓ 不是 bug ✓）|
@@ -60,7 +60,7 @@
 | **116** | ✅ **无 `on_stage_start`** ✓ ⇒ 换面没有任何东西去清它 ✓ | ✅（`on_run_reset`/`on_delete` = `clear_card` ✓）| 待核：`clear_card` 是否覆盖它全部 run 级 static（10 个 ✓）|
 | **117** | ⚠ **需你裁定**：`on_stage_start` 里 `clear_card(c, 1)` **每关清令牌** ✗（日志自述 `animal tokens cleared; HUD slot kept` ✓）—— 形态与 112 那条**已修 bug 同款** ✗ ⇒ 但也许动物灵本就该每关重来 ✓（你定 ✓）| ✅（`on_run_reset`/`on_delete` = `clear_card` ✓）| 见左 |
 | **106** | ✅（`on_stage_start` 只做 `t06_state_stage_reset`（subRank/帧计数 ✓）+ 按持有 36/37 重发碎片 ✓；rank 本身跨关保留 ✓）| ✅（`on_run_reset` 只撤「未满 P」声明 ✓ 幂等 ✓）| 无 |
-| **107** | **❌ 违反**：注册了 `.ctor`(`senro.c:1985`) ⇒ **每关** ctor 无条件 `senro_clear`(`:1679`) 整块 memset ✗ ⇒ `spell_bonuses`/`drop_rot`/统计被连坐清（樱点/+C 那部分按 th07 一手本就该每关重设，不算 ✗）| ✅（12 处 `on_run_reset` ✓）| 见 §2.1 |
+| **107** | **❌ 违反**：注册了 `.ctor`(`senro.c:1985`) ⇒ **每关** ctor 无条件 `senro_clear`(`:1679`) 整块 memset ✅（P31a 已修） ⇒ `spell_bonuses`/`drop_rot`/统计被连坐清（樱点/+C 那部分按 th07 一手本就该每关重设，不算 ✗）| ✅（12 处 `on_run_reset` ✓）| 见 §2.1 |
 | **112** | ✅（`on_stage_start` 显式**保留令牌池 + 槽** ✓ = 2026-09-23 修的 bug ✓；只收本体侧/宿主皮/特效 ✓）| ✅ 主体干净；残留三类：`s_bounty_eq*`（旧 `take()` 路径隐患 ✗，新 peek 读法免疫 ✓）、`s_eq`/`s_faith_log_*`（只在下一次召唤/结包清）、`s_bolt[]`+Lcg（视觉 scratch ✗）| 无"只靠 on_delete"项 ✓（on_delete 是 on_run_reset 的子集 ✓）|
 | **113** | ✅（`on_stage_start` 先把槽存起来 → `trance_clear` → 写回 200 ✓；`max_point_bonus`/`decl_last` 不在 clear 范围 ✓）| run 级 VM/池 ✅；但**累计值不对称** ✗：**`s->max_point_bonus` 只靠"关卡号变小"判新局** ⇒ **同一关 retry 可能不复位** ✗（它每帧进计分 delta ⇒ 最像违反 ② 的一处 ✓）；槽初值同理（keep 分支会写回已被清零的槽 = 0 ✗）| 无 on_delete-only ✓；不对称在**反方向**：一批 stage 级计数只在 `on_stage_start` 清 ⇒ retry 残留（脏日志 ✓）|
 | 114 | `collect2x.c` | 见下 | 见下 | 见下 | 见下 |
