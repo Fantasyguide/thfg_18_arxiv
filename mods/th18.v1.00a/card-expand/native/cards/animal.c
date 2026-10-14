@@ -4204,10 +4204,29 @@ static int on_load(ce_card_t *c)
 static void on_stage_start(ce_card_t *c)
 {
     animal_card_t *s = st(c);
+    animal_token_t keep[ANIMAL_TOKEN_MAX];
+    int keep_n, i;
+
     if (!s) return;
+    /* ★★★ 2026-10-14（P33，owner 口径逐字：「**117 也不该清**」✓）：**换关不再清令牌** ✓ ——
+     *   原来这里无条件 `clear_card(c, 1)`，而 `clear_card()` 里有一句 `token_clear_all()`
+     *   ⇒ 每关把令牌池整块清掉 ✗（审计 §3 的 117 行点名的那条 ✓，形态同 112 那条 ✓）。
+     *   现在的做法（与 `on_ctor` 的"先存 → 跑原清理 → 再写回"同款 ✓）：
+     *     · 先把令牌**数据**存进栈上副本；
+     *     · 照旧跑 `clear_card(c, 1)`（它要清的 per-stage 相位/boss 追踪/各处 VM **该清照清** ✓，
+     *       HUD 槽也照旧保住 ✓）；
+     *     · 再把令牌数据写回，并把 **VM 句柄一律置 0** ✓ —— 引擎换关会把令牌 VM 拆掉，
+     *       留着旧句柄就是**死句柄** ✗；置 0 后下一帧由 `token_make_vm()` 按 `type` 重建 ✓
+     *       （与"换种类重建"走同一支 ✓，不新增机制 ✓）。
+     *   ⚠ `age` / `life` 这些令牌自己的计时**一起带过去** ✓（它们是"这只灵"的属性 ✓，不是关的 ✓）。*/
+    memcpy(keep, s_tok, sizeof s_tok);
+    keep_n = s_n_tok;
     clear_card(c, 1);
-    ce_log("wba_wc: stage start -> animal tokens (%d slots) + core/HUD/roar VMs cleared; HUD slot kept "
-           "(shop path = on_load is NOT touched)", ANIMAL_TOKEN_MAX);
+    memcpy(s_tok, keep, sizeof s_tok);
+    for (i = 0; i < ANIMAL_TOKEN_MAX; ++i) s_tok[i].id = 0;
+    s_n_tok = keep_n;
+    ce_log("wba_wc: stage start -> animal tokens KEPT (%d slots, %d alive); only VM handles dropped; "
+           "HUD slot kept (shop path = on_load is NOT touched)", ANIMAL_TOKEN_MAX, (int)s_n_tok);
 }
 
 static void on_run_reset(ce_card_t *c) { clear_card(c, 0); }
