@@ -2453,8 +2453,13 @@ static void pofv_c2_fire(void)
 }
 
 /* 每帧推进（105 帧）。`id` = 本卡卡号（无敌声明层的键 ✓）。**不依赖结界键电平** ✓（一次性 105 帧）。*/
-static void c2_ring_vm_sync(float r);   /* 定义在后（装回范围圈时加的 ✓）*/
-static void c2_ring_vm_release(void);   /* 定义在后（装回范围圈时加的 ✓）*/
+/* ★★ 2026-10-13（★ owner：「★ **灵梦 C2 发了两个消弹环**」✗ + ★「★ **落后的那个，炸了之后才出现**」✗
+ *   + ★「★ **抽成公用函数** ⇒ ★ **CA 模型更好**」✓）：
+ *   ★ ★ 原来这里有两个前置声明（`c2_ring_vm_sync` / `c2_ring_vm_release` ✓）—— ★ **已删** ✗
+ *   ★（★ 调用点已在上一笔停用 ✓：★ 滞后那台不再起 ✓；★ 函数本体与 `s_c2.ring_vm` 字段
+ *   ★ **下一笔连根删** ✓ —— ★ 那一处要**连它自己的兜底收一起删** ✗，★ 否则编译不过 ✓）。*/
+/* static void c2_ring_vm_sync(float r); */
+/* static void c2_ring_vm_release(void); */
 
 static void pofv_c2_tick(uint32_t id)
 {
