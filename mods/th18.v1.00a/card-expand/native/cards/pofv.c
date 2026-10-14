@@ -1705,7 +1705,10 @@ static void pofv_spark_tick(void)
     }
 }
 
-static int cancel_white_in_circle(const float *pos, float r, int max_count, int mode)
+/* ★★ P60（owner：「**这个过滤器应当只有暴风用到才对**」✓）：加 `white_only` 开关 ——
+ *   只有**暴风**传 1（只吃半径 ≤ 4 的小弹 ✓），**C1–C4 消弹圈**与**破罩搜弹**传 0（不筛 ✓）。
+ *   旧版把这个判据用在所有消弹路径上 ✗（owner 实跑口径纠正 ✓）。*/
+static int cancel_white_in_circle(const float *pos, float r, int max_count, int mode, int white_only)
 {
     uint8_t *bm = CE_BULLET_MGR();
     uint32_t i;
@@ -1717,7 +1720,7 @@ static int cancel_white_in_circle(const float *pos, float r, int max_count, int 
         float br, dx, dy, rr;
         if (state != 1 && state != 2) continue;        /* 0 = 空槽；3 / 4 = 别的状态 */
         br = *(const float *)(b + POFV_BULLET_RADIUS_OFF);
-        if (!pofv_is_white_bullet(br)) continue;       /* ★ 可消弹判据（哨兵弹种在这里被跳掉）*/
+        if (white_only && !pofv_is_white_bullet(br)) continue;   /* ★ P60：只有暴风筛小弹 ✓ */
         dx = *(const float *)(b + CE_BULLET_POS) - pos[0];
         dy = *(const float *)(b + CE_BULLET_POS + 4) - pos[1];
         rr = br * 0.5f + r;                            /* 照 0x429370 的判定式 */
@@ -2404,7 +2407,7 @@ static int pofv_aura_rise_edge(int held)
  * 返回消掉的颗数。位置 = 圈心（一手是逐个命中点，本卡不复刻逐点坐标 ⇒ 见 `TUNING.md` 的 ❓）。*/
 static int c2_cancel_drop(const float *pos, float r)
 {
-    const int n = cancel_white_in_circle(pos, r, POFV_CANCEL_MAX, POFV_BULLET_CANCEL_MODE);
+    const int n = cancel_white_in_circle(pos, r, POFV_CANCEL_MAX, POFV_BULLET_CANCEL_MODE, 0)   /* ★ P60：C1–C4 不筛 ✓ */;
     if (n > 0) {
         int32_t pts = 0;
         (void)pofv_power_spawn_packed(&s_power, pos[0], pos[1], n, POFV_POWER_PTS_CANCEL,
@@ -2820,7 +2823,7 @@ static void pofv_ca_ring_tick(void)
         if (!R->active) continue;
         pos[0] = R->x; pos[1] = R->y; pos[2] = 0.0f;
         if (R->r > 0.0f) {
-            n = cancel_white_in_circle(pos, R->r, POFV_CANCEL_MAX, POFV_BULLET_CANCEL_MODE);
+            n = cancel_white_in_circle(pos, R->r, POFV_CANCEL_MAX, POFV_BULLET_CANCEL_MODE, 0)   /* ★ P60：不筛 ✓ */;
             if (n > 0)
                 ce_log("pofv: [CA_RING] slot=%d kind=%d r=%.1f 消掉 %d 颗（一手：逐帧点测试 ✓）",
                        i, R->kind, (double)R->r, n);
@@ -2986,7 +2989,7 @@ static void do_storm_frame(const pofv_storm_t *bl)
     if (r <= 0.0f) return;
     pos[0] = bl->x; pos[1] = bl->y; pos[2] = 0.0f;
 
-    n = cancel_white_in_circle(pos, r, POFV_CANCEL_MAX, POFV_BULLET_CANCEL_MODE);
+    n = cancel_white_in_circle(pos, r, POFV_CANCEL_MAX, POFV_BULLET_CANCEL_MODE, 0)   /* ★ P60：C1–C4 不筛 ✓ */;
     /* ★★★★ 2026-10-10 TH19 連撃：暴风**每消掉一颗小弹 ⇒ combo +1**（一手 `0x51cb91`：
      *   `FUN_0051c8c0`（暴风 tick）的消弹循环里调 `FUN_00549780(实参 0)` ✓ —— 实参 0 ⇒ **窗口不加** ✓）。
      *   这是 combo 的**第二个**（也是唯一另一个）来源 ✓；一手对「除霊オーラ（结界）消弹」**不加** ✗
@@ -4202,7 +4205,7 @@ static int pofv_barrier_nearest_bullet(const float *pos, float r, float *ox, flo
         float br, dx, dy, rr, d2;
         if (state != 1 && state != 2) continue;
         br = *(const float *)(b + POFV_BULLET_RADIUS_OFF);
-        if (!pofv_is_white_bullet(br)) continue;
+        /* ★ P60（owner：过滤器只该暴风用 ✓）⇒ 破罩找最近弹**不筛** ✓（任何弹都算 ✓）。*/
         dx = *(const float *)(b + CE_BULLET_POS) - pos[0];
         dy = *(const float *)(b + CE_BULLET_POS + 4) - pos[1];
         rr = br * 0.5f + r;
