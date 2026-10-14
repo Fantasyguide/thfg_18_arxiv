@@ -1692,7 +1692,12 @@ static int ctor(ce_card_t *c)
     return 0;
 }
 
-static void on_run_reset(ce_card_t *c) { mof_clear(c); }   /* ⚠ 不再清账本：`ctor` 会从 s_slot_keep 恢复 */
+/* ★★ 2026-10-14（P32，owner 口径「哦，retry可以重走一次入场」✓）：**retry / 新一局** ⇒ 共享 HUD
+ *   **重走一次入场** ✓ —— `mof_clear()` 里那次 `faith_hud_departed()` 走的是**删卡**语义
+ *   （另一张还在就留着 ✗，因为删卡发生在商店、tick 全停 ⇒ 收掉没人重建 ✗）；这里在局末/retry 这一路
+ *   **再无条件收一次** ✓ ⇒ 下一帧 `on_draw` 照旧按需重建 16 支 VM ⇒ 脚本自带的 20 帧淡入**重播一次** ✓。
+ *   ⚠ 幂等：`mof_clear()` 已经收过也不怕（`fh_kill()` 里句柄已置 0 ✓）。*/
+static void on_run_reset(ce_card_t *c) { mof_clear(c); faith_hud_run_reset(); }
 /* ★★ 2026-10-14（P20）：**删卡时注销**灵击提供者（唯一必须走 `on_delete` 而不是 `on_run_reset` 的一步 ✗）——
  *   理由见 `bomb10.h` 的 `bomb10_unregister_host()`：卡被删后 `ce_state` 的内存会被别的卡领走，
  *   而机器每帧仍会拿这条注册去调 `gate`/`on_start`/`on_cancel`（都写那块内存）⇒ 写进别人的活状态 ✗✗。

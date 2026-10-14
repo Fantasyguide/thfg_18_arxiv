@@ -77,5 +77,10 @@ void faith_hud_draw(void);
 /* 一张卡退场（`on_delete` / `on_run_reset`；**必须在 `faith_unregister()` 之后调**）：
  * 还有另一张在场 ⇒ 只清它那一槽的声明（块与占位不动）；两张都走了 ⇒ 收掉 16 支 VM + 放占位。*/
 void faith_hud_departed(void);
+/* ★★ 2026-10-14（P32）：**局末 / retry** 专用收尾 —— 无条件整套收掉 ⇒ 下一帧重建 ⇒
+ *   入场淡入重播一次 ✓（owner 口径「retry 可以重走一次入场」✓）。
+ *   ⚠ 与 `faith_hud_departed()` 的分工见 `faith_hud.c` 的定义处注释 ✓：
+ *     删卡路（商店里 tick 停）用 departed ✓，局末/retry 路用本函数 ✓。*/
+void faith_hud_run_reset(void);
 
 #endif /* FAITH_HUD_H */
