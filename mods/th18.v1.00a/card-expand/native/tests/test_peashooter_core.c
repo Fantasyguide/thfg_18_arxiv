@@ -220,11 +220,11 @@ static void test_proj(void)
     int i;
     pe_proj_clear_all(a, 3);
 
-    i = pe_proj_spawn(a, 3, 0.0f, 400.0f, PE_SET_NORMAL);
+    i = pe_proj_new(a, 3, 0.0f, 400.0f, PE_SET_NORMAL);
     CHECK(i == 0 && a[0].alive == 1, "起一颗正常弹应在 0 号（i=%d）", i);
     CHECK(a[0].dmg == PE_DMG_NORMAL && a[0].vy == -PE_SPD_NORMAL, "正常弹的伤害/速度应照 PEA_NORMAL（dmg=%d vy=%.1f）", a[0].dmg, a[0].vy);
 
-    i = pe_proj_spawn(a, 3, 16.0f, 400.0f, PE_SET_GATLING);
+    i = pe_proj_new(a, 3, 16.0f, 400.0f, PE_SET_GATLING);
     CHECK(i == 1 && a[1].dmg == PE_DMG_GATLING && a[1].vy == -PE_SPD_GATLING, "机枪弹应照 PEA_GATLING（dmg=%d vy=%.1f）", a[1].dmg, a[1].vy);
 
     CHECK(pe_proj_hit_now(&a[0]) == 1, "刚出生就该能结算 ✓");
@@ -238,7 +238,14 @@ static void test_proj(void)
     a[0].y = PE_VIEW_Y_MIN - 1.0f;
     CHECK(pe_proj_out(&a[0]) == 1, "越过上界就该收 ✓");
 
-    CHECK(pe_proj_spawn(a, 1, 0.0f, 0.0f, PE_SET_NORMAL) == -1, "池满应返回 -1（不炸 ✓）");
+    CHECK(pe_proj_new(a, 1, 0.0f, 0.0f, PE_SET_NORMAL) == -1, "池满应返回 -1（不炸 ✓）");
+
+    /* ★ P44：扇形弹幕 = 显式方向 ✓（x 也要动 ✓）*/
+    pe_proj_clear_all(a, 3);
+    i = pe_proj_spawn(a, 3, 100.0f, 400.0f, 7.0f, -18.0f, PE_SET_GATLING, PE_DMG_GATLING);
+    CHECK(i == 0 && a[0].vx == 7.0f && a[0].vy == -18.0f, "显式方向应写进 vx/vy（vx=%.1f vy=%.1f）", a[0].vx, a[0].vy);
+    pe_proj_move(&a[0]);
+    CHECK(a[0].x == 107.0f && a[0].y == 382.0f, "一帧后应同时按 vx/vy 走（x=%.1f y=%.1f）", a[0].x, a[0].y);
     pe_proj_clear_all(a, 3);
     CHECK(pe_proj_hit_now(&a[0]) == 0 && pe_proj_out(&a[0]) == 0, "清空之后都不该有反应 ✓");
 }
