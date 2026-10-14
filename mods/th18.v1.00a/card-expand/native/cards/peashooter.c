@@ -49,7 +49,8 @@
 #define PS_ELEC_RGBA      0xffa0d0ffu  /* ★ P49：**带 alpha** 的整色（0xff = 不透明 ✓）—— 直接 spawn 的 VM 必须自己写 alpha ✗ */
 #define PS_BALL_SCALE    0.22f   /* ★ P50（owner：怎么这么大）0.6 → 0.22 ✓ */         /* ❓自定：电球缩放（71 的 orb 是子机大小 ✓，缩到弹那样 ✓）*/
 #define PS_OPT_LAYER      13           /* anm 层（与 71 同一层 ✓）*/
-#define PS_CHAIN_HOPS      4           /* ❓自定：链最多跳几段（含第一跳 ✓）*/
+#define PS_CHAIN_HOPS      3           /* ★ P52（owner：一个电球可以连三个人）4 → 3 ✓ */
+#define PS_BALL_LINKS      3           /* ★ P52：一个电球最多对**三只敌**各拉一条球→敌的弧 ✓ */
 #define PS_CHAIN_RADIUS 150.0f         /* ❓自定：每跳半径（把 PvZ 的"上下行"换成 360° 半径 ✓）*/
 #define PS_CHAIN_DMG       1           /* ❓自定（P48 改）：**每帧**每跳的伤害 ✓ —— owner「电链是一帧一下的」✓
                                         *   一帧一下 ⇒ 单次数必须极小 ✓；电弹 7 px/帧 ⇒ 经过一只敌约 7 帧 ⇒ 4 跳 ≈ 28 伤害 ✓ 自限 ✓。*/
@@ -170,7 +171,11 @@ static void ps_chain_from(uint32_t from_id, float px, float py, float pz)
     }
     if (n <= 0) return;
     visited[nv++] = from_id;
+    /* ★ P52：visited 里**只放"上一只"** ✓（原来放所有连过的 ⇒ 禁止回头 ✗）
+     *   每跳开始时把上一只的 id 写进 visited[0] ⇒ A→B→A 这种返程允许 ✓。*/
     for (hop = 0; hop < PS_CHAIN_HOPS; ++hop) {
+        visited[0] = (nv > 0) ? visited[nv - 1] : from_id;
+        nv = 1;
         int k = pea_chain_pick(cand, cid, n, px, py, PS_CHAIN_RADIUS, visited, nv);
         float tx, ty;
         uint32_t spark;
@@ -331,6 +336,7 @@ static void ps_proj_tick(void)
         }
         {   /* 贴近敌 ⇒ 触发链（链自己带节流 ✓）*/
             uint8_t *em = CE_ENEMY_MGR(), *e;
+            int ball_links = 0;                      /* ★ P52：这个球这一帧已经连了几只 ✓ */
             if (em) {
                 CE_ENEMY_FOREACH(em, e) {
                     const float *pp;
@@ -342,8 +348,21 @@ static void ps_proj_tick(void)
                     if (dx * dx + dy * dy > PS_CHAIN_TRIG_R * PS_CHAIN_TRIG_R) continue;
                     id = *(const uint32_t *)(e + CE_ENEMY_ID);
                     if (id == 0) continue;
-                    ps_chain_from(id, p->x, p->y, pz);
-                    break;                          /* 一颗弹一帧最多起一条链 ✓ */
+                    /* ★★ P51/P52（owner：一针见血 + 一个电球连三个人）：
+                     *   ① 电球对它**半径内最近的三只敌**各画一条 **球→敌** 的弧 ✓（原来只画"敌→敌"、
+                     *      还要求至少还有别的敌 ⇒ 贴上去那刻球与敌之间没有线 ✗、单敌时啥都不画 ✗）；
+                     *   ② 从**最近那只**起往"敌→敌"传播 ✓，visited 只排除**上一只** ✓（原来排除所有连过的 ✗
+                     *      ⇒ 禁止回头 ✗；owner 要的是 A→B→A 这种**返程**也允许 ✓）。
+                     *   伪 id = `0x8000|弹槽号`（球不是敌 ✓）⇒ 进同一张按对去重表 ✓，每帧只刷新 ✓
+                     *   ⇒ 线的起点**跟着球走** ✓（这才是"雷电条" ✓），返程也不会堆 VM ✓。*/
+                    if (ball_links < PS_BALL_LINKS) {
+                        ps_arc_show(0x8000u | (uint32_t)i, id, p->x, p->y, pp[0], pp[1], pz);
+                        ++ball_links;
+                    }
+                    if (ball_links == 1) {               /* 最近那只（第一个命中的 ✓）负责往下传 ✓ */
+                        ps_chain_from(id, p->x, p->y, pz);
+                    }
+                    continue;                            /* 继续找半径内别的敌 ⇒ 一个球可连三人 ✓ */
                 }
             }
         }
