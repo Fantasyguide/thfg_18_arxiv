@@ -1055,40 +1055,30 @@ int main(void)
     CHECK(yk_half_with_carry(1, &carry) == 0 && carry == 1);
     CHECK(yk_half_with_carry(1, &carry) == 1 && carry == 0);      /* 两次 1 点 ⇒ 转 1 */
 
-    /* ★ 2026-10-01：这条**与 `YK_TRANSFER_PCT` 绑定** —— 100 = owner 口径（全额转、不丢余数）；
-     *   50 = 一手 1/2（半整数进位器）。旋钮切回 50 时这组断言仍成立。*/
+    /* ★★ P59（owner 2026-10-14：「**附加使魔全额转伤，发弹口使魔 1/2**」✓）：
+     *   两条比例都钉住 —— 100 = 附加（绕转）使魔（逐字节不丢余数）；50 = 发弹口（映射）使魔（半整数进位）。*/
     yk_transfer_reset(&t);
-    yk_transfer_feed(&t, 5);
-    yk_transfer_feed(&t, 3);
-#if YK_TRANSFER_PCT == 100
-    CHECK(t.pending == 8 && t.carry == 0);                        /* 全额：5+3 */
-#elif YK_TRANSFER_PCT == 50
-    CHECK(t.pending == 4 && t.carry == 0);                        /* 1/2：（5+3)/2 = 4 */
-#else
-    CHECK(t.pending == (int32_t)((5 + 3) * YK_TRANSFER_PCT / 100));
-#endif
-    yk_transfer_feed(&t, 0);                                      /* 没有伤害就不加 */
-    yk_transfer_feed(&t, -9);                                     /* 负数（life 变大）也不加 */
-#if YK_TRANSFER_PCT == 100
+    yk_transfer_feed(&t, 5, YK_TRANSFER_PCT);
+    yk_transfer_feed(&t, 3, YK_TRANSFER_PCT);
+    CHECK(t.pending == 8 && t.carry == 0);
+    yk_transfer_feed(&t, 0, YK_TRANSFER_PCT);                 /* 没有伤害就不加 */
+    yk_transfer_feed(&t, -9, YK_TRANSFER_PCT);                /* 负数（life 变大）也不加 */
     CHECK(t.pending == 8);
-#elif YK_TRANSFER_PCT == 50
-    CHECK(t.pending == 4);
-#else
-    CHECK(t.pending == (int32_t)(8 * YK_TRANSFER_PCT / 100));
-#endif
     yk_transfer_reset(&t);
-    yk_transfer_feed(&t, 1);
-#if YK_TRANSFER_PCT == 100
+    yk_transfer_feed(&t, 1, YK_TRANSFER_PCT);
     CHECK(t.pending == 1 && t.carry == 0);
-    yk_transfer_feed(&t, 1);
+    yk_transfer_feed(&t, 1, YK_TRANSFER_PCT);
     CHECK(t.pending == 2 && t.carry == 0);
-#elif YK_TRANSFER_PCT == 50
-    CHECK(t.pending == 0 && t.carry == 1);
-    yk_transfer_feed(&t, 1);
-    CHECK(t.pending == 1 && t.carry == 0);
-#else
-    CHECK(t.pending == 1 * YK_TRANSFER_PCT / 100);
-#endif
+
+    yk_transfer_reset(&t);
+    yk_transfer_feed(&t, 5, YK_TRANSFER_PCT_MAP);
+    yk_transfer_feed(&t, 3, YK_TRANSFER_PCT_MAP);
+    CHECK(t.pending == 4 && t.carry == 0);                 /* 发弹口使魔 1/2：(5+3)/2 = 4 ✓ */
+    yk_transfer_reset(&t);
+    yk_transfer_feed(&t, 1, YK_TRANSFER_PCT_MAP);
+    CHECK(t.pending == 0 && t.carry == 1);                 /* 1 点的 1/2 留进位 ✓ */
+    yk_transfer_feed(&t, 1, YK_TRANSFER_PCT_MAP);
+    CHECK(t.pending == 1 && t.carry == 0);                 /* 两次 1 点 ⇒ 转 1，半分不丢 ✓ */
 
     /* 单帧上限：cap <= 0 = 无上限（占位默认，TODO 待定）*/
     CHECK(yk_transfer_clamp(4, 0) == 4);
