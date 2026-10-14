@@ -149,6 +149,36 @@ static void test_clear(void)
           s.bursts == 0 && s.peas == 0 && s.pending_wait == 1, "pea_clear 没清干净");
 }
 
+
+/* ★ P40：电弹连锁的选目标（纯函数 ✓）—— 最近 / 排除去过的 / 半径外 / 空表 四种情形 ✓ */
+static void test_chain_pick(void)
+{
+    static const float xy[6] = { 100.0f, 0.0f,  60.0f, 0.0f,  400.0f, 0.0f };
+    static const uint32_t id[3] = { 7u, 8u, 9u };
+    uint32_t vis[4];
+    int k;
+
+    k = pea_chain_pick(xy, id, 3, 0.0f, 0.0f, 150.0f, 0, 0);
+    CHECK(k == 1, "半径内最近的应是 B(60px)，实际 %d", k);
+
+    vis[0] = 8u;
+    k = pea_chain_pick(xy, id, 3, 0.0f, 0.0f, 150.0f, vis, 1);
+    CHECK(k == 0, "排除已连过的 B 之后应挑 A，实际 %d", k);
+
+    vis[0] = 7u; vis[1] = 8u;
+    k = pea_chain_pick(xy, id, 3, 0.0f, 0.0f, 150.0f, vis, 2);
+    CHECK(k == -1, "只剩半径外的 C 时应返回 -1，实际 %d", k);
+
+    k = pea_chain_pick(xy, id, 3, 0.0f, 0.0f, 500.0f, 0, 0);
+    CHECK(k == 1, "半径放大后仍是最近的 B，实际 %d", k);
+
+    k = pea_chain_pick(xy, id, 0, 0.0f, 0.0f, 150.0f, 0, 0);
+    CHECK(k == -1, "没有候敌时应返回 -1，实际 %d", k);
+
+    k = pea_chain_pick(xy, id, 3, 0.0f, 0.0f, 0.0f, 0, 0);
+    CHECK(k == -1, "半径 0 应返回 -1，实际 %d", k);
+}
+
 int main(void)
 {
     test_wait_range();
@@ -158,6 +188,7 @@ int main(void)
     test_two_cycles();
     test_inflight_and_cap();
     test_clear();
+    test_chain_pick();
     printf(fails ? "peashooter_core: %d FAILED\n" : "peashooter_core: OK\n", fails);
     return fails != 0;
 }

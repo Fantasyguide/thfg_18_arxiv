@@ -46,4 +46,13 @@ void pea_clear(pea_state_t *s);                        /* 局末 / 关店收子�
 void pea_set_wait(pea_state_t *s, uint32_t rnd);       /* 调用方在 pending_wait 时用游戏 RNG 喂进来 */
 void pea_shoot_frame(pea_state_t *s, pea_out_t *o);    /* 每个射击帧一次（要求 pending_wait == 0）*/
 void pea_frame(pea_state_t *s);                        /* 每帧一次（含不射击的帧）：inflight 倒数 */
-int  pea_needs_cap(const pea_state_t *s);              /* 1 = 本帧要抬每敌每帧伤害上限 */
+int  pea_needs_cap(const pea_state_t *s);
+/* ★★ 2026-10-14（P40，owner 需求「电大哥」协同）：**电弹连锁**的选目标（纯函数 ✓，主机可测 ✓）。
+ *   从 (cx, cy) 出发，在 n 个候敌里挑一个：**在半径 r 内**、**id 不在 visited 里**（去过的不再连 ✓）、
+ *   且**离 (cx, cy) 最近**的那个 ⇒ 返回下标；没有合格的就返回 -1 ✓。
+ *   依据：国服 PvZ2 电能豌豆「发射带有雷电条的豌豆 …… 同时可对**上下行造成电弧连锁伤害**」
+ *   （社区攻略：小米游戏中心《电能豌豆综合玩法教学》）＋ owner 口径「**连接自身一个半径范围内的敌人，
+ *   敌人还会再连接敌人**」✓ ⇒ 我们这里把"上下行"换成**半径**（TH18 是 360° ✓），逐跳传播 ✓。
+ *   ⚠ 这里**只管挑谁**，不碰引擎（伤害/特效在 `peashooter.c` 里 ✓）。*/
+int  pea_chain_pick(const float *xy, const uint32_t *id, int n, float cx, float cy, float r,
+                    const uint32_t *visited, int nv);              /* 1 = 本帧要抬每敌每帧伤害上限 */

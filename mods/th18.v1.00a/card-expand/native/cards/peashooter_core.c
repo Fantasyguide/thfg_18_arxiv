@@ -69,3 +69,27 @@ int pea_needs_cap(const pea_state_t *s)
 {
     return s->inflight != 0;
 }
+
+/* ★ P40：电弹连锁的选目标（见 peashooter_core.h 的注释 ✓）——半径内、未访问过、最近的那个 ✓；
+ *   没有合格的返回 -1 ✓。纯函数 ⇒ 主机单测覆盖 ✓（tests/test_peashooter_core.c）。*/
+int pea_chain_pick(const float *xy, const uint32_t *id, int n, float cx, float cy, float r,
+                   const uint32_t *visited, int nv)
+{
+    int i, k, best = -1;
+    float best_d2;
+    if (!xy || !id || n <= 0 || r <= 0.0f) return -1;
+    best_d2 = r * r;
+    for (i = 0; i < n; ++i) {
+        float dx, dy, d2;
+        int seen = 0;
+        if (id[i] == 0) continue;                        /* 0 = 没 id ⇒ 不敢当目标 ✓ */
+        for (k = 0; k < nv; ++k)
+            if (visited && visited[k] == id[i]) { seen = 1; break; }
+        if (seen) continue;                              /* 已连过的不再连 ✓（防成环 ✓）*/
+        dx = xy[2 * i] - cx;
+        dy = xy[2 * i + 1] - cy;
+        d2 = dx * dx + dy * dy;
+        if (d2 <= best_d2) { best_d2 = d2; best = i; }    /* `<=` ⇒ 等距取后一个（入参顺序稳定 ⇒ replay 稳 ✓）*/
+    }
+    return best;
+}
