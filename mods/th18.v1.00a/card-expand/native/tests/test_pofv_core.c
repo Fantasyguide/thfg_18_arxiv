@@ -482,7 +482,12 @@ static void check_hits(void)
     pofv_hits_t h;
     int i;
     pofv_hits_init(&h);
-    CHECK(pofv_hits_visible(&h) == 0);                       /* latch=0 ⇒ 不画 ✓ */
+    /* ★★★★★ 2026-10-13（★ owner 实跑：「★ **左上角连击槽的 UI 又在撞弹后消失了**」✗）：
+     *   ★ 原断言是 ★ `== 0`（★ "latch=0 ⇒ 不画"✗）★ —— ★ 那正是"★ **归零就整块 UI 消失**"✗ 的**规格** ✓。
+     *   ★ 但 ★ 归零机制本身是 ★ **owner 2026-10-08 定的门控** ✓（★ 距上次暴风 > X 帧 ⇒ hits 归零 ✓），
+     *   ★ 他**要的是"数值归零"** ✓、★ **不是"整块 UI 消失"** ✗ ⇒ ★ 改判为 ★ **状态存在就可见** ✓
+     *   ★（★ 数字走 0 ✓ / 颜色走灰 ✓；★ 实现改动见 ★ `pofv_core.c` 的 `pofv_hits_visible()` ✓）。*/
+    CHECK(pofv_hits_visible(&h) == 1);                       /* ★ 2026-10-13：归零不再隐藏整块 UI ✓ */
     pofv_hits_bump(&h, 1); pofv_hits_tick(&h);
     /* ★★★ 2026-10-08 **owner 口径**（实跑：「即使我认定帧是 1 帧那我也应当能看见连击是 1」✓）：
      *   门从一手的 `1 < cur` **放宽到 `0 < cur`** ⇒ **连击 = 1 也要锁存** ✓（有意的偏差，已登记 TUNING ✓）。*/
