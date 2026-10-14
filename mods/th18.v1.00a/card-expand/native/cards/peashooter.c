@@ -76,8 +76,17 @@ static uint8_t   s_arc_alive[PS_ARC_MAX];  /* 本帧该 VM 还活着吗（每帧
 static uint32_t  s_chain_cd;
 static int       s_ball_last;   /* P44：上一扇"大招电球"是在哪个射击帧 ✓ */
 static int       s_log_fan = 1;  /* P44：第一扇打一行日志（省得每次刷屏 ✓；clear 时复位 ✓）*/
+static int       s_gate_log = -1;   /* P46：门状态变化时打一行（-1 = 还没打过 ✓）*/
+static uint32_t  s_spawn_n, s_respawn_n, s_fan_n;   /* P46：诊断计数（起弹 / 补 VM / 大招扇数 ✓）*/
+static unsigned  g_frames_ps_diag;                  /* P46：诊断限频 ✓ */
 
 static int ps_elec_on(void) { return ce_owned(PS_ELEC_CARD) ? 1 : 0; }   /* 同装判据 ✓（每帧现算 ✓）*/
+static int ps_proj_live(void)   /* P46：现在有几颗弹在飞 ✓ */
+{
+    int i, n = 0;
+    for (i = 0; i < PE_MAX; ++i) if (s_proj[i].alive) ++n;
+    return n;
+}
 
 /* 收干净：弹 + 弹的 VM + 弧 + 弧的 VM + 节流（删卡 / 局末都走这里 ✓）。*/
 static void ps_elec_clear(void)
@@ -95,6 +104,8 @@ static void ps_elec_clear(void)
     s_chain_cd = 0;
     s_ball_last = -1000000;   /* P44：起手那一下必发 ⇒ 用一个很远的初值 ✓ */
     s_log_fan = 1;
+    s_spawn_n = s_respawn_n = s_fan_n = 0;
+    g_frames_ps_diag = 0;
 }
 
 /* ★ P42 ③：一对敌（A,B）**只建一个**电弧 VM ✓；同对再链**只刷新** ✓；表满且无同对 ⇒ 宁可不建 ✓。*/
@@ -232,10 +243,12 @@ static void ps_proj_fan(void *o)
         if (vm) {
             ce_anm_set_pos(vm, s_proj[k].x, s_proj[k].y, pz);
             ce_anm_set_rotation(vm, 0.0f, 0.0f, s_fan[i].ang);   /* 贴图朝上 ⇒ 转 a 就是扇面方向 ✓ */
+            ce_anm_set_scale(vm, 1.0f, 1.0f);                    /* ★ P46：显式缩放 ✓ */
             ce_anm_set_color_rgb(vm, PS_ELEC_RGB);
         }
     }
-    if (s_log_fan) { s_log_fan = 0; ce_log("peashooter: 电大哥 大招 —— %d 颗普攻电球 扇形 ±%.0f°", PS_FAN_N, PS_FAN_HALF_DEG); }
+    ++s_fan_n;
+    if (s_log_fan) { s_log_fan = 0; ce_log("peashooter: 电大哥 大招 —— %d 颗普攻电球 扇形 ±%.0f°（共已 %u 扇）", PS_FAN_N, PS_FAN_HALF_DEG, s_fan_n); }
 }
 
 static void ps_proj_kill(int i)
@@ -253,11 +266,32 @@ static void ps_proj_tick(void)
     for (a = 0; a < PS_ARC_MAX; ++a)
         s_arc_alive[a] = (s_arc_vms[a] && ce_anm_get_vm(s_arc_vms[a])) ? 1 : 0;
     if (s_chain_cd) --s_chain_cd;
+    {   /* ★ P46 诊断：① 门状态一变就打一行 ⇒ 从日志就能看出协同开没开 ✓ */
+        int on = ps_elec_on();
+        if (on != s_gate_log) {
+            s_gate_log = on;
+            ce_log("peashooter: 电大哥 门 = %s（ce_owned(71)=%d）", on ? "开" : "关", on);
+        }
+        /* ② 约每 5 秒一行：在飞弹 / 已起弹 / 补过几次 VM / 大招扇数 ✓ */
+        if (on && (g_frames_ps_diag++ % 300u) == 0u)
+            ce_log("peashooter: 电大哥 诊断 在飞弹=%d 已起=%u 补VM=%u 大招扇=%u",
+                   ps_proj_live(), s_spawn_n, s_respawn_n, s_fan_n);
+    }
     for (i = 0; i < PE_MAX; ++i) {
         pe_proj_t *p = &s_proj[i];
         if (!p->alive) continue;
         pe_proj_move(p);
-        if (s_proj_vm[i] && ce_anm_get_vm(s_proj_vm[i])) ce_anm_set_pos(s_proj_vm[i], p->x, p->y, pz);
+        if (!s_proj_vm[i] || !ce_anm_get_vm(s_proj_vm[i])) {   /* ★ P46：VM 没了就补一个（否则弹隐形 ✗）*/
+            s_proj_vm[i] = ce_anm_spawn(CE_ABILITY_ANM(),
+                                        (p->set == PE_SET_GATLING) ? CE_ANM_ABILITY_SCRIPT_PEA_SMALL
+                                                                   : CE_ANM_ABILITY_SCRIPT_PEA, PS_OPT_LAYER);
+            ++s_respawn_n;
+        }
+        if (s_proj_vm[i] && ce_anm_get_vm(s_proj_vm[i])) {
+            ce_anm_set_pos(s_proj_vm[i], p->x, p->y, pz);
+            ce_anm_set_scale(s_proj_vm[i], 1.0f, 1.0f);
+            ce_anm_set_color_rgb(s_proj_vm[i], PS_ELEC_RGB);
+        }
         if (pe_proj_out(p)) { ps_proj_kill(i); continue; }
         if (pe_proj_hit_now(p)) {                   /* 定点伤害源（与 89 同口径 ✓，命中不销毁 ✓）*/
             float center[3] = { p->x, p->y, pz };
