@@ -103,6 +103,11 @@ def w1a(defs) -> list[dict]:
 
 
 def w1b() -> list[dict]:
+    # ★★ 2026-10-14（W1b 收口）：**只认"明确声明归属"的写法** —— `zStruct` 后面紧跟 `+0x…` 或
+    #   `.字段`（即注释在说"这个偏移属于谁"）。旧的宽松写法（注释里**第一个** `z*` 名字）
+    #   常抓到**字段的类型**（例：`zAnmLoaded*` 是某个字段的类型，不是偏移的宿主 ✗）⇒ 155 处里
+    #   绝大多数是这么来的假阳性 ✓。收紧后剩下的才是"注释点名了宿主、但偏移对不上"的可查项 ✓。
+
     """engine.h 的偏移常量：**注释块**（define 上方 12 行 + 同行）点名的结构里，该偏移必须真有字段
 
     ⛔ 第一版只看 define 同一行 ⇒ 几乎不可能命中（注释块才是写结构名的地方 ✗）。
@@ -126,27 +131,28 @@ def w1b() -> list[dict]:
         ctx = "\n".join(lines[max(0, idx - 12):idx + 1])
         if "z" not in ctx:
             continue
-        structs = sorted({s for s in re.findall(r"\b(z[A-Z][A-Za-z0-9_]+)\b", ctx) if s in data})
+        structs = sorted({s for s in re.findall(r"\b(z[A-Z][A-Za-z0-9_]+)\s*(?:\+0x|\.)", ctx) if s in data})
         if not structs:
             continue
         off = int(value, 16)
         if off > 0xFFFF:
             continue          # ★ 绝对地址（0x4cxxxx 那族 `CE_ADDR_*`）不是结构内偏移 ✗ ⇒ 不查
-        for s in structs:
-            fields = data[s]
-            exact = [f for f in fields if str(f[0]).lower() == value.lower()]
-            if exact:
-                continue
-            # 该结构里**近邻**（±0x40）有没有同名味道的字段？没有就报（可能名字/偏移已腐坏）
-            near = [f for f in fields
-                    if isinstance(f[0], str) and f[0].lower().startswith("0x")
-                    and abs(int(f[0], 16) - off) <= 0x40]
-            out.append({"check": "W1b", "file": str(path.relative_to(REPO)),
-                        "line": idx + 1, "name": name, "claimed": value,
-                        "actual": (f"{s} 该偏移无字段"
-                                   + (f"；±0x40 内有 {near[0][0]}:{near[0][1]}" if near else "")),
-                        "defined_at": f"金矿 {s}", "text": ctx.strip().splitlines()[-1][:150]})
-            break
+        # ★★ 2026-10-14（W1b 收口第一步）：**任一"宿主"能对上就算通过** ✓ —— 一条注释常同时点到
+        #   「宿主结构」与「字段类型 / 邻居结构」（例：既写 `zBullet+0x20`，又提 `zBulletList` ✓）
+        #   ⇒ 旧写法是"逐个结构都要求对上、第一个对不上就报"✗，会把这类正常注释报成假阳性 ✓
+        #   （实测：收紧"只认声明归属的写法" + 本改动把 155 处降到 62 处 ✓）。
+        if any(str(f[0]).lower() == value.lower() for s in structs for f in data[s]):
+            continue
+        s = structs[0]                       # 都对不上 ⇒ 报一条（带第一个宿主的近邻信息 ✓）
+        fields = data[s]
+        near = [f for f in fields
+                if isinstance(f[0], str) and f[0].lower().startswith("0x")
+                and abs(int(f[0], 16) - off) <= 0x40]
+        out.append({"check": "W1b", "file": str(path.relative_to(REPO)),
+                    "line": idx + 1, "name": name, "claimed": value,
+                    "actual": (f"{s} 该偏移无字段"
+                               + (f"；±0x40 内有 {near[0][0]}:{near[0][1]}" if near else "")),
+                    "defined_at": f"金矿 {s}", "text": ctx.strip().splitlines()[-1][:150]})
     return out
 
 
@@ -210,7 +216,12 @@ def w1d() -> list[dict]:
 
 
 CHECKS = {"W1a": w1a, "W1b": w1b, "W1c": w1c, "W1d": w1d}
-# ★ 默认集合：**W1b 暂不列入** ✗ —— 它的判据依赖「注释点名的结构」与「命名金矿字段完整度」，
+# ★★ 2026-10-14（W1b 收口第一步，已完成 ✓）：把提取规则收紧成"只认**声明归属**的写法"
+#   （`zStruct` 紧跟 `+0x…` / `.字段` ✓），并把"逐个宿主都要求对上"改成"**任一**宿主对上即通过" ✓
+#   ⇒ 误报 **155 → 62** ✓（去掉 93 处假阳性 ✓）。**仍未列入默认集合** ✗：
+#   剩下 62 处需要「每个常量 → 它真正索引的结构」映射表才能判（见 `CONST-INDEX-MAP.md` ✓）。
+#
+# 原注释（保留作背景）：★ 默认集合：**W1b 暂不列入** ✗ —— 它的判据依赖「注释点名的结构」与「命名金矿字段完整度」，
 #   首轮 report 出了 155 处、绝大多数是假阳性（例：`zItem` 是道具结构体，而 `CE_ITEM_POOL_OFF`
 #   是**管理器**里的偏移；`zPlayerBullet` 在金矿里几乎是空的）。按 P13 纪律"先 report 收敛误报"，
 #   等有了「每个常量 → 它真正索引的结构」映射表再启用 ✓（映射表本身列为 P13 的后续子项）。
