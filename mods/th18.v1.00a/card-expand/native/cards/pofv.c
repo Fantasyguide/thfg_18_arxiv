@@ -2922,10 +2922,15 @@ static void pofv_ca_ring_tick(void)
 
 static void pofv_c2_clear(void)
 {
-    if (s_c2.ring_vm) {                                       /* ★ 铁律：范围圈 VM 也收 ✓ */
-        if (ce_anm_get_vm((uint32_t)s_c2.ring_vm)) ce_anm_delete((uint32_t)s_c2.ring_vm);
-        s_c2.ring_vm = 0;
-    }
+    /* ★★★★★ 2026-10-13（★ owner：「★ **灵梦 C2 发了两个消弹环**」✗ + ★「★ **落后的那个炸了之后才出现**」✗
+     *   + ★「★ **抽成公用函数 ⇒ CA 模型更好**」✓）：★ ★ **这里原来收的是"滞后那台"的 VM** ✗
+     *   （★ `s_c2.ring_vm` ✓）—— ★ 那台已整体退役 ✓（★ 调用点 `373277d7` ✓、前置声明 `89d33420` ✓，
+     *   ★ 函数体与字段下一笔 ✓）★ ⇒ ★ **这段兜底收一并删** ✗（★ 否则字段删掉后它编译不过 ✓）。
+     *   ★ ⚠ ★ 删的顺序：★ **先删函数体（`:2675-2713` 一带 ✓）⇒ 再删字段（`:2361` ✓）** ✗ —— ★ 反了会编译不过 ✓。*/
+    /* if (s_c2.ring_vm) { */
+    /*     if (ce_anm_get_vm((uint32_t)s_c2.ring_vm)) ce_anm_delete((uint32_t)s_c2.ring_vm); */
+    /*     s_c2.ring_vm = 0; */
+    /* } */
     s_c2.active = 0; s_c2.age = 0; s_c2.invuln = 0;
     s_aura_rise_prev = 0;                 /* 删卡后不留幽灵闩锁 ⇒ 下次张开仍算上升沿 ✓ */
     ce_invuln_request(POFV_CARD_ID, 0);   /* 撤无敌声明（声明层是**粘性**的 ⇒ 必须显式撤 ✓）*/
