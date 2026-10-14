@@ -334,36 +334,44 @@ static void ps_proj_tick(void)
             ce_damage_rect(center, 0.0f, PS_CHAIN_LIFE, p->dmg, w, w);
             pe_proj_fired(p);
         }
-        {   /* 贴近敌 ⇒ 触发链（链自己带节流 ✓）*/
+        {   /* ★ P53（owner：「一个电球能开三条」「链不能 visited」）：
+             *   ① 取半径内**最近的 3 只**（**按距离** ✓ —— 上一版取的是敌人链表前三只 ✗）；
+             *   ② **每一只都往下传一条链** ✓（上一版只有第一条传 ✗）⇒ 一个球真正"开三条" ✓；
+             *   ③ 链里**没有 visited 名单** ✓ —— 只禁止"原地打自己"（下一跳 ≠ 当前 ✓）⇒ 回头/复用敌人允许 ✓。
+             *   小数组 + 插入式取最近 3 ✓（不调 libm ✓、replay 确定 ✓）。*/
             uint8_t *em = CE_ENEMY_MGR(), *e;
-            int ball_links = 0;                      /* ★ P52：这个球这一帧已经连了几只 ✓ */
+            float cx[PS_BALL_LINKS], cy[PS_BALL_LINKS];
+            uint32_t ci[PS_BALL_LINKS];
+            int cn = 0, k, m;
             if (em) {
                 CE_ENEMY_FOREACH(em, e) {
                     const float *pp;
-                    float dx, dy;
+                    float dx, dy, d2;
                     uint32_t id;
                     if (!ce_enemy_lockable(e)) continue;
                     pp = ce_enemy_pos(e);
                     dx = pp[0] - p->x; dy = pp[1] - p->y;
-                    if (dx * dx + dy * dy > PS_CHAIN_TRIG_R * PS_CHAIN_TRIG_R) continue;
+                    d2 = dx * dx + dy * dy;
+                    if (d2 > PS_CHAIN_TRIG_R * PS_CHAIN_TRIG_R) continue;
                     id = *(const uint32_t *)(e + CE_ENEMY_ID);
                     if (id == 0) continue;
-                    /* ★★ P51/P52（owner：一针见血 + 一个电球连三个人）：
-                     *   ① 电球对它**半径内最近的三只敌**各画一条 **球→敌** 的弧 ✓（原来只画"敌→敌"、
-                     *      还要求至少还有别的敌 ⇒ 贴上去那刻球与敌之间没有线 ✗、单敌时啥都不画 ✗）；
-                     *   ② 从**最近那只**起往"敌→敌"传播 ✓，visited 只排除**上一只** ✓（原来排除所有连过的 ✗
-                     *      ⇒ 禁止回头 ✗；owner 要的是 A→B→A 这种**返程**也允许 ✓）。
-                     *   伪 id = `0x8000|弹槽号`（球不是敌 ✓）⇒ 进同一张按对去重表 ✓，每帧只刷新 ✓
-                     *   ⇒ 线的起点**跟着球走** ✓（这才是"雷电条" ✓），返程也不会堆 VM ✓。*/
-                    if (ball_links < PS_BALL_LINKS) {
-                        ps_arc_show(0x8000u | (uint32_t)i, id, p->x, p->y, pp[0], pp[1], pz);
-                        ++ball_links;
+                    if (cn < PS_BALL_LINKS) {
+                        cx[cn] = pp[0]; cy[cn] = pp[1]; ci[cn] = id; ++cn;
+                    } else {                                   /* 已有 3 只 ⇒ 若新的更近就顶掉最远那只 ✓ */
+                        int far = 0; float fd = -1.0f;
+                        for (k = 0; k < cn; ++k) {
+                            float ex2 = cx[k] - p->x, ey2 = cy[k] - p->y, d3 = ex2 * ex2 + ey2 * ey2;
+                            if (d3 > fd) { fd = d3; far = k; }
+                        }
+                        if (d2 < fd) { cx[far] = pp[0]; cy[far] = pp[1]; ci[far] = id; }
                     }
-                    if (ball_links == 1) {               /* 最近那只（第一个命中的 ✓）负责往下传 ✓ */
-                        ps_chain_from(id, p->x, p->y, pz);
-                    }
-                    continue;                            /* 继续找半径内别的敌 ⇒ 一个球可连三人 ✓ */
                 }
+            }
+            for (m = 0; m < cn; ++m) {
+                /* 球→敌那条只是观感 ✓（伤害由弹自己的定点源出 ✓）*/
+                ps_arc_show(0x8000u | (uint32_t)i, ci[m], p->x, p->y, cx[m], cy[m], pz);
+                /* ★ 每只都往下传 ⇒ 一个球开三条链 ✓ */
+                ps_chain_from(ci[m], p->x, p->y, pz);
             }
         }
     }
