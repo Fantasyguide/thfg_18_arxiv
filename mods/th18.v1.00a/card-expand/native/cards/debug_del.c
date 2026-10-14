@@ -1,4 +1,4 @@
-/* 119「调试・定向删卡」—— **调试用主动卡**（临时工具；owner 2026-10-14 需求 A1）
+/* 201「调试・定向删卡」—— **调试用主动卡**（临时工具；owner 2026-10-14 需求 A1）
  *
  * owner 原话（逐字）：「最好是能弄一张**主动卡**，类似于挑战：十二合一，效果是**删卡**，
  *   debug 期间的**定向删卡**」✓ —— 起因是 A1 那条实跑（"用倒吊人删指定卡"）做不到 ✗。
@@ -29,7 +29,7 @@
  *   卡表条目一起删 ✓（`CE_DEBUG_SPACE_KEYS` 也可以恢复成 1 ✓）。*/
 #include "sdk.h"
 
-#define DDBG_ID   119u
+#define DDBG_ID   201u
 #define DDBG_MAX  255
 
 static int32_t    s_cursor;          /* 当前目标下标（0..s_n−1）*/
@@ -142,7 +142,7 @@ static void ddbg_reset(void)
 static void on_run_reset(ce_card_t *c) { (void)c; ddbg_reset(); }
 static void on_delete(ce_card_t *c)    { (void)c; ddbg_reset(); }
 
-CE_CARD(119,                                /* ⚠ 必须写裸 119：宏做 token 拼接（`ce_hooks_##ID`）✗ */
+CE_CARD(201,                                /* ⚠ 必须写裸 201：宏做 token 拼接（`ce_hooks_##ID`）✗ */
         .active_recharge = 1,                 /* 主动卡（照 118）：D 切到本卡后按 C ✓ */
         .on_tick_2 = ddbg_tick,               /* 读 A/S/SPACE（`ce_key_down` 电平 + 自己记边沿 ✓）*/
         .on_draw = ddbg_draw,                 /* 左下角一行 HUD ✓（`ce_hud_text` 只许在 +0x48 里调 ✓）*/
