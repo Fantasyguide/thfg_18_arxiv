@@ -49,7 +49,8 @@
 #define PS_OPT_LAYER      13           /* anm 层（与 71 同一层 ✓）*/
 #define PS_CHAIN_HOPS      4           /* ❓自定：链最多跳几段（含第一跳 ✓）*/
 #define PS_CHAIN_RADIUS 150.0f         /* ❓自定：每跳半径（把 PvZ 的"上下行"换成 360° 半径 ✓）*/
-#define PS_CHAIN_DMG       8           /* ❓自定：每段伤害（71 一道闪电 = 30×4 = 120 ⇒ 链只给零头 ✓）*/
+#define PS_CHAIN_DMG       1           /* ❓自定（P48 改）：**每帧**每跳的伤害 ✓ —— owner「电链是一帧一下的」✓
+                                        *   一帧一下 ⇒ 单次数必须极小 ✓；电弹 7 px/帧 ⇒ 经过一只敌约 7 帧 ⇒ 4 跳 ≈ 28 伤害 ✓ 自限 ✓。*/
 #define PS_CHAIN_W      32.0f          /* 判定框 = 与 71 同口径（BC_HIT_W/H ✓）*/
 #define PS_CHAIN_H      32.0f
 #define PS_CHAIN_LIFE      2           /* 帧：与 71 的 BC_HIT_LIFE 一致 ✓ */
@@ -79,6 +80,7 @@ static int       s_log_fan = 1;  /* P44：第一扇打一行日志（省得每�
 static int       s_gate_log = -1;   /* P46：门状态变化时打一行（-1 = 还没打过 ✓）*/
 static uint32_t  s_spawn_n, s_respawn_n, s_fan_n;   /* P46：诊断计数（起弹 / 补 VM / 大招扇数 ✓）*/
 static unsigned  g_frames_ps_diag;                  /* P46：诊断限频 ✓ */
+static uint32_t  s_src_fail;                        /* P48：伤害源没抢到的次数（池爆报警 ✓）*/
 
 static int ps_elec_on(void) { return ce_owned(PS_ELEC_CARD) ? 1 : 0; }   /* 同装判据 ✓（每帧现算 ✓）*/
 static int ps_proj_live(void)   /* P46：现在有几颗弹在飞 ✓ */
@@ -105,6 +107,7 @@ static void ps_elec_clear(void)
     s_ball_last = -1000000;   /* P44：起手那一下必发 ⇒ 用一个很远的初值 ✓ */
     s_log_fan = 1;
     s_spawn_n = s_respawn_n = s_fan_n = 0;
+    s_src_fail = 0;
     g_frames_ps_diag = 0;
 }
 
@@ -146,7 +149,7 @@ static void ps_chain_from(uint32_t from_id, float px, float py, float pz)
     uint32_t cid[PE_MAX], visited[PS_CHAIN_HOPS + 2];
     uint8_t *em, *e;
     int n = 0, nv = 0, hop;
-    if (s_chain_cd) return;                       /* 节流 ✓ */
+    /* ★ P48（owner：电链是一帧一下的）⇒ **没有节流** ✓：贴着敌的每一帧都放 ✓（弧按对去重负责不重复建 VM ✓）。*/
     em = CE_ENEMY_MGR();
     if (em) {
         CE_ENEMY_FOREACH(em, e) {
@@ -170,7 +173,9 @@ static void ps_chain_from(uint32_t from_id, float px, float py, float pz)
         tx = cand[2 * k]; ty = cand[2 * k + 1];
         {
             float center[3] = { tx, ty, pz };
-            ce_damage_rect(center, 0.0f, PS_CHAIN_LIFE, PS_CHAIN_DMG, PS_CHAIN_W, PS_CHAIN_H);
+            /* ★ P48：一帧一下 ⇒ 每帧都在发源 ✓ ⇒ 记下"源没抢到"的次数（池爆就会猛涨 ✗）*/
+            if (ce_damage_rect(center, 0.0f, PS_CHAIN_LIFE, PS_CHAIN_DMG, PS_CHAIN_W, PS_CHAIN_H) <= 0)
+                ++s_src_fail;
         }
         ps_arc_show(nv ? visited[nv - 1] : from_id, cid[k], px, py, tx, ty, pz);   /* ★ 按对去重 ✓ */
         spark = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_BROKEN_CORE_SPARK, PS_OPT_LAYER);
@@ -274,8 +279,8 @@ static void ps_proj_tick(void)
         }
         /* ② 约每 5 秒一行：在飞弹 / 已起弹 / 补过几次 VM / 大招扇数 ✓ */
         if (on && (g_frames_ps_diag++ % 300u) == 0u)
-            ce_log("peashooter: 电大哥 诊断 在飞弹=%d 已起=%u 补VM=%u 大招扇=%u",
-                   ps_proj_live(), s_spawn_n, s_respawn_n, s_fan_n);
+            ce_log("peashooter: 电大哥 诊断 在飞弹=%d 已起=%u 补VM=%u 大招扇=%u 源失败=%u",
+                   ps_proj_live(), s_spawn_n, s_respawn_n, s_fan_n, s_src_fail);
     }
     for (i = 0; i < PE_MAX; ++i) {
         pe_proj_t *p = &s_proj[i];
