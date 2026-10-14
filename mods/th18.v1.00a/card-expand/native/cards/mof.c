@@ -249,6 +249,17 @@ typedef struct {
 /* ★ 2026-09-16r：跨关账本的**权威副本**（见 `ctor` 的说明）。`ctor` 恢复它、每帧同步它。*/
 static faith_slot_t s_slot_keep;
 static int32_t      s_slot_stage = -1;
+/* ★★★ 2026-10-14（P30，修 P17 审计 **F4**，owner：**F4 肯定得动** ✓）：**奖残账本的跨关镜像** ✓。
+ *   `mof_bonus`（蓝点奖残计数 `mof_bonus_t` ✓）在 ctor 里原来**无条件** `mof_bonus_init()` ✗ ⇒
+ *   换面时 ctor 一跑就归零 ✗（本卡 `ctor` 在**关卡切换**时也会跑 ✓）。而它的语义是**一局一份** ✓
+ *   （阈值 `MOF_BONUS_MAX` 是「一局能拿几次奖残」，不是「一关」✓）。
+ *   修法 = 与 `s_slot_keep` **完全同款**（同一处判据、同一条时序 ✓，不发明新机制 ✓）：
+ *     · `on_stage_start`（引擎在换关时**先**调它、再调 `ctor` ✓ —— 实测日志 `on_stage_start (+0x34) first hit`
+ *       → `ctor (+0x00) first hit` ✓）里把当前账本**存进本镜像** ✓；
+ *     · `ctor` 走「同关/换面」支路时**从镜像恢复** ✓；走「新局」支路时正常 init ✓；
+ *     · `mof_clear()`（retry / 删卡 ✓）把镜像**重设成干净账本** ✓ + 哨兵置 -1 ⇒ 下一次 `ctor` 必走新局支路 ✓。
+ *   ⚠ 计分口径的复核按 owner 说的**往后放** ✓（本批只保证「换面不清」✓）。*/
+static mof_bonus_t  s_bonus_keep;
 
 _Static_assert(sizeof(mof_card_t) <= 496, "ce_state 上限 496 字节（超了会静默返回 NULL）");
 
@@ -1589,6 +1600,7 @@ static void mof_clear(ce_card_t *c)
      *   ⚠ 副作用（有意 ✓）：被删掉后**又以同 id 回来**的卡也从干净账本起步 ✓ —— 与 `s_p_item` 那种
      *     「绝对干净」的声明一致 ✓（此前它会继承被摧毁那张卡的旧 Δ ✗，见审计 F7g）。*/
     faith_slot_init_110(&s_slot_keep);
+    mof_bonus_init(&s_bonus_keep);        /* ★ P30：镜像也重设成干净账本（配哨兵 -1 ⇒ 下次 ctor 走新局 ✓）*/
     s_slot_stage = -1;
 }
 
@@ -1662,13 +1674,14 @@ static int ctor(ce_card_t *c)
         ce_log("mof: 新一局（stage %d -> %d）⇒ 信仰账本归零（原 Δ %d）",
                (int)s_slot_stage, (int)CE_CURRENT_STAGE(), (int)(s_slot_keep.delta / FAITH_FIXED));
         faith_slot_init_110(&s->slot);        /* 基础恒 50000、Δ 从 0 起算、下限 0 */
+        mof_bonus_init(&s->bonus);            /* ★ P30：奖残账本也是「一局一份」⇒ 只有新局才清 ✓ */
     } else {
+        s->bonus = s_bonus_keep;              /* ★ P30：奖残账本同理，换面**不清** ✓ */
         s->slot = s_slot_keep;                /* ★ 一面→二面：**不清**（跨关保留 Δ 与连击）
                                                * ⚠ 「信号槽每关归零」那条只归 111（110 没有信号槽，
                                                *   见 `faith_hud.c` 的声明：110 的 `v.signal` 恒 0）*/
     }
     s_slot_stage = (int32_t)CE_CURRENT_STAGE();
-    mof_bonus_init(&s->bonus);
     s->last_graze = -1;
     s->last_lives = -1;
     s->stage_frames_ref = -1;             /* ★ 门③的关卡帧计数：首帧起算（见 `mof_stage_frames()`）*/
@@ -1699,6 +1712,7 @@ static void on_stage_start(ce_card_t *c)
     mof_card_t *s = st(c);
 
     if (!s) return;
+    s_bonus_keep = s->bonus;   /* ★ P30：换关前把奖残账本存进镜像（本回调先于 ctor ✓）*/
     bomb10_reset();
     s->spell_watch.was = 0;
     s->spell_watch.bombed = 0;
