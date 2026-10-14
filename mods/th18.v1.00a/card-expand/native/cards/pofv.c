@@ -2667,6 +2667,7 @@ static void pofv_c2_tick(uint32_t id)
                                        *   ⇒ ★ 那一维是 **6.0** ✓（★ 不是 1.0 ✗）。★ 半径那维由卡侧每帧写 ✓。
                                        *   ★ ❓自定成分：★ 1.0 也是"❓旋钮"✓ ⇒ 改成 6.0 只是**照先例取同值** ✓，
                                        *   ★ 非一手确证 ✓（★ 一手那套半径/带宽在别处 ✓）。*/
+#if 0   /* ★ 2026-10-13：★ 两函数整体退役 ⇒ 排除编译（★ 见上方那段说明 ✓）*/
 static void c2_ring_vm_sync(float r)
 {
     const float *p = ce_player_pos();
@@ -2712,6 +2713,7 @@ static void c2_ring_vm_release(void)
     if (ce_anm_get_vm((uint32_t)s_c2.ring_vm)) ce_anm_interrupt((uint32_t)s_c2.ring_vm, 1);
     s_c2.ring_vm = 0;
 }
+#endif   /* ★ 2026-10-13：★ `c2_ring_vm_sync` / `c2_ring_vm_release` 的 `#if 0` 收尾 ✓ */
 
 /* ★ 消弹**范围圈**：起 / 驱动 / 收（**一台 VM** ✓，脚本 432 = `texArcEven(64)` ✓，§15 ✓）。
  *   `r` = 本帧的**消弹半径** ⇒ `scale.y` 照写（**判定=绘制** ✓）。★ C2 用它自己的（见上 ✓），
