@@ -4846,7 +4846,12 @@ static void pofv_c4_tick(void)
         }
         if (b->vm) {
             ce_anm_set_pos((uint32_t)b->vm, b->x, b->y, 0.0f);
-            ce_anm_set_scale((uint32_t)b->vm, 0.5f + (float)b->age * 0.004f,
+            /* ★★★★★ 2026-10-13（★ owner：「★ **怎么 C4 的阴阳玉在逐渐增大**」✗）：
+             *   ★ 原来这里是 ★ `ce_anm_set_scale(vm, **0.5f + (float)b->age * 0.004f**, …)` ✗
+             *   ★ ⇒ ★ **每帧 +0.004 ⇒ 无限变大** ✗ ✓（★ 卡侧自造的"长大"✗，★ 一手没有这一项 ✓）
+             *   ★ ⇒ ★ **去掉那个 `age` 项** ✓，★ 只留基线 **0.5** ✓（★ 大小不再随帧变 ✓）。
+             *   ⚠ ★ 基线本身（0.5）是卡侧早先定的 ❓ ⇒ ★ 若大小还要调 ✓，★ 你给个准值我改 ✓。*/
+            ce_anm_set_scale((uint32_t)b->vm, 0.5f,
                              0.5f + (float)b->age * 0.004f);
         }
         pos[0] = b->x; pos[1] = b->y; pos[2] = 0.0f;
