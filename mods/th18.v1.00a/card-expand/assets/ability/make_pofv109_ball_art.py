@@ -44,6 +44,23 @@ FRAMES = [
     ("POFV109_BBALL_DIE",    "BBALL_DIE.png",     SRC1, (16, 240, 24, 248)),   # 8×8 彩弹：消失
 ]
 
+# ★★★★★ 2026-10-13（★ 本 goal 待办 1 ✓）：★ **纯灵本体那 8 帧** ✗ ——
+#   ★ 一手（★ 复核 `ab9b54e5` ✓ 高置信 ✓）：★ 标准纯灵 = ★ `GhostPure()` → ★ `ins_303(0,106)` → ★ **script106**
+#   ★ → ★ **`enemy.anm` entry1 `enemy2.png` 的 sprite 144–151（黄、8 帧、32×32、y=96）** ✓；
+#   ★ 固化态 = ★ `GhostPureDisable()` → ★ **同一支 script106** ✓ ⇒ ★「★ 固化不换族、颜色也一样」✓。
+#   ★ ★ **为什么必须补** ✗：★ 本卡当年只切了 **144–148 这 5 帧** ✗（★ `ORDER.txt:1168-1172` ✓）
+#   ★ ⇒ ★ **"环"的那三帧 149/150/151 从来没切进来** ✗ ⇒ ★ 这就是 owner 报的
+#   ★ 「★ **固化态出生时外面那圈蓝环没了**」✗ ✓（★ 一手那个循环是 ★ **球 → … → 空心环** ✓）。
+#   ★ 矩形 = ★ **x = 0/32/64/96/128/160/192/224** ✓、★ y = 96 ✓、★ 32×32 ✓（★ 步长 32 ✓）。
+# ★ 2026-10-13 订正路径 ✗：`dat/enemy/enemy2.png` **不存在** ❓（`dat/` 要 `thdat -x` 解包才有）
+#   ⇒ 用仓库里**已经解出来的**那张 ✓（`glob **/enemy2.png` 查到的 TH19 那份 ✓）。
+SRC_SPIRIT = _r / "local/th19.v1.10c/anm/enemy/enemy/enemy2.png"
+SPIRIT_DIR = ROOT / "spirit"
+SPIRIT_FRAMES = [
+    (f"SPIRIT_DISP4_{i}", f"SPIRIT_DISP4_{i}.png", (0 + 32 * i, 96, 32 + 32 * i, 128))
+    for i in range(8)
+]
+
 
 def main() -> int:
     OUTDIR.mkdir(parents=True, exist_ok=True)
@@ -52,6 +69,12 @@ def main() -> int:
         cut = im.crop(rect)
         cut.save(OUTDIR / fn)
         print(f"{name:<24} ability/bball/{fn} {cut.width}x{cut.height}")
+    SPIRIT_DIR.mkdir(parents=True, exist_ok=True)
+    for name, fn, rect in SPIRIT_FRAMES:
+        im = Image.open(SRC_SPIRIT).convert("RGBA")
+        cut = im.crop(rect)
+        cut.save(SPIRIT_DIR / fn)
+        print(f"{name:<24} ability/spirit/{fn} {cut.width}x{cut.height}")
     print("# —— 以上各行追加/替换到 ability/entries/ORDER.txt ——")
     return 0
 

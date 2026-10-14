@@ -1164,12 +1164,19 @@ SPIRIT_CALMR_4         ability/spirit/SPIRIT_CALMR_4.png   @272,40,48x48
 SPIRIT_CALMR_5         ability/spirit/SPIRIT_CALMR_5.png   @320,40,48x48
 SPIRIT_CALMR_6         ability/spirit/SPIRIT_CALMR_6.png   @368,40,48x48
 SPIRIT_CALMR_7         ability/spirit/SPIRIT_CALMR_7.png   @416,40,48x48
-ATLAS ATLAS_SPIRIT_DISABLE_PURE 160x32
+ATLAS ATLAS_SPIRIT_DISABLE_PURE 256x32
+# ★ 2026-10-13（★ 本 goal 待办 1 ✓）：★ **5 帧 → 8 帧**✗ —— ★ 一手（★ 复核 `ab9b54e5` ✓）：
+#   ★ 标准纯灵 / 固化态都 = `enemy.anm` **script106** = `enemy2.png` **sprite 144–151（黄、8 帧）** ✓
+#   ★ ⇒ ★ 当年只切了前 5 帧 ✗ ⇒ ★ **"环"那三帧（149/150/151）从没进来** ✗
+#   ★ ⇒ ★ 这就是「固化态出生时外面那圈蓝环没了」✗ ✓（★ 切图器 = `make_pofv109_ball_art.py` ✓）。
 SPIRIT_DISP4_0         ability/spirit/SPIRIT_DISP4_0.png            @0,0,32x32
 SPIRIT_DISP4_1         ability/spirit/SPIRIT_DISP4_1.png            @32,0,32x32
 SPIRIT_DISP4_2         ability/spirit/SPIRIT_DISP4_2.png            @64,0,32x32
 SPIRIT_DISP4_3         ability/spirit/SPIRIT_DISP4_3.png            @96,0,32x32
 SPIRIT_DISP4_4         ability/spirit/SPIRIT_DISP4_4.png            @128,0,32x32
+SPIRIT_DISP4_5         ability/spirit/SPIRIT_DISP4_5.png            @160,0,32x32
+SPIRIT_DISP4_6         ability/spirit/SPIRIT_DISP4_6.png            @192,0,32x32
+SPIRIT_DISP4_7         ability/spirit/SPIRIT_DISP4_7.png            @224,0,32x32
 ATLAS ATLAS_SAKUYA_FIELD 32x128
 SAKUYA_FIELD_STRIP      ability/spirit/SAKUYA_FIELD_STRIP.png   @0,0,32x128
 ATLAS ATLAS_HUD_HITS 56x14

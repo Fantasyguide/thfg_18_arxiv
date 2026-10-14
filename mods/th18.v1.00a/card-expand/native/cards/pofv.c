@@ -1541,9 +1541,10 @@ static int pofv_spirit_body_sprite(int32_t kind, int32_t level, int disabled, in
         CE_ANM_ABILITY_SPRITE_SPIRIT_GHOSTG_0
     };
     int k = (kind >= 0 && kind < POFV_SPIRIT_KIND__COUNT) ? (int)kind : (int)POFV_SPIRIT_KIND_PURE;
-    int n = (k == (int)POFV_SPIRIT_KIND_PURE) ? 5 : 4;   /* ★ 2026-10-13：★ 纯净灵改用**黄版**贴图 ✓
-                                                          *   （★ `SPIRIT_DISP4_*` ✓ 是 **5 帧** ✗ 不是 8 帧 ✓
-                                                          *   —— ★ 见上一行 `base[]` 里那段注释 ✓）。*/
+    int n = (k == (int)POFV_SPIRIT_KIND_PURE) ? 8 : 4;   /* ★ 2026-10-13（★ 本 goal 待办 1 ✓）：★ **5 → 8** ✗
+                                                          *   —— ★ 一手 = `enemy.anm` script106 = sprite **144–151（8 帧）** ✓
+                                                          *   （★ 复核 `ab9b54e5` ✓）；★ 补切后 ★ `SPIRIT_DISP4_0..7` 八张齐 ✓
+                                                          *   （★ 见 `make_pofv109_ball_art.py` + `ORDER.txt` ✓）。*/
     if (frame < 0) frame = 0;
     /* ★★★ owner 2026-10-06：「**固化的时候 sprite 也会变**」✓ ＋ 核实方：一手**每族一档** ✓ */
     if (disabled && k == (int)POFV_SPIRIT_KIND_PURE) {
@@ -1561,7 +1562,9 @@ static int pofv_spirit_body_sprite(int32_t kind, int32_t level, int disabled, in
          *   ★ 重切 **8 张** ✓、★ 本函数 ★ **`% 5` → `% 8`** ✓、★ `ORDER.txt` 那 5 行 → **8 行** ✓
          *   ★（★ 2026-10-13：★ 等 owner 一句"B 可以"✓ 即落 ✓）。*/
         int b = (int)CE_ANM_ABILITY_SPRITE_SPIRIT_DISP4_0;
-        return b + ((frame < 0 ? 0 : frame) % 5);   /* ⚠ 5 帧循环 —— ★ 应为 8 ✗（见上 ✓）*/
+        return b + ((frame < 0 ? 0 : frame) % 8);   /* ★ 8 帧循环 ✓（★ 一手 script106 = sprite 144–151 ✓；
+                                                     *   ★ 第 5–7 帧即"球 → 空心环"的后半 ✓ ——
+                                                     *   ★ 这就是 owner 要的那圈 ✓）*/
     }
     if (disabled && (k == (int)POFV_SPIRIT_KIND_WOLF || k == (int)POFV_SPIRIT_KIND_OTTER ||
                      k == (int)POFV_SPIRIT_KIND_EAGLE)) {
