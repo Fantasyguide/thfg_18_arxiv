@@ -54,5 +54,13 @@ int  pea_needs_cap(const pea_state_t *s);
  *   （社区攻略：小米游戏中心《电能豌豆综合玩法教学》）＋ owner 口径「**连接自身一个半径范围内的敌人，
  *   敌人还会再连接敌人**」✓ ⇒ 我们这里把"上下行"换成**半径**（TH18 是 360° ✓），逐跳传播 ✓。
  *   ⚠ 这里**只管挑谁**，不碰引擎（伤害/特效在 `peashooter.c` 里 ✓）。*/
+/* ★★ P42（owner：「为了防止重复创建VM，从敌人A到敌人B的VM只创建一个」✓）：电弧**按敌人对去重**。
+ *   一对敌（A,B）只允许存在一个电弧 VM ✓ —— 同对再次成链时**只刷新**已有那个（位置/角度/缩放 ✓），
+ *   不新建 ✓；表满时**宁可不建**也不重复创建 ✓。key 用**无序对**（弧是 A↔B 同一根 ✓）。*/
+uint32_t pea_arc_key(uint32_t a, uint32_t b);            /* 无序对 key（小 id 在前 ✓；a==b 也稳定 ✓）*/
+int      pea_arc_find(const uint32_t *keys, int n, uint32_t key);   /* 找同对的槽 ⇒ 下标；没有 = -1 ✓ */
+int      pea_arc_put(uint32_t *keys, uint32_t *vms, const uint8_t *alive, int n,
+                     uint32_t key, uint32_t vm);          /* 写进"同对的槽"，否则第一个死的槽 ⇒ 下标；
+                                                           * 全满且无同对 = **-1**（调用方据此不新建 ✓）*/
 int  pea_chain_pick(const float *xy, const uint32_t *id, int n, float cx, float cy, float r,
                     const uint32_t *visited, int nv);              /* 1 = 本帧要抬每敌每帧伤害上限 */

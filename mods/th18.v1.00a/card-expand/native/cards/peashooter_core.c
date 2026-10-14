@@ -93,3 +93,31 @@ int pea_chain_pick(const float *xy, const uint32_t *id, int n, float cx, float c
     }
     return best;
 }
+
+/* ★ P42：电弧按敌人对去重（见 peashooter_core.h 注释 ✓；纯函数 ⇒ 主机单测覆盖 ✓）。*/
+uint32_t pea_arc_key(uint32_t a, uint32_t b)
+{
+    uint32_t lo = (a < b) ? a : b, hi = (a < b) ? b : a;
+    return (lo << 16) ^ (hi & 0xffffu);          /* 两个 id 各 16 位以内 ⇒ 无序对唯一 ✓（与顺序无关 ✓）*/
+}
+
+int pea_arc_find(const uint32_t *keys, int n, uint32_t key)
+{
+    int i;
+    if (!keys || n <= 0) return -1;
+    for (i = 0; i < n; ++i) if (keys[i] == key) return i;
+    return -1;
+}
+
+int pea_arc_put(uint32_t *keys, uint32_t *vms, const uint8_t *alive, int n, uint32_t key, uint32_t vm)
+{
+    int i, free_i = -1;
+    if (!keys || !vms || n <= 0) return -1;
+    for (i = 0; i < n; ++i) {
+        if (keys[i] == key) { vms[i] = vm; return i; }      /* 同对 ⇒ 复用那个槽（不新建 ✓）*/
+        if (free_i < 0 && (!alive || !alive[i])) free_i = i;/* 记下第一个"已死"的槽 ✓ */
+    }
+    if (free_i < 0) return -1;                              /* 表满且无同对 ⇒ 宁可不建 ✓ */
+    keys[free_i] = key; vms[free_i] = vm;
+    return free_i;
+}

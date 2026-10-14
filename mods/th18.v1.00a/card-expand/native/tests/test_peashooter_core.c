@@ -179,6 +179,39 @@ static void test_chain_pick(void)
     CHECK(k == -1, "半径 0 应返回 -1，实际 %d", k);
 }
 
+
+/* ★ P42：电弧按敌人对去重（纯函数 ✓）—— key 无序 / 找同对 / 复用死槽 / 表满不新建 ✓ */
+static void test_arc_dedupe(void)
+{
+    uint32_t keys[3] = { 0, 0, 0 };
+    uint32_t vms[3] = { 0, 0, 0 };
+    uint8_t  alive[3] = { 0, 0, 0 };
+    uint32_t k1 = pea_arc_key(7u, 8u), k2 = pea_arc_key(8u, 7u);
+    int i;
+
+    CHECK(k1 == k2, "无序对：key(7,8) 应等于 key(8,7)（%u vs %u）", k1, k2);
+    CHECK(pea_arc_find(keys, 3, k1) == -1, "空表里不该找到 ✓");
+
+    i = pea_arc_put(keys, vms, alive, 3, k1, 111u);
+    CHECK(i == 0 && vms[0] == 111u, "第一次应放进 0 号槽（i=%d vm=%u）", i, vms[0]);
+    i = pea_arc_put(keys, vms, alive, 3, k2, 222u);
+    CHECK(i == 0 && vms[0] == 222u, "★ 同一对（反向写）应复用 0 号槽、只换 VM（i=%d vm=%u）", i, vms[0]);
+    CHECK(pea_arc_find(keys, 3, k1) == 0, "同对应能找到 0 号槽 ✓");
+
+    alive[0] = 1;                                    /* 0 号还活着 ⇒ 新对放 1 号 ✓ */
+    i = pea_arc_put(keys, vms, alive, 3, pea_arc_key(1u, 2u), 333u);
+    CHECK(i == 1, "0 号活着 ⇒ 新对应放 1 号（i=%d）", i);
+    alive[0] = 0;                                    /* 0 号死了 ⇒ 新对复用 0 号 ✓ */
+    i = pea_arc_put(keys, vms, alive, 3, pea_arc_key(3u, 4u), 444u);
+    CHECK(i == 0 && vms[0] == 444u, "0 号死后应被复用（i=%d vm=%u）", i, vms[0]);
+
+    alive[0] = alive[1] = alive[2] = 1;              /* 全活 + 无同对 ⇒ 不新建 ✓ */
+    i = pea_arc_put(keys, vms, alive, 3, pea_arc_key(9u, 9u), 555u);
+    CHECK(i == -1, "表满且无同对 ⇒ 必须返回 -1（宁可不建 ✓），实际 %d", i);
+    i = pea_arc_put(keys, vms, alive, 3, pea_arc_key(3u, 4u), 666u);
+    CHECK(i == 0, "表满但**有同对** ⇒ 仍要复用（i=%d）", i);
+}
+
 int main(void)
 {
     test_wait_range();
@@ -189,6 +222,7 @@ int main(void)
     test_inflight_and_cap();
     test_clear();
     test_chain_pick();
+    test_arc_dedupe();
     printf(fails ? "peashooter_core: %d FAILED\n" : "peashooter_core: OK\n", fails);
     return fails != 0;
 }
