@@ -2583,7 +2583,16 @@ static void pofv_c2_tick(uint32_t id)
             for (k4 = 0; k4 < POFV_C2_POINTS; ++k4)
                 if (s_c2.orb_vm[k4]) ce_anm_interrupt((uint32_t)s_c2.orb_vm[k4], 1);
         }
-        c2_ring_vm_sync(r);   /* ★ 圆心 = 第 1 个环绕点 ✓（一手 ✓）*/   /* ★★ 范围圈：每帧按**真实消弹半径**写 `scale.y`（判定=绘制 ✓）*/
+        /* ★★★★★ 2026-10-13（★ owner：「★ **灵梦 C2 发了两个消弹环**」✗ + ★ 原则
+         *   「★ **消弹环出发的时间是松手那一刻**；★ 这两个有一个**落后的，炸了之后才出现**」✗
+         *   + ★「★ **最好抽取成公用函数，所以 CA 的模型是更好的**」✓）：
+         *   ★ ★ **这里是"落后的那台"** ✗ —— ★ 它在 ★ **C2 自己 tick 的环阶段**里起 ✓
+         *   ⇒ ★ **炸了之后才出现** ✓；★ 而 ★ **CA 那台**（★ `pofv_ca_ring_*` ✓）★ 起于
+         *   ★ **释放分派那一帧** ✓（★ `:6795` ✓）= ★ **松手即出** ✓。
+         *   ★ ⇒ ★ 按 owner 的两条原则：★ **统一到 CA 模型** ✓ ⇒ ★ **这一路掐掉** ✗（★ 不再起 VM ✓）。
+         *   ★（★ 两个函数本体 `c2_ring_vm_sync` / `c2_ring_vm_release` 与 `s_c2.ring_vm` 字段
+         *   ★ **下一步连根删** ✓ —— ★ 那时会消掉"未使用函数"警告 ✓。）*/
+        /* c2_ring_vm_sync(r); */   /* ★ 2026-10-13 停用 ✗：滞后那台 ⇒ 统一到 CA ✓ */
         float pos[3];
         pos[0] = s_c2_pt0x; pos[1] = s_c2_pt0y; pos[2] = 0.0f;   /* ★ 一手：环心 = 第 1 个环绕点 ✓（原为自机 ✗）*/
         (void)c2_cancel_drop(pos, r);
@@ -2596,7 +2605,7 @@ static void pofv_c2_tick(uint32_t id)
 
     /* ⑤ 收尾（105 帧到 ⇒ 环淡出、无敌撤声明、状态归零 ✓）*/
     if (++s_c2.age >= POFV_C2_TOTAL) {
-        c2_ring_vm_release();  /* ★ 范围圈：随 C2 一起收（淡出后由 clear 兜底 ✓）*/
+        /* c2_ring_vm_release(); */  /* ★ 2026-10-13 停用 ✗（同上一处 ✓：统一到 CA 模型 ✓）*/
         ce_log("pofv: [C2ORB] 收尾@105 vm=(%d,%d,%d) live=(%d,%d,%d)（★ 若某台还 live=1 ✗ ⇒ 那台没按 +60 自删 ✓，"
                "★ 与 45 那条对照即可判【爆两次】是否句柄复用 ✓）",
                (int)s_c2.orb_vm[0], (int)s_c2.orb_vm[1], (int)s_c2.orb_vm[2],
