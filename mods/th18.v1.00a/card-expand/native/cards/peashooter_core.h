@@ -57,6 +57,41 @@ int  pea_needs_cap(const pea_state_t *s);
 /* ★★ P42（owner：「为了防止重复创建VM，从敌人A到敌人B的VM只创建一个」✓）：电弧**按敌人对去重**。
  *   一对敌（A,B）只允许存在一个电弧 VM ✓ —— 同对再次成链时**只刷新**已有那个（位置/角度/缩放 ✓），
  *   不新建 ✓；表满时**宁可不建**也不重复创建 ✓。key 用**无序对**（弧是 A↔B 同一根 ✓）。*/
+/* ★★ P43（owner 裁定「**改成真穿透**」✓）：**卡侧电弹** —— 照 89 星星炮那套 ✓
+ *   （卡自建 anm 弹 + 自己每帧挪 + 自己出定点伤害源 ⇒ **命中不销毁 = 真穿透** ✓）。
+ *   ⚠ 数值必须与 `assets/sht/append_shooterset.py` 的 PEA_NORMAL / PEA_GATLING **两组对齐** ✓
+ *     （那边决定"引擎豌豆"的行为 ✓，这边决定"卡侧电弹"的行为 ✓；改一处必须改两处 ✗）。*/
+#define PE_MAX            64      /* ❓自定：同时最多几颗卡侧电弹（机枪一组 7 颗 ✓ ⇒ 有余量 ✓）*/
+#define PE_SET_NORMAL      0
+#define PE_SET_GATLING     1
+#define PE_SPD_NORMAL    14.0f    /* = PEA_NORMAL.speed ✓ */
+#define PE_SPD_GATLING   18.0f    /* = PEA_GATLING.speed ✓ */
+#define PE_DMG_NORMAL     90      /* = PEA_NORMAL.damage ✓ */
+#define PE_DMG_GATLING     7      /* = PEA_GATLING.damage ✓ */
+#define PE_HIT_W_NORMAL  16.0f    /* = PEA_NORMAL.hit_w/h ✓ */
+#define PE_HIT_W_GATLING 12.0f
+#define PE_HIT_COOLDOWN   10      /* ★ 复刻原版默认 `localNPCHitCooldown = 10`（与 89 的 SC_HIT_COOLDOWN 同口径 ✓）
+                                   *   ⇒ 一颗电弹穿过一个敌人是「每 10 帧 1 跳」而不是帧伤 ✓ */
+#define PE_VIEW_X       360.0f    /* 出界即收（与 89 的 SC_VIEW_* 同口径 ✓）*/
+#define PE_VIEW_Y_MIN   (-80.0f)
+#define PE_VIEW_Y_MAX   520.0f
+
+typedef struct {
+    float    x, y;        /* 位置（px）*/
+    float    vy;          /* 速度（负 = 向上 ✓）*/
+    int      set;         /* PE_SET_NORMAL / _GATLING ✓ */
+    int      dmg;         /* 每次结算的伤害 ✓ */
+    int      alive;
+    uint32_t cd;          /* 还有几帧才允许再出一次伤害源 ✓ */
+} pe_proj_t;
+
+void pe_proj_clear_all(pe_proj_t *a, int n);                       /* 局末 / 删卡：全收 ✓ */
+int  pe_proj_spawn(pe_proj_t *a, int n, float x, float y, int set); /* 起一颗 ⇒ 下标；满了 = -1 ✓ */
+void pe_proj_move(pe_proj_t *p);                                   /* 一帧：挪 + 递减 cd ✓ */
+int  pe_proj_hit_now(const pe_proj_t *p);                          /* 1 = 本帧该出伤害源 ✓ */
+void pe_proj_fired(pe_proj_t *p);                                  /* 出过源 ⇒ 重置 cd ✓ */
+int  pe_proj_out(const pe_proj_t *p);                              /* 1 = 出界 ⇒ 该收 ✓ */
+
 uint32_t pea_arc_key(uint32_t a, uint32_t b);            /* 无序对 key（小 id 在前 ✓；a==b 也稳定 ✓）*/
 int      pea_arc_find(const uint32_t *keys, int n, uint32_t key);   /* 找同对的槽 ⇒ 下标；没有 = -1 ✓ */
 int      pea_arc_put(uint32_t *keys, uint32_t *vms, const uint8_t *alive, int n,

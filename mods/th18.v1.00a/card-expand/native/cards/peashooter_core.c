@@ -121,3 +121,44 @@ int pea_arc_put(uint32_t *keys, uint32_t *vms, const uint8_t *alive, int n, uint
     keys[free_i] = key; vms[free_i] = vm;
     return free_i;
 }
+
+/* ★ P43：卡侧电弹（见 peashooter_core.h 注释 ✓）——纯逻辑，主机单测覆盖 ✓。*/
+void pe_proj_clear_all(pe_proj_t *a, int n)
+{
+    int i;
+    if (!a) return;
+    for (i = 0; i < n; ++i) { a[i].alive = 0; a[i].cd = 0; }
+}
+
+int pe_proj_spawn(pe_proj_t *a, int n, float x, float y, int set)
+{
+    int i;
+    if (!a || n <= 0) return -1;
+    for (i = 0; i < n; ++i) {
+        if (a[i].alive) continue;
+        a[i].alive = 1;
+        a[i].x = x; a[i].y = y;
+        a[i].set = set;
+        a[i].vy = (set == PE_SET_GATLING) ? -PE_SPD_GATLING : -PE_SPD_NORMAL;
+        a[i].dmg = (set == PE_SET_GATLING) ? PE_DMG_GATLING : PE_DMG_NORMAL;
+        a[i].cd = 0;                       /* 出生当帧就能结算（与 89 一致 ✓）*/
+        return i;
+    }
+    return -1;                             /* 满了（只影响数量 ✓，不炸 ✓）*/
+}
+
+void pe_proj_move(pe_proj_t *p)
+{
+    if (!p || !p->alive) return;
+    p->y += p->vy;
+    if (p->cd) --p->cd;
+}
+
+int pe_proj_hit_now(const pe_proj_t *p) { return (p && p->alive && p->cd == 0) ? 1 : 0; }
+void pe_proj_fired(pe_proj_t *p) { if (p) p->cd = PE_HIT_COOLDOWN; }
+
+int pe_proj_out(const pe_proj_t *p)
+{
+    if (!p || !p->alive) return 0;
+    return (p->x < -PE_VIEW_X || p->x > PE_VIEW_X || p->y < PE_VIEW_Y_MIN || p->y > PE_VIEW_Y_MAX) ? 1 : 0;
+}

@@ -212,6 +212,37 @@ static void test_arc_dedupe(void)
     CHECK(i == 0, "表满但**有同对** ⇒ 仍要复用（i=%d）", i);
 }
 
+
+/* ★ P43：卡侧电弹（纯逻辑 ✓）—— 两组数值 / 每 10 帧才结算 / 出界判定 / 满了不炸 ✓ */
+static void test_proj(void)
+{
+    pe_proj_t a[3];
+    int i;
+    pe_proj_clear_all(a, 3);
+
+    i = pe_proj_spawn(a, 3, 0.0f, 400.0f, PE_SET_NORMAL);
+    CHECK(i == 0 && a[0].alive == 1, "起一颗正常弹应在 0 号（i=%d）", i);
+    CHECK(a[0].dmg == PE_DMG_NORMAL && a[0].vy == -PE_SPD_NORMAL, "正常弹的伤害/速度应照 PEA_NORMAL（dmg=%d vy=%.1f）", a[0].dmg, a[0].vy);
+
+    i = pe_proj_spawn(a, 3, 16.0f, 400.0f, PE_SET_GATLING);
+    CHECK(i == 1 && a[1].dmg == PE_DMG_GATLING && a[1].vy == -PE_SPD_GATLING, "机枪弹应照 PEA_GATLING（dmg=%d vy=%.1f）", a[1].dmg, a[1].vy);
+
+    CHECK(pe_proj_hit_now(&a[0]) == 1, "刚出生就该能结算 ✓");
+    pe_proj_fired(&a[0]);
+    CHECK(pe_proj_hit_now(&a[0]) == 0, "★ 出过源之后应等冷却（不许帧伤 ✓）");
+    for (i = 0; i < PE_HIT_COOLDOWN; ++i) pe_proj_move(&a[0]);
+    CHECK(pe_proj_hit_now(&a[0]) == 1, "★ 过了 %d 帧应能再结算一次（= 对同一敌每 10 帧 1 跳 ✓）", PE_HIT_COOLDOWN);
+
+    a[0].x = 0.0f; a[0].y = 400.0f;
+    CHECK(pe_proj_out(&a[0]) == 0, "画面内不该判出界 ✓");
+    a[0].y = PE_VIEW_Y_MIN - 1.0f;
+    CHECK(pe_proj_out(&a[0]) == 1, "越过上界就该收 ✓");
+
+    CHECK(pe_proj_spawn(a, 1, 0.0f, 0.0f, PE_SET_NORMAL) == -1, "池满应返回 -1（不炸 ✓）");
+    pe_proj_clear_all(a, 3);
+    CHECK(pe_proj_hit_now(&a[0]) == 0 && pe_proj_out(&a[0]) == 0, "清空之后都不该有反应 ✓");
+}
+
 int main(void)
 {
     test_wait_range();
@@ -223,6 +254,7 @@ int main(void)
     test_clear();
     test_chain_pick();
     test_arc_dedupe();
+    test_proj();
     printf(fails ? "peashooter_core: %d FAILED\n" : "peashooter_core: OK\n", fails);
     return fails != 0;
 }
