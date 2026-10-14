@@ -4836,7 +4836,12 @@ static void pofv_c4_tick(void)
         ++b->age;
         if (b->x < -(POFV_FIELD_HALF_W + POFV_C1_OFF_MARGIN) ||
             b->x >  (POFV_FIELD_HALF_W + POFV_C1_OFF_MARGIN) ||
-            b->y < -POFV_C1_OFF_MARGIN || b->y > (POFV_FIELD_H + POFV_C1_OFF_MARGIN) || b->age >= POFV_C4_BULLET_LIFE) {
+            /* ★★★★★ 2026-10-13（★ owner：「★ **C4 的阴阳玉依旧消失**」✗）：★ **去掉寿命那条** ✗ ——
+             *   ★ 本行原来还有 ★ `|| b->age >= POFV_C4_BULLET_LIFE` ✗，★ 而 ★ 前四条**都是出界** ✓
+             *   ⇒ ★ 画面内唯一能让它"消失"的就是这条寿命 ✓✓ ★ ⇒ ★ **删掉它** ✓，★ 与 C3 那套
+             *   ★（★ owner 要的"★ **碰怪不消失**"✓）一致：★ **只在出界时收** ✓。
+             *   ★（★ 依据 = ★ owner 的一级证据 ✓：★ 玉**不该在画面里凭空消失**✓。）*/
+            b->y < -POFV_C1_OFF_MARGIN || b->y > (POFV_FIELD_H + POFV_C1_OFF_MARGIN)) {
             /* ★ 2026-10-13（★ owner 口径 4 ✓）：★ 改用 `ce_anm_interrupt` ✓ ⇒ ★ 走脚本 457 的**消失支**
              *   （★ 消失帧 + 加算 + 淡出 ✓）= ★ "★ **敌方弹碰到自机的消失动画**" ✓
              *   （★ 原来 `ce_anm_delete` = 直接抹掉、无动画 ✗）；★ 与 C3 那三处同形 ✓。*/
