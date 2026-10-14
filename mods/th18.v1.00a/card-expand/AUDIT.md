@@ -4854,6 +4854,7 @@ UI 列表尾插、组内后生成者后画（§2b.4）。
 | 2026-10-13 | **109 卡专属（未改共享件 ✓）** | ★ 新增脚本 `456` + 本卡 7 处 spawn 换引用 ⇒ 详见下方小节「§BE-109-HUD20」✓ |
 | 2026-10-12 | **所有卡（共享件：shooterset 生成器）** | 见下方小节「§BE-109 两格」 |
 | 2026-10-12 | **111 地灵殿（咲夜×大小姐支援特技的"靠近弹幕变红"）** | `native/cards/signal.c` （`signal_tint_restore_all` 与 `signal_tint_sync` 的**两处还原**）| 还原改成**只还原 RGB、保留当前 alpha** ✓ （`*col = (*col & 0xff000000u) | (s_tint_orig[i] & 0x00ffffffu);` ✓）| owner 指出「111 咲夜特技也可能有这个 bug」⇒ 我只读核实：★ **同病** ✗ —— 该卡的 `signal_tint_apply` 本来就保留 alpha ✓，但**两处还原**是"整条写回染色前的快照"✗ ⇒ 弹**在擦弹圈内出生**时 alpha 被旧快照覆盖 ⇒ **变暗** ✗（与 109/115 同一成因 ✓；115 的已修版式见 `lolk.c:446` ✓）| `make check` 459 全绿 ✓ + `check-docs` ✓ + 四处 DLL 同 md5 ✓；★ 只改这两行、不动其它逻辑 ✓ |
+| 2026-10-14 | **110 与 111（共享件 `faith_hud.c/h`：局末收尾入口拆分）** | `native/cards/faith_hud.c` + `faith_hud.h` + `mof.c` 的 `on_run_reset` + `signal.c` 的 `on_run_reset` | ★ 新增 `faith_hud_run_reset()` ✓（**无条件整套收掉** HUD ⇒ 下一帧重建 ⇒ 入场淡入重播一次 ✓）；`faith_hud_departed()` 语义**不变** ✓（删卡路：另一张还在就留着 ✓）| **owner 口径逐字**：「哦，**retry可以重走一次入场**」✓（原 F6：retry 路早退 ⇒ 入场不重播 ✗）| `make check` rc=0 ✓；实跑：retry 后左下角 HUD 应**重播一次**入场淡入 ✓，删掉单张卡时 HUD **仍不消失** ✓ |
 | 2026-10-14 | **所有卡（调试空格键统一摘除）+ 新调试卡 119** | `sdk.h`（新增 `CE_DEBUG_SPACE_KEYS 0`）+ 7 个文件 13 处空格读点惰性化（`animal.c`/`pofv.c`/`th06rank.c`/`trance.c`/`ufo.c`/`youkai.c`/`input_synth.c`）+ 新卡 `cards/debu…（详见 §BE 小节） | ★ 新增**调试用「定向删卡」主动卡 119**（A/S 切目标、空格或 C 删除 ✓）；按 owner 要求**先摘除全仓调试空格键** ✓（改键读、不删代码 ✓）⇒ 详见下方「§BE-DEBUG-DELETE-CARD」✓ | **owner 需求 A1（原话）**：「最好是能弄一张**主动卡**…效果是**删卡**，debug 期间的**定向删卡**」+「添加 hud，按 **A S** 左右切换目标，**空格键删除**…但需要**提前摘除所有卡的调试空格键**」✓ | `make check` **rc=0** ✓（含卡表契约 / 容量台账 / 全闸）+ `make release` 发布闸全过 ✓ + DLL 三处同 md5 `59b20fe5e4adb52c7723d2a7094b7cc1` ✓；**站点新增 0** ✓（删卡用既有 `ce_destroy_card`）
 | 2026-10-14 | **所有卡（共享件 `sdk.h`：子弹扫描宏）** | `native/sdk.h` 的 `CE_BULLET_LIVE_FOR_EACH`（只改宏里三处守卫 + 注释）| ★ 三处 `!ce_ptr_readable(...)` → `ce_ptr_readable(...)` ✓（`ce_ptr_readable` 返回 **1 = 可读** ✓）⇒ 详见下方「§BE-BULLET-LIVE-MACRO」✓ | **owner 实跑**：咲夜 111 支援特技 / 109 固灵结界 / 115 擦弹圈内的**敌弹变色全失效** ✗；**根因是我早前**的迁移提交 `8b8c9139` 把守卫写反 ✗ ⇒ 恒 0 次迭代 ✗ | `make check` rc=0 ✓；**11 个站点**同时复活（`lolk.c:488`、`signal.c:2100/2156`、`youkai.c:954/6936`、`pofv.c:1944`、`season.c:714/1441`、`great_work.c:204/313`、`reverse.c:20` ✓）；实跑判据见小节 △ |
 | 2026-10-14 | **116 与 111（共享件：新增 `dtap_core.*` + `Makefile`）** | 新增 `cards/dtap_core.{h,c}`；`season_core.h/.c` 改薄包装；`signal.c` 换触发（+ 新 `tests/test_dtap_core.c` + Makefile 规则）| ★ 抽出「**完整双击 Z**」共享状态机（语义**逐字**取自 116 ✓）；116 薄包装化、111 改用它 ⇒ 详见下方「§BE-DTAP-CORE」✓ | **owner 需求（原话）**：「111 魔理沙特技切换自机请改成**双击 z**，与 116 切换季节一致」✓ —— 111 旧触发要 Shift+Z **同时**按下且都在 5 帧内 ✗ | `make check` **rc=0** ✓；**116 的 8 组旧单测全过**（`test_season_core: 140 passed, 0 failed` ✓）+ 新 `test_dtap_core: 33 passed, 0 failed` ✓；发布闸全过 + DLL 四处同 md5 ✓；**影响面只有 116/111** ✓ |
@@ -4919,6 +4920,16 @@ UI 列表尾插、组内后生成者后画（§2b.4）。
 - **建议实跑（交 owner）** △：① 把 119 装进初始卡组 ⇒ 进游戏 ⇒ 左下角应有一行 `[dbg] 删除目标: …` ✓；
   ② `A`/`S` 切换目标（日志 `dbgdel: 目标 -> …` ✓）③ 空格删掉目标 ⇒ 该卡应消失、日志 `dbgdel: [SPACE] 已删除卡 …` ✓、HUD 位次刷新 ✓；
   ④ **重点**：删卡正好用来复测 `on_delete` 收尾 ✓（F1 的 `bomb10` 注销 ✓、A3 的账本 ✓、绿皮/VM 收尾 ✓）。
+
+
+#### §BE-FAITH-HUD-RUN-RESET —— 共享 HUD 的「局末收尾」入口拆分（2026-10-14，P32）
+
+- **文件 → 改了什么**：`faith_hud.c` 新增 `void faith_hud_run_reset(void)` ✓（收 16 支 VM + 释放槽 + 清声明表 + 清哨兵与认领冷却 ✓）；`faith_hud.h` 加声明 ✓；`mof.c` 与 `signal.c` 的 **`on_run_reset`** 各补/换一次调用 ✓（`on_delete` 照旧走 `faith_hud_departed()` ✓）。
+- **为什么**：owner 口径「retry 可以重走一次入场」✓。原 F6 = retry 与「删掉单张卡」走同一个入口 ⇒ 入口为后者保命（另一张还在就留着 ✗）⇒ retry 时收不掉、下一帧也不会重建 ⇒ **入场淡入不重播** ✗。
+- **影响面**：只影响 **110/111** 两张卡的**局末/retry** 路 ✓（`faith_hud_departed()` 的删卡语义与所有其它调用点**一字未动** ✓）；
+  共享 HUD 的 VM 生命周期与 `FH_WARMUP_FRAMES` 的语义不变 ✓ ⇒ 其它卡（107/109/113/116 等各自的 HUD）**不受影响** ✓。
+- **怎么验的**：`make check` **rc=0**（470 文档 + 全闸 ✓）、`make anm`/`make sht` rc=0 ✓、`make release` 发布闸全过 ✓、DLL 三处同 md5 ✓。
+- **建议实跑** △：① retry ⇒ 左下角 HUD **重播一次**入场淡入 ✓；② 只装 110+111、用倒吊人删掉其中一张 ⇒ HUD **不消失** ✓（确认删卡语义没被误伤 ✓）。
 
 | 2026-09-26 | **112 星莲船（UFO 载体皮）** | `assets/ability/scripts/352_ufo_carrier_fairy.anm.txt`、`356_ufo_carrier_fairy_side_r.anm.txt`、`357_ufo_carrier_fairy_side_l.anm.txt` | 三支脚本的贴图从本卡自己的 `@CARRIER_FAIRY_0..11@`（TH12 妖精切图）换成 **TH18 原生 `enemy_g.png` 倒数第二行**那支**黄色辉光妖精**的 sprite **256..267**（正面 256..259、转身 260..267；帧**时序未动**）| **owner 2026-09-26 逐字指示**：「3 面…圣域…妖精种类特殊，贴图外面有一层辉光…**包括 112 改的黄色妖精也得改成这里面倒数第二行的**」| `make anm` 追加脚本检查全过、`make check` 全绿；**实跑待 112 那条线复核**（他们的载体皮判据/掉落逻辑一行未动，只换图）|
 | 2026-09-12 | **69 加倍** | 见下方「§BE 详录 #1」 |

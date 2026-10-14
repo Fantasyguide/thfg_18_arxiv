@@ -4012,7 +4012,7 @@ static void on_run_reset(ce_card_t *c)
      *   `faith_hud_departed()`；它只在**两张卡都不在场**时才真收那 16 支 VM（只 111 走了、110 还在
      *   ⇒ 块与 VM 一个都不动，用户 ③）。⚠ 上面那行注释里说的「不用 signal_clear()」现在只针对
      *   **信仰槽的注册**（那个仍归 `on_delete`），HUD 这一支两者都可以调（幂等）。*/
-    faith_hud_departed();
+    faith_hud_run_reset();   /* ★ P32：retry ⇒ 重走一次入场 ✓（owner 口径 ✓）*/
     /* ★★★ 2026-10-14（P25，owner 实跑 A3：「111 retry **信仰和信号均保留**，110 正常」✗）：
      *   上面这一路**故意不调 `signal_clear()`** ✓（要保住信仰槽注册与 HUD 认领 ✓），
      *   而 P21 修的「账本镜像归零 + 哨兵置 -1」那两行**写在 `signal_clear()` 的尾部** ✗
