@@ -3970,12 +3970,21 @@ static int ctor(ce_card_t *c)
 static void on_stage_start(ce_card_t *c)
 {
     signal_card_t *s = st(c);
+    int32_t keep_remilia_total;   /* ★ P34（F7b）：见下方注释 ✓ */
 
     if (!s) return;
     /* ★ 支援特技的跨帧状态**每关开场归零**（❓ 自定：一手的计数器挂在 zPlayer 上、随场景重建
      *   ⇒ 换关时原版也会归零；我们的卡对象是每关重建 state 但**不清零**，所以显式一次）。
      *   ⚠ 也顺手把 `CE_PLAYER_SPEED_MULT` 写回 1.0 —— 上一关的残留不能让这一关开场就加速。*/
+    /* ★★★ 2026-10-14（P34，修审计 **F7b** —— **代码与注释矛盾** ⇒ 按 owner 总口径①「换面卡内数据
+     *   保持不变」判定 ✓）：`signal_support_reset()` 里的 `signal_remilia_reset()` 会把 `remilia.total`
+     *   （本卡**累计**的擦弹触发次数 ✓）一起清零 ✗，而**同一文件** `:3402` 的注释自称它
+     *   **「跨关保留」** ✓ —— 二者只能取一个 ⇒ 本批按**注释**（也是 owner 口径 ✓）执行：换关把它带过去 ✓。
+     *   ⚠ 只保 `total` 这一个 **run 级累计** ✓；`remilia` 的其余字段（周期 / 游标 / 本关进度 ✓）
+     *     照旧每关归零 ✓ —— 它们是"这一关的扫描进度" ✓，不是累计量 ✓。*/
+    keep_remilia_total = s->remilia.total;
     signal_support_reset(c, s);
+    s->remilia.total = keep_remilia_total;   /* ★ P34（F7b）：跨关保留 ✓ */
     /* ★★ 2026-09-15e：命碎段机**只重挂边沿记忆**（`signal_seg_rebase()`）——
      *   换关时上一关的 boss 对象与相位槽都没了，留着旧指纹会在本关第一个相位上误报一次「段收尾」；
      *   **余数 `pending` 与诊断计数保留**（用户口径的「余数跨段保留」按段算，不按关切）。*/
