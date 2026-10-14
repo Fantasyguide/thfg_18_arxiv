@@ -2358,7 +2358,13 @@ typedef struct {
     int active;      /* 1 = C2 生效中 */
     int age;         /* 0..`POFV_C2_TOTAL`−1（一手 `EXReigekiInf+0x5c` ✓）*/
     int invuln;      /* 剩余无敌帧（一手 40 ✓；逐帧声明给 SDK 的声明层 ✓）*/
-    int ring_vm;     /* ★★ 消弹**范围圈**的 VM（★ 一手正解 = 一台 VM + `texArcEven(64)`，见 §15 ✓）*/
+    /* ★ 2026-10-13（★ 待办 A 收尾 ✓）：★ **`int ring_vm;` 字段已拔** ✗ —— ★ 它只服务于
+     *   ★ `c2_ring_vm_sync` / ★ `c2_ring_vm_release` ✓（★ 那两个函数已 `#if 0` 排除编译 ✓、
+     *   ★ 调用点早在 `373277d7` 停用 ✓）★ ⇒ ★ 字段**无人读写** ✓ ★ ⇒ ★ 删掉它 ✓（★ 顺序对：
+     *   ★ **先函数体、后字段** ✓ —— ★ 反了会编译不过 ✓）。
+     *   ★ 历史：★ 这里原来是 ★「★ `int ring_vm;` —— 消弹**范围圈**的 VM（★ 一手正解 = 一台 VM +
+     *   ★ `texArcEven(64)` ✓，见 §15 ✓）」✗ —— ★ 那台就是"★ **滞后、炸了之后才出现**"✗ 的那一台 ✓，
+     *   ★ owner 已裁定 ★ **统一到 CA 模型** ✓（★ 见 `POFV_CA_RING_MAX` 上方那段 ✓）。*/
     int32_t orb_vm[POFV_C2_POINTS];   /* ★★ C2 的 **3 台可见物** = 一手 `pl00.anm` script20 ✓（脚本 434 ✓）*/
 } pofv_c2_t;
 static pofv_c2_t s_c2;
