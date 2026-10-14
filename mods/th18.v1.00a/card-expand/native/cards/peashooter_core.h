@@ -70,6 +70,9 @@ int  pea_needs_cap(const pea_state_t *s);
 #define PE_DMG_GATLING     7      /* = PEA_GATLING.damage ✓ */
 #define PE_HIT_W_NORMAL  16.0f    /* = PEA_NORMAL.hit_w/h ✓ */
 #define PE_HIT_W_GATLING 12.0f
+#define PE_ELEC_SLOW     2.0f     /* ★★ P47（owner 逐字：「电弹的弹速需要比普通豌豆慢一倍」✓）
+                                   *   电弹速度 = 该组默认速度 / 它（14→7 ✓、机枪 18→9 ✓）。
+                                   *   ⚠ `PE_SPD_NORMAL/GATLING`（镜像 SHT 的 14/18）**不动** ✓ —— 那是引擎豌豆的 ✓。*/
 #define PE_HIT_COOLDOWN   10      /* ★ 复刻原版默认 `localNPCHitCooldown = 10`（与 89 的 SC_HIT_COOLDOWN 同口径 ✓）
                                    *   ⇒ 一颗电弹穿过一个敌人是「每 10 帧 1 跳」而不是帧伤 ✓ */
 #define PE_VIEW_X       360.0f    /* 出界即收（与 89 的 SC_VIEW_* 同口径 ✓）*/
