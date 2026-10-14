@@ -11,6 +11,7 @@
  */
 #pragma once
 #include <stdint.h>
+#include "sdk_color.h"     /* ★ P14a：I1 词汇的纯函数（主机可测 ✓，见该文件头注）*/
 #include "engine.h"
 #include "anm_ids.h"      /* build_ability.py 生成：ability.anm 追加的 sprite / 脚本号 */
 #include "sht_ids.h"      /* append_shooterset.py 生成：pl0X.sht 追加的 shooterset 索引（§12）*/
@@ -294,6 +295,28 @@ static inline int ce_anm_set_rotation(uint32_t id, float rx, float ry, float rz)
 }
 /* 写 VM 的 color_2（`+0x528`，TH18 zAnmVm 字段图；`color2()` 写的就是它）。
  * 渐变图元（`drawRectGrad`）的第二个色只能靠它 —— `ce_anm_set_color` 只写 color_1。*/
+/* ★★★ 2026-10-14（P14a，owner 授权逐字：「**抽取那个 set color 的 sdk 可以做**」✓）：
+ *   **I1 词汇** —— 「只改 `color_1` 的 **RGB**、**保住 alpha**」✓（普查见 `VM-IDIOM-MAP.md` §1 的 I1 ✓）。
+ *
+ *   为什么要有它：这条表达式原来被各卡**各自手写** ✓（散布在 6 个文件里），语义**逐字相同** ⇒ 抽成一个词汇 ✓。
+ *   三层，**逐位等价** ✓（就是同一个表达式 ✓）：
+ *     · `ce_color_keep_alpha(c, rgb)` —— **纯函数** ✓：给"先算后写"或 `return` 的站点用 ✓，**主机可测** ✓（不碰引擎 ✓）；
+ *     · `ce_color_set_rgb(p, rgb)`    —— **指针版** ✓：**子弹的内嵌 VM** 只有 `color_1` 指针、**没有 VM id** ⇒ 只能走这一支 ✓；
+ *     · `ce_anm_set_color_rgb(id, rgb)` —— **id 版** ✓：HUD 等有 id 的 VM ✓（内部走 `ce_anm_get_vm` ✓）。
+ *   ⚠ **绝不碰 alpha** ✓：alpha 归引擎插值器 / 各卡自己的 alpha 通道管 ✓；写成整条 `color_1`
+ *     会把它钉死（历史教训见 `lolk.c` 的「第三十三轮」注释 ✓）。
+ *   ⚠ 与 `ce_anm_set_color()`（写**整条** `0xAARRGGBB` ✓）**不是**替代关系 ✗：那个要你自己带 alpha ✓，
+ *     这个**从当前值里取** alpha ✓。*/
+/* 纯函数 `ce_color_keep_alpha()` 在 `sdk_color.h` ✓（主机可测 ⇒ 单独成头 ✓）。*/
+/* 指针版 `ce_color_set_rgb()` 与纯函数一样在 `sdk_color.h` ✓（主机可测 ✓）。*/
+static inline int ce_anm_set_color_rgb(uint32_t id, uint32_t rgb)
+{
+    uint8_t *vm = ce_anm_get_vm(id);
+    if (!vm) return 0;
+    ce_color_set_rgb((volatile uint32_t *)(vm + CE_ANM_VM_COLOR1), rgb);
+    return 1;
+}
+
 static inline int ce_anm_set_color2(uint32_t id, uint32_t rgba)
 {
     uint8_t *vm = ce_anm_get_vm(id);

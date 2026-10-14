@@ -4854,6 +4854,7 @@ UI 列表尾插、组内后生成者后画（§2b.4）。
 | 2026-10-13 | **109 卡专属（未改共享件 ✓）** | ★ 新增脚本 `456` + 本卡 7 处 spawn 换引用 ⇒ 详见下方小节「§BE-109-HUD20」✓ |
 | 2026-10-12 | **所有卡（共享件：shooterset 生成器）** | 见下方小节「§BE-109 两格」 |
 | 2026-10-12 | **111 地灵殿（咲夜×大小姐支援特技的"靠近弹幕变红"）** | `native/cards/signal.c` （`signal_tint_restore_all` 与 `signal_tint_sync` 的**两处还原**）| 还原改成**只还原 RGB、保留当前 alpha** ✓ （`*col = (*col & 0xff000000u) | (s_tint_orig[i] & 0x00ffffffu);` ✓）| owner 指出「111 咲夜特技也可能有这个 bug」⇒ 我只读核实：★ **同病** ✗ —— 该卡的 `signal_tint_apply` 本来就保留 alpha ✓，但**两处还原**是"整条写回染色前的快照"✗ ⇒ 弹**在擦弹圈内出生**时 alpha 被旧快照覆盖 ⇒ **变暗** ✗（与 109/115 同一成因 ✓；115 的已修版式见 `lolk.c:446` ✓）| `make check` 459 全绿 ✓ + `check-docs` ✓ + 四处 DLL 同 md5 ✓；★ 只改这两行、不动其它逻辑 ✓ |
+| 2026-10-14 | **所有卡（共享件 `sdk.h` + 新头 `sdk_color.h`：I1 词汇）** | `native/sdk_color.h`（新 ✓）+ `sdk.h`（include 它 + 加 id 版 ✓）+ 迁移 8 个文件的 11 个真写点 ✓ + `Makefile`（挂单测 ✓）| ★ 抽出 I1 词汇 ✓：纯函数 `ce_color_keep_alpha` ✓ / 指针版 `ce_color_set_rgb` ✓ / id 版 `ce_anm_set_color_rgb` ✓（**只改 RGB、保 alpha** ✓，与各卡原来的手写表达式**逐位等价** ✓）| **owner 授权逐字**：「抽取那个 set color 的 sdk 可以做」✓（普查见 `VM-IDIOM-MAP.md` §1 的 I1 ✓）| `make check` rc=0 ✓；主机单测 `test_sdk_color` **400 断言 0 失败** ✓（等价性判据 ✓，已挂进 `test-host` ✓）；**行为零差异** ✓ |
 | 2026-10-14 | **110 与 111（共享件 `faith_hud.c/h`：局末收尾入口拆分）** | `native/cards/faith_hud.c` + `faith_hud.h` + `mof.c` 的 `on_run_reset` + `signal.c` 的 `on_run_reset` | ★ 新增 `faith_hud_run_reset()` ✓（**无条件整套收掉** HUD ⇒ 下一帧重建 ⇒ 入场淡入重播一次 ✓）；`faith_hud_departed()` 语义**不变** ✓（删卡路：另一张还在就留着 ✓）| **owner 口径逐字**：「哦，**retry可以重走一次入场**」✓（原 F6：retry 路早退 ⇒ 入场不重播 ✗）| `make check` rc=0 ✓；实跑：retry 后左下角 HUD 应**重播一次**入场淡入 ✓，删掉单张卡时 HUD **仍不消失** ✓ |
 | 2026-10-14 | **所有卡（调试空格键统一摘除）+ 新调试卡 119** | `sdk.h`（新增 `CE_DEBUG_SPACE_KEYS 0`）+ 7 个文件 13 处空格读点惰性化（`animal.c`/`pofv.c`/`th06rank.c`/`trance.c`/`ufo.c`/`youkai.c`/`input_synth.c`）+ 新卡 `cards/debu…（详见 §BE 小节） | ★ 新增**调试用「定向删卡」主动卡 119**（A/S 切目标、空格或 C 删除 ✓）；按 owner 要求**先摘除全仓调试空格键** ✓（改键读、不删代码 ✓）⇒ 详见下方「§BE-DEBUG-DELETE-CARD」✓ | **owner 需求 A1（原话）**：「最好是能弄一张**主动卡**…效果是**删卡**，debug 期间的**定向删卡**」+「添加 hud，按 **A S** 左右切换目标，**空格键删除**…但需要**提前摘除所有卡的调试空格键**」✓ | `make check` **rc=0** ✓（含卡表契约 / 容量台账 / 全闸）+ `make release` 发布闸全过 ✓ + DLL 三处同 md5 `59b20fe5e4adb52c7723d2a7094b7cc1` ✓；**站点新增 0** ✓（删卡用既有 `ce_destroy_card`）
 | 2026-10-14 | **所有卡（共享件 `sdk.h`：子弹扫描宏）** | `native/sdk.h` 的 `CE_BULLET_LIVE_FOR_EACH`（只改宏里三处守卫 + 注释）| ★ 三处 `!ce_ptr_readable(...)` → `ce_ptr_readable(...)` ✓（`ce_ptr_readable` 返回 **1 = 可读** ✓）⇒ 详见下方「§BE-BULLET-LIVE-MACRO」✓ | **owner 实跑**：咲夜 111 支援特技 / 109 固灵结界 / 115 擦弹圈内的**敌弹变色全失效** ✗；**根因是我早前**的迁移提交 `8b8c9139` 把守卫写反 ✗ ⇒ 恒 0 次迭代 ✗ | `make check` rc=0 ✓；**11 个站点**同时复活（`lolk.c:488`、`signal.c:2100/2156`、`youkai.c:954/6936`、`pofv.c:1944`、`season.c:714/1441`、`great_work.c:204/313`、`reverse.c:20` ✓）；实跑判据见小节 △ |
@@ -4930,6 +4931,19 @@ UI 列表尾插、组内后生成者后画（§2b.4）。
   共享 HUD 的 VM 生命周期与 `FH_WARMUP_FRAMES` 的语义不变 ✓ ⇒ 其它卡（107/109/113/116 等各自的 HUD）**不受影响** ✓。
 - **怎么验的**：`make check` **rc=0**（470 文档 + 全闸 ✓）、`make anm`/`make sht` rc=0 ✓、`make release` 发布闸全过 ✓、DLL 三处同 md5 ✓。
 - **建议实跑** △：① retry ⇒ 左下角 HUD **重播一次**入场淡入 ✓；② 只装 110+111、用倒吊人删掉其中一张 ⇒ HUD **不消失** ✓（确认删卡语义没被误伤 ✓）。
+
+
+#### §BE-COLOR-RGB-VOCAB —— I1 词汇（只改 RGB、保 alpha）的抽取与迁移（2026-10-14，P14a）
+
+- **文件 → 改了什么**：新增 `native/sdk_color.h`（纯函数 `ce_color_keep_alpha()` + 指针版 `ce_color_set_rgb()` ✓，**单独成头因为它是主机可测的** ✓ —— `sdk.h` 有 `thiscall/fastcall` 属性，主机 gcc 编不过 ✗）；
+  `sdk.h` include 它 ✓ + 新增 id 版 `ce_anm_set_color_rgb()` ✓；`Makefile` 的 `test-host` 挂上 `test_sdk_color` ✓；新增 `tests/test_sdk_color.c` ✓；
+  迁移**真写点**：`faith.c`（id ✓）、`lolk.c` ×2（指针 ✓）、`pofv.c`（109 ✓ 指针 ✓）、`season.c`（id ✓）、`signal.c` ×3（指针 ✓）、`youkai_core.c` ×3（纯函数 ✓）。
+- **为什么**：owner 授权 ✓；这条表达式原来被各卡**各自手写**（散布 6 个文件 ✓），语义逐字相同 ✓ ⇒ 收敛成一个词汇 ✓（P14 的目标 ✓）。
+- **等价性怎么保证的（R1）**：词汇体就是**同一个表达式** ✓；`tests/test_sdk_color.c` 用 400 条断言钉死「纯函数 == 字面写法」「alpha 一位不动」「RGB 完全等于入参低 24 位」「指针版与纯函数一致」✓。
+- **刻意不动的**：`youkai.c:2241-2244` 是「**比较 + 条件写**」（拿快照 `v` 比两种颜色后写回 ✓），形态不同 ⇒ **保留原样** ✓（并在 PR 里说明 ✓）；
+  `ce_anm_set_color()`（写整条 `0xAARRGGBB` ✓）与 `mirror_color` 等既有词汇**不动** ✓。
+- **影响面**：所有卡共用 `sdk.h` ✓ ⇒ 只**新增**词汇、不删不改既有词汇 ✓；迁移点**行为零差异** ✓（同一表达式 ✓）。
+- **怎么验的**：`make check` **rc=0** ✓（470 文档 + 全闸 + 新单测 ✓）、`make anm`/`make sht` rc=0 ✓、`make release` 发布闸全过 ✓、DLL 三处同 md5 ✓。
 
 | 2026-09-26 | **112 星莲船（UFO 载体皮）** | `assets/ability/scripts/352_ufo_carrier_fairy.anm.txt`、`356_ufo_carrier_fairy_side_r.anm.txt`、`357_ufo_carrier_fairy_side_l.anm.txt` | 三支脚本的贴图从本卡自己的 `@CARRIER_FAIRY_0..11@`（TH12 妖精切图）换成 **TH18 原生 `enemy_g.png` 倒数第二行**那支**黄色辉光妖精**的 sprite **256..267**（正面 256..259、转身 260..267；帧**时序未动**）| **owner 2026-09-26 逐字指示**：「3 面…圣域…妖精种类特殊，贴图外面有一层辉光…**包括 112 改的黄色妖精也得改成这里面倒数第二行的**」| `make anm` 追加脚本检查全过、`make check` 全绿；**实跑待 112 那条线复核**（他们的载体皮判据/掉落逻辑一行未动，只换图）|
 | 2026-09-12 | **69 加倍** | 见下方「§BE 详录 #1」 |
