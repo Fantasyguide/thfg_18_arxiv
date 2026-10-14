@@ -47,7 +47,7 @@
 #define PS_ELEC_CARD      71
 #define PS_ELEC_RGB       0x00a0d0ffu  /* 电弹/电弧的 RGB（电光蓝 ✓）*/
 #define PS_ELEC_RGBA      0xffa0d0ffu  /* ★ P49：**带 alpha** 的整色（0xff = 不透明 ✓）—— 直接 spawn 的 VM 必须自己写 alpha ✗ */
-#define PS_BALL_SCALE     0.6f         /* ❓自定：电球缩放（71 的 orb 是子机大小 ✓，缩到弹那样 ✓）*/
+#define PS_BALL_SCALE    0.22f   /* ★ P50（owner：怎么这么大）0.6 → 0.22 ✓ */         /* ❓自定：电球缩放（71 的 orb 是子机大小 ✓，缩到弹那样 ✓）*/
 #define PS_OPT_LAYER      13           /* anm 层（与 71 同一层 ✓）*/
 #define PS_CHAIN_HOPS      4           /* ❓自定：链最多跳几段（含第一跳 ✓）*/
 #define PS_CHAIN_RADIUS 150.0f         /* ❓自定：每跳半径（把 PvZ 的"上下行"换成 360° 半径 ✓）*/
@@ -59,7 +59,7 @@
 #define PS_CHAIN_CD       12           /* ❓自定：链的节流（开大时 140 颗命中很多 ⇒ 没节流会失控 ✓）*/
 #define PS_CHAIN_SE     0x46           /* 与 71 同一个"电流"音效（BC_SE ✓）*/
 #define PS_BEAM_TEX_W  256.0f          /* 71 的电弧贴图宽（scale.x = 距离 / 它 ✓）*/
-#define PS_CHAIN_TRIG_R 26.0f          /* ❓自定：电弹离敌多近算"到了身上"（≈ 半个豌豆判定 ✓）*/
+#define PS_CHAIN_TRIG_R 72.0f          /* ★ P50（owner：触发半径再大一些）26 → 72 px ✓ —— 弧长≈它，26 时短到看不见 ✓ */
 #define PS_ARC_MAX        32           /* ❓自定：弧表容量（按敌人对去重 ✓，表满宁可不建 ✓）*/
 /* ★★ P44（owner 逐字）：「**大招也得是电版，但就做发一堆普通弹幕即可**」✓ 随后澄清：「**发一堆的普攻电球**」✓
  *   ⇒ 开大时不搞新花样 ✗：就是**把普攻那颗电球一次发一堆** ✓（同 `PE_SET_NORMAL` 的速度/伤害 ✓，横向铺开 ✓）。
@@ -67,7 +67,7 @@
  *   ⚠ 一颗 = 90 伤害 ✓ ⇒ 一轮 7 颗同帧 = 630 ✗（比开大那排 7 颗小豌豆的 49 大得多 ✓，owner 要调就调这里 ✓）。*/
 #define PS_FAN_N          13           /* ❓自定：扇形里几颗普攻电球 ✓（奇数 ⇒ 正中一颗朝正上方 ✓）*/
 #define PS_FAN_HALF_DEG 50.0f          /* ❓自定：扇形半角（度 ✓；±50° 的扇面 ✓）*/
-#define PS_FAN_SPEED     7.0f          /* ★ P47 = 普攻速度的**一半**（PE_SPD_NORMAL 14 / PE_ELEC_SLOW 2 ✓）*/
+#define PS_FAN_SPEED     3.5f          /* ★ P47 = 普攻速度的**一半**（PE_SPD_NORMAL 14 / PE_ELEC_SLOW 2 ✓）*/
 #define PS_FAN_EVERY      20           /* ❓自定：开大期间每几帧来一扇 ✓（100 帧的 burst ⇒ 5 扇 ✓）*/
 
 /* 卡侧电弹的状态（纯逻辑在 `peashooter_core` ✓，这里只放引擎侧的那半：VM id ✓）*/
@@ -82,6 +82,7 @@ static int       s_log_fan = 1;  /* P44：第一扇打一行日志（省得每�
 static int       s_gate_log = -1;   /* P46：门状态变化时打一行（-1 = 还没打过 ✓）*/
 static uint32_t  s_spawn_n, s_respawn_n, s_fan_n;   /* P46：诊断计数（起弹 / 补 VM / 大招扇数 ✓）*/
 static unsigned  g_frames_ps_diag;                  /* P46：诊断限频 ✓ */
+static int       s_log_arc = 1;   /* P50：首条电弧打一行诊断 ✓ */
 static uint32_t  s_src_fail;                        /* P48：伤害源没抢到的次数（池爆报警 ✓）*/
 
 static int ps_elec_on(void) { return ce_owned(PS_ELEC_CARD) ? 1 : 0; }   /* 同装判据 ✓（每帧现算 ✓）*/
@@ -110,6 +111,7 @@ static void ps_elec_clear(void)
     s_log_fan = 1;
     s_spawn_n = s_respawn_n = s_fan_n = 0;
     s_src_fail = 0;
+    s_log_arc = 1;
     g_frames_ps_diag = 0;
 }
 
@@ -136,6 +138,7 @@ static void ps_arc_show(uint32_t ida, uint32_t idb, float px, float py, float tx
     }
     vm = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_BROKEN_CORE_BEAM, PS_OPT_LAYER);
     if (!vm) return;
+    if (s_log_arc) { s_log_arc = 0; ce_log("peashooter: 电大哥 首条电弧 dist=%.1f scale.x=%.3f vm=%u 层=%d", dist, sx, vm, PS_OPT_LAYER); }
     ce_anm_set_pos(vm, px, py, pz);
     ce_anm_set_rotation(vm, 0.0f, 0.0f, ang);
     ce_anm_set_scale(vm, sx, 1.0f);
@@ -218,19 +221,19 @@ static void ps_proj_fire(void *o, int set)
  *   角度 a 是从**正上方**往右为正 ✓；vx/vy 是屏幕坐标（y 向下 ✓）。
  *   ⚠ 改 `PS_FAN_N` / `PS_FAN_HALF_DEG` / `PS_FAN_SPEED` 时，这张表要**重新生成** ✗。*/
 static const struct { float vx, vy, ang; } s_fan[PS_FAN_N] = {
-    {    -5.3623f,    -4.4995f,    -0.8727f },
-    {    -4.6536f,    -5.2292f,    -0.7272f },
-    {    -3.8466f,    -5.8484f,    -0.5818f },
-    {    -2.9583f,    -6.3442f,    -0.4363f },
-    {    -2.0076f,    -6.7059f,    -0.2909f },
-    {    -1.0145f,    -6.9261f,    -0.1454f },
-    {     0.0000f,    -7.0000f,     0.0000f },
-    {     1.0145f,    -6.9261f,     0.1454f },
-    {     2.0076f,    -6.7059f,     0.2909f },
-    {     2.9583f,    -6.3442f,     0.4363f },
-    {     3.8466f,    -5.8484f,     0.5818f },
-    {     4.6536f,    -5.2292f,     0.7272f },
-    {     5.3623f,    -4.4995f,     0.8727f },
+    {    -2.6812f,    -2.2498f,    -0.8727f },
+    {    -2.3268f,    -2.6146f,    -0.7272f },
+    {    -1.9233f,    -2.9242f,    -0.5818f },
+    {    -1.4792f,    -3.1721f,    -0.4363f },
+    {    -1.0038f,    -3.3530f,    -0.2909f },
+    {    -0.5073f,    -3.4630f,    -0.1454f },
+    {     0.0000f,    -3.5000f,     0.0000f },
+    {     0.5073f,    -3.4630f,     0.1454f },
+    {     1.0038f,    -3.3530f,     0.2909f },
+    {     1.4792f,    -3.1721f,     0.4363f },
+    {     1.9233f,    -2.9242f,     0.5818f },
+    {     2.3268f,    -2.6146f,     0.7272f },
+    {     2.6812f,    -2.2498f,     0.8727f },
 };
 
 /* ★ P44：大招 = **发一扇普攻电球** ✓（owner：「**发一堆的普攻电球**」+「**得是扇形**」✓）。
@@ -251,7 +254,11 @@ static void ps_proj_fan(void *o)
             ce_anm_set_pos(vm, s_proj[k].x, s_proj[k].y, pz);
             ce_anm_set_rotation(vm, 0.0f, 0.0f, s_fan[i].ang);   /* 贴图朝上 ⇒ 转 a 就是扇面方向 ✓ */
             ce_anm_set_scale(vm, PS_BALL_SCALE, PS_BALL_SCALE);  /* ★ P49 */
-            *(volatile uint32_t *)(ce_anm_get_vm(vm) + CE_ANM_VM_COLOR1) = PS_ELEC_RGBA;   /* ★ P49 带 alpha ✓ */
+            /* ★ P50：两个字段都写 ✓ */
+            if (ce_anm_get_vm(vm)) {
+                *(volatile uint32_t *)(ce_anm_get_vm(vm) + CE_ANM_VM_COLOR1) = PS_ELEC_RGBA;
+                *(volatile uint32_t *)(ce_anm_get_vm(vm) + CE_ANM_VM_COLOR2) = PS_ELEC_RGBA;
+            }
         }
     }
     ++s_fan_n;
@@ -310,7 +317,10 @@ static void ps_proj_tick(void)
         if (s_proj_vm[i] && ce_anm_get_vm(s_proj_vm[i])) {
             ce_anm_set_pos(s_proj_vm[i], p->x, p->y, pz);
             ce_anm_set_scale(s_proj_vm[i], PS_BALL_SCALE, PS_BALL_SCALE);
-            *(volatile uint32_t *)(ce_anm_get_vm(s_proj_vm[i]) + CE_ANM_VM_COLOR1) = PS_ELEC_RGBA;
+            if (ce_anm_get_vm(s_proj_vm[i])) {   /* ★ P50：两个字段都写 ✓ */
+                *(volatile uint32_t *)(ce_anm_get_vm(s_proj_vm[i]) + CE_ANM_VM_COLOR1) = PS_ELEC_RGBA;
+                *(volatile uint32_t *)(ce_anm_get_vm(s_proj_vm[i]) + CE_ANM_VM_COLOR2) = PS_ELEC_RGBA;
+            }
         }
         if (pe_proj_out(p)) { ps_proj_kill(i); continue; }
         if (pe_proj_hit_now(p)) {                   /* 定点伤害源（与 89 同口径 ✓，命中不销毁 ✓）*/
