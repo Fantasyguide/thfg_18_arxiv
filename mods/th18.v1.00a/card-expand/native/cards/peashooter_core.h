@@ -14,7 +14,8 @@
 #define PEA_GAT_INTERVAL   5    /* 帧：开大时每 5 帧一排 */
 #define PEA_GAT_ROWS       7    /* 一排 7 颗，横向铺开 ±48 px */
 #define PEA_GAT_DMG        7    /* 一颗小豌豆；一排同帧 49，稳在最低的每帧上限（Sakuya 60）之下 */
-#define PEA_GAT_FRAMES   100    /* 开大持续帧数 → 20 排 × 7 = 140 颗 = 980 伤害 */
+#define PEA_GAT_FRAMES   240    /* ★ P54（owner：「有无联动，爆发的时间均拉长一些」）100 → 240 ✓
+                                 *   （= 48 排 × 7 = 336 颗；电弹模式下发射节奏另算 ✓）*/
 #define PEA_WAIT_MIN    1100    /* 帧：两次开大之间至少等这么久（射击帧计）*/
 #define PEA_WAIT_SPAN    601    /* wait = MIN + rnd % SPAN ⇒ 周期 1200–1800 帧 = 20–30 s */
 #define PEA_CAP          180    /* 有豌豆在途的帧把每敌每帧伤害上限抬到这里 = Reimu 基值 90 + 一颗 90：
@@ -46,7 +47,8 @@ void pea_clear(pea_state_t *s);                        /* 局末 / 关店收子�
 void pea_set_wait(pea_state_t *s, uint32_t rnd);       /* 调用方在 pending_wait 时用游戏 RNG 喂进来 */
 void pea_shoot_frame(pea_state_t *s, pea_out_t *o);    /* 每个射击帧一次（要求 pending_wait == 0）*/
 void pea_frame(pea_state_t *s);                        /* 每帧一次（含不射击的帧）：inflight 倒数 */
-int  pea_needs_cap(const pea_state_t *s);
+int  pea_needs_cap(const pea_state_t *s);              /* 1 = 本帧要抬每敌每帧伤害上限 */
+int  pea_burst_left(const pea_state_t *s);             /* ★ P54：开大还剩几帧（0 = 没在开大）✓ —— 爆发无敌用它 ✓ */
 /* ★★ 2026-10-14（P40，owner 需求「电大哥」协同）：**电弹连锁**的选目标（纯函数 ✓，主机可测 ✓）。
  *   从 (cx, cy) 出发，在 n 个候敌里挑一个：**在半径 r 内**、**id 不在 visited 里**（去过的不再连 ✓）、
  *   且**离 (cx, cy) 最近**的那个 ⇒ 返回下标；没有合格的就返回 -1 ✓。

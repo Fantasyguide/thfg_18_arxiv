@@ -172,3 +172,10 @@ int pe_proj_out(const pe_proj_t *p)
     if (!p || !p->alive) return 0;
     return (p->x < -PE_VIEW_X || p->x > PE_VIEW_X || p->y < PE_VIEW_Y_MIN || p->y > PE_VIEW_Y_MAX) ? 1 : 0;
 }
+
+/* ★ P54：开大还剩几帧（0 = 没在开大）—— on_tick_2 用它决定要不要声明"爆发无敌" ✓。*/
+int pea_burst_left(const pea_state_t *s)
+{
+    if (!s) return 0;
+    return (s->gat_left > 0) ? (int)s->gat_left : 0;
+}

@@ -36,9 +36,9 @@ static void test_wait_range(void)
         CHECK(s.wait >= PEA_WAIT_MIN && s.wait < PEA_WAIT_MIN + PEA_WAIT_SPAN,
               "rnd=%u → wait=%u 越界", r, s.wait);
     }
-    /* 周期 = 等待 + 开大，落在 20–30 s（1200–1800 帧）*/
-    CHECK(PEA_WAIT_MIN + PEA_GAT_FRAMES == 1200, "周期下界 = %d", PEA_WAIT_MIN + PEA_GAT_FRAMES);
-    CHECK(PEA_WAIT_MIN + PEA_WAIT_SPAN - 1 + PEA_GAT_FRAMES == 1800,
+    /* 周期 = 等待 + 开大；P54（owner：爆发拉长）把开大从 100 帧加到 240 帧 ⇒ 22–32 s（1340–1940 帧）*/
+    CHECK(PEA_WAIT_MIN + PEA_GAT_FRAMES == 1340, "周期下界 = %d", PEA_WAIT_MIN + PEA_GAT_FRAMES);
+    CHECK(PEA_WAIT_MIN + PEA_WAIT_SPAN - 1 + PEA_GAT_FRAMES == 1940,
           "周期上界 = %d", PEA_WAIT_MIN + PEA_WAIT_SPAN - 1 + PEA_GAT_FRAMES);
 }
 
@@ -93,7 +93,7 @@ static void test_gatling_shape(void)
     CHECK(normal == n0, "开大期间还在打平时的豌豆");
     CHECK(gat == PEA_GAT_FRAMES / PEA_GAT_INTERVAL * PEA_GAT_ROWS,
           "开大该打 %d 颗，实际 %d", PEA_GAT_FRAMES / PEA_GAT_INTERVAL * PEA_GAT_ROWS, gat);
-    CHECK(gat * PEA_GAT_DMG == 980, "开大总伤 = %d", gat * PEA_GAT_DMG);
+    CHECK(gat * PEA_GAT_DMG == 2352, "开大总伤 = %d", gat * PEA_GAT_DMG);
     CHECK(s.pending_wait, "开完大该要一个新的随机等待");
     CHECK(s.bursts == 1 && s.peas == (uint32_t)(normal + gat), "bursts=%u peas=%u", s.bursts, s.peas);
 

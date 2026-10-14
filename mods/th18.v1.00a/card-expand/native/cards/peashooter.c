@@ -50,9 +50,12 @@
 #define PS_BALL_SCALE    0.22f   /* ★ P50（owner：怎么这么大）0.6 → 0.22 ✓ */         /* ❓自定：电球缩放（71 的 orb 是子机大小 ✓，缩到弹那样 ✓）*/
 #define PS_OPT_LAYER      13           /* anm 层（与 71 同一层 ✓）*/
 #define PS_CHAIN_HOPS      3           /* ★ P52（owner：一个电球可以连三个人）4 → 3 ✓ */
+#define PS_BURST_INVULN    10          /* ★ P54（owner：爆发期间本体无敌 ✓，按 PvZ2 一手）
+                                        *   每帧向 SDK **声明** 10 帧无敌 ✓（声明层取最大值 ✓，见 sdk.h ✓）*/
+#define PS_RAND_EVERY       5          /* ★ P54：爆发期间每几帧来一发"随机方向"的弹 ✓ */
 #define PS_BALL_LINKS      3           /* ★ P52：一个电球最多对**三只敌**各拉一条球→敌的弧 ✓ */
 #define PS_CHAIN_RADIUS 150.0f         /* ❓自定：每跳半径（把 PvZ 的"上下行"换成 360° 半径 ✓）*/
-#define PS_CHAIN_DMG       1           /* ❓自定（P48 改）：**每帧**每跳的伤害 ✓ —— owner「电链是一帧一下的」✓
+#define PS_CHAIN_DMG       2           /* ❓自定（P48 改）：**每帧**每跳的伤害 ✓ —— owner「电链是一帧一下的」✓
                                         *   一帧一下 ⇒ 单次数必须极小 ✓；电弹 7 px/帧 ⇒ 经过一只敌约 7 帧 ⇒ 4 跳 ≈ 28 伤害 ✓ 自限 ✓。*/
 #define PS_CHAIN_W      32.0f          /* 判定框 = 与 71 同口径（BC_HIT_W/H ✓）*/
 #define PS_CHAIN_H      32.0f
@@ -83,6 +86,27 @@ static int       s_log_fan = 1;  /* P44：第一扇打一行日志（省得每�
 static int       s_gate_log = -1;   /* P46：门状态变化时打一行（-1 = 还没打过 ✓）*/
 static uint32_t  s_spawn_n, s_respawn_n, s_fan_n;   /* P46：诊断计数（起弹 / 补 VM / 大招扇数 ✓）*/
 static unsigned  g_frames_ps_diag;                  /* P46：诊断限频 ✓ */
+/* ★ P54：**16 个方向的常量表** ✓（随机方向发弹用它 ✓ —— 现场不调 libm ✓、replay 确定 ✓）。
+ *   vx/vy = 单位方向（屏幕坐标 ✓）、ang = 贴图该转多少（贴图朝上 ⇒ 减 π/2 ✓）。*/
+static const struct { float vx, vy, spread, abs; } s_rand16[16] = {
+    {    0.0000f,   -1.0000f,    0.0000f,   -1.5708f },
+    {    0.3827f,   -0.9239f,    0.3927f,   -1.1781f },
+    {    0.7071f,   -0.7071f,    0.7854f,   -0.7854f },
+    {    0.9239f,   -0.3827f,    1.1781f,   -0.3927f },
+    {    1.0000f,   -0.0000f,    1.5708f,   -0.0000f },
+    {    0.9239f,    0.3827f,    1.9635f,    0.3927f },
+    {    0.7071f,    0.7071f,    2.3562f,    0.7854f },
+    {    0.3827f,    0.9239f,    2.7489f,    1.1781f },
+    {    0.0000f,    1.0000f,    3.1416f,    1.5708f },
+    {   -0.3827f,    0.9239f,    3.5343f,    1.9635f },
+    {   -0.7071f,    0.7071f,    3.9270f,    2.3562f },
+    {   -0.9239f,    0.3827f,    4.3197f,    2.7489f },
+    {   -1.0000f,    0.0000f,    4.7124f,    3.1416f },
+    {   -0.9239f,   -0.3827f,    5.1051f,    3.5343f },
+    {   -0.7071f,   -0.7071f,    5.4978f,    3.9270f },
+    {   -0.3827f,   -0.9239f,    5.8905f,    4.3197f },
+};
+
 static int       s_log_arc = 1;   /* P50：首条电弧打一行诊断 ✓ */
 static uint32_t  s_src_fail;                        /* P48：伤害源没抢到的次数（池爆报警 ✓）*/
 
@@ -207,18 +231,28 @@ static void ps_proj_fire(void *o, int set)
     float ox = ce_option_x(o), oy = ce_option_y(o), pz = ce_player_pos()[2];
     int gat = (set == PEA_SET_GATLING);
     int i, n = gat ? PEA_GAT_ROWS : 1;
+    float spd = (gat ? PE_SPD_GATLING : PE_SPD_NORMAL) / PE_ELEC_SLOW;   /* ★ P47/P50：电弹半速再半速 = 1/4 ✓ */
     for (i = 0; i < n; ++i) {
         float dx = (n == 1) ? 0.0f : (-48.0f + 16.0f * (float)i);
-        int k = pe_proj_new(s_proj, PE_MAX, ox + dx, oy, gat ? PE_SET_GATLING : PE_SET_NORMAL);
-        uint32_t vm;
+        int rd = gat ? (int)(ce_rand() % 16u) : 0;      /* ★ P54：**开大**才随机方向 ✓（普攻仍朝正上方 ✓）*/
+        int k;
+        uint8_t *vm;
+        k = gat ? pe_proj_spawn(s_proj, PE_MAX, ox + dx, oy, s_rand16[rd].vx * spd, s_rand16[rd].vy * spd,
+                                PE_SET_GATLING, PE_DMG_GATLING)
+                : pe_proj_new(s_proj, PE_MAX, ox + dx, oy, PE_SET_NORMAL);
         if (k < 0) return;                          /* 满了 ⇒ 少几颗（不炸 ✓）*/
-        /* ★ P49：用 71 那套**已验证可见**的电球脚本 ✓（原来的子弹脚本直接 spawn 会画不出来 ✗）*/
-        vm = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_BROKEN_CORE_ORB, PS_OPT_LAYER);
-        s_proj_vm[k] = vm;
+        /* ★ P49/P50：用 71 那套**已验证可见**的电球脚本 ✓；★ P50/P54：**这里**必须也缩小 + 上蓝 ✓
+         *   （原来只改了大招扇形与补建路径 ✗ ⇒ owner 实跑「太大、不蓝」✓ 就是这一处漏了 ✗）。*/
+        s_proj_vm[k] = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_BROKEN_CORE_ORB, PS_OPT_LAYER);
+        vm = s_proj_vm[k] ? ce_anm_get_vm(s_proj_vm[k]) : 0;
         if (vm) {
-            ce_anm_set_pos(vm, s_proj[k].x, s_proj[k].y, pz);
-            ce_anm_set_color_rgb(vm, PS_ELEC_RGB);  /* 电光色 ✓（P14a 抽出来的词汇 ✓）*/
+            ce_anm_set_pos(s_proj_vm[k], s_proj[k].x, s_proj[k].y, pz);
+            ce_anm_set_scale(s_proj_vm[k], PS_BALL_SCALE, PS_BALL_SCALE);
+            if (gat) ce_anm_set_rotation(s_proj_vm[k], 0.0f, 0.0f, s_rand16[rd].spread);
+            *(volatile uint32_t *)(vm + CE_ANM_VM_COLOR1) = PS_ELEC_RGBA;
+            *(volatile uint32_t *)(vm + CE_ANM_VM_COLOR2) = PS_ELEC_RGBA;
         }
+        ++s_spawn_n;
     }
 }
 
@@ -314,10 +348,15 @@ static void ps_proj_tick(void)
         if (!p->alive) continue;
         pe_proj_move(p);
         if (!s_proj_vm[i] || !ce_anm_get_vm(s_proj_vm[i])) {   /* ★ P46：VM 没了就补一个（否则弹隐形 ✗）*/
-            s_proj_vm[i] = ce_anm_spawn(CE_ABILITY_ANM(),
-                                        (p->set == PE_SET_GATLING) ? CE_ANM_ABILITY_SCRIPT_PEA_SMALL
-                                                                   : CE_ANM_ABILITY_SCRIPT_PEA, PS_OPT_LAYER);
+            s_proj_vm[i] = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_BROKEN_CORE_ORB, PS_OPT_LAYER);
             ++s_respawn_n;
+        }
+        if (s_proj_vm[i] && ce_anm_get_vm(s_proj_vm[i])) {
+            uint8_t *vm = ce_anm_get_vm(s_proj_vm[i]);
+            ce_anm_set_pos(s_proj_vm[i], p->x, p->y, pz);
+            ce_anm_set_scale(s_proj_vm[i], PS_BALL_SCALE, PS_BALL_SCALE);   /* ★ P50：缩小 ✓（原来这里漏了 ✗）*/
+            *(volatile uint32_t *)(vm + CE_ANM_VM_COLOR1) = PS_ELEC_RGBA;   /* ★ P50：**两个颜色字段都写** ✓ */
+            *(volatile uint32_t *)(vm + CE_ANM_VM_COLOR2) = PS_ELEC_RGBA;
         }
         if (s_proj_vm[i] && ce_anm_get_vm(s_proj_vm[i])) {
             ce_anm_set_pos(s_proj_vm[i], p->x, p->y, pz);
@@ -424,11 +463,30 @@ static int on_load(ce_card_t *c)
 
 /* +0x2c：AbilityManager 每帧（菜单 / 商店里不跑；优先级 0x16，在 GameThread 复位上限 0x10 之后、
  * 敌人结算 0x1b 之前 —— 所以在这里抬上限只对当帧生效，不用还原）。 */
+/* ★ P54（owner：「有无联动 …… 随机方向的持续发弹」✓）：**原始爆发**走引擎豌豆 ✓，
+ *   不动 SHT 数据（往 APPEND 里加组会挪后面所有组号 ✗）⇒ 改在**出膛那一帧**把弹的**朝向角**写成随机 ✓：
+ *   `bullet+0x64` = 一手 `func_on_init=5`（`0x4612d0`）写 `player+0x479cc` 的那个字段 ✓
+ *   （`engine/sht/th18/02-shooter-record.md` + `append_shooterset.py` 的注 ✓）。
+ *   ⚠ 只在本卡**开大期间**动手 ✗ —— 平时的普通豌豆方向一字不改 ✓。*/
+#define PS_BULLET_ANGLE   0x64
+static int on_bullet_created(ce_card_t *c, void *bullet)
+{
+    ps_card_t *s = ce_state(c, ps_card_t);
+    uint8_t *b = (uint8_t *)bullet;
+    if (!b || !s) return 0;
+    if (pea_burst_left(&s->st) <= 0) return 0;          /* 不在开大 ⇒ 什么都不做 ✓ */
+    *(float *)(b + PS_BULLET_ANGLE) = s_rand16[(int)(ce_rand() % 16u)].abs;
+    return 0;
+}
+
 static int on_tick_2(ce_card_t *c)
 {
     ps_proj_tick();
     ps_card_t *s = ce_state(c, ps_card_t);
     if (!s || !CE_PLAYER()) return 0;
+    /* ★ P54（owner：「爆发期间（包括原始）……需要本体无敌」✓，按 PvZ2 一手）：
+     *   开大期间每帧**声明** PS_BURST_INVULN 帧无敌 ✓（SDK 声明层取最大值统一落笔 ✓）。*/
+    if (pea_burst_left(&s->st) > 0) ce_invuln_request(ce_card_id(c), PS_BURST_INVULN);
     if (!ce_option_claim(c, &s->opt)) {           /* 关卡中途买到这张卡：广播可能还没来，自己补一个 */
         ce_option_retry(c, &s->opt, PS_OPTION_OFFSET, CE_ANM_ABILITY_SCRIPT_PEASHOOTER_OPT,
                         PS_RETRY_FRAMES, "peashooter");
@@ -492,5 +550,6 @@ static int on_tick_shooters(ce_card_t *c, uint32_t short_timer, uint32_t long_ti
 }
 
 CE_CARD(77, .on_power_level_change = on_power_level_change, .on_tick_shooters = on_tick_shooters,
+            .on_bullet_created = on_bullet_created,   /* ★ P54：爆发期间把引擎豌豆的朝向写成随机 ✓ */
             .on_tick_2 = on_tick_2, .on_load = on_load, .on_run_reset = on_run_reset,
             .on_delete = on_delete);
