@@ -222,10 +222,14 @@ static void test_proj(void)
 
     i = pe_proj_new(a, 3, 0.0f, 400.0f, PE_SET_NORMAL);
     CHECK(i == 0 && a[0].alive == 1, "起一颗正常弹应在 0 号（i=%d）", i);
-    CHECK(a[0].dmg == PE_DMG_NORMAL && a[0].vy == -PE_SPD_NORMAL, "正常弹的伤害/速度应照 PEA_NORMAL（dmg=%d vy=%.1f）", a[0].dmg, a[0].vy);
+    CHECK(a[0].dmg == PE_DMG_NORMAL && a[0].vy == -(PE_SPD_NORMAL / PE_ELEC_SLOW),
+          "★ P47 普攻电球：伤害照 PEA_NORMAL、速度是它的一半（dmg=%d vy=%.1f 应为 %.1f）",
+          a[0].dmg, a[0].vy, -(PE_SPD_NORMAL / PE_ELEC_SLOW));
 
     i = pe_proj_new(a, 3, 16.0f, 400.0f, PE_SET_GATLING);
-    CHECK(i == 1 && a[1].dmg == PE_DMG_GATLING && a[1].vy == -PE_SPD_GATLING, "机枪弹应照 PEA_GATLING（dmg=%d vy=%.1f）", a[1].dmg, a[1].vy);
+    CHECK(i == 1 && a[1].dmg == PE_DMG_GATLING && a[1].vy == -(PE_SPD_GATLING / PE_ELEC_SLOW),
+          "★ P47 机枪电弹同样半速（dmg=%d vy=%.1f 应为 %.1f）",
+          a[1].dmg, a[1].vy, -(PE_SPD_GATLING / PE_ELEC_SLOW));
 
     CHECK(pe_proj_hit_now(&a[0]) == 1, "刚出生就该能结算 ✓");
     pe_proj_fired(&a[0]);

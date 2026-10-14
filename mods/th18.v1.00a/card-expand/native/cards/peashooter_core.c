@@ -151,8 +151,9 @@ int pe_proj_spawn(pe_proj_t *a, int n, float x, float y, float vx, float vy, int
 int pe_proj_new(pe_proj_t *a, int n, float x, float y, int set)
 {
     int gat = (set == PE_SET_GATLING);
-    return pe_proj_spawn(a, n, x, y, 0.0f, gat ? -PE_SPD_GATLING : -PE_SPD_NORMAL, set,
-                         gat ? PE_DMG_GATLING : PE_DMG_NORMAL);
+    /* ★ P47：电弹比普通豌豆**慢一倍**（owner 口径 ✓）⇒ 用镜像速度除以 PE_ELEC_SLOW ✓ */
+    float spd = (gat ? PE_SPD_GATLING : PE_SPD_NORMAL) / PE_ELEC_SLOW;
+    return pe_proj_spawn(a, n, x, y, 0.0f, -spd, set, gat ? PE_DMG_GATLING : PE_DMG_NORMAL);
 }
 
 void pe_proj_move(pe_proj_t *p)
