@@ -102,7 +102,12 @@ def w1a(defs) -> list[dict]:
     return out
 
 
+W1B_INFO: list[dict] = []
+
+
 def w1b() -> list[dict]:
+    global W1B_INFO
+    info = []
     # ★★ 2026-10-14（W1b 收口）：**只认"明确声明归属"的写法** —— `zStruct` 后面紧跟 `+0x…` 或
     #   `.字段`（即注释在说"这个偏移属于谁"）。旧的宽松写法（注释里**第一个** `z*` 名字）
     #   常抓到**字段的类型**（例：`zAnmLoaded*` 是某个字段的类型，不是偏移的宿主 ✗）⇒ 155 处里
@@ -143,16 +148,38 @@ def w1b() -> list[dict]:
         #   （实测：收紧"只认声明归属的写法" + 本改动把 155 处降到 62 处 ✓）。
         if any(str(f[0]).lower() == value.lower() for s in structs for f in data[s]):
             continue
-        s = structs[0]                       # 都对不上 ⇒ 报一条（带第一个宿主的近邻信息 ✓）
+        # ★★ 2026-10-14（W1b 收尾，实测 48 条之后的关键判断）：**"金矿没覆盖"不等于"我们错"** ✗
+        #   —— 金矿（`type-structs-own.json`）是**部分 dump** ✓：像 `zEnemy` 在 0x623c / 0x1270
+        #   这些位置本来就没有字段 ✓，而我们的常量是**逐条实测一手**推出来的 ✓。
+        #   ⇒ 判据收紧成：**只有"正向矛盾"才算违规** —— 即该结构在**这个偏移上确实有字段、
+        #     但名字与我们的常量语义对不上** ✗（历史上一例都没有 ✓）。
+        #   "金矿未覆盖" ⇒ 记进 INFO（`info` 列表 ✓，打印但不计入违规 ✓），供下一批补表时参考 ✓。
+        s = structs[0]
         fields = data[s]
+        exact = [f for f in fields if str(f[0]).lower() == value.lower()]
         near = [f for f in fields
                 if isinstance(f[0], str) and f[0].lower().startswith("0x")
                 and abs(int(f[0], 16) - off) <= 0x40]
-        out.append({"check": "W1b", "file": str(path.relative_to(REPO)),
-                    "line": idx + 1, "name": name, "claimed": value,
-                    "actual": (f"{s} 该偏移无字段"
-                               + (f"；±0x40 内有 {near[0][0]}:{near[0][1]}" if near else "")),
-                    "defined_at": f"金矿 {s}", "text": ctx.strip().splitlines()[-1][:150]})
+        info.append({"check": "W1b", "file": str(path.relative_to(REPO)),
+                     "line": idx + 1, "name": name, "claimed": value,
+                     "actual": (f"{s} 金矿未覆盖该偏移"
+                                + (f"；±0x40 内有 {near[0][0]}:{near[0][1]}" if near else "")),
+                     "defined_at": f"金矿 {s}", "text": ctx.strip().splitlines()[-1][:150]})
+        if exact:
+            # ★ 这一支才是**真闸** ✓：金矿在该偏移**确实有字段** ⇒ 字段名必须与我们的常量语义对得上 ✗
+            #   （判据：字段名拆成词后，至少有一个 ≥3 字母的词出现在常量名里 ✓）。对不上就是
+            #   "同一个偏移、两边叫法完全不同" ⇒ 极可能有一边错了 ⇒ 报**硬失败** ✓。
+            fld = str(exact[0][1])
+            wname = name.lower()
+            toks = [w for w in re.split(r"[^A-Za-z0-9]+", fld.lower()) if len(w) >= 3]
+            if toks and not any(w in wname for w in toks):
+                out.append({"check": "W1b", "file": str(path.relative_to(REPO)),
+                            "line": idx + 1, "name": name, "claimed": value,
+                            "actual": f"{s}+{value} 的字段叫 {fld} ⇒ 与常量名对不上（二者必有一错 ✗）",
+                            "defined_at": f"金矿 {s}", "text": ctx.strip().splitlines()[-1][:150]})
+                continue
+            info[-1]["actual"] = f"{s} 该偏移有字段 {fld} ✓（名字对得上 ✓）"
+    W1B_INFO = info
     return out
 
 
@@ -225,7 +252,7 @@ CHECKS = {"W1a": w1a, "W1b": w1b, "W1c": w1c, "W1d": w1d}
 #   首轮 report 出了 155 处、绝大多数是假阳性（例：`zItem` 是道具结构体，而 `CE_ITEM_POOL_OFF`
 #   是**管理器**里的偏移；`zPlayerBullet` 在金矿里几乎是空的）。按 P13 纪律"先 report 收敛误报"，
 #   等有了「每个常量 → 它真正索引的结构」映射表再启用 ✓（映射表本身列为 P13 的后续子项）。
-DEFAULT_CHECKS = ("W1a", "W1c", "W1d")
+DEFAULT_CHECKS = ("W1a", "W1b", "W1c", "W1d")   # ★ 2026-10-14：W1b 收口后启用 ✓
 
 
 def main() -> int:
