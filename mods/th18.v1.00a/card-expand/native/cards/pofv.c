@@ -3981,7 +3981,19 @@ static void c3_fire_wave(void)
         b->spd = POFV_C3_SPEED;
         b->age = 0; b->bounces = 0; b->live = 1;
         b->spin = s_c3.parity ? 1 : 0;   /* ★ 出生时定死自转方向 ✓（一手 `etExSet` ✓；★ 之后不随波变 ✓）*/
-        b->vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), POFV109_C3_ORB_SCRIPT, POFV109_BBALL_LAYER);
+        /* ★★★★★ 2026-10-13（★ owner：「★ **C3 和 C4 的阴阳玉的一手表现还有自转**」✓）：
+         *   ★ 一手是 ★ **两支脚本 329 / 330** ✓，★ **只差 `angleVel` 的符号** ✓
+         *   ★（★ `bullet.anm.txt:10729` = `angleVel(+0.05235988, 0, +0.05235988)` ✓ = 329 ✓；
+         *   ★   `:10771` = `angleVel(-0.05235988, 0, -0.05235988)` ✓ = 330 ✓）
+         *   ⇒ ★ 卡侧 ★ **按波奇偶（`b->spin` ✓，上一行刚定 ✓）挑脚本** ✓：
+         *   ★ `spin == 0` ⇒ ★ `458`（★ 正号 ✓ = 一手 329 ✓）；
+         *   ★ `spin == 1` ⇒ ★ `460`（★ 负号 ✓ = 一手 330 ✓，★ 文件 = `460_pofv109_c3_orb_neg.anm.txt` ✓）。
+         *   ⚠ ★ 哪一支配哪一奇偶**没有一手依据** ✗（★ 一手只保证"两支交替"✓）★ ⇒ ★ 这里**任选** ✓，
+         *   ★ 观感等价 ✓（★ 两支都是 3°/帧、方向相反 ✓）。*/
+        b->vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
+                                       b->spin ? CE_ANM_ABILITY_SCRIPT_POFV109_C3_ORB_NEG
+                                               : POFV109_C3_ORB_SCRIPT,
+                                       POFV109_BBALL_LAYER);
         POFV_DBGLOG("pofv: [DBGC3] bullet i=%d vm=%d spawn_ok=%d pos=(%.1f,%.1f) dir=(%.2f,%.2f) spd=%.2f",
                     i, (int)b->vm, b->vm ? 1 : 0, (double)b->x, (double)b->y,
                     (double)b->dx, (double)b->dy, (double)b->spd);
