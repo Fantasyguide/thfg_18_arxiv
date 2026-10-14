@@ -4892,7 +4892,16 @@ static void pofv_c4_tick(void)
             }
             if (!b->live) continue;      /* ★ 命中了 ⇒ 本颗到此为止 ✓ */
         }
-        (void)ce_damage_rect(pos, 0.0f, POFV_C1_HIT_LIFE,
+        /* ★★★★★ 2026-10-13（★ owner：「★ **每一个怪每 10 帧收到一次伤害**」✓
+         *   + ★「★ **C4 的阴阳玉也改一样的**」✓ + ★「★ **参考星星炮…**」✓）：
+         *   ★ 先例 = ★ **89 星星炮** ✓（★ 真实代码核过 ✓：★ `star_cannon_core.c:57/72` 的
+         *   ★ `hit_timer` 每 `SC_HIT_COOLDOWN = 10` 帧才发一条 ✓；★ `star_cannon.c:315` 那条
+         *   ★ `ce_damage_rect(center, 0, SC_HIT_LIFE, …)` ✓）★ ⇒ ★ **每 10 帧一条** ✓
+         *   ★（★ 一条源对同一敌人只结算一次 ✓ —— 引擎保证 ✓）★ ⇒ ★ **每怪每 10 帧 1 跳** ✓。
+         *   ⚠ ★ 本处用的是 ★ `POFV_C1_HIT_LIFE` ✗（★ 与 C3 的 `POFV_C3_HIT_LIFE` 不同宏 ✓ ——
+         *   ★ 它只是"★ 伤害源自己的寿命"✓，★ 与 10 帧节拍是两件事 ✓，★ 两条都留 ✓）；
+         *   ⚠ ★ C1 那处（★ `:3716` ✓）**不加门** ✗ —— ★ owner 只要求 C3/C4 ✓。*/
+        if ((b->age % 10) == 0) (void)ce_damage_rect(pos, 0.0f, POFV_C1_HIT_LIFE,
                              pofv_dmg((int)s_aura_kind, 4, (int)s_c4_lv_n),
                              POFV_C1_HIT_W, POFV_C1_HIT_H);
     }
