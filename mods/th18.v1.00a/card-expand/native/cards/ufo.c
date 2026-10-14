@@ -5658,6 +5658,16 @@ static void ufo_withdraw_all(ufo_card_t *s, const char *why)
     ufo_tok_pool_clear_all();                          /* ★ 令牌 VM + 五边形框，全部只看句柄 */
     ufo_drop_kill_all();                               /* ★ 掉落物实体（压缩包 / Bomb）也在静态区 */
     ufo_pull_forget_all();                             /* ★ 拉拽累计速度表（静态区）*/
+    /* ★★ 2026-10-14（P34，修审计 **F7f**）：两个**文件静态 scratch** 也在这里收 ✓ ——
+     *   `s_bolt[]`（闪电碎屑的视觉 scratch ✓）与赏金等价包 `s_bounty_eq*` 原来**没有任何钩子**
+     *   清它们 ✗ ⇒ 删卡/新局之后残留的旧值可能被下一局误读 ✓（防御性清理 ✓，正常流程里
+     *   owner 说过只在商店删卡 ⇒ 这里是"兜底"而不是修症状 ✓）。
+     *   ⚠ `s_bounty_eq_gen` 用**自增**而不是归零 ✓：它是给其它卡看的**代数**（变了就重读 ✓），
+     *     归零可能让"持有旧代数 0"的卡误判"没变" ✗ ⇒ 自增永远能被看见 ✓。*/
+    memset(s_bolt, 0, sizeof s_bolt);
+    s_bounty_eq_pending = 0;
+    memset(&s_bounty_eq, 0, sizeof s_bounty_eq);
+    ++s_bounty_eq_gen;
     if (s_tokpool.dropped)
         ce_log("ufo: token pool dropped %d token(s) while full (cap %d)", s_tokpool.dropped,
                UFO_TOKEN_CAP);
