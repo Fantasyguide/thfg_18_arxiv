@@ -745,8 +745,8 @@ int32_t mof_core_bomb_radius_centi(int32_t frame, int32_t target_centi);
  *   —— 相当于最后一次灵击只花 0.45」）。下限仍是 `MOF_BOMB_POWER_FLOOR`（105）⇒ 150 那一发实扣 45。*/
 #define MOF_BOMB_POWER_HALF_GATE   (150)
 
-/* ★★ 灵击的**消耗规则**（110/111 **共用同一套系统**，见 `mof_core.c` 的实现注）：
- *   `alice_on` = 「111 在场 + 魔理沙机体」⇒ 半档（门槛 1.55 档 / 扣 50 单位 / 下限 1.05 档）；
+/* ★★ 灵击的**消耗规则**（★ P66：注释里的门槛已按活常量 `MOF_BOMB_POWER_HALF_GATE = 150` 更正为 1.50 档 ✓；旧注释写的是过期值 ✗（以活常量为准 ✓））（110/111 **共用同一套系统**，见 `mof_core.c` 的实现注）：
+ *   `alice_on` = 「111 在场 + 魔理沙机体」⇒ 半档（门槛 1.50 档 / 扣 50 单位 / 下限 1.05 档）；
  *   否则 = 常态（门槛 2.00 档 / 扣 1 档 / 下限 1.05 档）。*/
 mof_power_t mof_core_bomb_power_spend(int32_t power, int alice_on);
 

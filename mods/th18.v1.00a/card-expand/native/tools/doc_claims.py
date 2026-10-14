@@ -242,7 +242,58 @@ def w1d() -> list[dict]:
     return out
 
 
-CHECKS = {"W1a": w1a, "W1b": w1b, "W1c": w1c, "W1d": w1d}
+# ---------------------------------------------------------------- W1e
+# ★★ 2026-10-14（P61 一致性审计 / owner 批准的计划 v2）：**口径回归清单** ✓
+#   把审计里**逐条查实并已改对**的口径，钉成机械断言 —— 以后谁改回去，这里就报 ✓。
+#   每条 = (说明, 文件(相对 MOD), 正则, want)：want=True = **必须出现**；False = **禁止出现**。
+#   依据：`INTENT-AUDIT.md` 的登记行（每条断言都能追到那一行 ✓）。
+W1E_REGRESSIONS = (
+    # ---- 卡面文字（cards.js）----
+    ("108 卡面必须写「附加使魔全额转伤」", "patch/th18/cards.js", r"附加使魔全额转伤", True),
+    ("108 卡面不得再有 1/2 时代残留「伤害减半」", "patch/th18/cards.js", r"伤害减半", False),
+    ("106 卡面不得声称 Rank 影响难度", "patch/th18/cards.js", r"Rank 越高弹幕与出怪越凶", False),
+    ("112 卡面不得写「把奖励翻倍」", "patch/th18/cards.js", r"把奖励翻倍", False),
+    ("卡面不得再出现测试卡 200", "patch/th18/cards.js", r"测试卡 200|TEST200", False),
+    ("卡面不得含代码层/内部字样", "patch/th18/cards.js", r"0x[0-9a-fA-F]{4,}|state==|未实跑|链路验证", False),
+    # ---- 玩家手册（受众口径 ✓）----
+    ("手册不得再出现 115/116 的 −33%", "PLAYER-GUIDE.md", r"−33%", False),
+    ("手册不得把全避扣分条件写反", "PLAYER-GUIDE.md", r"没放灵击、自己收掉", False),
+    ("手册不得再出现「1.55 档」", "PLAYER-GUIDE.md", r"1\.55 档", False),
+    ("手册不得含内部 QA 用语", "PLAYER-GUIDE.md", r"实跑验收|未实跑|机制推论|未测确认|尚未实跑", False),
+    ("手册不得含裸地址", "PLAYER-GUIDE.md", r"0x[0-9a-fA-F]{4,}", False),
+    ("手册不得含工单号或日期横幅", "PLAYER-GUIDE.md", r"工单|2026-[0-9]{2}-[0-9]{2}", False),
+    ("手册不得写调试键", "PLAYER-GUIDE.md", r"调试键|空格 ?=|Shift ?\+ ?空格", False),
+    # ---- 代码注释（过期注释 ✓）----
+    ("111 的魔理沙灵击门槛注释不得写 1.55（活常量 = 150）", "native/cards/mof_core.h", r"1\.55", False),
+    ("107 的「7 秒」注释需与活常量复核", "native/cards/senro.c", r"(?<![.\d])7 ?(?:秒|s)\b", False),
+    ("106 注释不得声称 Rank 影响难度", "native/cards/th06rank.c", r"越凶", False),
+    ("109 注释不得用自造词「红圈」", "native/cards/pofv.c", r"红圈", False),
+    ("109 的小弹过滤器只该暴风用（另有 3 处不得再筛）", "native/cards/pofv.c",
+     r"cancel_white_in_circle\(pos, R->r, POFV_CANCEL_MAX, POFV_BULLET_CANCEL_MODE, 1\)", False),
+)
+
+
+def w1e() -> list[dict]:
+    """口径回归清单：审计查实并已改对的口径，禁止回潮（依据 INTENT-AUDIT.md 的登记行）"""
+    out: list[dict] = []
+    for text, rel, pat, want in W1E_REGRESSIONS:
+        path = MOD / rel
+        if not path.exists():
+            continue
+        body = read(path)
+        m = re.search(pat, body, re.M)
+        if want and not m:
+            out.append({"check": "W1e", "file": rel, "line": 0, "name": text,
+                        "claimed": "（未出现该写法）", "actual": "必须出现",
+                        "defined_at": "INTENT-AUDIT.md", "text": text})
+        elif (not want) and m:
+            line = body[:m.start()].count("\n") + 1
+            out.append({"check": "W1e", "file": rel, "line": line, "name": text,
+                        "claimed": m.group(0)[:40], "actual": "不应出现",
+                        "defined_at": "INTENT-AUDIT.md", "text": text})
+    return out
+
+CHECKS = {"W1a": w1a, "W1b": w1b, "W1c": w1c, "W1d": w1d, "W1e": w1e}
 # ★★ 2026-10-14（W1b 收口第一步，已完成 ✓）：把提取规则收紧成"只认**声明归属**的写法"
 #   （`zStruct` 紧跟 `+0x…` / `.字段` ✓），并把"逐个宿主都要求对上"改成"**任一**宿主对上即通过" ✓
 #   ⇒ 误报 **155 → 62** ✓（去掉 93 处假阳性 ✓）。**仍未列入默认集合** ✗：
@@ -252,7 +303,7 @@ CHECKS = {"W1a": w1a, "W1b": w1b, "W1c": w1c, "W1d": w1d}
 #   首轮 report 出了 155 处、绝大多数是假阳性（例：`zItem` 是道具结构体，而 `CE_ITEM_POOL_OFF`
 #   是**管理器**里的偏移；`zPlayerBullet` 在金矿里几乎是空的）。按 P13 纪律"先 report 收敛误报"，
 #   等有了「每个常量 → 它真正索引的结构」映射表再启用 ✓（映射表本身列为 P13 的后续子项）。
-DEFAULT_CHECKS = ("W1a", "W1b", "W1c", "W1d")   # ★ 2026-10-14：W1b 收口后启用 ✓
+DEFAULT_CHECKS = ("W1a", "W1b", "W1c", "W1d", "W1e")   # ★ W1e = P61 口径回归清单 ✓（report 先收敛 ✓）   # ★ 2026-10-14：W1b 收口后启用 ✓
 
 
 def main() -> int:
