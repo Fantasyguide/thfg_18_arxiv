@@ -3264,18 +3264,21 @@ static void power_vm_sync(void)
              *   ★ 道具坐标远离自机 ⇒ 位置/空间问题 ✓；★ age 全都很小 ⇒ 被秒收 ✓；★ 都正常 ⇒ 绘制层问题 ✓）。*/
             const float *pp9 = ce_player_pos();
             float ix = 0.0f, iy = 0.0f;
-            int32_t amin = 9999, amax = -1;
+            int32_t amin = 9999, amax = -1, first_vm = 0;
             for (k9 = 0; k9 < POFV_POWER_MAX; ++k9) {
                 if (!s_power.s[k9].active) continue;
                 ix = s_power.s[k9].x; iy = s_power.s[k9].y;
+                first_vm = s_power.s[k9].vm;   /* ★ 顺手记下这台 VM 的句柄（诊断 ✓）*/
                 if (s_power.s[k9].age < amin) amin = s_power.s[k9].age;
                 if (s_power.s[k9].age > amax) amax = s_power.s[k9].age;
                 break;
             }
-            ce_log("pofv: [ITEMP] item=(%.0f,%.0f) player=(%.0f,%.0f) age=%d..%d",
+            ce_log("pofv: [ITEMP] item=(%.0f,%.0f) player=(%.0f,%.0f) age=%d..%d vm=%d alive=%d spr=%d",
                    (double)ix, (double)iy,
                    (double)(pp9 ? pp9[0] : 0.0f), (double)(pp9 ? pp9[1] : 0.0f),
-                   (int)amin, (int)amax);
+                   (int)amin, (int)amax,
+                   (int)first_vm, (first_vm && ce_anm_get_vm((uint32_t)first_vm)) ? 1 : 0,
+                   (int)POFV_POWER_VM_SPRITE);
         }
         /* ★ 2026-10-16 **槽位含义**（`pofv_core.h:519-525` ✓）：`0 = CANCEL`（消弹）✓、
          *   ★ `1 = KILL`（击破敌人）✓、★ `2 = AURA`（**固灵结界碰弹** ✓ —— owner 关心的那条 ✓）、
