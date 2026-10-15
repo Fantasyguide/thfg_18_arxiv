@@ -2568,7 +2568,7 @@ static void pofv_c2_tick(uint32_t id)
     if (s_c2.age < POFV_C2_GEN_FRAMES) {
         float pos[3];
         pos[0] = p[0]; pos[1] = p[1]; pos[2] = 0.0f;
-        (void)c2_cancel_drop(pos, POFV_C2_GEN_R0 + POFV_C2_GEN_STEP * (float)s_c2.age);
+        /* ★ 2026-10-16 删除（owner：全部走 CA 环那一支 ✓）—— 原来这里调那个**自造函数** ✗ */
     }
 
     if (s_c2.age < POFV_C2_ORB_END) {   /* ★ C2-⑤ 后半 ✓：orb 摆到 **60** ✓（一手 = 管家/434 的 `+60` ✓；
@@ -2617,7 +2617,7 @@ static void pofv_c2_tick(uint32_t id)
                 pos[0] += (p[0] - pos[0]) * u;      /* ★ 线性拉回自机（= 中心 ✓）*/
                 pos[1] += (p[1] - pos[1]) * u;
             }
-            (void)c2_cancel_drop(pos, POFV_C2_POINT_CANCEL_R);      /* 半径 64 的消弹圈 ✓ */
+            /* ★ 2026-10-16 删除（原"半径 64 的消弹圈"那条自造路 ✗）—— 消弹/撒道具全部走 CA 环 ✓ */
             /* ★★ 可见物（一手 ✓）：★ 每点一台 `pl00.anm` script20 的复刻（脚本 434 ✓）——
              *   一手 tick 里这 3 台就是**跟着三个环绕点跑** ✓（`+10°/帧` ✓、半径见下 ✓）。*/
             if (i == 0) { s_c2_pt0x = pos[0]; s_c2_pt0y = pos[1]; }   /* ★ 环心用它 ✓ */
