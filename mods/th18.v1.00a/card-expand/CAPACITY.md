@@ -275,7 +275,7 @@ cards: 35 registered from cards.js; shop pool 700/8192 slots, guaranteed offers 
   **追加在 ORDER.txt 末尾** ⇒ 新 sprite = **430**、同批新脚本 = **275/276**，
   **既有 sprite / 脚本号一个都没动**（`ORDER.frozen.txt` 的前 186 行逐行未变，构建期已核）。
 - **★ 2026-10-15 新增 `ATLAS_BOSS_AURA_RED`（`CE_ANM_ABILITY_ATLAS_ATLAS_BOSS_AURA_RED`，
-  `ability.anm` 的 entry **179**，画布 **384×48**、8 个 sprite）**：卡 109 的「C4 期间模仿 boss」两件观感件之一
+  `ability.anm` 的 entry **180**，画布 **384×48**、8 个 sprite）**：卡 109 的「C4 期间模仿 boss」观感件之一
   —— 把 TH18 **原生 `enemy.anm` script107**（sprite152–159，`enemy/enemy_aura.png` 48×48/格、y=0）
   原样搬到**自机身上**（owner 2026-10-15 口径：「这个是 th18 自己就有的 effect」「我只是让你"复制粘贴"到自机身上」）。
   成员 8 条 `RED_AURA_0..7` 各 `@x,0,48x48`（x = 0,48,…,336），**追加在 ORDER.txt 末尾** ⇒

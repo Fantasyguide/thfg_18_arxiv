@@ -1330,6 +1330,13 @@ POFV109_BBALL_DIE            ability/bball/BBALL_DIE.png            8x8
 #   · 红雾 = 原生 `enemy.anm` script107 的 sprite152–159（`enemy/enemy_aura.png`，**48×48 一格、y=0** ✓）
 #     ⇒ 已切 8 张入库（`assets/ability/boss_aura_red/RED_AURA_0..7.png` ✓，与 lolk/RING 同规矩 ✓）。
 MAGICSQUARE          local/th18.v1.00a/anm/effect/effect/eff_magicsquare.png   256x256
+# ★ 2026-10-15（owner：「一手 boss 还有一个深蓝色的"霸气"，大小跟魔法阵差不多」✓ +
+#   「就是按照那个 ecl 来做，只做这个羽化的圆」✓ + 「按照所处的状态，道中深蓝，boss 深红来做」✓）：
+#   ECL opcode 629 `fog(半径,颜色)` 的观感件（一手见 engine/enemy/th18/07-boss-aura-mesh.md §9.31）。
+#   贴图 = 自烤径向渐变 256×256（❓ 自定：原生是 17 段圆盘 mesh + 引擎 alpha 渐变 ⇒ 登记 TUNING）。
+#   ⚠ 必须写在 `ATLAS ATLAS_BOSS_AURA_RED` **段头之前** ✗（写进那段会被当成图集成员 ⇒
+#     报"显式段的成员要写 @x,y,WxH"⇒ 段内只许放成员行 ✓）。
+FOG_CIRCLE             ability/fog/FOG_CIRCLE.png                   256x256
 ATLAS ATLAS_BOSS_AURA_RED 384x48
 RED_AURA_0             ability/boss_aura_red/RED_AURA_0.png        @0,0,48x48
 RED_AURA_1             ability/boss_aura_red/RED_AURA_1.png        @48,0,48x48

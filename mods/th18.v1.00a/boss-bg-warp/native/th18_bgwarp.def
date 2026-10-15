@@ -1,0 +1,4 @@
+LIBRARY th18_bgwarp.dll
+EXPORTS
+	thcrap_plugin_init	@1
+	bgwarp_mod_exit		@2
