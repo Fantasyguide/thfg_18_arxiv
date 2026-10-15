@@ -556,7 +556,12 @@ static void check_power(void)
     CHECK(POFV_POWER_DECEL == 0.03f);
     CHECK(POFV_POWER_GRAVITY == 0.03f);
     CHECK(POFV_POWER_FALL_MAX == 2.0f);
-    CHECK(POFV_POWER_SPEED_SCALE == 1.9f && POFV_POWER_SPEED_MIN == 0.2f);
+    /* ★ 2026-10-16 owner 口径：「**上抛速度按 th19 一手**」✓（明确「不是 116」✗）：
+     *   ★ 一手 = **速度恒 2.2、角度随机** ✓（`th19.exe` `FUN_00521d60`
+     *   `local/th19.v1.10c/decomp/all.c:221235`：`+0xc8c = cos(param_5)*param_6` ✓；
+     *   各调用点传的速度 = `0x400ccccd` = float **2.2** ✓，见 `all.c:13115/207100/207295` ✓）
+     *   ⇒ ★ 规格同步为 `SCALE = 0.0f` / `MIN = 2.2f` ✓（**有意偏离**旧的 TH16 散射 0.2..2.1 ✗）。*/
+    CHECK(POFV_POWER_SPEED_SCALE == 0.0f && POFV_POWER_SPEED_MIN == 2.2f);
     CHECK(POFV_POWER_LAUNCH_DELAY == 6);
     CHECK(POFV_POWER_MAG_SPEED0 == 2.0f && POFV_POWER_MAG_ACCEL == 0.2f);
     CHECK(POFV_POWER_MAG_SPEED_MAX == 12.0f);
