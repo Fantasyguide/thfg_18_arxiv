@@ -1322,3 +1322,20 @@ POFV109_C4_ORB_SOLID          ability/bball/C4_ORB_SOLID.png       30x30
 POFV109_BBALL_BORN           ability/bball/BBALL_BORN.png           8x8
 POFV109_BBALL_IDLE           ability/bball/BBALL_IDLE.png           8x8
 POFV109_BBALL_DIE            ability/bball/BBALL_DIE.png            8x8
+# ★★★★★ 2026-10-15（owner：「C4 期间要模仿 boss」✓ + 「这个是 th18 自己就有的 effect」✓ +
+#   「我只是让你'复制粘贴'到自机身上」✓）：★ **把 TH18 原生那两件 effect 原样搬到自机身上** ✓。
+#   · 魔法阵 = 原生 `effect.anm` script105（贴图 `effect/eff_magicsquare.png` 256×256 ✓，源图在
+#     `local/th18.v1.00a/anm/effect/effect/` 里 ✓ —— owner 提醒的"th18 自己就有" ✓）；
+#     ⇒ 直接用 `local/...` 源图那行（ORDER 语法 ①，构建时取 ✓），不再派生一份入库 ✓。
+#   · 红雾 = 原生 `enemy.anm` script107 的 sprite152–159（`enemy/enemy_aura.png`，**48×48 一格、y=0** ✓）
+#     ⇒ 已切 8 张入库（`assets/ability/boss_aura_red/RED_AURA_0..7.png` ✓，与 lolk/RING 同规矩 ✓）。
+MAGICSQUARE          local/th18.v1.00a/anm/effect/effect/eff_magicsquare.png   256x256
+ATLAS ATLAS_BOSS_AURA_RED 384x48
+RED_AURA_0             ability/boss_aura_red/RED_AURA_0.png        @0,0,48x48
+RED_AURA_1             ability/boss_aura_red/RED_AURA_1.png        @48,0,48x48
+RED_AURA_2             ability/boss_aura_red/RED_AURA_2.png        @96,0,48x48
+RED_AURA_3             ability/boss_aura_red/RED_AURA_3.png        @144,0,48x48
+RED_AURA_4             ability/boss_aura_red/RED_AURA_4.png        @192,0,48x48
+RED_AURA_5             ability/boss_aura_red/RED_AURA_5.png        @240,0,48x48
+RED_AURA_6             ability/boss_aura_red/RED_AURA_6.png        @288,0,48x48
+RED_AURA_7             ability/boss_aura_red/RED_AURA_7.png        @336,0,48x48
