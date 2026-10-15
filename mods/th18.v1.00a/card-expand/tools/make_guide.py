@@ -185,7 +185,9 @@ def linkify(tex, cards):
         else:
             macro = bold = '\\textbf{%d\u3000%s}' % (cid, nm)
         tex = re.sub(r'(?<![0-9])%d\s*%s(?![0-9])' % (cid, re.escape(nm)), lambda m, b=bold: b, tex)
-        tex = re.sub(r'(?<![0-9])%s(?![0-9])' % re.escape(nm), lambda m, mm=macro: mm, tex)
+        # ★ 两侧都要求边界（汉字/字母都算"词内"）⇒ 「原版风神录」「地灵殿的」这类复合词不会被塞编号 ✗
+        tex = re.sub(r'(?<![0-9A-Za-z\u4e00-\u9fff])%s(?![0-9A-Za-z\u4e00-\u9fff])' % re.escape(nm),
+                     lambda m, mm=macro: mm, tex)
     return _restore(tex, store)
 
 
