@@ -4141,7 +4141,9 @@ static void pofv_c3_tick(void)
             {   const float *pp3r = ce_player_pos();
                 pos[0] = pp3r ? pp3r[0] : 0.0f; pos[1] = pp3r ? pp3r[1] : 128.0f; }
             pos[2] = 0.0f;
-            (void)c2_cancel_drop(pos, r);
+            /* ★ 2026-10-16 删除（owner：「那个突兀的自造函数杀掉，全部走 CA 的那个函数」✓）：
+             *   原来这里是 `(void)c2_cancel_drop(pos, r);` ✗ —— 一手那支 CA 环
+             *   （`pofv_ca_ring_tick()` ✓）负责消弹与撒道具 ✓。*/
             pofv_eb_ring_sync(&s_c3.ring_vm, r);
         }
         ++s_c3.eb;
@@ -4892,7 +4894,9 @@ static void pofv_c4_tick(void)
             {   const float *pp4r = ce_player_pos();
                 pos[0] = pp4r ? pp4r[0] : 0.0f; pos[1] = pp4r ? pp4r[1] : 128.0f; }
             pos[2] = 0.0f;
-            (void)c2_cancel_drop(pos, r);
+            /* ★ 2026-10-16 删除（owner：「那个突兀的自造函数杀掉，全部走 CA 的那个函数」✓）：
+             *   原来这里是 `(void)c2_cancel_drop(pos, r);` ✗ —— 一手那支 CA 环
+             *   （`pofv_ca_ring_tick()` ✓）负责消弹与撒道具 ✓。*/
             pofv_eb_ring_sync(&s_c4.ring_vm, r);
         }
         ++s_c4.eb;
