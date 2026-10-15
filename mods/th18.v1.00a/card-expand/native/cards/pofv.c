@@ -3257,7 +3257,27 @@ static void power_vm_sync(void)
         ce_log("pofv: [ITEM] active=%d vm=%d spawn_ok=%d spawn_fail=%d | cancel=%d kill=%d aura=%d reigeki=%d",
                act, has_vm, (int)s_item_spawn_ok, (int)s_item_spawn_fail,
                by_src[0], by_src[1], by_src[2], by_src[3]);
-        /* ★ 2026-10-16：★ 槽位含义（`pofv_core.h:519-525` ✓）：★ `0 = CANCEL`（消弹）✓、
+        {
+            /* ★ 2026-10-16 只读诊断（owner：「C 也不掉、shift 也不掉」✓ 而日志显示 active=14/vm=13 ✓）：
+             *   ★ 活着且有 VM ⇒ ★ 若还看不见，最可能是**坐标投到了画面外** ✗（坐标空间不一致 ✓）
+             *   ⇒ ★ 打一颗活道具的坐标 ＋ 自机坐标 ＋ 最小/最大 age ✓（三项一比就分得开 ✓：
+             *   ★ 道具坐标远离自机 ⇒ 位置/空间问题 ✓；★ age 全都很小 ⇒ 被秒收 ✓；★ 都正常 ⇒ 绘制层问题 ✓）。*/
+            const float *pp9 = ce_player_pos();
+            float ix = 0.0f, iy = 0.0f;
+            int32_t amin = 9999, amax = -1;
+            for (k9 = 0; k9 < POFV_POWER_MAX; ++k9) {
+                if (!s_power.s[k9].active) continue;
+                ix = s_power.s[k9].x; iy = s_power.s[k9].y;
+                if (s_power.s[k9].age < amin) amin = s_power.s[k9].age;
+                if (s_power.s[k9].age > amax) amax = s_power.s[k9].age;
+                break;
+            }
+            ce_log("pofv: [ITEMP] item=(%.0f,%.0f) player=(%.0f,%.0f) age=%d..%d",
+                   (double)ix, (double)iy,
+                   (double)(pp9 ? pp9[0] : 0.0f), (double)(pp9 ? pp9[1] : 0.0f),
+                   (int)amin, (int)amax);
+        }
+        /* ★ 2026-10-16 **槽位含义**（`pofv_core.h:519-525` ✓）：`0 = CANCEL`（消弹）✓、
          *   ★ `1 = KILL`（击破敌人）✓、★ `2 = AURA`（**固灵结界碰弹** ✓ —— owner 关心的那条 ✓）、
          *   ★ `3 = REIGEKI`（霊撃）✓ ⇒ ★ 名字直接打进日志 ✓，不再让人对裸数字 ✓。*/
     }
