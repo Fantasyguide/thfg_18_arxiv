@@ -4957,9 +4957,28 @@ static void pofv_c4_tick(void)
             uint32_t best_c = 0;
             uint8_t *em3;
             uint8_t *e3;
-            CE_ENEMY_FOREACH(em3, e3) {
-                const float rr = *(const float *)(e3 + POFV_C4_FOG_R_OFF);
-                if (rr > best_r) { best_r = rr; best_c = *(const uint32_t *)(e3 + POFV_C4_FOG_C_OFF); }
+            /* ★ 2026-10-16 **崩溃修复** ✗：★ 原来在这里用 `CE_ENEMY_FOREACH` 全场遍历读
+             *   `enemy+0x5594` ✗ ⇒ ★ **实跑崩了** ✓（日志停在 `[REL] tier=4` 之后的 `[BARRIER]`
+             *   那几帧 ⇒ 崩点就是本块 ✓；全场结点并非都够长 ⇒ 越界读 ✗）。
+             *   ⇒ ★ 改成只对**引擎认定的 boss** 读 ✓：`CE_ENEMY_MGR() + CE_EM_BOSS_IDS`（`int[4]` ✓）
+             *   ＋ `ce_enemy_by_id()`（`sdk.h:617` ✓ —— 注释写明它照 `get_boss_enemy_full 0x4237f0`
+             *   且带 guard ✓）★ ⇒ 不再扫非 boss 结点 ✓。*/
+            {
+                uint8_t *em3 = CE_ENEMY_MGR();
+                if (em3) {
+                    const int32_t *bids = (const int32_t *)(em3 + CE_EM_BOSS_IDS);
+                    int bi;
+                    for (bi = 0; bi < 4; ++bi) {
+                        uint8_t *e3;
+                        if (bids[bi] <= 0) continue;
+                        e3 = ce_enemy_by_id(em3, bids[bi]);
+                        if (!e3) continue;
+                        {
+                            const float rr = *(const float *)(e3 + POFV_C4_FOG_R_OFF);
+                            if (rr > best_r) { best_r = rr; best_c = *(const uint32_t *)(e3 + POFV_C4_FOG_C_OFF); }
+                        }
+                    }
+                }
             }
             if (best_r > 0.0f) { s_fog_r_last = best_r; s_fog_c_last = best_c; }
             else if (s_fog_r_last <= 0.0f) { s_fog_r_last = POFV_C4_FOG_FALLBACK_R; s_fog_c_last = POFV_C4_FOG_FALLBACK_C; }
