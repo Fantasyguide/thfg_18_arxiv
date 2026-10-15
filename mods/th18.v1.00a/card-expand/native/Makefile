@@ -245,8 +245,10 @@ test-host:
 	./tests/build/test_vitem_batch
 	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_peashooter_core tests/test_peashooter_core.c cards/peashooter_core.c
 	./tests/build/test_peashooter_core
-	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_season_core tests/test_season_core.c cards/season_core.c
+	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_season_core tests/test_season_core.c cards/season_core.c cards/dtap_core.c   # ★ 2026-10-15：`season_core.h` 的 `season_dtap_*` 已是 static inline 包装（实现在 dtap_core.c）⇒ 必须一起链
 	./tests/build/test_season_core
+	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_dtap_core tests/test_dtap_core.c cards/dtap_core.c   # ★ 2026-10-15：这条此前漏了，`test_dtap_core.c` 一直没被跑
+	./tests/build/test_dtap_core
 	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_lolk_core tests/test_lolk_core.c cards/lolk_core.c
 	./tests/build/test_lolk_core
 	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_ouroboros_core tests/test_ouroboros_core.c cards/ouroboros_core.c
