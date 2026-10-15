@@ -745,9 +745,12 @@ static void check_power(void)
 
     /* ---- 状态机④：吸引盒 ⇒ 起步 2.0、每帧 +0.2、上限 12.0 ---- */
     pofv_power_pool_init(&pool);
-    pofv_power_spawn_dir(&pool, POFV_POWER_BOX_HALF_W * 0.5f, 300.0f, 10, POFV_POWER_SRC_KILL,
+    pofv_power_spawn_dir(&pool, POFV_POWER_PARAM_DEF_ATTRACT_R * 0.4f, 300.0f, 10, POFV_POWER_SRC_KILL,
                          0.0f, 2.0f);
-    pu[0] = 0.0f; pu[1] = 400.0f; pu[2] = 0.0f;    /* 同列、dy = 100 ≤ 半高 120 ⇒ 进盒 */
+    pu[0] = 0.0f; pu[1] = 350.0f; pu[2] = 0.0f;    /* ★ 2026-10-16 规格同步：吸引已由**自造矩形**改为
+                                                   * **一手半径**（`s_pwr_attract_r`，默认 70 ✓）
+                                                   * ⇒ 本处 dx = 28、dy = 50 ⇒ d² = 3284 < 70² = 4900 ✓ 进吸引圈 ✓。
+                                                   * （原来按矩形 56/120 写的是 dy = 100 ✗，半径语义下出圈 ✗）*/
     power_launch(&pool, pu, 128.0f, &pts);
     pofv_power_tick(&pool, pu, 128.0f, &pts);
     CHECK(pool.s[0].st == 3);
@@ -762,7 +765,7 @@ static void check_power(void)
     CHECK(feq(pool.s[0].mspd, POFV_POWER_MAG_SPEED_MAX));
     /* 放进收取半径 ⇒ 必被收（盒内朝自机走 ⇒ 有限帧内收干净）*/
     pofv_power_pool_init(&pool);
-    pofv_power_spawn_dir(&pool, POFV_POWER_BOX_HALF_W * 0.5f, 300.0f, 10, POFV_POWER_SRC_AURA,
+    pofv_power_spawn_dir(&pool, POFV_POWER_PARAM_DEF_ATTRACT_R * 0.4f, 300.0f, 10, POFV_POWER_SRC_AURA,
                          0.0f, 2.0f);
     power_launch(&pool, pu, 128.0f, &pts);
     { int n2 = 0;

@@ -1130,8 +1130,7 @@ int pofv_power_tick(pofv_power_pool_t *p, const float *player, float poc_y, int3
             if (player[1] < poc_y) {
                 if (it->st != 2) it->st = 2;                  /* 过回收线（一手 state 4）*/
             } else if (it->st != 3 &&
-                       dx >= -POFV_POWER_BOX_HALF_W && dx <= POFV_POWER_BOX_HALF_W &&
-                       dy >= -POFV_POWER_BOX_HALF_H && dy <= POFV_POWER_BOX_HALF_H) {
+                       (dx * dx + dy * dy) <= (s_pwr_attract_r * s_pwr_attract_r)) {
                 it->st = 3;                                   /* 进吸引矩形（一手 state 5）*/
                 if (it->mspd < POFV_POWER_MAG_SPEED0) it->mspd = POFV_POWER_MAG_SPEED0;
             }
