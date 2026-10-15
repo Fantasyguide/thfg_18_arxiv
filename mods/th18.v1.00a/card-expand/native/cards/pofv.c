@@ -3241,12 +3241,22 @@ static void power_vm_sync(void)
      *   ⇒ ★ 下一局正常打就能分辨："逻辑在跑但没有 VM" ✗ vs "VM 建了却没画出来" ✗ ✓。*/
     if ((s_card_frames % 120) == 0) {
         int act = 0, has_vm = 0, k9;
+        int by_src[4] = { 0, 0, 0, 0 };   /* ★ 2026-10-16（owner：「按 C 的固灵结界才掉、按 shift 不掉」✓
+                                           *   已修 ✓）：★ **按来源分计数** ✓ ⇒ 以后"哪条在撒"一眼可查 ✓。
+                                           *   ★ 来源 = 池里每颗自带的 `src` ✓（`pofv_power_spawn*` 的入参 ✓，
+                                           *   不改 core ✓），越界的归到最后一格 ✓。*/
         for (k9 = 0; k9 < POFV_POWER_MAX; ++k9) {
             if (s_power.s[k9].active) ++act;
             if (s_power.s[k9].vm) ++has_vm;
+            if (s_power.s[k9].active) {
+                int s9 = (int)s_power.s[k9].src;
+                if (s9 < 0 || s9 > 3) s9 = 3;
+                ++by_src[s9];
+            }
         }
-        ce_log("pofv: [ITEM] active=%d vm=%d spawn_ok=%d spawn_fail=%d", act, has_vm,
-               (int)s_item_spawn_ok, (int)s_item_spawn_fail);
+        ce_log("pofv: [ITEM] active=%d vm=%d spawn_ok=%d spawn_fail=%d | by_src %d/%d/%d/%d",
+               act, has_vm, (int)s_item_spawn_ok, (int)s_item_spawn_fail,
+               by_src[0], by_src[1], by_src[2], by_src[3]);
     }
 }
 
