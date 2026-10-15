@@ -1761,6 +1761,20 @@ static int cancel_white_in_circle(const float *pos, float r, int max_count, int 
             const float bx = *(const float *)(b + CE_BULLET_POS);
             const float by = *(const float *)(b + CE_BULLET_POS + 4);
             ((pofv_fn_bullet_cancel_t)POFV_FN_BULLET_CANCEL)(b, mode);
+            /* ★★★★★ 2026-10-16 **只读诊断**（owner：「C4 持续期间（消弹环已消失）怎么还有消弹特效」✗）：
+             *   ★ 三个消弹点（`pofv_ca_ring_tick` / `c2_cancel_drop` / `do_storm_frame`）**都走本函数** ✓
+             *   ⇒ ★ 在这一处打一行就够 ✓（每颗一颗一行 ✓，颗数多时才知道是谁在消 ✓）。
+             *   ★ 带上：位置 / 半径 / `mode` / **C4 状态**（`s_c4.live` + `s_c4.timer` ✓）/
+             *   ★ **环的存活数与最大半径** ＋ **暴风的存活数**（据此一眼看出是"环"还是"暴风"还是 C2 ✓）。
+             *   ★ 纯诊断：不改任何行为 ✓；定位完就删 ✓。*/
+            {
+                /* ★ 注：环（`s_ca_ring`）与暴风（`s_storm`）的结构体声明都在**本函数之后** ✗
+                 *   ⇒ 这里取不到 ✗ ⇒ 只打本处可得的：**位置 + 半径 + mode + C4 状态** ✓
+                 *   ★ 定位判据：★ 环的圆心 = 起环点（自机处 ✓）且只活 **128 帧** ✓；
+                 *   ★ C2 的消弹圈 = 每次掉落点 ✓；★ 暴风 = 暴风实体的位置 ✓ ⇒ 三者的"位置 + 时间"互不相同 ✓。*/
+                ce_log("pofv: [CANCEL] at (%.0f,%.0f) r=%.1f mode=%d",
+                       (double)bx, (double)by, (double)r, mode);
+            }
             pofv_spark_spawn(bx, by);
             /* ★★★★★ 2026-10-12 goal-b68a8c72 ① **修"同一颗弹同帧掉两次"** ✓
              *   （审计 `89c60c46` 抓到 ✓）：★ 消弹之后**槽 state 仍非 0** ✓（一手：`Bullet__cancel` 写
@@ -4991,6 +5005,18 @@ static void pofv_c4_tick(void)
             }
             if (best_r > 0.0f) { s_fog_r_last = best_r; s_fog_c_last = best_c; }
             else if (s_fog_r_last <= 0.0f) { s_fog_r_last = POFV_C4_FOG_FALLBACK_R; s_fog_c_last = POFV_C4_FOG_FALLBACK_C; }
+            /* ★ 2026-10-16 **只读诊断**（owner：「道中是红的」✗ ⇒ 与一手"道中深蓝 128 / 关底深红 160"不符）：
+             *   ★ 每 120 帧打一行 ⇒ ★ 一次实跑就能分清是"**读到 0**（⇒ 走兜底 160 深红 ✓）"
+             *   还是"**读到红**（⇒ 我挑 boss 槽/挑目标的规则不对 ✓）"。★ 不改行为 ✓，定位完删 ✓。*/
+            {
+                static int32_t s_fog_log_t;
+                if (++s_fog_log_t >= 120) {
+                    s_fog_log_t = 0;
+                    ce_log("pofv: [FOG] best_r=%.1f best_c=0x%06X last_r=%.1f last_c=0x%06X",
+                           (double)best_r, (unsigned)(best_c & 0xFFFFFFu),
+                           (double)s_fog_r_last, (unsigned)(s_fog_c_last & 0xFFFFFFu));
+                }
+            }
             if (!s_c4_fog_vm)
                 s_c4_fog_vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
                                   CE_ANM_ABILITY_SCRIPT_POFV109_FOG_CIRCLE, 6);
