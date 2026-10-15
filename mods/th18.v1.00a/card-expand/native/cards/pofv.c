@@ -3254,9 +3254,12 @@ static void power_vm_sync(void)
                 ++by_src[s9];
             }
         }
-        ce_log("pofv: [ITEM] active=%d vm=%d spawn_ok=%d spawn_fail=%d | by_src %d/%d/%d/%d",
+        ce_log("pofv: [ITEM] active=%d vm=%d spawn_ok=%d spawn_fail=%d | cancel=%d kill=%d aura=%d reigeki=%d",
                act, has_vm, (int)s_item_spawn_ok, (int)s_item_spawn_fail,
                by_src[0], by_src[1], by_src[2], by_src[3]);
+        /* ★ 2026-10-16：★ 槽位含义（`pofv_core.h:519-525` ✓）：★ `0 = CANCEL`（消弹）✓、
+         *   ★ `1 = KILL`（击破敌人）✓、★ `2 = AURA`（**固灵结界碰弹** ✓ —— owner 关心的那条 ✓）、
+         *   ★ `3 = REIGEKI`（霊撃）✓ ⇒ ★ 名字直接打进日志 ✓，不再让人对裸数字 ✓。*/
     }
 }
 
