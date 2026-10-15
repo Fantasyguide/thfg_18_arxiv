@@ -1,0 +1,42 @@
+# 报告：子机槽（12 格卡池）扩容的代价 —— 只读侦察结论
+
+> **版本**：TH18 v1.00a。**状态**：**只读侦察**，未改任何代码/资产（owner 2026-10-15 批准的就是"先给清单"）。
+> **知识正文**：[`engine/player/th18/07-option-slot-pool.md`](../../../engine/player/th18/07-option-slot-pool.md) ✓
+> **背景**：owner 问「其他槽诸如卡组数量都可以扩，这是为什么呢」——答案是：卡那侧是**做出来**的，
+> 子机槽这一侧的代价高在**结构位移**与**几何/分组**两处，不是"不可能"。
+
+## 一句话结论
+
+**子机槽 = 内联在玩家对象里的一块 16 格 × `0xf0` 的定长区**（`player+0x720` 原生 4 格、`player+0xae0` 卡池 12 格），
+上限是**立即数 `4` / `0xc`** ⇒ 扩它要同时动：对象布局、分配/重建/回收、死亡与商店清槽、
+那批**原生装备卡自己的 tick**、以及 **sht 的子机位置块（仅 10 对）**与**按槽号的发弹分组**。
+
+## 已坐实（✅ 一手字节）
+
+| 项 | 值 | 出处 |
+| --- | --- | --- |
+| 原生 4 格基址 | `player+0x720` | `0x45d2c5` `lea esi,[edi+0x720]`、`0x45d2cb` `mov edi,4` |
+| 卡池 12 格基址 | `player+0xae0` | `0x45d305` `lea esi,[edi+0xae0]`、`0x45d30b` `mov edi,0xc` |
+| 每格大小 | `0xf0` | `0x45d2ed` / `0x45d32d` `lea esi,[esi+0xf0]` |
+| 每格形态 | 两支 VM 句柄 + 一个状态位 | `push [esi]` / `push [esi+4]` / `mov [esi-0xb0],0` |
+| 清槽动作 | 给每支 VM 发中断标签 **1** | `call 0x488be0`（与 `AUDIT.md` 既有记录一致）|
+
+## 首轮站点统计（🟡 未穷尽）
+
+- 跨格遍历：`lea reg,[reg+0xf0]` **13 处** + `add reg,0xf0` **9 处** = **22 处**；
+- 以玩家全局 `[0x4cf410]` 为基址的交集：**17 个函数** —— 除 `Player__allocate_option` / `PlayerInner__constructor` /
+  `Player__initialize` / `Player__commit_death_and_enter_state2` / `Player__repopulate_options_and_notify_cards` /
+  `AbilityManager__on_tick` / `AbilityShop__initialize` 外，**大量是原生装备卡自己的 `on_tick` / `c_press`**
+  （Aya / Suwako / Tenshi / Megumu / Sumireko / Tsukasa / Miko / Remilia / Utusho / Raiko / Shinmyoumaru / Clownpiece）。
+
+## 要扩就得动的 8 类点
+
+见 engine 文档 §4 的表（结构位移 / 分配回收 / 重建通知 / 死亡与商店 / 原生卡 tick / sht 几何 / 发弹分组 / 认领与 HUD）。
+其中**两个硬骨头**：① 数组在对象内 ⇒ 位移面极大；② sht 的子机位置块**只有 10 对** ⇒ 槽数先被几何卡住（🟡 待核对齐关系）。
+
+## 下一步（若要真做）
+
+1. 先把**访问点枚举穷尽**（按 `[0x4cf410]` 做函数内数据流，区分格首/格内/区间尾）；
+2. 核 `pl0X.sht` 位置块与 12 格的对齐（决定"上限"到底是 10 还是 12）；
+3. 核发弹分组字段（一手行字段 `+0x02` = 使魔槽号）在 TH18 的上界与位域宽度；
+4. 再估"扩到 N"的施工单与回归面（对 108/111/116 这些按格认领的卡、以及存档）。
