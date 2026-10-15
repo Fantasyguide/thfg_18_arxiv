@@ -7571,7 +7571,15 @@ static int on_tick_2(ce_card_t *c)
              *     待一手的真实换算到位 ⇒ **改这一个常量**即可 ✓。*/
             s_aura_anim_cur = POFV_AURA_K_SAKUYA * e;   /* 0 → 3.0×20 = 60 ✓ */
         }
-        s_aura_r = s_aura_anim_cur;
+        /* ★★★★★ 2026-10-16 owner 口径（原话）：「★ **你不用管 th09 了，你就按照在固灵结界本身，
+         *   shift == C，只是 C 额外挂一个蓄力**」✓ ⇒ ★ **判定半径不许因"没蓄力"而退成插值起点** ✗。
+         *   ★ 病根（owner 实跑观察 ✓）：「★ **按 C 的时候固灵结界才会掉，按 shift 不会掉**」✓ ——
+         *   ★ 因为 `s_aura_anim_cur = 1.0f + (target − 1.0f)·e` ✓ 的插值**从 1.0 起** ⇒
+         *   ★ 只按 shift（`e == 0`）时 `s_aura_r = **1.0 px**` ✗ ⇒ 掉落那条路的圈内判定全落空 ✓
+         *   ⇒ ★ **一颗都不撒** ✓（而看得见的那圈用的是 `target` ✓ ⇒ "**看得见却不掉**" ✓）。
+         *   ★ 修法：★ **没蓄力时判定半径取 `target`（= 可见那圈）** ✓ ⇒ ★ `shift` 与 `C` 的结界
+         *   **同一档** ✓，C 只是额外把蓄力挂上去 ✓（= owner 口径 ✓）。*/
+        s_aura_r = (e > 0.0f) ? s_aura_anim_cur : target;
         /* ★★ 只有**咲夜**用它（owner 明确：「总之是你就改咲夜的，其他别动」✓）：
          *   一手（`engine/versus/th09/02-ghost-and-seal.md` §3.6e ✓）：领域扇节点 = `EffectSys` sid 7
          *   ⇒ `etama.anm` **script91** ⇒ `scale(24.0f, 24.0f)`（opcode 7 ✓）⇒ 写进 `VM+0x288`
