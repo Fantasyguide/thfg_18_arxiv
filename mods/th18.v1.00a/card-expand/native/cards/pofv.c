@@ -2689,7 +2689,7 @@ static void pofv_c2_tick(uint32_t id)
         /* c2_ring_vm_sync(r); */   /* ★ 2026-10-13 停用 ✗：滞后那台 ⇒ 统一到 CA ✓ */
         float pos[3];
         pos[0] = s_c2_pt0x; pos[1] = s_c2_pt0y; pos[2] = 0.0f;   /* ★ 一手：环心 = 第 1 个环绕点 ✓（原为自机 ✗）*/
-        (void)c2_cancel_drop(pos, r);
+        /* ★ 2026-10-16 删除（最后一处 ✓）—— 原来这里调那个**自造函数** ✗ */
         (void)(void)storm_hit_clipped(s_c2_pt0x, s_c2_pt0y, r, POFV_C2_RING_DMG);   /* ★ 一手：环心 ✓ */
     }
 
@@ -4142,7 +4142,7 @@ static void pofv_c3_tick(void)
                 pos[0] = pp3r ? pp3r[0] : 0.0f; pos[1] = pp3r ? pp3r[1] : 128.0f; }
             pos[2] = 0.0f;
             /* ★ 2026-10-16 删除（owner：「那个突兀的自造函数杀掉，全部走 CA 的那个函数」✓）：
-             *   原来这里是 `(void)c2_cancel_drop(pos, r);` ✗ —— 一手那支 CA 环
+             *   原来这里是那个**自造函数的调用** ✗ —— 一手那支 CA 环
              *   （`pofv_ca_ring_tick()` ✓）负责消弹与撒道具 ✓。*/
             pofv_eb_ring_sync(&s_c3.ring_vm, r);
         }
@@ -4895,7 +4895,7 @@ static void pofv_c4_tick(void)
                 pos[0] = pp4r ? pp4r[0] : 0.0f; pos[1] = pp4r ? pp4r[1] : 128.0f; }
             pos[2] = 0.0f;
             /* ★ 2026-10-16 删除（owner：「那个突兀的自造函数杀掉，全部走 CA 的那个函数」✓）：
-             *   原来这里是 `(void)c2_cancel_drop(pos, r);` ✗ —— 一手那支 CA 环
+             *   原来这里是那个**自造函数的调用** ✗ —— 一手那支 CA 环
              *   （`pofv_ca_ring_tick()` ✓）负责消弹与撒道具 ✓。*/
             pofv_eb_ring_sync(&s_c4.ring_vm, r);
         }
