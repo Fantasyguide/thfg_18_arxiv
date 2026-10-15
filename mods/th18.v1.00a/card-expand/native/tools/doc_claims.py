@@ -263,6 +263,7 @@ W1E_REGRESSIONS = (
     ("手册不得含裸地址", "PLAYER-GUIDE.md", r"0x[0-9a-fA-F]{4,}", False),
     ("手册不得含工单号或日期横幅", "PLAYER-GUIDE.md", r"工单|2026-[0-9]{2}-[0-9]{2}", False),
     ("手册不得写调试键", "PLAYER-GUIDE.md", r"调试键|空格 ?=|Shift ?\+ ?空格", False),
+    ("手册不得出现工作记号", "PLAYER-GUIDE.md", r"[\u2713\u2717\u2753\u23f3\u2705]", False),
     # ---- 代码注释（过期注释 ✓）----
     ("111 的魔理沙灵击门槛注释不得写 1.55（活常量 = 150）", "native/cards/mof_core.h", r"1\.55", False),
     ("107 的「7 秒」注释需与活常量复核", "native/cards/senro.c", r"(?<![.\d])7 ?(?:秒|s)\b", False),
