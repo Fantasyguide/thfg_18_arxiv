@@ -152,8 +152,8 @@ def card_macros(cards):
         if cid not in cards:
             continue
         nm = cards[cid]['name']
-        L.append('\\newcommand{\\%s}{%d\u3000%s}' % (al, cid, nm))
-        L.append('\\newcommand{\\%s}{\\textbf{%d\u3000%s}}' % (al.upper(), cid, nm))
+        L.append('\\newcommand{\\%s}{%d %s}' % (al, cid, nm))
+        L.append('\\newcommand{\\%s}{\\textbf{%d %s}}' % (al.upper(), cid, nm))
     return '\n'.join(L)
 
 
@@ -188,7 +188,7 @@ def linkify(tex, cards):
             macro = '\\' + CARD_ALIAS[cid] + '{}'
             bold = '\\' + CARD_ALIAS[cid].upper() + '{}'
         else:
-            macro = bold = '\\textbf{%d\u3000%s}' % (cid, nm)
+            macro = bold = '\\textbf{%d %s}' % (cid, nm)
         # ★ 一条规则吃掉「编号 卡名」「卡名 编号」「裸卡名」三种形态，且**连相邻的同一个编号一起吃掉**
         #   （否则旧写法「风神录 110」会被替成「110 风神录 110」✗ —— owner 2026-10-15 指出）
         def _rep(m, nm=nm, cid=cid, bold=bold, macro=macro):
@@ -305,7 +305,7 @@ def main():
             L.append(r'\begin{minipage}[c]{0.64\linewidth}')
         else:
             L.append(r'\noindent\begin{minipage}[c]{0.98\linewidth}')
-        L.append(r'{\bfseries %d\quad %s}\par\smallskip' % (cid, esc(c['name'])))
+        L.append(r'{\bfseries %d %s}\par\smallskip' % (cid, esc(c['name'])))
         L.append(r'{\footnotesize %s}\par' % '\\\\'.join(inline(x) for x in c['desc']))
         L.append(r'\end{minipage}')
         L.append(r'\par\smallskip{\color{gray}\hrule}\smallskip')
