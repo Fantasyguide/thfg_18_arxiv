@@ -1106,6 +1106,12 @@ int pofv_power_tick(pofv_power_pool_t *p, const float *player, float poc_y, int3
              *   ⚠ ★ 单测同步改（★ 旧规格"一帧就收"✗ = `tests/test_pofv_core.c:674` ✓）——
              *   ★ 本仓里 ★ **单测就是规格** ✗。*/
             if (d2 <= absorb2 && it->age > 31) {   /* 收取：点入账、槽当场释放（出生 32 帧内不可拾 ✗）*/
+                /* ★ 2026-10-16 **只读诊断**（owner：「就是被瞬间吃了！」✓ 且明确排除"12 px / POC 线"✗）：
+                 *   ★ 道具在**离自机很远**（结界的边缘 ✓）的地方就被吃掉 ⇒ 必须查清是**哪一支**清的 ✓
+                 *   ⇒ ★ 本行打出：年龄 / 来源 / 到自机的平方距离 / 半径² ✓（一次实跑就能对号入座 ✓）。*/
+                ce_log("pofv: [PICK-ABS] age=%d src=%d d2=%.0f absorb2=%.0f at=(%.0f,%.0f) pl=(%.0f,%.0f)",
+                       (int)it->age, (int)it->src, (double)d2, (double)absorb2,
+                       (double)it->x, (double)it->y, (double)player[0], (double)player[1]);
                 pts += it->value;
                 it->active = 0;
                 --p->live;
@@ -1115,6 +1121,12 @@ int pofv_power_tick(pofv_power_pool_t *p, const float *player, float poc_y, int3
                 continue;
             }
             if (player[1] < poc_y) {
+                /* ★ 2026-10-16 **只读诊断**：★ 这一支**没有半径** ✓（自机在 POC 线以上 ⇒ 全屏收 ✓）
+                 *   ⇒ ★ 它就是"道具在离自机很远的地方也被吃"的头号嫌疑 ✗ ⇒ 打一行 ✓。
+                 *   ★ 若日志里是 `[PICK-POC]` 而不是 `[PICK-ABS]` ⇒ 元凶就是它 ✓，改法由 owner 口径定 ✓。*/
+                ce_log("pofv: [PICK-POC] age=%d src=%d at=(%.0f,%.0f) pl_y=%.0f poc_y=%.0f",
+                       (int)it->age, (int)it->src,
+                       (double)it->x, (double)it->y, (double)player[1], (double)poc_y);
                 if (it->st != 2) it->st = 2;                  /* 过回收线（一手 state 4）*/
             } else if (it->st != 3 &&
                        dx >= -POFV_POWER_BOX_HALF_W && dx <= POFV_POWER_BOX_HALF_W &&
