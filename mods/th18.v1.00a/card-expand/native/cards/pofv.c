@@ -1484,15 +1484,12 @@ static void pofv_graze_scan_drop(void)
         if (!pofv_power_has_room()) continue;       /* ★ 池满 ⇒ **不置位** ✓（以后还能掉 ✓）*/
         s_aura_bullet_done[i] = 1;
         {
-            /* ★ 2026-10-16 **与结界那条同一改动（照 116 ✓）**：★ 擦弹掉落也改用**引擎道具** ✓
-             *   ⇒ ★ 吸引矩形 / POC / 收取 / 出生宽限**全归一手** ✓（不再走卡侧自造池 ✗，
-             *   也就不再受那两个 ❓自定吸引矩形（`pofv_core.h` 的 56/120 ✓）影响 ✓）。
-             *   ★ 速度/角度 = **TH19 一手**（速度 2.2 ✓、角度随机 ✓；出处见结界那段注释：
-             *   `local/th19.v1.10c/decomp/all.c:221235` ＋ 调用点 `0x400ccccd` ✓）。*/
-            float pos11[3];
-            const float ang11 = (float)(ce_rand() % 628) * 0.01f;
-            pos11[0] = bx; pos11[1] = by; pos11[2] = 0.0f;
-            (void)ce_spawn_item(2u, pos11, ang11, 2.2f);
+            /* ★ 2026-10-16 **已撤（同结界那处 ✓）**：上一版改成引擎道具 ✗ ⇒ 现改回**卡侧池** ✓
+             *   —— 116 的做法是"自己的 VM + 一手运动学 + 参数读自机字段" ✓（`season.c:16/:35`、`:816-836` ✓）。*/
+            float gx[1], gy[1]; int32_t gpts = 0;
+            gx[0] = bx; gy[0] = by;
+            pofv_power_spawn_packed_at(&s_power, gx, gy, 1, POFV_POWER_PTS_AURA, 1,
+                                       POFV_POWER_SRC_AURA, &gpts);
         }
     }
     /* ★★★ 2026-10-12 goal ① 的"证据不足"项自证 ✓（审计 `89c60c46` 指出：★ 三条路都 `br <= 0` 跳过 ✗，
@@ -8887,27 +8884,16 @@ static int on_tick_2(ce_card_t *c)
             int hit = aura_scan_bullets(ppa, POFV_AURA_ITEMS_PER_FRAME, ox, oy);
             if (hit > 0) {
                 int32_t apts = 0;
-                int k10;
-                /* ★★★★★ 2026-10-16 **owner 口径（照 116 做 ✓）**：★「★ **怎么人 116 就能做对呢？**」✓
-                 *   —— ★ 因为 116 **用的是引擎自己的道具** ✓：`season.c:604`
-                 *   `ce_spawn_item(2u, pos, -1.5707964f, 1.7f)` ✓（SDK 包一手 `CE_FN_SPAWN_ITEM` ✓，
-                 *   `sdk.h:413-417` ✓）⇒ ★ **吸引矩形 / POC / 收取出生宽限全是引擎一手** ✓✓。
-                 *   ★ 本卡从此也走同一条 ✓：★ 逐颗**命中点**（`aura_scan_bullets` 的 `ox/oy` ✓）
-                 *   ⇒ `ce_spawn_item(2u, 命中点, 角度随机, **2.2f**)` ✓
-                 *   · ★ 速度/角度按 **TH19 一手** ✓：`local/th19.v1.10c/decomp/all.c:221235` 的
-                 *     `FUN_00521d60`：`+0xc8c = cos(param_5)*param_6` ✓（`param_5`=角度、`param_6`=速度 ✓），
-                 *     各调用点传的速度 = `0x400ccccd` = float **2.2** ✓、角度由**调用方随机** ✓ ⇒ 本处同样随机 ✓；
-                 *   · ★ 失败就从简（照 116 ✓ 它失败时退 `ce_money_pocket` ✓）：★ 引擎道具池满 ⇒ 这一颗不撒 ✓
-                 *     （★ 旧的自造池那条链**不再参与掉落** ✗ —— 池/HUD 计数随后按 goal 第 2 步清理 ✓）。*/
-                for (k10 = 0; k10 < hit; ++k10) {
-                    float pos10[3];
-                    const float ang10 = (float)(ce_rand() % 628) * 0.01f;   /* 0..2π ✓ */
-                    pos10[0] = ox[k10]; pos10[1] = oy[k10]; pos10[2] = 0.0f;
-                    if (ce_spawn_item(2u, pos10, ang10, 2.2f)) ++apts;
-                }
+                /* ★ 2026-10-16 **已撤：做法改按 116** ✗✓（owner：「★ 核实清楚了，**做法上照着 116 做**」✓）——
+                 *   ★ 上一版这里改成了引擎道具 `ce_spawn_item(...)` ✗，那是"另一条路" ✓ **不是** 116 的做法 ✗；
+                 *   ★ 116 的真做法 = ★ **自己的 anm VM + 一手运动学 + 参数读自机字段** ✓
+                 *   （`season.c:16/:35` ✓ 与 `:816-836` ✓）⇒ ★ 本处**改回卡侧池** ✓，
+                 *   而"参数读自机字段"那一步在池那一侧做（见本卡 `pofv_core.h` / 卡侧读值处 ✓）。*/
+                pofv_power_spawn_packed_at(&s_power, ox, oy, hit, POFV_POWER_PTS_AURA,
+                                           POFV_AURA_ITEMS_PER_FRAME, POFV_POWER_SRC_AURA, &apts);
                 s_aura_bullets += hit;
                 if (hit >= POFV_AURA_ITEMS_PER_FRAME)     /* 每帧上限生效时留一行（诊断）*/
-                    ce_log("pofv: aura touched %d bullets (frame cap %d, engine items ok %d)",
+                    ce_log("pofv: aura touched %d bullets (frame cap %d, packed %d pts)",
                            hit, POFV_AURA_ITEMS_PER_FRAME, (int)apts);
             }
         }
