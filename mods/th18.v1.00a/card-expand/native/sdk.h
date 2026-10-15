@@ -1256,16 +1256,26 @@ int ce_ptr_readable(const void *p, unsigned n);
  *     `node.entry` = `zBullet*`）⇒ **只摸活弹** ✓（O(活弹)）；
  *   `CE_BULLET_POOL_FOR_EACH(b)`：走**2000 槽静态池**（老写法；顺序 = 数组下标 ✓）；
  *   两者都**不判断有效性** ⇒ 卡体里照旧 `if (!你的判据(b)) continue;` ✓。
- *   ⚠ 每一步都过 `IsBadReadPtr`（坏指针即停 ✓）、链表顺序 ≠ 数组顺序（顺序敏感的卡用 POOL ✓）。*/
+ *   ⚠ 每一步都过 `IsBadReadPtr`（坏指针即停 ✓）、链表顺序 ≠ 数组顺序（顺序敏感的卡用 POOL ✓）。
+ *
+ * ★★★ 2026-10-15：**移植上游 P26 修复**（上游提交 `dd447f70`，merge `bcdce0d1`
+ *   「P26: 修回归 —— CE_BULLET_LIVE_FOR_EACH 的守卫反相（11 站点静默扫 0 次）」✓）。
+ *   病根：`ce_ptr_readable()` 返回 **1 = 可读**（实现 `p && !IsBadReadPtr(p, n)`）⇒ 判"能不能走"
+ *   要用 `ce_ptr_readable(...)` ✓，而本宏原来三处写成 `!ce_ptr_readable(...)` ✗ = 要求「指针**坏**」
+ *   才继续 ⇒ **链表一开头就退出、恒 0 次迭代** ✗（引入提交 `8b8c9139`）。
+ *   后果（owner 实跑）：所有走本宏的站点静默扫 0 次 —— 11 个站点：`lolk.c:488`、
+ *   `signal.c:2100/2156`、`youkai.c:954/6936`、**`pofv.c:1944`（109 固灵结界碰弹染色）**、
+ *   `season.c:714/1441`、`great_work.c:204/313`、`reverse.c:20` ⇒「109 固灵结界碰弹不变暗」就是它 ✓。
+ *   ⇒ 本卡 109 的那棵树缺这笔（检出落后上游 208 个提交）⇒ 这里按上游原样把三处守卫改回来 ✓。*/
 #define CE_BULLET_LIVE_FOR_EACH(b)                                                   \
     for (uint8_t *ce_bl_head = (CE_BULLET_MGR() ? (CE_BULLET_MGR() + CE_BM_TICK_LIST_HEAD) : 0), \
-                 *ce_bl_node = ((ce_bl_head && !ce_ptr_readable(ce_bl_head, 16))         \
+                 *ce_bl_node = ((ce_bl_head && ce_ptr_readable(ce_bl_head, 16))          \
                                     ? *(uint8_t *const *)(ce_bl_head + CE_BULLET_LIST_NEXT) : 0), \
                  *b = 0;                                                             \
              ce_bl_node && ce_bl_node != ce_bl_head &&                               \
-             !ce_ptr_readable(ce_bl_node, 16) &&                                        \
+             ce_ptr_readable(ce_bl_node, 16) &&                                        \
              ((b) = *(uint8_t *const *)ce_bl_node) != 0 &&                           \
-             !ce_ptr_readable((b), CE_BULLET_STATE + 2);                                \
+             ce_ptr_readable((b), CE_BULLET_STATE + 2);                                \
          ce_bl_node = *(uint8_t *const *)(ce_bl_node + CE_BULLET_LIST_NEXT))
 
 /* ★ z62：**带下标**的池遍历（给"按下标收集/消费"的卡用，例如 111 的 `counted[]`）——
