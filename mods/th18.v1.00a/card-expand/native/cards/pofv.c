@@ -1523,15 +1523,17 @@ static int      s_spirit_next;
 static int pofv_spirit_body_sprite(int32_t kind, int32_t level, int disabled, int frame)
 {
     static const int base[POFV_SPIRIT_KIND__COUNT] = {
-        /* ★★★★★ 2026-10-13（★ owner 实跑 ✓）：「★ **纯净灵的颜色还是红色**」✗ ⇒ ★ **真因 = 贴图** ✗：
-         *   ★ `SPIRIT_PURE_*` 那张的平均 RGB = **(220,179,179)** ✓（★ R 明显高于 G/B ⇒ **红/粉** ✗）；
-         *   ★ 而固化态那张 `SPIRIT_DISP4_*` = **(232,222,174)** ✓（★ R≈G ≫ B ⇒ **黄** ✓）；
-         *   ★ 两张的**不透明像素数完全相同（348 ✓）** ⇒ ★ **同一只灵的"红版 / 黄版"** ✓✓。
-         *   ★ owner：「★ **纯净灵正常的颜色就是其固化状态的颜色，都应该是黄的**」✓
-         *   ⇒ ★ **换上"黄版"这张** ✓ —— ★ **不是**调 `set_color` ✗（★ 红贴图 × 黄 tint **仍是红** ✗，
-         *   ★ 这正是我以前改了 tint 却没用的原因 ✓）。
-         *   ⚠ ★ 帧数跟着变 ✗：★ `SPIRIT_PURE_*` 是 **8 帧** ✓、★ `SPIRIT_DISP4_*` 是 **5 帧** ✓
-         *   ⇒ ★ 下一行的 `n` 也从 8 改成 5 ✓（★ 否则帧索引越界 ✗）。*/
+        /* ★★★★★ 2026-10-13（★ 订正 ✓ —— 原来的理由**已被证伪** ✗，见下 ✓）：
+         *   ★ 原话（★ 已作废 ✗）：★「★ 两张的**不透明像素数完全相同（348 ✓）** ⇒ ★ 同一只灵的"红版 / 黄版"」✗
+         *   ★ ★ **为什么错** ✗（★ 复核 `ab9b54e5` 逐帧量 ✓ 高置信 ✓）：
+         *   ★ `SPIRIT_PURE_*` 的**逐帧**不透明像素 = ★ **540 / 541 / 560 / 542 / 417 / 398 / 499 / 587** ✓
+         *   ★ —— ★ ★ **不是 348** ✗；★ 348 只量到"★ 球"那一层 ✓ ⇒ ★ 它**回答不了"外环是不是另一张 sprite"** ✗。
+         *   ★ ★ **一手真值** ✓：★ 标准纯灵 = ★ `GhostPure()` → ★ `ins_303(0,106)` → ★ **script106**
+         *   ★ → ★ **`enemy.anm` entry1 `enemy2.png` 的 sprite 144–151（黄、8 帧）** ✓
+         *   ★（★ 而 ★ `SPIRIT_PURE_*` = sprite **120–127（红）** ✓，★ 只被 ★ `GhostPureOrinDisable`/★ `GhostTest*` 用 ✓
+         *   ★ ⇒ ★ **不是标准纯灵** ✗）；★ **固化态 = `GhostPureDisable()` → 同一支 script106** ✓
+         *   ★ ⇒ ★ **一手"固化不换族、颜色也一样"** ✓（★ 你说的"★ 正常色 = 固化色"字面成立 ✓）。
+         *   ★ ⚠ ★ **换黄的这一步本身是对的** ✓（★ 红 ✗ → 黄 ✓），★ 只是**理由要换成上面的一手** ✓。*/
         CE_ANM_ABILITY_SPRITE_SPIRIT_DISP4_0,
         CE_ANM_ABILITY_SPRITE_SPIRIT_WOLF_0,
         CE_ANM_ABILITY_SPRITE_SPIRIT_OTTER_0,
@@ -1539,21 +1541,30 @@ static int pofv_spirit_body_sprite(int32_t kind, int32_t level, int disabled, in
         CE_ANM_ABILITY_SPRITE_SPIRIT_GHOSTG_0
     };
     int k = (kind >= 0 && kind < POFV_SPIRIT_KIND__COUNT) ? (int)kind : (int)POFV_SPIRIT_KIND_PURE;
-    int n = (k == (int)POFV_SPIRIT_KIND_PURE) ? 5 : 4;   /* ★ 2026-10-13：★ 纯净灵改用**黄版**贴图 ✓
-                                                          *   （★ `SPIRIT_DISP4_*` ✓ 是 **5 帧** ✗ 不是 8 帧 ✓
-                                                          *   —— ★ 见上一行 `base[]` 里那段注释 ✓）。*/
+    int n = (k == (int)POFV_SPIRIT_KIND_PURE) ? 8 : 4;   /* ★ 2026-10-13（★ 本 goal 待办 1 ✓）：★ **5 → 8** ✗
+                                                          *   —— ★ 一手 = `enemy.anm` script106 = sprite **144–151（8 帧）** ✓
+                                                          *   （★ 复核 `ab9b54e5` ✓）；★ 补切后 ★ `SPIRIT_DISP4_0..7` 八张齐 ✓
+                                                          *   （★ 见 `make_pofv109_ball_art.py` + `ORDER.txt` ✓）。*/
     if (frame < 0) frame = 0;
-    /* ★★★ owner 2026-10-06：「**固化的时候 sprite 也会变**」✓ ＋ 核实方：一手**每族一档** ✓
-     *   ⇒ 补上此前缺失的**純霊档**（`ATLAS_SPIRIT_DISABLE_PURE` ✓，8 帧 = 一手 TH19 `enemy.anm`
-     *     `sprite112–119` 的「4 帧实心球 + 4 帧空心环」✓；来源与 UV 见 `AUDIT.md` §BE-167 ✓）。*/
+    /* ★★★ owner 2026-10-06：「**固化的时候 sprite 也会变**」✓ ＋ 核实方：一手**每族一档** ✓ */
     if (disabled && k == (int)POFV_SPIRIT_KIND_PURE) {
-        /* ★★★ owner 2026-10-06 修正（一手链 ✓）：`ins_303(0, 106)` 的 **106 是 anm「脚本号」而非 sprite 号** ✗
-         *   —— opcode 303 → `FUN_004fe980` → `FUN_004cb960(&vm, …, arg1(脚本号), …, *(enemy+0x28c)+7, 2, 0)` ✓
-         *   （与光环同机制：`FUN_004cb960(…, 0xf, …)` = `pl00.anm` **script15** ✓）。
-         *   ⇒ **純霊固化 = `enemy.anm` script106** ✓，其 sprite = **144–148**（`enemy2.png`，y=96，**32×32、5 帧** ✓）
-         *   ⇒ 本卡的 `SPIRIT_DISP4_0..4` 即按此重切 ✓（旧的 8 帧「球/环」是切错来源 ✗，已删）。*/
+        /* ★★★★★ 2026-10-13（★ 订正 ✓ —— 下面原注释里"★ 旧的 8 帧已删"✗ **查无实据** ✗）：
+         *   ★ ★ **证伪** ✗：★ 我查了 ★ `entries/ORDER.txt` 的**历史** ✓ —— ★ 在引入本表的
+         *   ★ `48fe29bf` 的**父提交**里 ★ **根本没有** `ATLAS_SPIRIT_DISABLE_PURE` / `SPIRIT_PURE_*` /
+         *   ★ `SPIRIT_DISP4_*` 任何一条 ✓（★ 同段只有 `ATLAS_TRANCE_SPIRIT` ✓）★ ⇒ ★ 那句
+         *   ★「★ **旧的 8 帧「球/环」是切错来源 ✗，已删**」✗ ★ **没有出处** ✓（★ 与审计 `a39d612c`
+         *   ★ 点名的病同款 ✗）。
+         *   ★ ★ **一手真值**（★ 复核 `ab9b54e5` ✓）：★ script106 的 sprite = ★ **144–151 = 8 帧** ✗
+         *   ★（★ 不是 5 帧 ✗）★ ⇒ ★ 本卡只切了 **144–148 这 5 帧** ✗ ★ ⇒ ★ ★ **"环"的那三帧
+         *   ★ 149/150/151 从来没被切进来** ✓✓ —— ★ 而 ★ 一手那个循环是 ★ **球 → … → 空心环** ✓
+         *   ★ ⇒ ★ ★ **这就是 owner 报的「固化态出生时外面那圈蓝环没了」** ✓✓（★ 见本 goal 的待办 1 ✓）。
+         *   ⚠ ★ 修法已定 ✓：★ 按 ★ `enemy2.png` **y=96**、★ x = **0/32/64/96/128/160/192/224** ✓
+         *   ★ 重切 **8 张** ✓、★ 本函数 ★ **`% 5` → `% 8`** ✓、★ `ORDER.txt` 那 5 行 → **8 行** ✓
+         *   ★（★ 2026-10-13：★ 等 owner 一句"B 可以"✓ 即落 ✓）。*/
         int b = (int)CE_ANM_ABILITY_SPRITE_SPIRIT_DISP4_0;
-        return b + ((frame < 0 ? 0 : frame) % 5);   /* 5 帧循环 ✓ */
+        return b + ((frame < 0 ? 0 : frame) % 8);   /* ★ 8 帧循环 ✓（★ 一手 script106 = sprite 144–151 ✓；
+                                                     *   ★ 第 5–7 帧即"球 → 空心环"的后半 ✓ ——
+                                                     *   ★ 这就是 owner 要的那圈 ✓）*/
     }
     if (disabled && (k == (int)POFV_SPIRIT_KIND_WOLF || k == (int)POFV_SPIRIT_KIND_OTTER ||
                      k == (int)POFV_SPIRIT_KIND_EAGLE)) {
@@ -1705,10 +1716,7 @@ static void pofv_spark_tick(void)
     }
 }
 
-/* ★★ P60（owner：「**这个过滤器应当只有暴风用到才对**」✓）：加 `white_only` 开关 ——
- *   只有**暴风**传 1（只吃半径 ≤ 4 的小弹 ✓），**C1–C4 消弹圈**与**破罩搜弹**传 0（不筛 ✓）。
- *   旧版把这个判据用在所有消弹路径上 ✗（owner 实跑口径纠正 ✓）。*/
-static int cancel_white_in_circle(const float *pos, float r, int max_count, int mode, int white_only)
+static int cancel_white_in_circle(const float *pos, float r, int max_count, int mode)
 {
     uint8_t *bm = CE_BULLET_MGR();
     uint32_t i;
@@ -1720,7 +1728,7 @@ static int cancel_white_in_circle(const float *pos, float r, int max_count, int 
         float br, dx, dy, rr;
         if (state != 1 && state != 2) continue;        /* 0 = 空槽；3 / 4 = 别的状态 */
         br = *(const float *)(b + POFV_BULLET_RADIUS_OFF);
-        if (white_only && !pofv_is_white_bullet(br)) continue;   /* ★ P60：只有暴风筛小弹 ✓ */
+        if (!pofv_is_white_bullet(br)) continue;       /* ★ 可消弹判据（哨兵弹种在这里被跳掉）*/
         dx = *(const float *)(b + CE_BULLET_POS) - pos[0];
         dy = *(const float *)(b + CE_BULLET_POS + 4) - pos[1];
         rr = br * 0.5f + r;                            /* 照 0x429370 的判定式 */
@@ -1969,7 +1977,7 @@ static void pofv_aura_tint_tick(void)
              *   ★ 即 ★ **只还原 RGB（低 24 位）** ✓、★ **保留当前 alpha（高 8 位）** ✓
              *   ⇒ ★ 不再把"染色前那一帧的 alpha 快照"写回去 ✗ —— ★ 那正是"**领域内出生的弹被降透明**"的成因 ✓
              *     （★ 出生时快照就已经是被染过的低 alpha ✓ ⇒ 还原时又把它写回 ⇒ 永久偏暗 ✗）。*/
-            ce_color_set_rgb(col, pofv_aura_tint_color(0));   /* ★ P14a：I1 词汇（与上面一行注释里的写法等价 ✓）*/
+            *col = (*col & 0xff000000u) | (pofv_aura_tint_color(0) & 0x00ffffffu);
 #if POFV_AURA_BULLET_SHAKE
             pofv_aura_shake_apply(b);
 #endif
@@ -2056,12 +2064,17 @@ static void storm_vm_sync(void)
  *   理由：① 结界键 = 本卡里唯一"玩家主动按下"的边沿事件 ✓；② 不动 `s_aura_charge` 语义 ✓；
  *   ③ 上升沿天然"只发一次" ✓（与一手"只发一轮"同形 ✓）。
  *   影响：按 C/Shift **立刻**出弹，**不受**灵力/`POFV_REI_C1` 门控 ✗（一手要蓄到 500 才出）
- *   ⇒ 手感偏强；且 `POFV_REI_C1`（现 2500，一手 500）owner 未拍板 ⇒ 本轮**不动它** ✓。
+ *   ⇒ 手感偏强。
+ *   ★ 2026-10-15（owner 拍板 ✓）：「**灵力初值是 500**」⇒ 与本宏现值**一致** ✓
+ *     （`POFV_REI_C1 = 500.0f`，开局 `s_reiryoku = POFV_REI_C1` ✓）。
+ *     ⚠ 这条注释里的旧话"现 2500"**是过期的** ✗ —— 2500 是**夹取上限** `POFV_REI_MAX` 与 C4 阈值，不是初值 ✓。
  *   ⇒ 定案登记在 `TUNING.md` 的 C1 节。
  *
  * ❓**观感自定**：一手是 `pl00.anm` script10 的 30×30 弹；本卡**暂用现成脚本占位**
  *   （`CE_ANM_ABILITY_SCRIPT_POFV109_SPIRIT_BODY`），**不新切贴图、不动 `ORDER.txt`** ✗。
- * ❓**伤害源自定**：`ce_damage_rect` 的 `life/w/h` 一手没给 ⇒ 先用下面的常量（32×32 ≈ 一手 30×30 ✓）。
+ * ❓**伤害源自定**：`ce_damage_rect` 的 `life/w/h` 一手没给 ⇒ 用下面的常量。
+ *   ★ 2026-10-15 核实（owner 问「现在代码是多大」✓）：现值 = **`POFV_C1_HIT_W` / `POFV_C1_HIT_H` = 30.0f**
+ *     ⇒ **30×30**，与一手 `sprite38` 的 30×30 **一致** ✓（旧注释写的"32×32"是过期值 ✗）。
  */
 typedef struct { float x, y; int dmg; float ang, spd; } pofv_c1_shot_t;
 
@@ -2350,7 +2363,13 @@ typedef struct {
     int active;      /* 1 = C2 生效中 */
     int age;         /* 0..`POFV_C2_TOTAL`−1（一手 `EXReigekiInf+0x5c` ✓）*/
     int invuln;      /* 剩余无敌帧（一手 40 ✓；逐帧声明给 SDK 的声明层 ✓）*/
-    int ring_vm;     /* ★★ 消弹**范围圈**的 VM（★ 一手正解 = 一台 VM + `texArcEven(64)`，见 §15 ✓）*/
+    /* ★ 2026-10-13（★ 待办 A 收尾 ✓）：★ **`int ring_vm;` 字段已拔** ✗ —— ★ 它只服务于
+     *   ★ `c2_ring_vm_sync` / ★ `c2_ring_vm_release` ✓（★ 那两个函数已 `#if 0` 排除编译 ✓、
+     *   ★ 调用点早在 `373277d7` 停用 ✓）★ ⇒ ★ 字段**无人读写** ✓ ★ ⇒ ★ 删掉它 ✓（★ 顺序对：
+     *   ★ **先函数体、后字段** ✓ —— ★ 反了会编译不过 ✓）。
+     *   ★ 历史：★ 这里原来是 ★「★ `int ring_vm;` —— 消弹**范围圈**的 VM（★ 一手正解 = 一台 VM +
+     *   ★ `texArcEven(64)` ✓，见 §15 ✓）」✗ —— ★ 那台就是"★ **滞后、炸了之后才出现**"✗ 的那一台 ✓，
+     *   ★ owner 已裁定 ★ **统一到 CA 模型** ✓（★ 见 `POFV_CA_RING_MAX` 上方那段 ✓）。*/
     int32_t orb_vm[POFV_C2_POINTS];   /* ★★ C2 的 **3 台可见物** = 一手 `pl00.anm` script20 ✓（脚本 434 ✓）*/
 } pofv_c2_t;
 static pofv_c2_t s_c2;
@@ -2407,7 +2426,7 @@ static int pofv_aura_rise_edge(int held)
  * 返回消掉的颗数。位置 = 圈心（一手是逐个命中点，本卡不复刻逐点坐标 ⇒ 见 `TUNING.md` 的 ❓）。*/
 static int c2_cancel_drop(const float *pos, float r)
 {
-    const int n = cancel_white_in_circle(pos, r, POFV_CANCEL_MAX, POFV_BULLET_CANCEL_MODE, 0)   /* ★ P60：C1–C4 不筛 ✓ */;
+    const int n = cancel_white_in_circle(pos, r, POFV_CANCEL_MAX, POFV_BULLET_CANCEL_MODE);
     if (n > 0) {
         int32_t pts = 0;
         (void)pofv_power_spawn_packed(&s_power, pos[0], pos[1], n, POFV_POWER_PTS_CANCEL,
@@ -2445,8 +2464,13 @@ static void pofv_c2_fire(void)
 }
 
 /* 每帧推进（105 帧）。`id` = 本卡卡号（无敌声明层的键 ✓）。**不依赖结界键电平** ✓（一次性 105 帧）。*/
-static void c2_ring_vm_sync(float r);   /* 定义在后（装回范围圈时加的 ✓）*/
-static void c2_ring_vm_release(void);   /* 定义在后（装回范围圈时加的 ✓）*/
+/* ★★ 2026-10-13（★ owner：「★ **灵梦 C2 发了两个消弹环**」✗ + ★「★ **落后的那个，炸了之后才出现**」✗
+ *   + ★「★ **抽成公用函数** ⇒ ★ **CA 模型更好**」✓）：
+ *   ★ ★ 原来这里有两个前置声明（`c2_ring_vm_sync` / `c2_ring_vm_release` ✓）—— ★ **已删** ✗
+ *   ★（★ 调用点已在上一笔停用 ✓：★ 滞后那台不再起 ✓；★ 函数本体与 `s_c2.ring_vm` 字段
+ *   ★ **下一笔连根删** ✓ —— ★ 那一处要**连它自己的兜底收一起删** ✗，★ 否则编译不过 ✓）。*/
+/* static void c2_ring_vm_sync(float r); */
+/* static void c2_ring_vm_release(void); */
 
 static void pofv_c2_tick(uint32_t id)
 {
@@ -2575,7 +2599,16 @@ static void pofv_c2_tick(uint32_t id)
             for (k4 = 0; k4 < POFV_C2_POINTS; ++k4)
                 if (s_c2.orb_vm[k4]) ce_anm_interrupt((uint32_t)s_c2.orb_vm[k4], 1);
         }
-        c2_ring_vm_sync(r);   /* ★ 圆心 = 第 1 个环绕点 ✓（一手 ✓）*/   /* ★★ 范围圈：每帧按**真实消弹半径**写 `scale.y`（判定=绘制 ✓）*/
+        /* ★★★★★ 2026-10-13（★ owner：「★ **灵梦 C2 发了两个消弹环**」✗ + ★ 原则
+         *   「★ **消弹环出发的时间是松手那一刻**；★ 这两个有一个**落后的，炸了之后才出现**」✗
+         *   + ★「★ **最好抽取成公用函数，所以 CA 的模型是更好的**」✓）：
+         *   ★ ★ **这里是"落后的那台"** ✗ —— ★ 它在 ★ **C2 自己 tick 的环阶段**里起 ✓
+         *   ⇒ ★ **炸了之后才出现** ✓；★ 而 ★ **CA 那台**（★ `pofv_ca_ring_*` ✓）★ 起于
+         *   ★ **释放分派那一帧** ✓（★ `:6795` ✓）= ★ **松手即出** ✓。
+         *   ★ ⇒ ★ 按 owner 的两条原则：★ **统一到 CA 模型** ✓ ⇒ ★ **这一路掐掉** ✗（★ 不再起 VM ✓）。
+         *   ★（★ 两个函数本体 `c2_ring_vm_sync` / `c2_ring_vm_release` 与 `s_c2.ring_vm` 字段
+         *   ★ **下一步连根删** ✓ —— ★ 那时会消掉"未使用函数"警告 ✓。）*/
+        /* c2_ring_vm_sync(r); */   /* ★ 2026-10-13 停用 ✗：滞后那台 ⇒ 统一到 CA ✓ */
         float pos[3];
         pos[0] = s_c2_pt0x; pos[1] = s_c2_pt0y; pos[2] = 0.0f;   /* ★ 一手：环心 = 第 1 个环绕点 ✓（原为自机 ✗）*/
         (void)c2_cancel_drop(pos, r);
@@ -2588,7 +2621,7 @@ static void pofv_c2_tick(uint32_t id)
 
     /* ⑤ 收尾（105 帧到 ⇒ 环淡出、无敌撤声明、状态归零 ✓）*/
     if (++s_c2.age >= POFV_C2_TOTAL) {
-        c2_ring_vm_release();  /* ★ 范围圈：随 C2 一起收（淡出后由 clear 兜底 ✓）*/
+        /* c2_ring_vm_release(); */  /* ★ 2026-10-13 停用 ✗（同上一处 ✓：统一到 CA 模型 ✓）*/
         ce_log("pofv: [C2ORB] 收尾@105 vm=(%d,%d,%d) live=(%d,%d,%d)（★ 若某台还 live=1 ✗ ⇒ 那台没按 +60 自删 ✓，"
                "★ 与 45 那条对照即可判【爆两次】是否句柄复用 ✓）",
                (int)s_c2.orb_vm[0], (int)s_c2.orb_vm[1], (int)s_c2.orb_vm[2],
@@ -2645,6 +2678,7 @@ static void pofv_c2_tick(uint32_t id)
                                        *   ⇒ ★ 那一维是 **6.0** ✓（★ 不是 1.0 ✗）。★ 半径那维由卡侧每帧写 ✓。
                                        *   ★ ❓自定成分：★ 1.0 也是"❓旋钮"✓ ⇒ 改成 6.0 只是**照先例取同值** ✓，
                                        *   ★ 非一手确证 ✓（★ 一手那套半径/带宽在别处 ✓）。*/
+#if 0   /* ★ 2026-10-13：★ 两函数整体退役 ⇒ 排除编译（★ 见上方那段说明 ✓）*/
 static void c2_ring_vm_sync(float r)
 {
     const float *p = ce_player_pos();
@@ -2690,6 +2724,7 @@ static void c2_ring_vm_release(void)
     if (ce_anm_get_vm((uint32_t)s_c2.ring_vm)) ce_anm_interrupt((uint32_t)s_c2.ring_vm, 1);
     s_c2.ring_vm = 0;
 }
+#endif   /* ★ 2026-10-13：★ `c2_ring_vm_sync` / `c2_ring_vm_release` 的 `#if 0` 收尾 ✓ */
 
 /* ★ 消弹**范围圈**：起 / 驱动 / 收（**一台 VM** ✓，脚本 432 = `texArcEven(64)` ✓，§15 ✓）。
  *   `r` = 本帧的**消弹半径** ⇒ `scale.y` 照写（**判定=绘制** ✓）。★ C2 用它自己的（见上 ✓），
@@ -2752,6 +2787,21 @@ typedef struct {
  *   **活动节点指针数组** ✓、计数在 `player+0xc110` ✓、池初始化 `0x41ec45` 写 **512 个空闲节点** ✓）。
  *   ★ 本卡取 8（❓自定：不是 512 ✓ —— 单局同时存在的 CA 环远少于这个数 ✓，但**必须 > 1** ✗：
  *   一手允许重叠（如 L1 48 帧没走完又放一次 ✓），原来"同一时刻只留一个"会把前一个**整个丢掉** ✗）。*/
+/* ★★★★★ 2026-10-13（★ owner 裁定 ✓，★ 一级证据 ✓）—— ★ ★ **这里就是"消弹环"的唯一实现** ✓：
+ *   ★ 原则（★ owner 原话 ✓）：★ ① ★「★ **消弹环出发的时间是松手那一刻**」✓；
+ *   ★ ② ★「★ **最好抽取成公用函数，所以 CA 的模型是更好的**」✓。
+ *   ★ ★ 于是：★ C1–C4 **全走这一套** ✓（★ 释放分派里 ★ `rk = (tier≤1)?1 : (tier==2)?2 :
+ *   ★ (tier==3)?3 : 4` ✓ ⇒ ★ kind 1/2/3/4 ✓）；★ **另一台"滞后"的（`c2_ring_vm_*`）已退役** ✗
+ *   ★（★ 它原来在 C2 自己 tick 的环阶段里起 ✓ ⇒ ★ **炸了之后才出现** ✗ ⇒ ★ 与原则①矛盾 ✓）。
+ *   ★ **本实现的三条口径** ✓：
+ *   ★ · ★ **起于松手那一帧** ✓（★ `pofv_ca_ring_spawn()` 就在释放分派里 ✓）；
+ *   ★ · ★ **半径 = 该招的消弹半径** ✓（★ 表 ★ `s_ca_ring_tab[5][3]` ✓ = ★ `r₀ / dr / life` ✓；
+ *   ★   ★ 起点 **16** ✓、★ 逐帧 ★ `r += dr` ✓、★ 终点 ★ **L1 192 / L2 256 / L3 448** ✓
+ *   ★   —— ★ 一手 = ★ TH09 `etama.anm` script91/92/93 ✓，★ 复核 `20b27cfe` ✓）；
+ *   ★ · ★ **收尾 = `life` 到点硬删** ✓（★ 那三支脚本有 `stop();` 但**没有 `interruptLabel`** ✗
+ *   ★   ⇒ ★ `ce_anm_interrupt` 是**空操作** ✓ —— ★ 见审计 `a39d612c` ✓）；
+ *   ★ · ★ 带厚 ★ **48** ✓（★ 与贴图 **1:1** ✓，★ 复核 `20b27cfe` ✓）。
+ *   ★ ⚠ ★ **`POFV_C2_RING_BAND_W` 仍被 `pofv_eb_ring_sync`（C3/C4 的 EB 环）用着** ✓ ⇒ ★ 别删它 ✗。*/
 #define POFV_CA_RING_MAX 8
 static pofv_ca_ring_t s_ca_ring[POFV_CA_RING_MAX];
 
@@ -2823,7 +2873,7 @@ static void pofv_ca_ring_tick(void)
         if (!R->active) continue;
         pos[0] = R->x; pos[1] = R->y; pos[2] = 0.0f;
         if (R->r > 0.0f) {
-            n = cancel_white_in_circle(pos, R->r, POFV_CANCEL_MAX, POFV_BULLET_CANCEL_MODE, 0)   /* ★ P60：不筛 ✓ */;
+            n = cancel_white_in_circle(pos, R->r, POFV_CANCEL_MAX, POFV_BULLET_CANCEL_MODE);
             if (n > 0)
                 ce_log("pofv: [CA_RING] slot=%d kind=%d r=%.1f 消掉 %d 颗（一手：逐帧点测试 ✓）",
                        i, R->kind, (double)R->r, n);
@@ -2875,7 +2925,13 @@ static void pofv_ca_ring_tick(void)
                  *   `R->r` ✓ ⇒ ★ 两者目标一致（都从 16 走到判定半径 ✓）⇒ **不打架** ✓；
                  *   ★ 万一脚本那层（`scaleTime`/`alphaTime`）在这类**图元**（`texArcEven`）上不驱动 ✗
                  *   ⇒ ★ 半径至少还有卡侧这个来源 ✓（★ alpha 已在脚本里改成 255 ✓）。*/
-                ce_anm_set_scale((uint32_t)R->vm, 16.0f, R->r);   /* ★ 2026-10-13：**带厚 1.0 → 16** ✓（★ owner："★ **粗细程度为 1 个像素**" ✗
+                ce_anm_set_scale((uint32_t)R->vm, 48.0f, R->r);   /* ★★★★★ 2026-10-13（★ owner：「★ **C2 还是两下发弹环**」✗
+                *   + ★「★ **C3 怎么又变成细环了**」✗ —— ★ ★ **两个症状同一个根** ✓✓）：★ **原来这里是 `16.0f`** ✗，
+                *   ★ 而 ★ **C2/C3/C4 走 EB 那条**（★ `pofv_eb_ring_sync` ✓）用的是
+                *   ★ `POFV_C2_RING_BAND_W = **48**` ✓（★ `:2747` ✓）★ ⇒ ★ ★ **两台环"一粗一细"叠在一起** ✓
+                *   ★（★ 粗的 48 ✓、★ 细的 **16** ✗）★ ⇒ ★ 看着就是 "★ C2 两个环" ✗ + "★ C3 细环" ✗ ✓。
+                *   ★ 正解 = ★ 复核 `20b27cfe` 给的 ★ **48** ✓（★ 全宽口径 ✓、★ 与 16px 贴图 1:1 时 3× 拉伸 ✓）
+                *   ★ —— ★ 我先前只改了 `c2_ring_vm_sync` 那一支 ✗，★ **这一支（CA 环）漏了** ✗ ✓。*/   /* ★ 2026-10-13：**带厚 1.0 → 16** ✓（★ owner："★ **粗细程度为 1 个像素**" ✗
                 *   ⇒ ★ 一手复核 `4eac7951`：★ `scale.x` = **带厚（世界 px）** ✓、★ `u` 取贴图左右边 ⇒ **贴图宽 = 径向** ✓
                 *   ⇒ ★ **1:1 = 16** ✓（★ 本卡 `C_RING_STRIP.png` = **16×128** ✓）；★ 我上一轮只改了
                 *   ★ `POFV_C2_RING_BAND_W` ✗ ⇒ ★ **管不到这一路**（这里是字面量 ✗）✓ */   /* 带宽 1.0（16 px ✓）/ 半径 = 判定半径 ✓ */
@@ -2900,10 +2956,15 @@ static void pofv_ca_ring_tick(void)
 
 static void pofv_c2_clear(void)
 {
-    if (s_c2.ring_vm) {                                       /* ★ 铁律：范围圈 VM 也收 ✓ */
-        if (ce_anm_get_vm((uint32_t)s_c2.ring_vm)) ce_anm_delete((uint32_t)s_c2.ring_vm);
-        s_c2.ring_vm = 0;
-    }
+    /* ★★★★★ 2026-10-13（★ owner：「★ **灵梦 C2 发了两个消弹环**」✗ + ★「★ **落后的那个炸了之后才出现**」✗
+     *   + ★「★ **抽成公用函数 ⇒ CA 模型更好**」✓）：★ ★ **这里原来收的是"滞后那台"的 VM** ✗
+     *   （★ `s_c2.ring_vm` ✓）—— ★ 那台已整体退役 ✓（★ 调用点 `373277d7` ✓、前置声明 `89d33420` ✓，
+     *   ★ 函数体与字段下一笔 ✓）★ ⇒ ★ **这段兜底收一并删** ✗（★ 否则字段删掉后它编译不过 ✓）。
+     *   ★ ⚠ ★ 删的顺序：★ **先删函数体（`:2675-2713` 一带 ✓）⇒ 再删字段（`:2361` ✓）** ✗ —— ★ 反了会编译不过 ✓。*/
+    /* if (s_c2.ring_vm) { */
+    /*     if (ce_anm_get_vm((uint32_t)s_c2.ring_vm)) ce_anm_delete((uint32_t)s_c2.ring_vm); */
+    /*     s_c2.ring_vm = 0; */
+    /* } */
     s_c2.active = 0; s_c2.age = 0; s_c2.invuln = 0;
     s_aura_rise_prev = 0;                 /* 删卡后不留幽灵闩锁 ⇒ 下次张开仍算上升沿 ✓ */
     ce_invuln_request(POFV_CARD_ID, 0);   /* 撤无敌声明（声明层是**粘性**的 ⇒ 必须显式撤 ✓）*/
@@ -2989,7 +3050,7 @@ static void do_storm_frame(const pofv_storm_t *bl)
     if (r <= 0.0f) return;
     pos[0] = bl->x; pos[1] = bl->y; pos[2] = 0.0f;
 
-    n = cancel_white_in_circle(pos, r, POFV_CANCEL_MAX, POFV_BULLET_CANCEL_MODE, 0)   /* ★ P60：C1–C4 不筛 ✓ */;
+    n = cancel_white_in_circle(pos, r, POFV_CANCEL_MAX, POFV_BULLET_CANCEL_MODE);
     /* ★★★★ 2026-10-10 TH19 連撃：暴风**每消掉一颗小弹 ⇒ combo +1**（一手 `0x51cb91`：
      *   `FUN_0051c8c0`（暴风 tick）的消弹循环里调 `FUN_00549780(实参 0)` ✓ —— 实参 0 ⇒ **窗口不加** ✓）。
      *   这是 combo 的**第二个**（也是唯一另一个）来源 ✓；一手对「除霊オーラ（结界）消弹」**不加** ✗
@@ -3682,8 +3743,10 @@ static void pofv_c1_tick(void)
  * ❓自定 / 存疑（逐条进 `TUNING.md`）：
  *   ① **档位** = `POFV_C3_LEVEL_DEFAULT`(=1)：一手档位是**每局按难度**取常数（§10.2 实测 `∈{1,3}`）✗
  *      本卡没有那个量 ⇒ 先固定档 1（⇒ `$D=1`、`$C=8`、wait=60 ✓）；
- *   ② **伤害值** = `POFV_C3_HIT_DMG`(=14)：一手 `ExtraAttack` 这一段**没给伤害** ✗ ⇒ 借 C1 的一手口径
+ *   ② **伤害值** = `POFV_C3_HIT_DMG`：一手 `ExtraAttack` 这一段**没给伤害** ✗ ⇒ 暂借 C1 的一手口径
  *      （灵梦本体主炮 = **14** ✓，`HANDOFF-109-C1-C4.md` §3.7）；
+ *      ★ 2026-10-15（owner 拍板 ✓）：「**C3 伤害暂时是 1，具体数值再调**」⇒ 本宏现值 = **1** ✓
+ *        （见宏定义处的 ★★★★★ 注释 ✓）。⚠ 上面那行"(=14)"是**过期**写法 ✗。
  *   ③ **`%B = [-9888.0f]`** 未定位（一手只用在**加速度系数**上，用法像 0..1 归一化标量）
  *      ⇒ 取 **0.0** ✓（§10.5）⇒ 加速率 = `0.01f` ✓；
  *   ④ **观感** = 现成脚本 **396**（= C1/C2 的占位同款；**不新切贴图 / 不动 `ORDER.txt`** ✗）；
@@ -3925,7 +3988,19 @@ static void c3_fire_wave(void)
         b->spd = POFV_C3_SPEED;
         b->age = 0; b->bounces = 0; b->live = 1;
         b->spin = s_c3.parity ? 1 : 0;   /* ★ 出生时定死自转方向 ✓（一手 `etExSet` ✓；★ 之后不随波变 ✓）*/
-        b->vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), POFV109_C3_ORB_SCRIPT, POFV109_BBALL_LAYER);
+        /* ★★★★★ 2026-10-13（★ owner：「★ **C3 和 C4 的阴阳玉的一手表现还有自转**」✓）：
+         *   ★ 一手是 ★ **两支脚本 329 / 330** ✓，★ **只差 `angleVel` 的符号** ✓
+         *   ★（★ `bullet.anm.txt:10729` = `angleVel(+0.05235988, 0, +0.05235988)` ✓ = 329 ✓；
+         *   ★   `:10771` = `angleVel(-0.05235988, 0, -0.05235988)` ✓ = 330 ✓）
+         *   ⇒ ★ 卡侧 ★ **按波奇偶（`b->spin` ✓，上一行刚定 ✓）挑脚本** ✓：
+         *   ★ `spin == 0` ⇒ ★ `458`（★ 正号 ✓ = 一手 329 ✓）；
+         *   ★ `spin == 1` ⇒ ★ `460`（★ 负号 ✓ = 一手 330 ✓，★ 文件 = `460_pofv109_c3_orb_neg.anm.txt` ✓）。
+         *   ⚠ ★ 哪一支配哪一奇偶**没有一手依据** ✗（★ 一手只保证"两支交替"✓）★ ⇒ ★ 这里**任选** ✓，
+         *   ★ 观感等价 ✓（★ 两支都是 3°/帧、方向相反 ✓）。*/
+        b->vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
+                                       b->spin ? CE_ANM_ABILITY_SCRIPT_POFV109_C3_ORB_NEG
+                                               : POFV109_C3_ORB_SCRIPT,
+                                       POFV109_BBALL_LAYER);
         POFV_DBGLOG("pofv: [DBGC3] bullet i=%d vm=%d spawn_ok=%d pos=(%.1f,%.1f) dir=(%.2f,%.2f) spd=%.2f",
                     i, (int)b->vm, b->vm ? 1 : 0, (double)b->x, (double)b->y,
                     (double)b->dx, (double)b->dy, (double)b->spd);
@@ -4078,12 +4153,17 @@ static void pofv_c3_tick(void)
             b->live = 0;
             continue;
         }
-        if (hit && ++b->bounces > POFV_C3_BOUNCE_MAX) {
-            /* ★ 2026-10-13（口径 4 ✓）：★ 反弹耗尽 ⇒ 走**消失动画**（同出界那处 ✓）。*/
-            if (b->vm) { ce_anm_interrupt((uint32_t)b->vm, 1); b->vm = 0; }
-            b->live = 0;
-            continue;
-        }
+        /* ★★★★★ 2026-10-13（★ 一手复核 `b886c051` ✓ **定案**）：★ ★ **停用"反弹耗尽就收"** ✗ ——
+         *   ★ 一手：★ `EX_BOUNCE` 的 `a = **4**` ✓（★ `pl00.txt:659` ✓）**只有次数上限** ✓，
+         *   ★ 到点引擎做的是 ★ **`andl $0xffffffbf,0x6a8`（清反弹位）后** ★ ★ **继续飞、不回收** ✓
+         *   ★（★ `th19:0x4f0310-0x4f0323` ✓）★ ⇒ ★ 卡侧原来"★ 超了就 `interrupt + live=0`" ✗
+         *   ★ **没有一手依据** ✗（★ 复核原话：★「★ **数的来源对、"到点就收"错**」✓）。
+         *   ⚠ ★ 行号已因前几笔改动漂移 ✓，★ 判据文字与原读到的整行一致 ✓。*/
+        /* if (hit && ++b->bounces > POFV_C3_BOUNCE_MAX) { */
+        /*     if (b->vm) { ce_anm_interrupt((uint32_t)b->vm, 1); b->vm = 0; } */
+        /*     b->live = 0; */
+        /*     continue; */
+        /* } */
         if (b->age >= POFV_C3_BULLET_LIFE) {              /* ❓⑥ 兜底寿命 */
             /* ★ 2026-10-13（口径 4 ✓）：★ 寿命到 ⇒ 也走**消失动画**（同出界那处 ✓）。*/
             if (b->vm) { ce_anm_interrupt((uint32_t)b->vm, 1); b->vm = 0; }
@@ -4116,15 +4196,32 @@ static void pofv_c3_tick(void)
                      *   的 8 帧 `effect/etbreak.png` ✓，★ 池化 32 ✓、★ 层级与脚本一致 ✓）★ **不新造** ✗。
                      *   ❓ 一手那边 C4 两个槽的**粒子颜色不同**（★ 槽0 蓝 / ★ 槽1 粉 ✓）★ ——
                      *   ★ 本 helper 现在**不吃颜色参数** ✗ ⇒ ★ 先都放同色 ✓，★ 待调（登记 TUNING ✓）。*/
-                    pofv_spark_spawn(b->x, b->y);
-                    if (b->vm) { ce_anm_interrupt((uint32_t)b->vm, 1); b->vm = 0; }
-                    b->live = 0;
-                    break;
+                    /* ★★★★★ 2026-10-13（★ owner：「★ **C3 的阴阳玉改成碰怪不消失**」✓
+                     *   + ★「★ **采用局部无敌帧 —— 每一个怪每 10 帧收到一次伤害**」✓
+                     *   + ★「★ **C4 的阴阳玉也改一样的**」✓
+                     *   + ★「★ **去掉命中收弹的话，参考星星炮和豌豆射手 + 破损核心协同**」✓）：
+                     *   ★ 先例 = ★ **89 星星炮** ✓（★ `cards/star_cannon.c` ✓，★ 口径见 `TUNING.md` 89 段 ✓）：
+                     *   ★「★ **无限穿透**（★ **命中不消耗** ✓，★ 只在出界收 ✓）★ ＋ ★ **不是帧伤**：
+                     *   ★ **伤害源每 `SC_HIT_COOLDOWN = 10` 帧才出一条** ✓，★ 而 ★ **一条源对同一敌人
+                     *   ★ 只结算一次** ✓ ⇒ ★ 穿过敌人是「★ **每 10 帧 1 跳**」」✓。
+                     *   ★ ⇒ ★ ★ **本处照抄** ✓：★ **不再 `interrupt` / 不再 `live = 0`** ✗（★ 弹**继续飞** ✓）；
+                     *   ★ 火花**保留** ✓（★ 命中视觉 ✓），★ 但 ★ **也放到 10 帧节拍** ✓ ——
+                     *   ★ 否则在半径里**每帧喷火花** ✗（★ 先例的节拍就是 10 ✓）。
+                     *   ★ ⚠ ★ 本锚点**同时命中 C3 与 C4 两处** ✓（★ 两段代码相同 ✓）⇒ ★ 一次改齐 ✓，
+                     *   ★ 与 owner「★ C4 也改一样的」✓ 一致 ✓；★ **彩弹（457/459）不在本锚点内** ✗ ✓。*/
+                    if ((b->age % 10) == 0) pofv_spark_spawn(b->x, b->y);
                 }
             }
             if (!b->live) continue;      /* ★ 命中了 ⇒ 本颗到此为止 ✓ */
         }
-        (void)ce_damage_rect(pos, 0.0f, POFV_C3_HIT_LIFE,
+        /* ★★★★★ 2026-10-13（★ owner：「★ **每一个怪每 10 帧收到一次伤害**」✓ + ★「★ **参考星星炮…**」✓）：
+         *   ★ 先例 = ★ **89 星星炮** ✓：★「★ **伤害源每 `SC_HIT_COOLDOWN = 10` 帧才出一条** ✓，
+         *   ★ 而 ★ **一条源对同一敌人只结算一次** ✓ ⇒ ★ 穿过敌人是「★ **每 10 帧 1 跳**」」✓
+         *   ⇒ ★ ★ **本处照抄** ✓：★ 把"★ **每帧发一条**"✗ 改成 ★ **每 10 帧发一条** ✓ ——
+         *   ★ 引擎自己保证"★ 一条只结算一次"✓ ⇒ ★ **不需要卡侧按怪记冷却表** ✓ ✓。
+         *   ⚠ ★ `POFV_C3_HIT_LIFE`（= 2）是**伤害源自己的寿命** ✓，★ 与"★ 10 帧节拍"是**两件事** ✗
+         *   ⇒ ★ **两条都留** ✓（★ 先例也是两条并存 ✓）。*/
+        if ((b->age % 10) == 0) (void)ce_damage_rect(pos, 0.0f, POFV_C3_HIT_LIFE,
                              pofv_dmg((int)s_aura_kind, 3, (int)s_c3.level),
                              POFV_C3_HIT_W, POFV_C3_HIT_H);
     }
@@ -4205,7 +4302,7 @@ static int pofv_barrier_nearest_bullet(const float *pos, float r, float *ox, flo
         float br, dx, dy, rr, d2;
         if (state != 1 && state != 2) continue;
         br = *(const float *)(b + POFV_BULLET_RADIUS_OFF);
-        /* ★ P60（owner：过滤器只该暴风用 ✓）⇒ 破罩找最近弹**不筛** ✓（任何弹都算 ✓）。*/
+        if (!pofv_is_white_bullet(br)) continue;
         dx = *(const float *)(b + CE_BULLET_POS) - pos[0];
         dy = *(const float *)(b + CE_BULLET_POS + 4) - pos[1];
         rr = br * 0.5f + r;
@@ -4758,7 +4855,12 @@ static void pofv_c4_tick(void)
         ++b->age;
         if (b->x < -(POFV_FIELD_HALF_W + POFV_C1_OFF_MARGIN) ||
             b->x >  (POFV_FIELD_HALF_W + POFV_C1_OFF_MARGIN) ||
-            b->y < -POFV_C1_OFF_MARGIN || b->y > (POFV_FIELD_H + POFV_C1_OFF_MARGIN) || b->age >= POFV_C4_BULLET_LIFE) {
+            /* ★★★★★ 2026-10-13（★ owner：「★ **C4 的阴阳玉依旧消失**」✗）：★ **去掉寿命那条** ✗ ——
+             *   ★ 本行原来还有 ★ `|| b->age >= POFV_C4_BULLET_LIFE` ✗，★ 而 ★ 前四条**都是出界** ✓
+             *   ⇒ ★ 画面内唯一能让它"消失"的就是这条寿命 ✓✓ ★ ⇒ ★ **删掉它** ✓，★ 与 C3 那套
+             *   ★（★ owner 要的"★ **碰怪不消失**"✓）一致：★ **只在出界时收** ✓。
+             *   ★（★ 依据 = ★ owner 的一级证据 ✓：★ 玉**不该在画面里凭空消失**✓。）*/
+            b->y < -POFV_C1_OFF_MARGIN || b->y > (POFV_FIELD_H + POFV_C1_OFF_MARGIN)) {
             /* ★ 2026-10-13（★ owner 口径 4 ✓）：★ 改用 `ce_anm_interrupt` ✓ ⇒ ★ 走脚本 457 的**消失支**
              *   （★ 消失帧 + 加算 + 淡出 ✓）= ★ "★ **敌方弹碰到自机的消失动画**" ✓
              *   （★ 原来 `ce_anm_delete` = 直接抹掉、无动画 ✗）；★ 与 C3 那三处同形 ✓。*/
@@ -4768,8 +4870,27 @@ static void pofv_c4_tick(void)
         }
         if (b->vm) {
             ce_anm_set_pos((uint32_t)b->vm, b->x, b->y, 0.0f);
-            ce_anm_set_scale((uint32_t)b->vm, 0.5f + (float)b->age * 0.004f,
-                             0.5f + (float)b->age * 0.004f);
+            /* ★★★★★ 2026-10-13（★ owner：「★ **怎么 C4 的阴阳玉在逐渐增大**」✗）：
+             *   ★ 原来这里是 ★ `ce_anm_set_scale(vm, **0.5f + (float)b->age * 0.004f**, …)` ✗
+             *   ★ ⇒ ★ **每帧 +0.004 ⇒ 无限变大** ✗ ✓（★ 卡侧自造的"长大"✗，★ 一手没有这一项 ✓）
+             *   ★ ⇒ ★ **去掉那个 `age` 项** ✓，★ 只留基线 **0.5** ✓（★ 大小不再随帧变 ✓）。
+             *   ⚠ ★ 基线本身（0.5）是卡侧早先定的 ❓ ⇒ ★ 若大小还要调 ✓，★ 你给个准值我改 ✓。*/
+            /* ★★★★★ 2026-10-15（★ owner：「★ **C4 阴阳玉大小不对，得更大**」✓
+             *   + ★「★ **会有大的阴阳玉的消失动画在跳**」✗）—— ★ ★ **两个现象同源，就是这一行** ✗：
+             *   ★ 脚本 `459_pofv109_c4_orb` 自己的时间线（★ 一手 ✓）是 ★
+             *   ★ **出生 `scale(5,5)`（30×30 × 5 = 150 px ✓）→ 稳定 `scale(1,1)`（30 px ✓）** ✓；
+             *   ★ 消失态（★ `interruptLabel(1)` ✓）是 ★ `alphaTime(14,0,0); scaleTime(14,4,1.5,1.5)` ✓。
+             *   ★ ⚠ ★ 而 ★ 本行**每帧**写 `0.5f` ✗ ⇒ ★ **把脚本的 scale 全部覆盖** ✗ ⇒
+             *   ★ ① ★ 玉永远停在 **0.5×**（★ 该 30 px 只剩 15 px ✓）★ = ★ owner 说的"太小" ✓；
+             *   ★ ② ★ 消失态的 `scaleTime(1.5)` ✗ 每帧被打回 0.5 ✗ = ★ owner 说的"**在跳**" ✗ ✓。
+             *   ★ ⇒ ★ **停用本行** ✗（★ 位置仍由上面 `ce_anm_set_pos` 每帧写 ✓，★ 那是必要的 ✓）★，
+             *   ★ 让 **脚本自己管 scale** ✓ ⇒ ★ 出生放大、稳定 30 px、消失涨到 1.5 倍淡出**全部恢复** ✓。
+             *   ⚠ ★ 依据 = ★ owner 的一级证据（★ 两个现象同源同消 ✓）；★ 若之后发现别处依赖这个 0.5 ✗，
+             *   ★ 再逐档调 ✓（★ 不先猜尺寸数值 ✗）。
+             *   ★ 历史（★ 保留以免重蹈 ✓）：★ 2026-10-13 那次"★ 横向窄椭圆"✗ 是因为**只改了第一个参数** ✗
+             *   ★（★ 第二个参数还带 `age*0.004` ✗）⇒ ★ 当时把两个参数都定成 `0.5f` 是为了"两轴一致"✓，
+             *   ★ 但**根子上就不该由卡侧写 scale** ✗ ✓。*/
+            /* ce_anm_set_scale((uint32_t)b->vm, 0.5f, 0.5f); */
         }
         pos[0] = b->x; pos[1] = b->y; pos[2] = 0.0f;
         /* ★ 2026-10-13（★ owner 口径 7 ✓）：★ 伤害改走**表** ✓ —— ★ `[角色][招][等级]` ✓
@@ -4796,15 +4917,34 @@ static void pofv_c4_tick(void)
                      *   的 8 帧 `effect/etbreak.png` ✓，★ 池化 32 ✓、★ 层级与脚本一致 ✓）★ **不新造** ✗。
                      *   ❓ 一手那边 C4 两个槽的**粒子颜色不同**（★ 槽0 蓝 / ★ 槽1 粉 ✓）★ ——
                      *   ★ 本 helper 现在**不吃颜色参数** ✗ ⇒ ★ 先都放同色 ✓，★ 待调（登记 TUNING ✓）。*/
-                    pofv_spark_spawn(b->x, b->y);
-                    if (b->vm) { ce_anm_interrupt((uint32_t)b->vm, 1); b->vm = 0; }
-                    b->live = 0;
-                    break;
+                    /* ★★★★★ 2026-10-13（★ owner：「★ **C3 的阴阳玉改成碰怪不消失**」✓
+                     *   + ★「★ **采用局部无敌帧 —— 每一个怪每 10 帧收到一次伤害**」✓
+                     *   + ★「★ **C4 的阴阳玉也改一样的**」✓
+                     *   + ★「★ **去掉命中收弹的话，参考星星炮和豌豆射手 + 破损核心协同**」✓）：
+                     *   ★ 先例 = ★ **89 星星炮** ✓（★ `cards/star_cannon.c` ✓，★ 口径见 `TUNING.md` 89 段 ✓）：
+                     *   ★「★ **无限穿透**（★ **命中不消耗** ✓，★ 只在出界收 ✓）★ ＋ ★ **不是帧伤**：
+                     *   ★ **伤害源每 `SC_HIT_COOLDOWN = 10` 帧才出一条** ✓，★ 而 ★ **一条源对同一敌人
+                     *   ★ 只结算一次** ✓ ⇒ ★ 穿过敌人是「★ **每 10 帧 1 跳**」」✓。
+                     *   ★ ⇒ ★ ★ **本处照抄** ✓：★ **不再 `interrupt` / 不再 `live = 0`** ✗（★ 弹**继续飞** ✓）；
+                     *   ★ 火花**保留** ✓（★ 命中视觉 ✓），★ 但 ★ **也放到 10 帧节拍** ✓ ——
+                     *   ★ 否则在半径里**每帧喷火花** ✗（★ 先例的节拍就是 10 ✓）。
+                     *   ★ ⚠ ★ 本锚点**同时命中 C3 与 C4 两处** ✓（★ 两段代码相同 ✓）⇒ ★ 一次改齐 ✓，
+                     *   ★ 与 owner「★ C4 也改一样的」✓ 一致 ✓；★ **彩弹（457/459）不在本锚点内** ✗ ✓。*/
+                    if ((b->age % 10) == 0) pofv_spark_spawn(b->x, b->y);
                 }
             }
             if (!b->live) continue;      /* ★ 命中了 ⇒ 本颗到此为止 ✓ */
         }
-        (void)ce_damage_rect(pos, 0.0f, POFV_C1_HIT_LIFE,
+        /* ★★★★★ 2026-10-13（★ owner：「★ **每一个怪每 10 帧收到一次伤害**」✓
+         *   + ★「★ **C4 的阴阳玉也改一样的**」✓ + ★「★ **参考星星炮…**」✓）：
+         *   ★ 先例 = ★ **89 星星炮** ✓（★ 真实代码核过 ✓：★ `star_cannon_core.c:57/72` 的
+         *   ★ `hit_timer` 每 `SC_HIT_COOLDOWN = 10` 帧才发一条 ✓；★ `star_cannon.c:315` 那条
+         *   ★ `ce_damage_rect(center, 0, SC_HIT_LIFE, …)` ✓）★ ⇒ ★ **每 10 帧一条** ✓
+         *   ★（★ 一条源对同一敌人只结算一次 ✓ —— 引擎保证 ✓）★ ⇒ ★ **每怪每 10 帧 1 跳** ✓。
+         *   ⚠ ★ 本处用的是 ★ `POFV_C1_HIT_LIFE` ✗（★ 与 C3 的 `POFV_C3_HIT_LIFE` 不同宏 ✓ ——
+         *   ★ 它只是"★ 伤害源自己的寿命"✓，★ 与 10 帧节拍是两件事 ✓，★ 两条都留 ✓）；
+         *   ⚠ ★ C1 那处（★ `:3716` ✓）**不加门** ✗ —— ★ owner 只要求 C3/C4 ✓。*/
+        if ((b->age % 10) == 0) (void)ce_damage_rect(pos, 0.0f, POFV_C1_HIT_LIFE,
                              pofv_dmg((int)s_aura_kind, 4, (int)s_c4_lv_n),
                              POFV_C1_HIT_W, POFV_C1_HIT_H);
     }
@@ -6138,7 +6278,7 @@ static int on_tick_2(ce_card_t *c)
 {
     int i;
     /* ★★★★★ 2026-10-13 owner 要求：★ **按空格 = 放 C3**（**调试用** ✓）——
-     *   ★ 接口 = `(CE_DEBUG_SPACE_KEYS && ce_key_down(CE_VK_SPACE))` ✓（`native/sdk.h:838` ✓）；★ 那个头文件里连
+     *   ★ 接口 = `ce_key_down(CE_VK_SPACE)` ✓（`native/sdk.h:838` ✓）；★ 那个头文件里连
      *   `CE_VK_CONTROL` 都注明「★ **调试组合键（Ctrl+空格）用**」✓ ⇒ ★ 这套是**现成的调试约定** ✓
      *   （★ owner 要的是**纯空格** ✓，★ 没加 Ctrl ✓）。
      *   ★ 取**上升沿**（局部 `static` ✓）⇒ ★ **按住不连发** ✗、★ **每按一次放一份** ✓。
@@ -6147,7 +6287,7 @@ static int on_tick_2(ce_card_t *c)
      *   ★ 与档位/蓄力**无关** ✓ —— ★ 调试键不受蓄力门槛限制 ✓（★ 正是要能"跳过条件"单独看 C3 ✓）。*/
     {
         static int s_dbg_sp_prev = 0;                       /* ★ 只在按下的那一帧触发 ✓ */
-        const int sp = (CE_DEBUG_SPACE_KEYS && ce_key_down(CE_VK_SPACE)) ? 1 : 0;
+        const int sp = ce_key_down(CE_VK_SPACE) ? 1 : 0;
         if (sp && !s_dbg_sp_prev) {
             pofv_c3_fire();
             ce_log("pofv: [DBG] 空格 ⇒ 放 C3 ✓（f=%d kind=%d charge=%.0f）",
@@ -6738,8 +6878,14 @@ static int on_tick_2(ce_card_t *c)
              *   ⇒ ★ **按角色分派** ✓：魔理沙 `c2m/c3m/c4m` ✓、早苗 `c2s/c3s` ✓（★ 她**没有 c4s** ✗
              *     ⇒ C4 仍走通用的 `pofv_c4_fire()` ✓，❓若一手她 C4 另有其物，再补 ✓）、其余（灵梦/咲夜）走通用 ✓。*/
             if (tier_rel == 2) {
-                if (s_aura_kind == 1) pofv_c2m_fire();
-                else if (s_aura_kind == 3) pofv_c2s_fire();
+                /* ★★★★★ 2026-10-13（★ owner：「★ **魔理沙的 C2 是没有那个奇怪的六向激光的**」✗
+                 *   —— ★ 并强调"★ **我说过多少次了**"✓ ⇒ ★ 这条是他的**一级证据** ✓）：★ **去掉 `c2m` 分支** ✗
+                 *   ⇒ ★ 她**落到本支最后的通用 `pofv_c2_fire()`** ✓（★ 中性 C2 ✓、★ **不再有那六条激光** ✗）。
+                 *   ★ ⚠ 一手侧那套 `c2m`（`POFV_C2M_LASERS 6` ✓ + `pofv_c2m_fire/tick/clear` ✓）**暂时留着** ✗
+                 *   ★（★ 现在没人调用 `fire` ✓ ⇒ 已是死路 ✓；★ 要不要连根删掉，等你一句话 ✓）。
+                 *   ★ ⚠ 卡里另有一处同案被前人关过 ✓：★ `:6962` 的注释「★ 这里原来就是蓄力到 C2 就放
+                 *   ★ **六向激光** ✗ 的真身 ⇒ 关掉 ✓」✓ —— ★ 但 `:6738` 这条**还开着** ✗ ✓（就是你现在看到的 ✓）。*/
+                if (s_aura_kind == 3) pofv_c2s_fire();
                 else pofv_c2_fire();
             } else if (tier_rel == 3) {
                 if (s_aura_kind == 1) pofv_c3m_fire();
