@@ -4307,6 +4307,10 @@ static void pofv_c3_tick(void)
  *   的魔法阵 ✓ / 脚本 462 = 原生 `enemy.anm` script107 的红雾 ✓）★ —— ★ 句柄放**文件作用域** ✗
  *   （不是函数内静态 ✗）：★ 铁律要求删卡/换局那条路（`pofv_c4_clear()` ⇒ `on_delete`）也能收干净 ✓。*/
 static int32_t s_c4_magic_vm, s_c4_aura_vm, s_c4_fog_vm;
+/* ★ 2026-10-16：★ C4 剩余时间计时器那台**文字 VM** 的句柄也提到文件作用域 ✓ ——
+ *   原来它是 C4 tick 里的**函数内静态** ✗ ⇒ ★ `pofv_c4_clear()`（删卡/换局，以及新增的
+ *   "对话强制退 C4"那条路 ✓）**看不到它** ✗ ⇒ 计时器文字会留在屏幕上 ✗（铁律违规 ✓）。*/
+static ce_hud_vm_text_t s_c4_timer_txt;
 /* ★ 2026-10-15：★ **ECL opcode 629 `fog` 的两个字段**（一手 ✓，见 `engine/enemy/th18/07-boss-aura-mesh.md` §9.31）：
  *   · 处理器 `0x435fe0`（629 的 case ✓）读 `(float, int)` ⇒ ★ `enemy+0x5594` = **半径** ✓、
  *     `enemy+0x559c` = **颜色** ✓（`enemy+0x5598 = 16.0f` ✓ 本卡不用）；
@@ -4687,6 +4691,9 @@ static void pofv_c4_clear(void)
     if (s_c4_magic_vm) { if (ce_anm_get_vm((uint32_t)s_c4_magic_vm)) ce_anm_delete((uint32_t)s_c4_magic_vm); s_c4_magic_vm = 0; }
     if (s_c4_aura_vm)  { if (ce_anm_get_vm((uint32_t)s_c4_aura_vm))  ce_anm_delete((uint32_t)s_c4_aura_vm);  s_c4_aura_vm  = 0; }
     if (s_c4_fog_vm)   { if (ce_anm_get_vm((uint32_t)s_c4_fog_vm))   ce_anm_delete((uint32_t)s_c4_fog_vm);   s_c4_fog_vm   = 0; }
+    ce_hud_vm_text_clear(&s_c4_timer_txt);   /* ★ 2026-10-16：C4 计时器的**文字 VM** 也在这里收 ✓
+                                              *   （原来只在"最后一帧"收 ✗ ⇒ 强制退 C4（对话那条 ✓）
+                                              *   与删卡/换局（本函数 ✓）这两条路都会留残影 ✗）。*/
     s_c4.timer = 0; s_c4.emitted = 0; s_c4.dir = 1; s_c4.live = 0; s_c4.base = 0.0f; s_c4.sweep = 0;
 }
 
@@ -4911,7 +4918,8 @@ static void pofv_c4_tick(void)
          *   ★ 收尾：C4 最后一帧（本块的 `s_c4.live = 0` 同帧）就清掉 ✓（`on_delete` 另有 `pofv_c4_clear`，
          *     这里用函数内静态句柄 + 同帧清 ⇒ 不会有残留 ✓）。*/
         {
-            static ce_hud_vm_text_t s_c4_timer_txt;   /* ★ 函数内静态（持久 ✓，无需文件级声明 ✓）*/
+            /* ★ 2026-10-16：句柄已提到**文件作用域** ✓（`s_c4_timer_txt` ✓）⇒ 这里不再重复声明 ✗
+             *   —— 目的：让"对话强制退 C4"与 `pofv_c4_clear()` 也收得到它 ✓（铁律 ✓）。*/
             const int32_t rf = POFV_C4_DURATION - s_c4.timer;
             const int32_t rr = (rf > 0) ? rf : 0;
             int32_t sec = rr / 60, frm = rr % 60;
@@ -5032,6 +5040,32 @@ static void pofv_c4_tick(void)
             if (s_c4.timer + 1 >= POFV_C4_DURATION) {   /* ★ 最后一帧：同帧收掉 ✓ */
                 if (s_c4_fog_vm) { ce_anm_delete((uint32_t)s_c4_fog_vm); s_c4_fog_vm = 0; }
             }
+        }
+        /* ★★★★★ 2026-10-16 **新需求（owner）**：「★ **对话期间强制退出 C4，返还
+         *   (C4−C1) × 未消耗时长 / C4总时长**」✓ —— ★ 复刻来源 = ★ **本仓 112 卡（飞碟 token）**
+         *   已经在用的同一判据 ✓（`CE_GUI_MSG_ACTIVE()` ✓，`engine.h:386`：`zGui.msg`（`+0x1b0`）
+         *   非 0 ＝ 对话中 ✓；112 的用法见 `cards/ufo.c:6032` ✓）⇒ ★ 不自己写偏移 ✓。
+         *   ★ 落地：★ ① 算 `remaining = POFV_C4_DURATION(1800) − s_c4.timer` ✓；
+         *   ★ ② `refund = (POFV_C4_THRESH(2500) − POFV_C1_THRESH(500)) × remaining / 1800` ✓
+         *   ⇒ ★ 乘进 `s_aura_charge` ✓（蓄力那一栏 ✓，与 `:7052` 的累加同一条 ✓）；
+         *   ★ ③ 清掉计时器文字 ✓ ＋ ★ 走 `pofv_c4_clear()` ✓（它收环/暴风/三件观感件 ✓）
+         *   ⇒ ★ 一条路收干净 ✓（含 `on_delete` 那条 ✓，因为都汇到 `pofv_c4_clear()` ✓）。
+         *   ⚠ ★ **一手差异（如实登记）**：`engine/spirit/th13/04-dialogue-and-gauge-refund.md` 的实测
+         *   是「**等比返还不成立** ✓，一手是在槽上**减一个固定 200**（= 一整格 ✓，
+         *   `th13:0x405cdd`）」✗ ⇒ ★ 本卡按 **owner 口径的比例式** ✓（差异记 `TUNING.md` ✓）。
+         *   ⚠ 位置：★ 放在本块**最后**（`++s_c4.timer` 之前 ✓）⇒ ★ 观感件先按常规起/刷一帧 ✓
+         *   再被收掉 ✓（不会留半帧残留 ✓）。*/
+        if (CE_GUI_MSG_ACTIVE()) {
+            const int32_t rem4 = POFV_C4_DURATION - s_c4.timer;
+            if (rem4 > 0) {
+                const float refund = (POFV_C4_THRESH - POFV_C1_THRESH)
+                                     * ((float)rem4 / (float)POFV_C4_DURATION);
+                s_aura_charge += refund;
+                ce_log("pofv: [C4BREAK] 对话 ⇒ 强制退 C4：剩余 %d/%d 帧 ⇒ 返还 %.1f（蓄力 %.1f）",
+                       (int)rem4, (int)POFV_C4_DURATION, (double)refund, (double)s_aura_charge);
+            }
+            ce_hud_vm_text_clear(&s_c4_timer_txt);   /* ★ 计时器文字同帧清掉 ✓ */
+            pofv_c4_clear();                         /* ★ 环/暴风/三件观感件一条路收干净 ✓ */
         }
         ++s_c4.timer;   /* ★ 收尾条件改成"三条扫描都跑完" ✓（见上面 ✓）*/
     }
