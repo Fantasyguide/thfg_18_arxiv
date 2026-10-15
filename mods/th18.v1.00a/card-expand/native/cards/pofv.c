@@ -4280,6 +4280,10 @@ static void pofv_c3_tick(void)
 #define POFV_C3_THRESH          1700.0f
 /* ★★ 一手 ✓ C4 门槛 = **2500**（= `S+0x38` × 10 ✓）—— ★ 它**恰好等于灵力满值** ✓ ⇒
  *   ★ 只有**灵力吸满**才够得着 C4 ✓（这正是 owner 定的「**灵力 = 蓄力上限**」的字面意思 ✓）。*/
+/* ★ 2026-10-15：★ C4 期间挂在**自机身上**的两件 boss 观感件（脚本 461 = 原生 `effect.anm` script105
+ *   的魔法阵 ✓ / 脚本 462 = 原生 `enemy.anm` script107 的红雾 ✓）★ —— ★ 句柄放**文件作用域** ✗
+ *   （不是函数内静态 ✗）：★ 铁律要求删卡/换局那条路（`pofv_c4_clear()` ⇒ `on_delete`）也能收干净 ✓。*/
+static int32_t s_c4_magic_vm, s_c4_aura_vm;
 #define POFV_C4_THRESH         2500.0f
 #define POFV_BARRIER_R          40.0f
 /* ★★ 2026-10-10 owner 实跑订正：「半径上感觉**大了 1.5 倍**」✗ —— 真因 = 外层曾写
@@ -4641,6 +4645,11 @@ static void pofv_c4_clear(void)
         if (s_c4_b[k].vm) { ce_anm_delete((uint32_t)s_c4_b[k].vm); s_c4_b[k].vm = 0; }
         s_c4_b[k].live = 0; s_c4_b[k].age = 0;
     }
+    /* ★ 2026-10-15（铁律）：★ C4 期间挂在自机身上的两件 boss 观感件（脚本 461/462 ✓）**也必须在这里收** ✗
+     *   —— 删卡 / 换局走 `pofv_c4_clear()` ✓（AbilityManager 冻住时只有 `on_delete` 跑得到 ✓）★ ⇒
+     *   ★ 无条件探活再删 ✓（脚本可能已自删 ⇒ 不能盲删 ✓）。*/
+    if (s_c4_magic_vm) { if (ce_anm_get_vm((uint32_t)s_c4_magic_vm)) ce_anm_delete((uint32_t)s_c4_magic_vm); s_c4_magic_vm = 0; }
+    if (s_c4_aura_vm)  { if (ce_anm_get_vm((uint32_t)s_c4_aura_vm))  ce_anm_delete((uint32_t)s_c4_aura_vm);  s_c4_aura_vm  = 0; }
     s_c4.timer = 0; s_c4.emitted = 0; s_c4.dir = 1; s_c4.live = 0; s_c4.base = 0.0f; s_c4.sweep = 0;
 }
 
@@ -4896,9 +4905,9 @@ static void pofv_c4_tick(void)
          *     `ce_anm_spawn(CE_ABILITY_ANM(), 脚本, 6)` ＋ ★ 每帧 `vm_set_world_pos(..., 自机)` ✓
          *     ＝ ★ owner 的"复制粘贴到自机身上" ✓。
          *   ⚠ 句柄是**函数内静态**（持久 ✓，本轮不新增文件级声明 ✓）；★ 收尾：★ C4 最后一帧
-         *     与本块同帧 `ce_anm_delete` ✓（另：`pofv_c4_clear()` 一侧的清理由下一笔补 ✓ —— 见 TUNING）。*/
+         *     与本块同帧 `ce_anm_delete` ✓；★ 删卡 / 换局那条路另由 `pofv_c4_clear()` 收 ✓
+         *     （句柄已在**文件作用域** ✓ ⇒ 那一侧看得到 ✓，铁律满足 ✓）。*/
         {
-            static int32_t s_c4_magic_vm, s_c4_aura_vm;
             const float *pp4 = ce_player_pos();
             if (!s_c4_magic_vm)
                 s_c4_magic_vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
