@@ -9047,6 +9047,31 @@ static int on_draw(ce_card_t *c)
          *   ⇒ ★ **在这里（`on_draw` 的同帧守卫内）无条件再同步一次** ✓ —— 本函数**幂等** ✓
          *   （已存在的 VM 只更新位置 ✓、缺的补建 ✓）⇒ ★ 重复调用无副作用 ✓，且不再受那条分支约束 ✓。*/
         power_vm_sync();
+        /* ★★★★★ 2026-10-16 **照 116 的做法（owner：「核实清楚了，做法上照着 116 做」✓）**：
+         *   ★ 道具池的"收集半径 / 吸引半径 / 磁速"**读自机自己的字段** ✓ —— 与 116 同款 ✓
+         *   （`season.c:816-836` ✓）⇒ ★ 原生卡 `ITEM_CATCH(21)` / `ITEM_LINE(22)` 一改，
+         *   ★ 本卡道具**跟着一起变** ✓。
+         *   ★ 字段（`engine.h:470-473` ✓）：`CE_PLAYER_ITEM_ATTRACT_SPD`(`0x47988`) /
+         *     `CE_PLAYER_ITEM_COLLECT_R`(`0x4798c`) / `CE_PLAYER_ITEM_ATTRACT_RF`(`0x47990`，聚焦) /
+         *     `_RU`(`0x47994`，非聚焦 ✓)；★ 一手初值 `{5,30,70,70}` ✓ ⇒ **照 116 同值兜底** ✓
+         *   （读不到/≤0 时用初值 ✓，不让池掉到 0 半径 ✗）。*/
+        {
+            const uint8_t *pl5 = CE_PLAYER();
+            float collect_r = POFV_POWER_PARAM_DEF_COLLECT_R;
+            float attract_r = POFV_POWER_PARAM_DEF_ATTRACT_R;
+            float mag_spd   = POFV_POWER_PARAM_DEF_MAG_SPD;
+            if (pl5) {
+                const float mr = *(const float *)(pl5 + CE_PLAYER_ITEM_ATTRACT_SPD);
+                const float cr = *(const float *)(pl5 + CE_PLAYER_ITEM_COLLECT_R);
+                const float ar = *(const float *)(pl5 + (CE_PLAYER_FOCUSED()
+                                                        ? CE_PLAYER_ITEM_ATTRACT_RF
+                                                        : CE_PLAYER_ITEM_ATTRACT_RU));
+                if (mr > 0.0f) mag_spd   = mr;
+                if (cr > 0.0f) collect_r = cr;
+                if (ar > 0.0f) attract_r = ar;
+            }
+            pofv_power_set_params(collect_r, attract_r, mag_spd);
+        }
         /* ★★★★★ 2026-10-16 **A2（owner：「A 加」✓ + 「为什么 th18 本身还在用的东西要新切」✓）**：
          *   ★ C4 剩余时间计时器改走**引擎自己的字符串管线** ✓ —— ★ **不切图、不起我们自己的 VM** ✓：
          *   · 入口 = ★ `ce_hud_text_ex(x, y, bgra, shadow, font_id, group, align_h, scale, fmt, …)` ✓
