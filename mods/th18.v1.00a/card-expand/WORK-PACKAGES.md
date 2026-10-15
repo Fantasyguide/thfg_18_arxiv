@@ -816,3 +816,6 @@ DLL `eec2b9c5935d7be751ddb0c5f85e88a5`（modkit 4 路径同 md5）+
 | 生成物 | `native/anm_ids.h` 回退（`CE_ANM_ABILITY_SPRITE_TOP_INDICATOR` / `..._SCRIPT_TOP_INDICATOR` 消失）；`make anm` 重编过 |
 | 回归 | `make check` **rc=0**（413 文件）；`sites.py` / `sdk.*` / `engine.h` / `cards_def.md` / `Makefile` 始终未动 |
 | 保留 | `engine/player/th18/06-offscreen-top-indicator-absent.md`（**一手调研**，结论 = 「TH18 有零件没扳机」）—— 与 owner 复核结果一致，留作资料 |
+| **P74** | 登记表收口（112/113 标 ⏳）+ §5 验收证据 | 文档 | ✅ 已合并（PR #64） |
+| **P75** | 卡名宏体系 + 正文卡名统一（编号+卡名） | 文档/工具 | ✅ 已合并（PR #65；生成器 tools/make_guide.py 入仓） |
+| **P76** | owner 评审清单 2026-10-15（107/108/110/111/113/114/115/117 逐条 + 措辞常识 + 本侧落地口径） | 文档 / 少量代码 | ⏳ 见 OWNER-REVIEW-2026-10-15.md |
