@@ -4882,6 +4882,39 @@ static void pofv_c4_tick(void)
             if (s_c4.timer + 1 >= POFV_C4_DURATION)     /* ★ 最后一帧：同帧清掉 ✓ */
                 ce_hud_vm_text_clear(&s_c4_timer_txt);
         }
+        /* ★★★★★ 2026-10-15（owner：「★ **在 C4 期间要模仿 boss**」✓ + 「★ **这个是 th18 自己就有的
+         *   effect**」✓ + 「★ **我只是让你"复制粘贴"到自机身上**」✓）—— ★ **把 TH18 原生那两件原样
+         *   挂到自机身上** ✓（只在 C4 期间 ✓）：
+         *   · ★ 红色旋转魔法阵 = ★ 脚本 **461**（= 原生 `effect.anm` **script105** 的 1:1 ✓，
+         *     贴图 = 原生 `effect/eff_magicsquare.png` 256×256 ✓）；
+         *   · ★ 那圈红雾/红光 = ★ 脚本 **462**（= 原生 `enemy.anm` **script107** 的 1:1 ✓，
+         *     sprite152–159 = `enemy/enemy_aura.png` 8 帧 ✓）。
+         *   ★ 层：★ 走**原生 `layer(6)`** ✓（脚本自己写 ✓；本卡 layer 6 实测可用 ✓ ——
+         *     罩子内层 `POFV_BARRIER_VM_LAYER_DISC`/暴风都用它 ✓）；★ 伴随 `script106`（炸开收尾）
+         *     **先不做** ✗（owner 没要）。
+         *   ★ 挂载方式 = ★ **本卡现成写法** ✓（同 `:8761` 那三台破罩爆发 VM ✓）：
+         *     `ce_anm_spawn(CE_ABILITY_ANM(), 脚本, 6)` ＋ ★ 每帧 `vm_set_world_pos(..., 自机)` ✓
+         *     ＝ ★ owner 的"复制粘贴到自机身上" ✓。
+         *   ⚠ 句柄是**函数内静态**（持久 ✓，本轮不新增文件级声明 ✓）；★ 收尾：★ C4 最后一帧
+         *     与本块同帧 `ce_anm_delete` ✓（另：`pofv_c4_clear()` 一侧的清理由下一笔补 ✓ —— 见 TUNING）。*/
+        {
+            static int32_t s_c4_magic_vm, s_c4_aura_vm;
+            const float *pp4 = ce_player_pos();
+            if (!s_c4_magic_vm)
+                s_c4_magic_vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
+                                    CE_ANM_ABILITY_SCRIPT_POFV109_MAGICSQUARE, 6);
+            if (!s_c4_aura_vm)
+                s_c4_aura_vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
+                                    CE_ANM_ABILITY_SCRIPT_POFV109_BOSS_AURA_RED, 6);
+            if (pp4) {
+                if (s_c4_magic_vm) vm_set_world_pos((uint32_t)s_c4_magic_vm, pp4[0], pp4[1]);
+                if (s_c4_aura_vm)  vm_set_world_pos((uint32_t)s_c4_aura_vm,  pp4[0], pp4[1]);
+            }
+            if (s_c4.timer + 1 >= POFV_C4_DURATION) {   /* ★ 最后一帧：同帧收掉两台 ✓ */
+                if (s_c4_magic_vm) { ce_anm_delete((uint32_t)s_c4_magic_vm); s_c4_magic_vm = 0; }
+                if (s_c4_aura_vm)  { ce_anm_delete((uint32_t)s_c4_aura_vm);  s_c4_aura_vm  = 0; }
+            }
+        }
         ++s_c4.timer;   /* ★ 收尾条件改成"三条扫描都跑完" ✓（见上面 ✓）*/
     }
     for (k = 0; k < POFV_C4_MAX_BULLETS; ++k) {
