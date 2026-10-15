@@ -27,7 +27,10 @@ from PIL import Image
 ROOT = pathlib.Path(__file__).resolve().parent
 _r = ROOT
 for _ in range(8):
-    if (_r / "local").is_dir():
+    # ★★★ 2026-10-15：判据从"存在 `local/`"收窄成"存在 `local/th19.v1.10c`" ✗ ——
+    #   因为 `mods/local` 也存在（别的东西放那儿）⇒ 原判据会**提前停在 `mods/`**，
+    #   `SRC1/SRC6` 解析成 `mods/local/th19.v1.10c/...` ⇒ 生成器直接 FileNotFoundError ✗。
+    if (_r / "local" / "th19.v1.10c").is_dir():
         break
     _r = _r.parent
 SRC1 = _r / "local/th19.v1.10c/dat/bullet/bullet1.png"
@@ -37,8 +40,13 @@ OUTDIR = ROOT / "bball"
 # ★ (名字, 文件名, 源, rect) —— 全部一手 ✓
 FRAMES = [
     ("POFV109_C3_ORB",       "C3_ORB.png",        SRC6, (1, 33, 63, 95)),      # sprite596：62×62 大红玉
-    ("POFV109_C4_ORB_FADE",  "C4_ORB_FADE.png",   SRC1, (97, 209, 127, 239)),  # sprite326：淡版蓝玉
-    ("POFV109_C4_ORB_SOLID", "C4_ORB_SOLID.png",  SRC6, (97, 1, 127, 31)),     # sprite583：实心蓝玉
+    # ★★★ 2026-10-15（owner：「C4 阴阳玉颜色应当是粉色」+「第一行第三个应该是 C4 的阴阳玉」+
+    #   「（出生）这段图应当还是 (65,1,95,31)」）：原先 FADE 取 bullet1.png (97,209,127,239)
+    #   （出图 30×30 / 455 px / 均值 (167,150,244) 淡蓝紫）、SOLID 取 bullet6.png (97,1,127,31)
+    #   （735 px / 均值 (101,111,141) 蓝灰）⇒ owner 实跑「看着怎么是蓝色的」，且出生段不像阴阳玉。
+    #   ⇒ 两张都改取 bullet6.png **row1 col3 = (65,1,95,31)**（735 px / 均值 (163,86,137) 偏粉）。
+    ("POFV109_C4_ORB_FADE",  "C4_ORB_FADE.png",   SRC6, (65, 1, 95, 31)),      # 出生段：同格的粉玉
+    ("POFV109_C4_ORB_SOLID", "C4_ORB_SOLID.png",  SRC6, (65, 1, 95, 31)),      # 稳定段：同格的粉玉
     ("POFV109_BBALL_BORN",   "BBALL_BORN.png",    SRC1, (8, 240, 16, 248)),    # 8×8 彩弹：出生
     ("POFV109_BBALL_IDLE",   "BBALL_IDLE.png",    SRC1, (0, 240, 8, 248)),     # 8×8 彩弹：稳定
     ("POFV109_BBALL_DIE",    "BBALL_DIE.png",     SRC1, (16, 240, 24, 248)),   # 8×8 彩弹：消失
