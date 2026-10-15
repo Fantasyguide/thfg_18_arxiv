@@ -3273,12 +3273,20 @@ static void power_vm_sync(void)
                 if (s_power.s[k9].age > amax) amax = s_power.s[k9].age;
                 break;
             }
-            ce_log("pofv: [ITEMP] item=(%.0f,%.0f) player=(%.0f,%.0f) age=%d..%d vm=%d alive=%d spr=%d",
+            ce_log("pofv: [ITEMP] item=(%.0f,%.0f) player=(%.0f,%.0f) age=%d..%d vm=%d alive=%d spr=%d | poc_y=%.0f pl_y=%.0f",
                    (double)ix, (double)iy,
                    (double)(pp9 ? pp9[0] : 0.0f), (double)(pp9 ? pp9[1] : 0.0f),
                    (int)amin, (int)amax,
                    (int)first_vm, (first_vm && ce_anm_get_vm((uint32_t)first_vm)) ? 1 : 0,
-                   (int)POFV_POWER_VM_SPRITE);
+                   (int)POFV_POWER_VM_SPRITE,
+                   (double)ce_poc_height_semantic(),
+                   (double)(pp9 ? pp9[1] : 0.0f));
+            /* ★ 2026-10-16（owner：「就是被瞬间吃了！」✓，并明确排除"12 px / POC 线"✗）：
+             *   ★ 排除 12 px 是对的 ✓（那支只吃 12 px 内 ✓，够不到结界边缘 ✗）；
+             *   ★ 而 **POC 那一支没有半径** ✗（`pofv_core.c`：`if (player[1] < poc_y)` ⇒ 全屏收 ✓）
+             *   ⇒ ★ 它是"远处也被吃"的头号嫌疑 ✓ ⇒ ★ 本行同时打 `poc_y` 与自机 y ✓：
+             *   ★ 若正常游玩时 `pl_y < poc_y` 成立 ⇒ ★ 那一支**每帧把全场道具全收走** ✓✓ 就是元凶 ✓
+             *   （届时按一手核 POC 的判据与坐标方向 ✓，再改那一处 ✓）。*/
         }
         /* ★ 2026-10-16 **槽位含义**（`pofv_core.h:519-525` ✓）：`0 = CANCEL`（消弹）✓、
          *   ★ `1 = KILL`（击破敌人）✓、★ `2 = AURA`（**固灵结界碰弹** ✓ —— owner 关心的那条 ✓）、
