@@ -8882,11 +8882,27 @@ static int on_tick_2(ce_card_t *c)
             int hit = aura_scan_bullets(ppa, POFV_AURA_ITEMS_PER_FRAME, ox, oy);
             if (hit > 0) {
                 int32_t apts = 0;
-                pofv_power_spawn_packed_at(&s_power, ox, oy, hit, POFV_POWER_PTS_AURA,
-                                           POFV_AURA_ITEMS_PER_FRAME, POFV_POWER_SRC_AURA, &apts);
+                int k10;
+                /* ★★★★★ 2026-10-16 **owner 口径（照 116 做 ✓）**：★「★ **怎么人 116 就能做对呢？**」✓
+                 *   —— ★ 因为 116 **用的是引擎自己的道具** ✓：`season.c:604`
+                 *   `ce_spawn_item(2u, pos, -1.5707964f, 1.7f)` ✓（SDK 包一手 `CE_FN_SPAWN_ITEM` ✓，
+                 *   `sdk.h:413-417` ✓）⇒ ★ **吸引矩形 / POC / 收取出生宽限全是引擎一手** ✓✓。
+                 *   ★ 本卡从此也走同一条 ✓：★ 逐颗**命中点**（`aura_scan_bullets` 的 `ox/oy` ✓）
+                 *   ⇒ `ce_spawn_item(2u, 命中点, 角度随机, **2.2f**)` ✓
+                 *   · ★ 速度/角度按 **TH19 一手** ✓：`local/th19.v1.10c/decomp/all.c:221235` 的
+                 *     `FUN_00521d60`：`+0xc8c = cos(param_5)*param_6` ✓（`param_5`=角度、`param_6`=速度 ✓），
+                 *     各调用点传的速度 = `0x400ccccd` = float **2.2** ✓、角度由**调用方随机** ✓ ⇒ 本处同样随机 ✓；
+                 *   · ★ 失败就从简（照 116 ✓ 它失败时退 `ce_money_pocket` ✓）：★ 引擎道具池满 ⇒ 这一颗不撒 ✓
+                 *     （★ 旧的自造池那条链**不再参与掉落** ✗ —— 池/HUD 计数随后按 goal 第 2 步清理 ✓）。*/
+                for (k10 = 0; k10 < hit; ++k10) {
+                    float pos10[3];
+                    const float ang10 = (float)(ce_rand() % 628) * 0.01f;   /* 0..2π ✓ */
+                    pos10[0] = ox[k10]; pos10[1] = oy[k10]; pos10[2] = 0.0f;
+                    if (ce_spawn_item(2u, pos10, ang10, 2.2f)) ++apts;
+                }
                 s_aura_bullets += hit;
                 if (hit >= POFV_AURA_ITEMS_PER_FRAME)     /* 每帧上限生效时留一行（诊断）*/
-                    ce_log("pofv: aura touched %d bullets (frame cap %d, packed %d pts)",
+                    ce_log("pofv: aura touched %d bullets (frame cap %d, engine items ok %d)",
                            hit, POFV_AURA_ITEMS_PER_FRAME, (int)apts);
             }
         }
