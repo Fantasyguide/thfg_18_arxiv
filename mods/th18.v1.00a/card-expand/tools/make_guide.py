@@ -101,6 +101,14 @@ def md2tex(text):
             out.append('\\begin{itemize}[leftmargin=1.3em,itemsep=1pt,topsep=2pt,parsep=0pt]\n' +
                        '\n'.join('  \\item ' + inline(x) for x in items) + '\n\\end{itemize}')
             continue
+        if ln.startswith('> '):                      # 引用块（markdown `>`）—— 以前会把 `>` 原样印出来 ✗
+            para = [ln[2:].strip()]; i += 1
+            while (i < len(lines) and lines[i].strip()
+                   and not lines[i].startswith(('- ', '|', '---', '>'))
+                   and not LABEL.match(lines[i])):
+                para.append(lines[i].strip()); i += 1
+            out.append('\\begin{quote}\\small ' + inline(' '.join(para)) + '\\end{quote}')
+            continue
         m = LABEL.match(ln)
         if m:                                       # **作用**：xxx  →  \paragraph{作用}xxx
             out.append('\\paragraph{%s}%s' % (esc(m.group(1)), inline(m.group(2))))
@@ -264,10 +272,10 @@ def main():
         else:
             L.append(r'\clearpage')
         L.append(r'\cardtitle{%d %s}' % (cid, esc(c['name'])))
-        L.append(r'\noindent\begin{minipage}[t]{0.45\textwidth}')
+        L.append(r'\noindent\begin{minipage}[t]{0.41\textwidth}')
         L.append(r'\includegraphics[width=\linewidth]{%s}' % img)
         L.append(r'\end{minipage}\hfill')
-        L.append(r'\begin{minipage}[t]{0.51\textwidth}')
+        L.append(r'\begin{minipage}[t]{0.55\textwidth}')
         L.append(r'\printedlabel')
         L.append(r'{\small %s}\par' % '\\\\'.join(inline(x) for x in c['desc']))
         L.append(r'\end{minipage}')
@@ -281,10 +289,10 @@ def main():
         L.append(r'\section{附：118 挑战・十二合一（挑战卡）}')
         for cid in extra:
             c = cards[cid]
-            L.append(r'\noindent\begin{minipage}[t]{0.45\textwidth}')
+            L.append(r'\noindent\begin{minipage}[t]{0.41\textwidth}')
             L.append(r'\includegraphics[width=\linewidth]{%s/%s_max.png}' % (imgdir, c['internal']))
             L.append(r'\end{minipage}\hfill')
-            L.append(r'\begin{minipage}[t]{0.51\textwidth}')
+            L.append(r'\begin{minipage}[t]{0.55\textwidth}')
             L.append(r'\printedlabel')
             L.append(r'{\small %s}\par' % '\\\\'.join(inline(x) for x in c['desc']))
             L.append(r'\end{minipage}')
