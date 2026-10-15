@@ -5164,7 +5164,7 @@ static int yk_bomb_active(void)
                                  *   1（链根 2n）+ 子机数（≤5）个浮字 ⇒ 3 会丢；池满只丢浮字、
                                  *   不影响道具/计分，见 `yk_popup_spawn` 的降级日志）*/
 #define YK_POPUP_GLYPHS     5
-#define YK_POPUP_ANM_LAYER  16
+#define YK_POPUP_ANM_LAYER  19   /* owner 2026-10-15: 会爆出一大堆永点, +N 的 layer 得在上面 => 取世界层最高档 19 (永点 7 / 道具 12 / 弹幕 14-16 都在下面) */
 /* ★★★ 2026-10-01（owner 第三轮：「依旧没有发红字」；实跑日志已证**字建出来了**）：
  *   日志判据（`th18_card_expand.log`，build 17:54:12）：`youkai/popup spawn: tag root/part/orbit
  *   value 16 …` **86 行**、`youkai/kill:` **64 行**、`youkai/zone: opened 41 … bullets 104`
@@ -5316,7 +5316,7 @@ static void yk_popup_tick(void)
              *   浮字 VM 用的 `YK_GAUGE_SCRIPT_FONT[]` 是**HUD 字形脚本**，它正文自带
              *   `layer(25); resolutionMode(2);` ⇒ 脚本一跑就**覆盖**我们创建时给的层，
              *   于是我们喂的**世界/640 空间**坐标被当成 HUD（表面）参照系 ⇒ 整块偏到别处。
-             *   ⇒ 每帧**再写回**：层 = `YK_POPUP_ANM_LAYER`(11，世界层 3–19)，
+             *   ⇒ 每帧**再写回**：层 = `YK_POPUP_ANM_LAYER`(19，世界层最高档)，
              *     `flags_hi` 的 resolutionMode(bits22–24) = **2**（= `1×`，即「脚本没写
              *     `resolutionMode` 时」的默认档，见 `build_player_anm.py` 的一手理由）
              *   ⇒ 浮字与同批刻符（`yk_orb_spawn`，世界层 7）**同一参照系**。
