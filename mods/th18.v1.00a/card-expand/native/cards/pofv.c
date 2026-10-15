@@ -4909,7 +4909,7 @@ static void pofv_c4_tick(void)
             tb[3] = (char)('0' + (frm / 10) % 10);
             tb[4] = (char)('0' + (frm % 10));
             tb[5] = 0;
-            ce_hud_vm_text_set_font(&s_c4_timer_txt, 224.0f, 336.0f, 0xFFFFFFFFu,
+            ce_hud_vm_text_set_font(&s_c4_timer_txt, 224.0f, 440.0f, 0xFFFFFFFFu,
                                     0, 1.0f, tb, "pofv109", CE_HUD_FONT_TH18_FONT2);
             if (s_c4.timer + 1 >= POFV_C4_DURATION)     /* ★ 最后一帧：同帧清掉 ✓ */
                 ce_hud_vm_text_clear(&s_c4_timer_txt);
