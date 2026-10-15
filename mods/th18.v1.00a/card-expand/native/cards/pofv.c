@@ -5016,6 +5016,17 @@ static void pofv_c4_tick(void)
                     int bi;
                     for (bi = 0; bi < 4; ++bi) {
                         uint8_t *e3;
+                        /* ★ 2026-10-16 **只读诊断**（owner：「道中还是红的」✗ + 「ECL 应该有现在是什么的线索」✓）：
+                         *   `[FOG]` 恒读到 0 ⇒ 先分清"槽里本来就没 id / id 语义我猜错" ✓
+                         *   ⇒ ★ 每 120 帧打一次**四个槽的原始 id** ✓（只在 bi == 0 那一轮 ✓，不刷屏 ✓）。*/
+                        if (bi == 0) {
+                            static int32_t s_fogid_t;
+                            if (++s_fogid_t >= 120) {
+                                s_fogid_t = 0;
+                                ce_log("pofv: [FOGID] slots=%d/%d/%d/%d",
+                                       (int)bids[0], (int)bids[1], (int)bids[2], (int)bids[3]);
+                            }
+                        }
                         if (bids[bi] <= 0) continue;
                         e3 = ce_enemy_by_id(em3, bids[bi]);
                         if (!e3) continue;
