@@ -4283,7 +4283,20 @@ static void pofv_c3_tick(void)
 /* ★ 2026-10-15：★ C4 期间挂在**自机身上**的两件 boss 观感件（脚本 461 = 原生 `effect.anm` script105
  *   的魔法阵 ✓ / 脚本 462 = 原生 `enemy.anm` script107 的红雾 ✓）★ —— ★ 句柄放**文件作用域** ✗
  *   （不是函数内静态 ✗）：★ 铁律要求删卡/换局那条路（`pofv_c4_clear()` ⇒ `on_delete`）也能收干净 ✓。*/
-static int32_t s_c4_magic_vm, s_c4_aura_vm;
+static int32_t s_c4_magic_vm, s_c4_aura_vm, s_c4_fog_vm;
+/* ★ 2026-10-15：★ **ECL opcode 629 `fog` 的两个字段**（一手 ✓，见 `engine/enemy/th18/07-boss-aura-mesh.md` §9.31）：
+ *   · 处理器 `0x435fe0`（629 的 case ✓）读 `(float, int)` ⇒ ★ `enemy+0x5594` = **半径** ✓、
+ *     `enemy+0x559c` = **颜色** ✓（`enemy+0x5598 = 16.0f` ✓ 本卡不用）；
+ *   · ECL 里的一手值：★ 道中 `st01mbs` `fog(128.0f, 8421631)` ⇒ `0x8080FF` = **R128 G128 B255 深蓝** ✓、
+ *     半径 **128** ✓；★ 关底 `st01bs` `fog(160.0f, 15732608)` ⇒ `0xF00F80` = **R240 G15 B128 深红** ✓、
+ *     半径 **160** ✓ ⇒ ★ 颜色格式就是 `0xRRGGBB` ✓（与本卡 `ce_anm_set_color` 的 `0xAARRGGBB` 同序 ✓
+ *     ⇒ 读出来直接 `| 0xFF000000` 即可 ✓，**不用换通道** ✓）。
+ *   · ★ 尺度：本卡的羽化圆贴图 256×256 **直径**代表 fog 直径 256（= 半径 128 那档 ✓）⇒ `scale = R / 128` ✓。*/
+#define POFV_C4_FOG_R_OFF      0x5594
+#define POFV_C4_FOG_C_OFF      0x559c
+#define POFV_C4_FOG_REF_R      128.0f        /* ★ 半径基准（道中那档 ✓）*/
+#define POFV_C4_FOG_FALLBACK_R 160.0f        /* ★ 读不到时的兜底 = 关底那档（深红 160 ✓）*/
+#define POFV_C4_FOG_FALLBACK_C 0x00F00F80u   /* ★ 关底颜色 `0xF00F80` ✓（R240 G15 B128 ✓）*/
 #define POFV_C4_THRESH         2500.0f
 #define POFV_BARRIER_R          40.0f
 /* ★★ 2026-10-10 owner 实跑订正：「半径上感觉**大了 1.5 倍**」✗ —— 真因 = 外层曾写
@@ -4650,6 +4663,7 @@ static void pofv_c4_clear(void)
      *   ★ 无条件探活再删 ✓（脚本可能已自删 ⇒ 不能盲删 ✓）。*/
     if (s_c4_magic_vm) { if (ce_anm_get_vm((uint32_t)s_c4_magic_vm)) ce_anm_delete((uint32_t)s_c4_magic_vm); s_c4_magic_vm = 0; }
     if (s_c4_aura_vm)  { if (ce_anm_get_vm((uint32_t)s_c4_aura_vm))  ce_anm_delete((uint32_t)s_c4_aura_vm);  s_c4_aura_vm  = 0; }
+    if (s_c4_fog_vm)   { if (ce_anm_get_vm((uint32_t)s_c4_fog_vm))   ce_anm_delete((uint32_t)s_c4_fog_vm);   s_c4_fog_vm   = 0; }
     s_c4.timer = 0; s_c4.emitted = 0; s_c4.dir = 1; s_c4.live = 0; s_c4.base = 0.0f; s_c4.sweep = 0;
 }
 
@@ -4922,6 +4936,47 @@ static void pofv_c4_tick(void)
             if (s_c4.timer + 1 >= POFV_C4_DURATION) {   /* ★ 最后一帧：同帧收掉两台 ✓ */
                 if (s_c4_magic_vm) { ce_anm_delete((uint32_t)s_c4_magic_vm); s_c4_magic_vm = 0; }
                 if (s_c4_aura_vm)  { ce_anm_delete((uint32_t)s_c4_aura_vm);  s_c4_aura_vm  = 0; }
+                if (s_c4_fog_vm)   { ce_anm_delete((uint32_t)s_c4_fog_vm);   s_c4_fog_vm   = 0; }
+            }
+        }
+        /* ★★★★★ 2026-10-15（owner：「★ 一手 boss 还有一个现在看清似乎是**深蓝色**的"**霸气**"，
+         *   **大小跟魔法阵差不多**」✓ + 「★ **就是按照那个 ecl 来做，只做这个羽化的圆**」✓ +
+         *   「★ **按照所处的状态，道中深蓝，boss 深红来做**」✓）—— ★ **第三件 = ECL opcode 629 `fog`
+         *   的那个羽化圆** ✓（脚本 463 ✓ = 一支自烤径向渐变的圆 ✓；一手出处与字段见上面那两个宏 ✓）。
+         *   ★ **半径与颜色不写死** ✗ —— ★ **每帧从当前敌机读** `enemy+0x5594`/`+0x559c` ✓
+         *   ⇒ ★ 道中自动深蓝 128、关底自动深红 160 ✓（= owner 的"按所处状态" ✓）。
+         *   ★ 取法：★ 遍历全场敌机、**取半径最大那台** ✓（关底在场时压过道中 ✓；多 boss 也稳 ✓）。
+         *   ★ 读不到（无敌机 / 两字段都是 0 ⇒ ECL 这帧没调 `fog`）⇒ ★ 退回**上次读到的值**（静态 ✓、
+         *   从 0 起 ⇒ 第一次就有值时就固定 ✓）；★ 再没有就用关底那套（深红 160 ✓）。
+         *   ⚠ ❓ 待实跑校准（登记 TUNING）：VE 与贴图的**尺度关系**（`scale = R / 128` 是"贴图直径 256
+         *   = fog 直径 256"的直读 ✓，但 VM 空间的倍率若与推测不同，就是这一个数要改 ✓）。*/
+        {
+            static float s_fog_r_last;
+            static uint32_t s_fog_c_last;
+            float best_r = 0.0f;
+            uint32_t best_c = 0;
+            uint8_t *em3;
+            uint8_t *e3;
+            CE_ENEMY_FOREACH(em3, e3) {
+                const float rr = *(const float *)(e3 + POFV_C4_FOG_R_OFF);
+                if (rr > best_r) { best_r = rr; best_c = *(const uint32_t *)(e3 + POFV_C4_FOG_C_OFF); }
+            }
+            if (best_r > 0.0f) { s_fog_r_last = best_r; s_fog_c_last = best_c; }
+            else if (s_fog_r_last <= 0.0f) { s_fog_r_last = POFV_C4_FOG_FALLBACK_R; s_fog_c_last = POFV_C4_FOG_FALLBACK_C; }
+            if (!s_c4_fog_vm)
+                s_c4_fog_vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
+                                  CE_ANM_ABILITY_SCRIPT_POFV109_FOG_CIRCLE, 6);
+            {
+                const float *pp6 = ce_player_pos();
+                if (s_c4_fog_vm && pp6) vm_set_world_pos((uint32_t)s_c4_fog_vm, pp6[0], pp6[1]);
+            }
+            if (s_c4_fog_vm) {
+                const float k6 = s_fog_r_last / POFV_C4_FOG_REF_R;
+                ce_anm_set_scale((uint32_t)s_c4_fog_vm, k6, k6);
+                ce_anm_set_color((uint32_t)s_c4_fog_vm, 0xFF000000u | (s_fog_c_last & 0x00FFFFFFu));
+            }
+            if (s_c4.timer + 1 >= POFV_C4_DURATION) {   /* ★ 最后一帧：同帧收掉 ✓ */
+                if (s_c4_fog_vm) { ce_anm_delete((uint32_t)s_c4_fog_vm); s_c4_fog_vm = 0; }
             }
         }
         ++s_c4.timer;   /* ★ 收尾条件改成"三条扫描都跑完" ✓（见上面 ✓）*/
