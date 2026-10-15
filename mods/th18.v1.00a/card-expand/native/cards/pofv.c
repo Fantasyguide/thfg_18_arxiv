@@ -1855,19 +1855,19 @@ typedef struct {
 static pofv_aura_tint_t s_aura_tint[POFV_AURA_TINT_MAX];
 static int s_aura_tint_n;
 
-/* G = clamp(2 * (0x68 − n), 0x60, 0xff) —— 一手公式（n 见上）。*/
-static uint32_t pofv_aura_tint_g(uint16_t n)
-{
-    int32_t v = 2 * (0x68 - (int32_t)n);
-    if (v < 0x60) v = 0x60;
-    if (v > 0xff) v = 0xff;
-    return (uint32_t)v;
-}
-
-/* 一条 AARRGGBB dword（一手写法；A=0xff、R=0xff、B=0x80、G 见上）。*/
+/* ★★★★ 2026-10-15（owner 一手口径）：「固灵结界碰弹的一手行为 = ①运动速度×1/2 ②抖动 ③染色
+ *   （**瞬间染色不变化**）」——★ 其中 ① 在本作会**打乱符卡节奏** ⇒ **主动去掉** ✓；② 抖动
+ *   **因视觉问题** ⇒ 也**主动去掉** ✓（`POFV_AURA_BULLET_SHAKE` 保持 0 ✓）；⇒ ★ 只剩 ③ 要修 ✗。
+ *
+ *   原来这里实现的是 ★ `G = clamp(2 * (0x68 − n), 0x60, 0xff)` ✓（`n` = 这颗弹**连续被结界碰到
+ *   的帧数** ✓）⇒ ★ 弹在圈里待得越久 `G` 越小 ⇒ 观感 **橙 → 红渐变** ✗ —— ★ owner 实跑指出
+ *   「一手不会有变化」✗ ⇒ ★ **改成常量** ✓：`G = 0xd0` ✓（= 原公式 **`n = 0` 的入口值** ✓，
+ *   即"接触第一帧那一档颜色"，之后**不再变** ✓）。
+ *   ⚠ 只改**颜色**：`n` 的计数、去重、快照/还原表**一字不动** ✓（它们管"染过谁、何时还原" ✓）。*/
 static uint32_t pofv_aura_tint_color(uint16_t n)
 {
-    return 0xff000000u | (POFV_AURA_TINT_R << 16) | (pofv_aura_tint_g(n) << 8) | POFV_AURA_TINT_B;
+    (void)n;   /* 不再随帧数变（一手：瞬间染色、之后不变化 ✓）*/
+    return 0xff000000u | (POFV_AURA_TINT_R << 16) | (0xd0u << 8) | POFV_AURA_TINT_B;
 }
 
 /* 还原整张表（删卡 / 换关 / 重开 —— `clear_card()` 里调，**不依赖 tick** ✓ 铁律「长持续效果要交代」）。
