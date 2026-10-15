@@ -216,6 +216,8 @@ PRE = r'''\documentclass[11pt,a4paper,fontset=none]{ctexart}
 \newcommand{\cardtitle}[1]{\section{#1}}
 \newcommand{\printedlabel}{{\small\itshape 卡面文字}\par\smallskip}
 \newcommand{\divider}{\par\medskip{\color{gray}\hrule}\medskip}
+% ★ 部分标题：**不强制分页**（article 的 \part 会另起一页 ⇒ 那页只剩一行字 ✗，owner 2026-10-15 指出）
+\newcommand{\parthdr}[2]{\par\needspace{3\baselineskip}{\Large\bfseries #1\quad #2}\par\medskip\addcontentsline{toc}{section}{#1 #2}}
 \begin{document}
 '''
 
@@ -243,11 +245,15 @@ def main():
     L.append(r'\clearpage')
 
     # ── 第一部分：系统卡 ──
-    L.append(r'\part{卡牌 106--117}')
+    L.append(r'\parthdr{第一部分}{卡牌 106--117}')
+    first = True
     for cid in sysids:
         c = cards[cid]
         img = '%s/%s_max.png' % (imgdir, c['internal'])
-        L.append(r'\clearpage')
+        if first:
+            first = False          # ★ 第一张卡跟在"第一部分"标题后面 ⇒ 不强制分页 ✓（owner 2026-10-15）
+        else:
+            L.append(r'\clearpage')
         L.append(r'\cardtitle{%d %s}' % (cid, esc(c['name'])))
         L.append(r'\noindent\begin{minipage}[t]{0.45\textwidth}')
         L.append(r'\includegraphics[width=\linewidth]{%s}' % img)
@@ -276,7 +282,7 @@ def main():
             L.append('')
     # ── 第二部分：其它卡 ──
     L.append(r'\clearpage')
-    L.append(r'\part{本 mod 其它卡}')
+    L.append(r'\parthdr{第二部分}{本 mod 其它卡}')
     L.append(r'{\small 下列卡片按卡号排列；每张给卡面图与卡面上印的字。}')
     L.append(r'\begin{multicols}{2}')
     for cid in others:
