@@ -1864,6 +1864,60 @@ static yk_orbit_gifted_t s_orbit_gifted[YK_ORBIT_GIFTED_MAX];
 static unsigned s_orbit_gift_full;    /* 表满拒绝过几次（只增，诊断用）*/
 static unsigned s_orbit_gift_refused; /* 拦下过几次重复补（只增，诊断用）*/
 
+/* ★★★ P82（owner 2026-10-15）：**映射（发射口）使魔的「当初发过几台」台账** ——
+ *   修 owner 报的「**时序问题**：击破含使魔的敌人时被判定成没有使魔 ⇒ 没有 +N」✗。
+ *   绕转使魔本来就有同款台账（s_orbit_gifted ✓），映射使魔没有 ✗ ⇒ 使魔先被清掉、母机同帧死亡时
+ *   n = 0 ⇒ n_mem = 0 ⇒ `if (!n2)` 整块跳过 ⇒ 连 +N 都没有 ✗。
+ *   这里按**母机 id** 记「哪些发射口键建过壳」（位图 ✓）⇒ 死亡那一帧仍取得出台数 ✓。
+ *   文件级静态、不进卡的 496 B 预算 ✓。*/
+#define YK_MAP_GIFTED_MAX 64
+typedef struct {
+    uint32_t id;
+    uint64_t seen[2];      /* 发射口键（slot + 16*ord，≤ 16*6）位图 ✓ */
+    uint32_t frame;
+} yk_map_gifted_t;
+static yk_map_gifted_t s_map_gifted[YK_MAP_GIFTED_MAX];
+
+static int yk_map_gifted_find(uint32_t id)
+{
+    unsigned i;
+    for (i = 0; i < YK_MAP_GIFTED_MAX; ++i) if (s_map_gifted[i].id == id) return (int)i;
+    return -1;
+}
+
+static void yk_map_gift_mark(uint32_t id, int key, uint32_t frame)
+{
+    unsigned i;
+    int idx;
+    if (!id || key < 0 || key >= 128) return;
+    idx = yk_map_gifted_find(id);
+    if (idx < 0) {
+        for (i = 0; i < YK_MAP_GIFTED_MAX; ++i) {
+            if (!s_map_gifted[i].id) {
+                s_map_gifted[i].id = id;
+                s_map_gifted[i].seen[0] = 0;
+                s_map_gifted[i].seen[1] = 0;
+                idx = (int)i;
+                break;
+            }
+        }
+    }
+    if (idx < 0) return;                      /* 表满 ⇒ 宁可不记（只影响 +N 的值 ✓）*/
+    if (key < 64) s_map_gifted[idx].seen[0] |= (uint64_t)1 << key;
+    else          s_map_gifted[idx].seen[1] |= (uint64_t)1 << (key - 64);
+    s_map_gifted[idx].frame = frame;
+}
+
+static unsigned yk_map_gifted_count(uint32_t id)
+{
+    int idx;
+    if (!id) return 0u;
+    idx = yk_map_gifted_find(id);
+    if (idx < 0) return 0u;
+    return (unsigned)__builtin_popcountll(s_map_gifted[idx].seen[0])
+         + (unsigned)__builtin_popcountll(s_map_gifted[idx].seen[1]);
+}
+
 static int yk_orbit_gifted_find(uint32_t id)
 {
     unsigned i;
@@ -3014,6 +3068,7 @@ static void yk_run_action(yk_card_t *s, const yk_action_t *act)   /* s 可为 NU
         /* ★ 2026-10-01 晚（owner：空格「啥用没有」= 我们的壳**父链是 0** ⇒ 活体校验全拒）：
          *   spawn 后把父 id 写成**该槽的母机 id** ⇒ ① 空格可用；② 这条父子关系本来就该有。*/
         *(uint32_t *)(f + YK_ENEMY_PARENT_ID) = act->enemy_id;
+        yk_map_gift_mark(act->enemy_id, act->slot, ce_sdk_frame());   /* ★ P82：记账（修 +N 时序 bug ✓）*/
         ce_log("youkai/emit SPAWN: slot %d key %d fam_id=%u ret=%d pos=(%.1f,%.1f) enemy_id %u",
                YK_EMIT_REAL_SLOT(act->slot), act->slot, fid, f ? 1 : 0, (double)act->x, (double)act->y, act->enemy_id);
         /* ★★★ 2026-10-01（owner：「依旧有一系列不该出现的发弹口使魔」）——**建壳诊断**（前 24 只）：
@@ -6198,7 +6253,13 @@ static void yk_on_enemy_killed(yk_card_t *s, const ce_enemy_death_t *ev)
          *   `n == 0` ⇒ 下面整块被 `if (!n2)` 跳过 ⇒ 连 `+N` 都没有（owner 实跑 `popup spawn` 0 行）。
          *   台账（`yk_orbit_gift_mark` 记的 `made`）知道「这台母机当初发了几台」⇒ 拿它兜底。
          *   ⚠ 只影响**值 / 公式 / 开区**；位置循环仍按 `n_child`（有几个位置画几个位置）。*/
-        n_mem = yk_kill_display_count(n, yk_orbit_gifted_count(ev->id));
+        {
+            /* ★ P82：记忆值取**绕转台账与映射台账的较大者** —— owner 2026-10-15 报的
+             *   「**时序问题**：被杀那一刻被判成没有使魔 ⇒ 没有 +N」正是映射那一支缺台账 ✗。*/
+            unsigned mem_o = yk_orbit_gifted_count(ev->id);
+            unsigned mem_m = yk_map_gifted_count(ev->id);
+            n_mem = yk_kill_display_count(n, (mem_m > mem_o) ? mem_m : mem_o);
+        }
         if (n_mem != n && !s_kill_mem_logged) {
             s_kill_mem_logged = 1;
             ce_log("youkai: kill burst uses the REMEMBERED familiar count (enemy #%u: %u live / "
