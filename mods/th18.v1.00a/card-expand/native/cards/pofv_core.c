@@ -1084,7 +1084,8 @@ int pofv_power_tick(pofv_power_pool_t *p, const float *player, float poc_y, int3
 {
     int i, got = 0;
     int32_t pts = 0;
-    const float absorb2 = POFV_POWER_ABSORB_R * POFV_POWER_ABSORB_R;
+    const float absorb2 = s_pwr_collect_r * s_pwr_collect_r;   /* ★ 2026-10-16 照 116：收集半径读自机字段 ✓
+                                                                *   （`CE_PLAYER_ITEM_COLLECT_R` ✓，默认一手初值 30 ✓）*/
 
     if (out_pts) *out_pts = 0;
     if (!p) return 0;
@@ -1132,7 +1133,10 @@ int pofv_power_tick(pofv_power_pool_t *p, const float *player, float poc_y, int3
             } else if (it->st != 3 &&
                        (dx * dx + dy * dy) <= (s_pwr_attract_r * s_pwr_attract_r)) {
                 it->st = 3;                                   /* 进吸引矩形（一手 state 5）*/
-                if (it->mspd < POFV_POWER_MAG_SPEED0) it->mspd = POFV_POWER_MAG_SPEED0;
+                if (it->mspd < s_pwr_mag_spd) it->mspd = s_pwr_mag_spd;   /* ★ 2026-10-16 照 116：
+                                                  * 磁速起步值读自机字段 ✓（`CE_PLAYER_ITEM_ATTRACT_SPD` ✓，
+                                                  * 默认一手初值 5.0 ✓；加速度/上限 `+0.2/12.0` 暂留 ✗，
+                                                  * 下一笔按一手核 `th16:0x4945d4` 那条 ✓）。*/
             }
         }
 

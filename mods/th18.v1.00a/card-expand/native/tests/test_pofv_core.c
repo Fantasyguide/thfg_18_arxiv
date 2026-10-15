@@ -564,6 +564,12 @@ static void check_power(void)
     CHECK(POFV_POWER_SPEED_SCALE == 0.0f && POFV_POWER_SPEED_MIN == 2.2f);
     CHECK(POFV_POWER_LAUNCH_DELAY == 6);
     CHECK(POFV_POWER_MAG_SPEED0 == 2.0f && POFV_POWER_MAG_ACCEL == 0.2f);
+    /* ★ 2026-10-16 **照 116（owner 口径 ✓）**：★ 磁速/收集半径/吸引半径的**起步值**改由
+     *   **自机字段**传入 ✓（`CE_PLAYER_ITEM_ATTRACT_SPD` / `COLLECT_R` / `ATTRACT_RF|RU` ✓，
+     *   读法见 `cards/season.c:816-836` ✓）⇒ ★ 默认值 = **一手初值 `{5,30,70,70}`** ✓
+     *   （`engine.h:470-473` ✓）。*/
+    CHECK(POFV_POWER_PARAM_DEF_MAG_SPD == 5.0f && POFV_POWER_PARAM_DEF_COLLECT_R == 30.0f
+          && POFV_POWER_PARAM_DEF_ATTRACT_R == 70.0f);
     CHECK(POFV_POWER_MAG_SPEED_MAX == 12.0f);
     CHECK(POFV_POWER_OUT_Y == 472.0f && POFV_POWER_OUT_X == 200.0f);
     CHECK(POFV_POWER_DROP_SPEED == 2.2f);
@@ -754,7 +760,8 @@ static void check_power(void)
     power_launch(&pool, pu, 128.0f, &pts);
     pofv_power_tick(&pool, pu, 128.0f, &pts);
     CHECK(pool.s[0].st == 3);
-    CHECK(feq(pool.s[0].mspd, POFV_POWER_MAG_SPEED0 + POFV_POWER_MAG_ACCEL));  /* 起步 2.0，本帧 +0.2 */
+    CHECK(feq(pool.s[0].mspd, POFV_POWER_PARAM_DEF_MAG_SPD + POFV_POWER_MAG_ACCEL));  /* ★ 2026-10-16 起步值改
+                                                                                      * 自机字段（默认一手 5.0）⇒ 本帧 5.2 */
     { float m0 = pool.s[0].mspd;
       pofv_power_tick(&pool, pu, 128.0f, &pts);
       CHECK(feq(pool.s[0].mspd, m0 + POFV_POWER_MAG_ACCEL)); }
