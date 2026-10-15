@@ -2906,6 +2906,12 @@ static void pofv_ca_ring_tick(void)
         int n;
         if (!R->active) continue;
         pos[0] = R->x; pos[1] = R->y; pos[2] = 0.0f;
+        /* ★ 2026-10-16：★ **撤回我 30 秒前那一刀** ✗ —— ★ 我误把 owner 的「只有 C2–C4 的消弹环会消弹」
+         *   读成"环的 kind ≥ 2 才消弹" ✗，而 owner 随后的更正原话是：「★ **不不不，C1 也会消弹** ✓；
+         *   我所谓的**只有**是只限定 **C2–C4 的效果** ✓」⇒ ★ 意思是"**消弹这件事只许发生在
+         *   蓄力环这一类效果上**（C1 的环也消、只是不画环 ✓），**别的东西不许消** ✗"✓
+         *   ⇒ ★ 本行**恢复原样** ✓（所有 kind 都消 ✓）。★ 真正要查的是**另外两处**消弹点 ✓：
+         *   `c2_cancel_drop()`（C2 的消弹圈 ✓）与 `do_storm_frame()`（暴风那条 ✗）—— 见 TUNING 待办 ✓。*/
         if (R->r > 0.0f) {
             n = cancel_white_in_circle(pos, R->r, POFV_CANCEL_MAX, POFV_BULLET_CANCEL_MODE);
             if (n > 0)
