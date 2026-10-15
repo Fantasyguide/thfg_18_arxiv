@@ -22185,3 +22185,41 @@ DOCSTYLE/METHOD ✓ = **别人的** ✓）⇒ ★ **禁止 `git commit -a`** ✗
 ★ ⇒ ★ 若 owner 要"和原生一模一样的**两块分工/基线差 6**"✗，★ 再拆两块照抄 ✓（一处改动 ✓）。
 
 ★ **提交**：★ `9656d7a9` ✓（`make` / `make check` 460 / `check-docs` 460 全绿 ✓；发布 DLL `684e75d30829caffc9fa54b67135a4e8` ✓）。
+
+---
+
+## ★★★★★ 2026-10-15 ★ **C4 期间把 TH18 原生两件 boss effect "复制粘贴"到自机身上** ✓ —— 台账
+
+★ **owner 口径（一级证据）**：★「★ **在 C4 期间要模仿 boss**」✓；★「★ **注意，这个是 th18 自己就有的 effect**」✓；
+★「★ **我只是让你"复制粘贴"到自机身上**」✓ ⇒ ★ **不新造美术/机制** ✓，★ 把原生那两件原样搬过来 ✓。
+
+★ **两件（原生 1:1，出处 = `engine/enemy/th18/07-boss-aura-mesh.md` §9.14/§9.26 ✓）**：
+★ · ★ **红色旋转魔法阵** = ★ 原生 `effect.anm` **script105** ✓ ⇒ 本仓脚本 ★ **461**（`461_pofv109_magicsquare.anm.txt` ✓）；
+★   ★ 贴图 = 原生 `effect/eff_magicsquare.png`（256×256 ✓，源图在 `local/th18.v1.00a/anm/effect/effect/` ✓）
+★   ★ ⇒ ORDER 里**直接引 `local/...` 源图** ✓（owner 提醒"th18 自己就有" ⇒ 不派生入库 ✓）；sprite = **798** ✓。
+★ · ★ **那圈红雾/红光** = ★ 原生 `enemy.anm` **script107**（sprite152–159 ✓）⇒ 本仓脚本 ★ **462** ✓；
+★   ★ 贴图 = `enemy/enemy_aura.png`（48×48/格、y=0 ✓）⇒ 已切 8 张入库
+★   ★ `assets/ability/boss_aura_red/RED_AURA_0..7.png` ✓（与 `lolk/RING` 同规矩：入库的是派生件 ✓），
+★   ★ 图集段 = `ATLAS_BOSS_AURA_RED 384x48` ✓、sprite = **799..806** ✓。
+
+★ **落地（C 侧，`pofv.c` 的 C4 tick 内）**：
+★ · ★ 起两台 = `ce_anm_spawn(CE_ABILITY_ANM(), SCRIPT, 6)` ✓（★ 用**本卡现成写法** ✓，同 `:8761` 那三台破罩爆发 VM ✓）；
+★ · ★ 每帧 `vm_set_world_pos(..., ce_player_pos())` ✓ ＝ ★ owner 的"复制粘贴到自机身上" ✓；
+★ · ★ 层 = ★ **原生 `layer(6)`** ✓（脚本自己写 ✓；本卡 layer 6 实测可用 ✓：罩子内层/暴风都用它 ✓）；
+★ · ★ **伴随 `script106`（炸开收尾）先不做** ✗（owner 没要 ✓，登记在此 ✓）；
+★ · ★ 收尾 = ★ C4 最后一帧同帧 `ce_anm_delete` 两台 ✓ ＋ ★ 句柄在**文件作用域** ✓
+★   ★（`s_c4_magic_vm`/`s_c4_aura_vm` ✓）⇒ ★ `pofv_c4_clear()`（删卡/换局那条路 ✓）也能收 ✓
+★   ★（`ce_anm_get_vm` 先判活再删 ✓ —— 脚本可能已自删 ⇒ 不盲删 ✓）★ ＝ 铁律满足 ✓。
+
+★ **构建期的三个坑（都撞过并修了 ✓，记下来防复发 ✗）**：
+★ ① ★ `build_ability.py` 要求脚本文件**开头即 `script scriptNNN {`** ✗（草案是注释在前 ⇒ 报"开头应为…"✓）；
+★ ② ★ `ORDER.txt` 的 `ATLAS …` **段头必须写在成员之前** ✗（写在后面报"尺寸列应为 WxH"✓）；
+★ ③ ★ 脚本里的占位名必须与 `ORDER.txt` 里的**条目同名** ✗（`@MAGICSQUARE` ↔ 我一度写成 `POFV109_MAGICSQUARE` ⇒ 报"未定义的占位"✓）。
+
+★ **连带改动的两处（都是让闸转绿 ✓）**：★ `CAPACITY.md` 登记新图集 entry 179 ✓（`capcheck` 红→绿 ✓）；
+★ `HANDOFF-109-BOSS-BG-WARP.md`（**owner 的文档** ✓）只改两处链接：草案路径 `_draft_109/` → `scripts/` ✓（`check-docs` 红→绿 ✓）。
+
+★ **提交**：★ `c442bf58`（素材步 ✓）/ `e220faed`（C 侧挂载 ✓）/ `7725e3a0`（收尾补齐 ✓）；
+★ 发布：DLL `0508993028dd9ccadc1b0e4f1b33e502` ＋ `ability.anm` `b84f0995e900103a2409261f9544c8cf` ✓（★ 同批 ✓）；
+★ ⚠ ★ 收尾那笔（`7725e3a0`）发布时 `thcrap/bin` 被运行中的游戏占用 ⇒ 只进了 `mods/`（`bf74f8e4f957092cdb457c3603c4b057` ✓）
+★   ⇒ ★ loader 下次启动会从 `mods/` 拷 ✓；`repos/` 与 `bin/` 待游戏退出后补跑 `deploy.py` ✓。
