@@ -1767,7 +1767,11 @@ static int cancel_white_in_circle(const float *pos, float r, int max_count, int 
             /* ★★ 一手：**每消一颗**就在**那颗弹的位置**播一次 `etbreak` 火花 ✓（见上面那节 ✓）*/
             const float bx = *(const float *)(b + CE_BULLET_POS);
             const float by = *(const float *)(b + CE_BULLET_POS + 4);
-            ((pofv_fn_bullet_cancel_t)POFV_FN_BULLET_CANCEL)(b, mode);
+            /* ★ 2026-10-16：★ **`mode < 0` = "只数不杀"** ✓（owner：「把 C2 消弹圈杀掉」✓）——
+             *   ★ 不调引擎的 `Bullet__cancel` ✓、不播 `etbreak` 火花 ✓、不置 `s_aura_bullet_done[]` 闩锁 ✓
+             *   ⇒ ★ 弹**原样留在场上** ✓，但本函数照旧**返回颗数** ✓（调用方拿它撒道具 ✓）。*/
+            if (mode >= 0) {
+                ((pofv_fn_bullet_cancel_t)POFV_FN_BULLET_CANCEL)(b, mode);
             /* ★★★★★ 2026-10-16 **只读诊断**（owner：「C4 持续期间（消弹环已消失）怎么还有消弹特效」✗）：
              *   ★ 三个消弹点（`pofv_ca_ring_tick` / `c2_cancel_drop` / `do_storm_frame`）**都走本函数** ✓
              *   ⇒ ★ 在这一处打一行就够 ✓（每颗一颗一行 ✓，颗数多时才知道是谁在消 ✓）。
@@ -1791,6 +1795,7 @@ static int cancel_white_in_circle(const float *pos, float r, int max_count, int 
              *     **统一到 `s_aura_bullet_done[]`** ✓ = spec §8.3 的"**一套共享规则**" ✓
              *     ⇒ ★ 同一颗弹**只掉一次** ✓。*/
             s_aura_bullet_done[i] = 1;
+            }   /* ★ 结束 `if (mode >= 0)` ✓（只数不杀时跳过上面整段 ✓）*/
         }
         if (++n >= max_count) break;
     }
@@ -2481,7 +2486,15 @@ static int pofv_aura_rise_edge(int held)
  * 返回消掉的颗数。位置 = 圈心（一手是逐个命中点，本卡不复刻逐点坐标 ⇒ 见 `TUNING.md` 的 ❓）。*/
 static int c2_cancel_drop(const float *pos, float r)
 {
-    const int n = cancel_white_in_circle(pos, r, POFV_CANCEL_MAX, POFV_BULLET_CANCEL_MODE);
+    /* ★★★★★ 2026-10-16 owner：「★ **你能不能把 C2 消弹圈杀掉**」✓ ⇒ ★ **不再消弹** ✓
+     *   —— ★ 用"**只数不杀**"哨兵模式（`mode = -1` ✓，见 `cancel_white_in_circle` 里那句
+     *   `if (mode >= 0)` ✓）：★ 照旧数出"圈内有多少颗可消弹" ✓ ⇒ ★ **道具照撒**（`n` 不变 ✓）、
+     *   ★ 但**一颗都不消、不播消弹特效** ✓。★ 五个调用点（`:2548/:2597/:2669/:4121/:4872` ✓）
+     *   共用本函数 ✓ ⇒ ★ 这一处就是全部 ✓。
+     *   ⚠ 副作用（如实登记）：★ 以前"消弹 ⇒ 掉灵力道具"这条因果没了 ✓ ⇒ ★ 现在是"**圈内有弹就撒**" ✓
+     *   （面值/上限仍走 `POFV_POWER_PTS_CANCEL` ✓）；★ 弹**留在场上** ✓（与原版 TH19 领域消弹不同 ✗，
+     *   按 owner 口径 ✓）。*/
+    const int n = cancel_white_in_circle(pos, r, POFV_CANCEL_MAX, -1);
     if (n > 0) {
         int32_t pts = 0;
         (void)pofv_power_spawn_packed(&s_power, pos[0], pos[1], n, POFV_POWER_PTS_CANCEL,
