@@ -1096,7 +1096,16 @@ int pofv_power_tick(pofv_power_pool_t *p, const float *player, float poc_y, int3
             float dx = player[0] - it->x;
             float dy = player[1] - it->y;
             float d2 = dx * dx + dy * dy;
-            if (d2 <= absorb2) {                 /* 收取：点入账、槽当场释放 */
+            /* ★★★★★ 2026-10-15（★ owner：「★ **固灵结界和擦弹生成的灵力道具似乎被瞬间吸收**」✗
+             *   + ★「★ **参考 th16 季节道具在此情况下的"无敌"**」✓）—— ★ ★ **出生后 32 帧内不可拾取** ✗：
+             *   ★ 先例（★ 一手 ✓）＝ ★ `cards/season.c:139` 自己记着的那句 ✓：
+             *   ★「★ **引擎自己的道具 tick 也是 `age > 31` 才开始抖/染**」✗ ⇒ ★ TH16 季节道具
+             *   ★ **`age > 31`（= 第 32 帧起）才可拾取** ✓ —— ★ 这就是 owner 说的"无敌" ✓。
+             *   ★ ⇒ ★ 本判据加一条 ★ `it->age > 31` ✓（★ 阈值照抄先例 ✓，★ 不自己发明数值 ✗）。
+             *   ⚠ ★ 只加在**收取**这一条上 ✓ —— ★ 运动学（`delay` / 状态机 / 吸引矩形 / 回收线）**一字不动** ✓。
+             *   ⚠ ★ 单测同步改（★ 旧规格"一帧就收"✗ = `tests/test_pofv_core.c:674` ✓）——
+             *   ★ 本仓里 ★ **单测就是规格** ✗。*/
+            if (d2 <= absorb2 && it->age > 31) {   /* 收取：点入账、槽当场释放（出生 32 帧内不可拾 ✗）*/
                 pts += it->value;
                 it->active = 0;
                 --p->live;

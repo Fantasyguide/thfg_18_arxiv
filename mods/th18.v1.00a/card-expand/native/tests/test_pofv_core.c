@@ -671,8 +671,18 @@ static void check_power(void)
     pc[0] = 100.0f; pc[1] = 200.0f; pc[2] = 0.0f;       /* 自机就站在道具上 */
     power_launch(&pool, pc, 100.0f, &pts);
     CHECK(pool.live == 1 && pts == 0);
-    CHECK(pofv_power_tick(&pool, pc, 100.0f, &pts) == 1);
-    CHECK(pts == 30 && pool.live == 0 && pool.absorbed == 1);
+    /* ★★★★★ 2026-10-15 新规格（★ owner：「★ **灵力道具似乎被瞬间吸收**」✗
+     *   + ★「★ **参考 th16 季节道具在此情况下的"无敌"**」✓）：
+     *   ★ 出生 **32 帧内不可拾取** ✓ —— ★ 一手先例 = ★ `season.c:139` 的 ★「★ 引擎自己的道具 tick
+     *   ★ 也是 `age > 31` 才开始抖/染」✗ ⇒ ★ 阈值取 **31** ✓（★ 与实现同一处出处 ✓）。
+     *   ★ 本用例的道具 `spawn_dir(..., 0.0f, 0.0f)` ⇒ **就地不动** ✓，★ 所以"跑满 33 帧"必然被收 ✓。*/
+    CHECK(pofv_power_tick(&pool, pc, 100.0f, &pts) == 0);   /* ★ 头一帧：站在道具上**也不收** ✓ */
+    CHECK(pts == 0 && pool.live == 1 && pool.absorbed == 0);
+    {
+        int g = 0;
+        while (g < 40 && pool.absorbed == 0) { (void)pofv_power_tick(&pool, pc, 100.0f, &pts); ++g; }
+    }
+    CHECK(pts == 30 && pool.live == 0 && pool.absorbed == 1);   /* ★ 过 32 帧后照旧收 ✓ */
 
     /* ---- 状态机①：待发射 6 帧（一手 `item+0xc50 = 6`）→ 飞散（定角、速度 −0.03/帧、无重力）----
      * 用「角 0 = +x」的道具，飞散段就是纯水平 ⇒ 断言 x 的位移与方向/重力的关系都干净。*/
