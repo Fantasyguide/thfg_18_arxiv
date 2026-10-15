@@ -1903,7 +1903,13 @@ static void pofv_aura_tint_restore_all(void)
     for (i = 0; i < s_aura_tint_n; ++i) {
         volatile uint32_t *col =
             (volatile uint32_t *)(s_aura_tint[i].b + POFV_BULLET_VM_OFF + CE_ANM_VM_COLOR1);
-        *col = s_aura_tint[i].orig;
+        /* ★★★★★ 2026-10-15 订正（owner：「★ **在固灵结界里面出生的弹幕，透明度会变成 50% 左右**」✗）：
+         *   ★ 病根 = ★ **还原时把整条 `color_1`（含 alpha）写回快照** ✗ —— 领域内**出生的**弹，
+         *   被染的第一帧它的脚本 alpha 还在淡入（≈50% ✓）⇒ 那一帧被快照成 `orig` ✓ ⇒ 离开结界时
+         *   写回 `orig` ⇒ ★ 弹**卡在 50%** ✗ ✓（本文件 `:1999` 的注释早就记着 115 的这条教训 ✓：
+         *   `*p = (*p & 0xff000000u) | (orig & 0x00ffffffu);` ✓ = **只改 RGB、alpha 用当前的** ✓）。
+         *   ⇒ ★ 改成同样写法 ✓（染/还原**都不碰 alpha** ✓ —— 与 115/111「只改 RGB、保 alpha」一致 ✓）。*/
+        *col = (*col & 0xff000000u) | (s_aura_tint[i].orig & 0x00ffffffu);
     }
     s_aura_tint_n = 0;
 }
@@ -1959,7 +1965,11 @@ static void pofv_aura_tint_tick(void)
             volatile uint32_t *col =
                 (volatile uint32_t *)(b + POFV_BULLET_VM_OFF + CE_ANM_VM_COLOR1);
             if (s_aura_tint[i].n < 0xffffu) ++s_aura_tint[i].n;   /* 一手：每帧 +1 */
-            *col = pofv_aura_tint_color(s_aura_tint[i].n);
+            /* ★ 2026-10-15：★ **只改 RGB、alpha 用当前的** ✗ —— 原来这里写整条 dword（`A=0xff` ✗）
+             *   ⇒ 会把弹的淡入（脚本 `alphaTime`）**钉成不透明** ✗，与"还原时写回旧 alpha"✗
+             *   正好是一对反方向的同一个病 ✓（owner 报的是后者：领域内出生的弹卡在 ~50% ✓）。
+             *   ⇒ 与本文件 `:2015` 的写法统一 ✓（115/111 也是只改 RGB ✓）。*/
+            *col = (*col & 0xff000000u) | (pofv_aura_tint_color(s_aura_tint[i].n) & 0x00ffffffu);
 #if POFV_AURA_BULLET_SHAKE
             pofv_aura_shake_apply(b);
 #endif
@@ -1967,7 +1977,13 @@ static void pofv_aura_tint_tick(void)
         } else {
             volatile uint32_t *col =
                 (volatile uint32_t *)(b + POFV_BULLET_VM_OFF + CE_ANM_VM_COLOR1);
-            *col = s_aura_tint[i].orig;         /* 无条件还原（lolk.c 的教训）*/
+            /* ★★★★★ 2026-10-15 订正（owner：「★ **在固灵结界里面出生的弹幕，透明度会变成 50% 左右**」✗）：
+         *   ★ 病根 = ★ **还原时把整条 `color_1`（含 alpha）写回快照** ✗ —— 领域内**出生的**弹，
+         *   被染的第一帧它的脚本 alpha 还在淡入（≈50% ✓）⇒ 那一帧被快照成 `orig` ✓ ⇒ 离开结界时
+         *   写回 `orig` ⇒ ★ 弹**卡在 50%** ✗ ✓（本文件 `:1999` 的注释早就记着 115 的这条教训 ✓：
+         *   `*p = (*p & 0xff000000u) | (orig & 0x00ffffffu);` ✓ = **只改 RGB、alpha 用当前的** ✓）。
+         *   ⇒ ★ 改成同样写法 ✓（染/还原**都不碰 alpha** ✓ —— 与 115/111「只改 RGB、保 alpha」一致 ✓）。*/
+        *col = (*col & 0xff000000u) | (s_aura_tint[i].orig & 0x00ffffffu);         /* 无条件还原（lolk.c 的教训）*/
         }
     }
     s_aura_tint_n = w;
