@@ -4848,6 +4848,40 @@ static void pofv_c4_tick(void)
                        if (s_c4.timer >= POFV_C4_DURATION) s_c4.live = 0; }
             }
         }
+        /* ★★★★★ 2026-10-15（owner：「敌人 boss 符卡时**版顶正中心**有一个还剩多少时间的计时器
+         *   ⇒ **C4 要在版底做一个一样的**，指示 C4 的剩余时间」✓；并说「完全不涉及切图、肯定是原生」✓）
+         *   —— ★ **照原生符卡计时器落** ✓，一手出处：
+         *   · 位置/字：`AUDIT.md` §AI（反 `zGui__on_draw 0x43cd00`）＝ ★ 符卡计时在
+         *     **`(224, 144/150/160/166)`**（640 空间 ✓）、**font 4 group 2**、表里注明"**随 VM**" ✓；
+         *     双空间版见 `HUD-LAYOUT.md:56`：640 `(224,144)` ＝ 表面 `(448,288)` ✓（×2 关系，与卡侧
+         *     `POFV_HUD_SURF_X/Y` 同源 ✓）。
+         *   · 格式：该字体支持 `'.'`（4 px ✓，`sdk.h:806` ✓）＋ `NEXT.md:1792` 的「同帧符卡计时 **00.00**」
+         *     ⇒ ★ 显示 **`秒.帧`** ✓（主数字那块 + `'.'`）。
+         *   · 通道：★ 走 **原生 HUD 文字 API** ✓ `ce_hud_vm_text_set_font()`（`sdk.h:820` ✓），
+         *     收 **640×480 空间**的点（`sdk.h:1219` ✓，引擎内部自己 ×倍率 ✓）⇒ 不切图、不自画数字 ✓。
+         *   ★ **版底镜像**：版顶那条在 640 空间 y=144（= 场地顶 16 + 128 ✓）⇒ 版底取
+         *     **场地底 464 − 128 = 336** ✓、x 仍取**游玩区正中 224** ✓ ⇒ `(224, 336)` ✓。
+         *   ★ 内容：剩余 = `POFV_C4_DURATION(1800, 一手 ✓) − s_c4.timer` ✓ ⇒ 秒 = /60、帧 = %60 ✓。
+         *   ★ 收尾：C4 最后一帧（本块的 `s_c4.live = 0` 同帧）就清掉 ✓（`on_delete` 另有 `pofv_c4_clear`，
+         *     这里用函数内静态句柄 + 同帧清 ⇒ 不会有残留 ✓）。*/
+        {
+            static ce_hud_vm_text_t s_c4_timer_txt;   /* ★ 函数内静态（持久 ✓，无需文件级声明 ✓）*/
+            const int32_t rf = POFV_C4_DURATION - s_c4.timer;
+            const int32_t rr = (rf > 0) ? rf : 0;
+            int32_t sec = rr / 60, frm = rr % 60;
+            char tb[8];
+            if (sec > 99) sec = 99;                    /* 两位数（与 00.00 同形 ✓）*/
+            tb[0] = (char)('0' + (sec / 10) % 10);
+            tb[1] = (char)('0' + (sec % 10));
+            tb[2] = '.';
+            tb[3] = (char)('0' + (frm / 10) % 10);
+            tb[4] = (char)('0' + (frm % 10));
+            tb[5] = 0;
+            ce_hud_vm_text_set_font(&s_c4_timer_txt, 224.0f, 336.0f, 0xFFFFFFFFu,
+                                    0, 1.0f, tb, "pofv109", CE_HUD_FONT_TH18_FONT2);
+            if (s_c4.timer + 1 >= POFV_C4_DURATION)     /* ★ 最后一帧：同帧清掉 ✓ */
+                ce_hud_vm_text_clear(&s_c4_timer_txt);
+        }
         ++s_c4.timer;   /* ★ 收尾条件改成"三条扫描都跑完" ✓（见上面 ✓）*/
     }
     for (k = 0; k < POFV_C4_MAX_BULLETS; ++k) {
