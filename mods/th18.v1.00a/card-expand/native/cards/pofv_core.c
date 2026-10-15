@@ -1067,6 +1067,19 @@ int pofv_power_spawn_packed_at(pofv_power_pool_t *p, const float *ox, const floa
     return (int)i;
 }
 
+/* ★★★★★ 2026-10-16（照 116 ✓）：★ 卡侧读 `CE_PLAYER()` 的那几个字段后传进来 ✓
+ *   （`CE_PLAYER_ITEM_COLLECT_R` / `_ATTRACT_RF|RU` / `_ATTRACT_SPD` ✓，`season.c:816-836` 同款 ✓）；
+ *   ★ 默认 = 一手初值 `{5,30,70,70}` ✓（`engine.h:470-473` ✓）⇒ 没调 setter 时行为与之前一致 ✓。*/
+static float s_pwr_collect_r = POFV_POWER_PARAM_DEF_COLLECT_R;
+static float s_pwr_attract_r = POFV_POWER_PARAM_DEF_ATTRACT_R;
+static float s_pwr_mag_spd   = POFV_POWER_PARAM_DEF_MAG_SPD;
+void pofv_power_set_params(float collect_r, float attract_r, float mag_spd)
+{
+    if (collect_r > 0.0f) s_pwr_collect_r = collect_r;
+    if (attract_r > 0.0f) s_pwr_attract_r = attract_r;
+    if (mag_spd   > 0.0f) s_pwr_mag_spd   = mag_spd;
+}
+
 int pofv_power_tick(pofv_power_pool_t *p, const float *player, float poc_y, int32_t *out_pts)
 {
     int i, got = 0;
