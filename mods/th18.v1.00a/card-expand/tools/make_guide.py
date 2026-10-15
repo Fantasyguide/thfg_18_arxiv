@@ -176,6 +176,11 @@ def linkify(tex, cards):
     """卡名 → 宏 / 加粗文本。先「编号+卡名」再裸名；边界只排除数字紧贴 ✓。
        ★ 宏后补 `{}`：xeCJK 下汉字是 catcode 11 字母，会把宏名吞进控制序列 ✗。"""
     tex, store = _protect(tex)
+    marks = []          # ★ 已替换过的片段先收进占位符：否则"编号+卡名"替完后，
+                        #   "裸卡名"规则会再钻进刚生成的那段里 ⇒ 「92 92 伟大之作」✗（owner 2026-10-15 指出）
+    def hold(s):
+        marks.append(s)
+        return '\x01%d\x01' % (len(marks) - 1)
     for nm, cid in sorted(((cards[c]['name'], c) for c in cards), key=lambda x: -len(x[0])):
         if len(nm) < 2:
             continue
@@ -184,10 +189,14 @@ def linkify(tex, cards):
             bold = '\\' + CARD_ALIAS[cid].upper() + '{}'
         else:
             macro = bold = '\\textbf{%d\u3000%s}' % (cid, nm)
-        tex = re.sub(r'(?<![0-9])%d\s*%s(?![0-9])' % (cid, re.escape(nm)), lambda m, b=bold: b, tex)
-        # ★ 两侧都要求边界（汉字/字母都算"词内"）⇒ 「原版风神录」「地灵殿的」这类复合词不会被塞编号 ✗
-        tex = re.sub(r'(?<![0-9A-Za-z\u4e00-\u9fff])%s(?![0-9A-Za-z\u4e00-\u9fff])' % re.escape(nm),
-                     lambda m, mm=macro: mm, tex)
+        # ★ 一条规则吃掉「编号 卡名」「卡名 编号」「裸卡名」三种形态，且**连相邻的同一个编号一起吃掉**
+        #   （否则旧写法「风神录 110」会被替成「110 风神录 110」✗ —— owner 2026-10-15 指出）
+        def _rep(m, nm=nm, cid=cid, bold=bold, macro=macro):
+            return hold(bold if (m.group(1) or m.group(2)) else macro)
+        tex = re.sub(r'(?<![0-9])(?:(%d)\s*)?%s(?:\s*(%d))?(?![0-9A-Za-z\u4e00-\u9fff])'
+                     % (cid, re.escape(nm), cid), _rep, tex)
+    for i, mk in enumerate(marks):
+        tex = tex.replace('\x01%d\x01' % i, mk)
     return _restore(tex, store)
 
 
