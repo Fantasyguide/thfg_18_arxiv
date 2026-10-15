@@ -7107,6 +7107,15 @@ static int on_tick_2(ce_card_t *c)
                 if (rate < 0.0f) rate = 0.0f;
                 if (rate > POFV_CHG_RATE_SRC_MAX) rate = POFV_CHG_RATE_SRC_MAX;
                 s_aura_charge += rate * (POFV_CHG_RATE_AT_SRC_MAX / POFV_CHG_RATE_SRC_MAX);
+                /* ★★★★★ 2026-10-16 **调试键（owner：「调试键空格，C3 换 C4」✓）**：
+                 *   ★ 蓄力已到 **C3 档**（`>= POFV_C3_THRESH(1700)` ✓）但还没到 C4（`< 2500` ✓）时，
+                 *   ★ 按一下**空格** ⇒ ★ 直接把蓄力顶到 **C4 阈值（2500 ✓）** ⇒ ★ 当帧就能放 C4 ✓
+                 *   （省得等满蓄 ✓；★ 只在 C3 档内生效 ⇒ 不会把 C1/C2 也跳上去 ✓，也不会误触发别的档 ✓）。
+                 *   ⚠ `CE_VK_SPACE` 是 SDK 现成的键码 ✓（`sdk.h:838` ✓）；★ 注意本卡别处
+                 *   （`:6564` ✓）也读空格 —— 那条是另一个用途 ✓，两者不冲突（本条只动蓄力值 ✓）。*/
+                if (ce_key_down(CE_VK_SPACE)
+                    && s_aura_charge >= POFV_C3_THRESH && s_aura_charge < POFV_C4_THRESH)
+                    s_aura_charge = POFV_C4_THRESH;
             }
             if (s_aura_charge > cap) s_aura_charge = cap;
         }
