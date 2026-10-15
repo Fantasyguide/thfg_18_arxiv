@@ -647,7 +647,12 @@ static int   s_boss_prev;   /* ★ owner 2026-10-05：boss 表 0→1 的**边沿
 #define POFV_HUD_CHG_MARK_TEX_H  24.0f   /* ★ 贴图高（表面 px）= 一手常显态高 ✓ */
 /* ★★ 底色标的 `scale`：贴图路径下 `scale` = **矩形倍率**（屏幕宽 = 贴图宽 × scale.x、屏幕高 = 贴图高 × scale.y
  *   ⇒ `th18:0x481703`）⇒ **恒 1.0 = 4×24 表面 px**（= 一手常显态 ✓；逐 texel 对上 ⇒ 脚本 425 用最近邻 ✓）。*/
-#define POFV_HUD_CHG_DIA_SCALE    1.0f
+#define POFV_HUD_CHG_DIA_SCALE    2.0f
+/* ★★★ 2026-10-15（owner：「蓄力条晕光的尺寸 … 怎么着是现在的两倍大」✓）：
+ *   原来 = **1.0**（= 贴图 4×24 表面 px 的 1 倍 ⇒ 一手常显态 ✓，见上一条注释 ✓），
+ *   owner 实跑判定"不够大" ✗ ⇒ **改成 2.0**（= 屏幕 8×48 表面 px ✓）。
+ *   ⚠ 这是**有意的尺寸偏离**（不是一手原值）⇒ 已按 owner 口径记在这里 ✓；
+ *   若之后要回到一手原值，把这一行改回 1.0 即可 ✓。*/
 /* ★ **未达（蓄力 < 标位）= 一手 `interruptLabel(3)` 的「细针」**：`scale(6,0.2); scale2(0.2,0.2)`
  *   ⇒ 表面 **≈0.4 × 24**（宽 = `2 × 0.2` ✓、高仍是 `2 × 6 × 2` = 24 ✓）⇒ 卡侧**只把 `scale.x` 压到**
  *   `0.4 / 4 = **0.1**`（同一张底色贴图；高度不动）⇒ 观感 = 一根 24 px 高的细针
@@ -6864,6 +6869,13 @@ static int on_tick_2(ce_card_t *c)
                    tier_rel, (double)s_aura_charge, (int)chg_held, (int)s_chg_prev,
                    (int)aura_held, (int)s_card_frames,
                    s_aura_kind, s_c1_set_sel, s_c1_win_left, (double)s_reiryoku);
+            /* ★★★ 2026-10-15（owner 一手口径 **(b)**：「C3 与 C4 释放都重发罩子」✓）——
+             *   原来罩子只有一条来源：拿到 / 重新拿到卡（`s_barrier_grant_pending` 唯一写点见
+             *   `pofv_new_run` 那侧）⇒ 放完 C3/C4 不会重发 ⇒ owner 实跑「C3 没给罩子」✗。
+             *   ⇒ 在**释放分派**这里：★ `tier_rel >= 3`（= C3 / C4 ✓，按松手那一刻的蓄力定档 ✓）
+             *   置一次"待发放" ✓；实际发放与守卫都在 `pofv_barrier_grant_tick()`（`s_barrier_on` 已有
+             *   罩子时它自己会处理 ✓）⇒ 本处只置标志、不直接改罩子状态 ✓。*/
+            if (tier_rel >= 3) s_barrier_grant_pending = 1;
             /* ★★★★ 2026-10-11 **修一个明显的 bug**（owner：「早苗 C2 也不是发灵梦的那三颗大球啊，
              *   就是青蛙」✗ + 上一轮「意外释放 C2 C3 …**其他人也应该都有**」✓）：
              *   ★ 这里原来**写死了灵梦那三支**（`pofv_c2_fire/c3_fire/c4_fire` ✗）⇒
