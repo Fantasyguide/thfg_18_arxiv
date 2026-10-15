@@ -1484,10 +1484,15 @@ static void pofv_graze_scan_drop(void)
         if (!pofv_power_has_room()) continue;       /* ★ 池满 ⇒ **不置位** ✓（以后还能掉 ✓）*/
         s_aura_bullet_done[i] = 1;
         {
-            float gx[1], gy[1]; int32_t gpts = 0;
-            gx[0] = bx; gy[0] = by;
-            pofv_power_spawn_packed_at(&s_power, gx, gy, 1, POFV_POWER_PTS_AURA, 1,
-                                       POFV_POWER_SRC_AURA, &gpts);
+            /* ★ 2026-10-16 **与结界那条同一改动（照 116 ✓）**：★ 擦弹掉落也改用**引擎道具** ✓
+             *   ⇒ ★ 吸引矩形 / POC / 收取 / 出生宽限**全归一手** ✓（不再走卡侧自造池 ✗，
+             *   也就不再受那两个 ❓自定吸引矩形（`pofv_core.h` 的 56/120 ✓）影响 ✓）。
+             *   ★ 速度/角度 = **TH19 一手**（速度 2.2 ✓、角度随机 ✓；出处见结界那段注释：
+             *   `local/th19.v1.10c/decomp/all.c:221235` ＋ 调用点 `0x400ccccd` ✓）。*/
+            float pos11[3];
+            const float ang11 = (float)(ce_rand() % 628) * 0.01f;
+            pos11[0] = bx; pos11[1] = by; pos11[2] = 0.0f;
+            (void)ce_spawn_item(2u, pos11, ang11, 2.2f);
         }
     }
     /* ★★★ 2026-10-12 goal ① 的"证据不足"项自证 ✓（审计 `89c60c46` 指出：★ 三条路都 `br <= 0` 跳过 ✗，
