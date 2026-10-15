@@ -7129,6 +7129,16 @@ static int on_tick_2(ce_card_t *c)
                 if (ce_key_down(CE_VK_SPACE)
                     && s_aura_charge >= POFV_C3_THRESH && s_aura_charge < POFV_C4_THRESH)
                     s_aura_charge = POFV_C4_THRESH;
+                /* ★★★★★ 2026-10-16 **调试键（owner：「★ **那这样的话，I 键安排一下无敌（参考 108），
+                 *   我没有 L 的底力**」✓）**：★ 按住 **I** ⇒ 每帧向 SDK **声明无敌** ✓ —— 走的是
+                 *   一手那条路 ✓（`sdk.h:1055-1063` ✓：★ 各卡每帧**声明**自己想要的帧数 ✓，
+                 *   层取**最大值** ✓，由 SDK 落到 `player+0x47774` ✓；★ **107 结界结束 0.67s**、
+                 *   **109 自己的爆风 C1–C4**、**117 霊撃 40 帧**都在用同一条 ✓）。
+                 *   ★ 每帧声明 `5` 帧 ⇒ 只要按住就一直续上 ✓（松开后自然过期 ✓，不会留永久无敌 ✓）。
+                 *   ⚠ `0x49` = Windows 虚拟键 **'I'** ✓（SDK 只给了 C/Shift/Space 三个键码 ✓，
+                 *     这里用字面量并注明 ✓）。*/
+                if (ce_key_down(0x49))
+                    ce_invuln_request(109, 5);
             }
             if (s_aura_charge > cap) s_aura_charge = cap;
         }
