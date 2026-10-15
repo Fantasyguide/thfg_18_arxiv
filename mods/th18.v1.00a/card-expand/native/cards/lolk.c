@@ -971,6 +971,7 @@ static int on_tick_2(ce_card_t *c)
     /* ④ 波边沿（一段攻击 = 一波）：boss 按相位/符卡位翻转；道中按「章 = MainSub 编号」 */
     phase_read(&in);
     in.spawn_delta = spawn_delta;
+    in.lives_full = (CE_CURRENT_LIVES() >= LOLK_LIVES_MAX) ? 1 : 0;   /* ★ 满残 ⇒ B 碎 ✓ */
     {
         int32_t ssub = -1, sch = -1;
         (void)stage_ecl_read(&ssub, &sch);      /* ★ MainSub 编号（去掉尾部字母）*/
