@@ -5062,6 +5062,20 @@ static void pofv_c4_tick(void)
                         }
                         if (bids[bi] <= 0) continue;
                         e3 = ce_enemy_by_id(em3, bids[bi]);
+                        /* ★ 2026-10-16 只读诊断（`[FOGID] slots=177/0/0/0` ✓ 但 `[FOG] best_r=0` ✗）：
+                         *   ★ 有 id ⇒ 把这一步再切开：★ **查表有没有命中** ＋ **命中那台的字段值** ✓
+                         *   （★ 命中且 `r=128/160` ⇒ 那就通了 ✓；★ 命中但 `r=0` ⇒ 字段位置/时机不对 ✗；
+                         *    ★ 没命中 ⇒ `ce_enemy_by_id` 与 boss 槽的 id 语义不同 ✗ ⇒ 换查法 ✓）。*/
+                        if (bi == 0 && e3) {
+                            static int32_t s_foghit_t;
+                            if (++s_foghit_t >= 120) {
+                                s_foghit_t = 0;
+                                ce_log("pofv: [FOGHIT] id=%d e=%p r=%.1f c=0x%06X",
+                                       (int)bids[0], (void *)e3,
+                                       (double)*(const float *)(e3 + POFV_C4_FOG_R_OFF),
+                                       (unsigned)(*(const uint32_t *)(e3 + POFV_C4_FOG_C_OFF) & 0xFFFFFFu));
+                            }
+                        }
                         if (!e3) continue;
                         {
                             const float rr = *(const float *)(e3 + POFV_C4_FOG_R_OFF);
