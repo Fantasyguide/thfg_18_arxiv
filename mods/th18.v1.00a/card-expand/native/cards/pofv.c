@@ -4931,8 +4931,11 @@ static void pofv_c4_tick(void)
             tb[3] = (char)('0' + (frm / 10) % 10);
             tb[4] = (char)('0' + (frm % 10));
             tb[5] = 0;
-            ce_hud_vm_text_set_font(&s_c4_timer_txt, 224.0f, 440.0f, 0xFFFFFFFFu,
-                                    0, 1.0f, tb, "pofv109", CE_HUD_FONT_TH18_FONT2);
+            /* ★ 2026-10-16 **A2 起不用我们自己的文字 VM 了** ✗ —— 计时器改由 `on_draw` 用**原生 ascii**
+             *   （`font 4 group 2` ✓，见那边那一大段注释 ✓）⇒ 这里**只保留字符串拼装**（供日志/降级用 ✓）
+             *   与"最后一帧清 VM"（句柄已空 ⇒ 无操作 ✓），不再调 `ce_hud_vm_text_set_font` ✓
+             *   （否则会**双份显示** ✗：我们的 VM 一份 ＋ 原生一份 ✓）。*/
+            (void)tb;
             if (s_c4.timer + 1 >= POFV_C4_DURATION)     /* ★ 最后一帧：同帧清掉 ✓ */
                 ce_hud_vm_text_clear(&s_c4_timer_txt);
         }
@@ -8906,6 +8909,38 @@ static int on_draw(ce_card_t *c)
     if (now != s_aura_tint_frame) {
         s_aura_tint_frame = now;
         pofv_aura_tint_tick();
+        /* ★★★★★ 2026-10-16 **A2（owner：「A 加」✓ + 「为什么 th18 本身还在用的东西要新切」✓）**：
+         *   ★ C4 剩余时间计时器改走**引擎自己的字符串管线** ✓ —— ★ **不切图、不起我们自己的 VM** ✓：
+         *   · 入口 = ★ `ce_hud_text_ex(x, y, bgra, shadow, font_id, group, align_h, scale, fmt, …)` ✓
+         *     （`sdk.h:851` ✓ 公开；内部 `ce_hud_text_raw` 写环境字段后调 **`create_string` `0x419b90`** ✓，
+         *     一手链见 `engine/anm/th18/03-ascii-text.md` §0b ✓）；
+         *   · ★ `font_id = 4, group = 2` ✓ ＝ ★ **原生符卡计时用的同一档** ✓（`AUDIT.md` §AI 表 ✓）
+         *     ⇒ 字形 = 原生 `ascii.anm`（`preloaded[2]` ✓）里的数字精灵 **289..298**、点 **288** ✓
+         *     （★ 精灵表实测 ✓，比文档那个基址 `0xef` 大 2 ⇒ **以实测为准** ✓）；
+         *   · ★ 必须写在 `on_draw`（虚表 `+0x48` ✓）里 ✓ —— `sdk.h:960` 明写"`ce_hud_text` 只允许在
+         *     `+0x48` 里用" ✓；本卡 `on_draw` 已有**同帧守卫** ✓（`ce_sdk_frame()` ✓）⇒ 不会一帧多条 ✓；
+         *   · ★ **字符串记录有寿命** ✓（环境字段 `mgr+0x1924c` = 存活帧数 ✓，`03-ascii-text.md:65` ✓；
+         *     记录表上限 `0x140` ✓、步长 `0x138` ✓）⇒ ★ 画之前把寿命设成 **2 帧** ✓
+         *     ⇒ 同时最多 2~3 条记录 ✓（远低于上限 ✓），画完**还原**环境 ✓；
+         *   · 位置/内容沿用已发布的：★ x = 224（游玩区正中 ✓）、y = 440（场地底沿 ✓）、
+         *     内容 = `POFV_C4_DURATION(1800) − s_c4.timer` 的 `秒.帧` ✓。
+         *   ⚠ ❓ 待实跑校准（登记 TUNING）：① 原生记录若带淡入淡出 ⇒ 会轻微闪动（那时改成"每帧一条
+         *     长寿命记录 + 同位置复用"或退回我们自己的 VM 方案 ✓）；② `align_h = 2`（居中 ✓）与
+         *     `scale = 0.0f`（沿用引擎默认 ✓）这两个数是观感旋钮 ✓。*/
+        if (s_c4.live) {
+            uint8_t *am = *(uint8_t **)CE_ADDR_ASCII_MANAGER_PTR;
+            if (am) {
+                const int32_t rf = POFV_C4_DURATION - s_c4.timer;
+                const int32_t rr = (rf > 0) ? rf : 0;
+                const uint32_t old_life = *(uint32_t *)(am + 0x1924c);
+                int32_t sec = rr / 60, frm = rr % 60;
+                if (sec > 99) sec = 99;
+                *(uint32_t *)(am + 0x1924c) = 2u;      /* ★ 寿命 2 帧 ✓（防记录表溢出 ✓）*/
+                ce_hud_text_ex(224.0f, 440.0f, 0xFFFFFFFFu, 0u, 4, 2, 2, 0.0f,
+                               "%02d.%02d", (int)sec, (int)frm);
+                *(uint32_t *)(am + 0x1924c) = old_life;   /* ★ 还原环境 ✓ */
+            }
+        }
     }
     return 0;
 }
