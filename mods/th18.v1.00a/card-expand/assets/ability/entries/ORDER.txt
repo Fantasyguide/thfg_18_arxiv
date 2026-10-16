@@ -1339,6 +1339,7 @@ MAGICSQUARE          local/th18.v1.00a/anm/effect/effect/eff_magicsquare.png   2
 FOG_CIRCLE             ability/fog/FOG_CIRCLE.png                   256x256
 POFV109_C3M_LASER      ability/POFV109_C3M_LASER.png                254x14
 POFV109_C3S_ORB        ability/POFV109_C3S_ORB.png                  14x14
+POFV109_C4S_BULLET     ability/POFV109_C4S_BULLET.png               8x8
 POFV109_C4M_STAR       ability/POFV109_C4M_STAR.png                 14x14
 ATLAS ATLAS_BOSS_AURA_RED 384x48
 RED_AURA_0             ability/boss_aura_red/RED_AURA_0.png        @0,0,48x48
