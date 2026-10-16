@@ -1256,6 +1256,28 @@ static int yk_boss_active(void)
     return 0;
 }
 
+/* ★★ 2026-10-15 **leveledit（第三方米斯蒂亚补丁）「同开」门** —— owner 口径见
+ * [`HANDOFF-108-LEVELEDIT-FAMILIARS.md`](../../HANDOFF-108-LEVELEDIT-FAMILIARS.md) §1 ✓：
+ *   ① 那场 boss 战时**不建我们自建的使魔壳** ✓；
+ *   ② 把**他们的**使魔当我们的使魔接管 ✓（下一批：喂进使魔台账 ⇒ **1/2 转伤** + 参与**人妖切换** ✓）；
+ *   ③ **没装 108 时，绝不对它们做形态切换** ✗ —— 由"形态切换全部挂在本卡上"天然保证 ✓。
+ *
+ * ★ 本函数现在**恒返回 0** ✓：`yk_le_mode()` 内 `YK_LE_TRUSTED` 仍为 0（判别常量**必须**由 P113 探针的
+ *   实跑日志钉死 ✓，不许猜 ✗）⇒ 这道门**完全惰性** ✓，行为与今天一致 ✓。
+ * 读的都是 boss 敌机上的**只读字段** ✓，偏移出处 = vendor `zEnemyData`（与探针同源 ✓）。*/
+#define YK_LE_B_SUB274        0x274   /* __probably_cur_subscript_for_anm_main ✓ */
+#define YK_LE_B_ANM_MAIN      0x270
+#define YK_LE_B_IV0           0x28c   /* ecl_int_vars[0] ✓ */
+static int yk_le_here(void)
+{
+    uint8_t *b = yk_boss();
+    if (!b) return 0;
+    return yk_le_mode(1 /* 本卡在场 ✓ */,
+                      *(const int32_t *)(b + YK_LE_B_SUB274),
+                      *(const int32_t *)(b + YK_LE_B_ANM_MAIN),
+                      *(const int32_t *)(b + YK_LE_B_IV0));
+}
+
 /* ★★★ 2026-09-22（P3 第二批）：「射击中」的判据（TH18 侧）。
  * TH08 是 `Player::shotActive`（一个 999 帧的射击周期标志，`th08:0x17d6ed4`）；TH18 没有同一个
  * 状态量（每帧按 rate 发弹，没有周期）⇒ 本卡用**射击键按住**（`CE_INPUT_HELD` 的 bit0）。
@@ -1349,7 +1371,10 @@ static uint8_t *yk_spawn_familiar_parent(float x, float y, uint32_t parent_id, i
      *   使魔壳**本来就该待在发射口上**，而发射口（`母机位置 + offsets`）经常在画面外 ⇒ 必须免删。
      *   掩码 `0xC` = `flags_lo` bit2|bit3，也是 ZUN 原生 ECL 在会飞出画面的敌人上用的 `flagSet(12)`。*/
     {
-        uint8_t *e = (uint8_t *)ce_spawn_enemy_keep_offscreen("NoEnemyDebug", spawn);
+        /* ★★ 2026-10-15 leveledit「同开」门（口径 ①）：那场里**不建**自建壳 ✓。
+         * 门现在是**惰性**的 ✓（`yk_le_here()` 恒 0 —— 判别常量还没实测 ✓），所以这一行今天
+         * 与原来完全等价 ✓；常量钉死后它会直接跳过建壳 ✓，而下面所有 `if (e …)` 分支自然都不跑 ✓。*/
+        uint8_t *e = yk_le_here() ? 0 : (uint8_t *)ce_spawn_enemy_keep_offscreen("NoEnemyDebug", spawn);
         /* ★ 第二步：真血量 >999 ⇒ 出生后回写三格 life（**只有这条路不置位 30**）。
          *   `yk_clamp_spawn_life(life)` 是幂等的纯函数，这里再算一次只为拿到「spawn 值」。*/
         if (e && life > 0 && life > yk_clamp_spawn_life(life)) {
