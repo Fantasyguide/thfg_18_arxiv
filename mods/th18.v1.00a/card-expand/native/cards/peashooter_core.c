@@ -195,3 +195,12 @@ int pea_burst_left(const pea_state_t *s)
     if (!s) return 0;
     return (s->gat_left > 0) ? (int)s->gat_left : 0;
 }
+
+/* ★★ 2026-10-15（owner 报「电大哥的弹幕把我主机的弹幕也弄成全方向随机的了」✗ 的判据 ✓）：
+ *   见头文件注释的一手出处 ✓。这里只做一件事：**`packed_id >> 8` 落在不在我们那两组里** ✓。
+ *   ⚠ 组号是 `sht_ids.h` 的 `0x17`/`0x18` ✓（生成物 ✓），由调用方传参 ✓（本函数不写死 ✗）。*/
+int pea_bullet_is_ours(uint32_t packed_id, uint32_t set_normal, uint32_t set_gatling)
+{
+    uint32_t set = packed_id >> 8;
+    return (set == set_normal || set == set_gatling) ? 1 : 0;
+}

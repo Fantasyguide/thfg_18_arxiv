@@ -146,6 +146,29 @@ static void test_burst_ends_without_firing(void)
     CHECK(s.pending_wait, "爆发结束后该要一个新的随机等待");
 }
 
+/* ★★★ 2026-10-15（owner 报「**电大哥的弹幕把我主机的弹幕也弄成全方向随机的了**」✗ 的回归 ✓）：
+ *   判据 = 弹上 packed id（`bullet+0xac` ✓）的**高 8 位 = shooterset 组号** ✓，要 ∈ 我们那两组
+ *   （`native/sht_ids.h` 生成物：普攻 **0x17**、机枪 **0x18** ✓）。本测试钳三件事：
+ *     ① 我们两组（**任意组内行号** 0..255 ✓）都判"是" ✓；
+ *     ② **原生**主机的弹（其它组号 ✓，含 0x00 原生普攻 / 0x0a–0x15 原生装备卡子机组 /
+ *        0x16 = 108 那组 ✓）一律判"不是" ✗ —— 这正是那个 bug 的边界 ✓；
+ *     ③ 紧邻的两组（0x16 / 0x19 ✓）也判"不是" ✗。*/
+static void test_bullet_is_ours(void)
+{
+    const uint32_t N = 0x17u, G = 0x18u;
+    CHECK(pea_bullet_is_ours((N << 8) | 0u,   N, G) == 1, "普攻组第 0 行没认出来");
+    CHECK(pea_bullet_is_ours((N << 8) | 7u,   N, G) == 1, "普攻组第 7 行没认出来");
+    CHECK(pea_bullet_is_ours((G << 8) | 0u,   N, G) == 1, "机枪组第 0 行没认出来");
+    CHECK(pea_bullet_is_ours((G << 8) | 255u, N, G) == 1, "机枪组第 255 行没认出来");
+    for (uint32_t set = 0; set <= 0x2fu; ++set) {
+        if (set == N || set == G) continue;
+        CHECK(pea_bullet_is_ours((set << 8) | 3u, N, G) == 0,
+              "★ 组 %#x 的弹被误认成我们的（主机弹会被改朝向 ✗）", set);
+    }
+    CHECK(pea_bullet_is_ours((0x16u << 8) | 0u, N, G) == 0, "0x16（108 那组）被误认");
+    CHECK(pea_bullet_is_ours((0x19u << 8) | 0u, N, G) == 0, "0x19（116 季节那组）被误认");
+}
+
 static void test_inflight_and_cap(void)
 {
     pea_state_t s;
@@ -291,6 +314,7 @@ int main(void)
     test_normal_cadence();
     test_gatling_shape();
     test_two_cycles();
+    test_bullet_is_ours();                           /* ★ 2026-10-15：主机弹绝不能被误认 ✓ */
     test_burst_ends_without_firing();                /* ★ 2026-10-15：松手后爆发/无敌必须自己走完 ✓ */
     test_inflight_and_cap();
     test_clear();

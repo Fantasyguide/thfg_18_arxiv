@@ -55,6 +55,15 @@ int  pea_burst_frame(pea_state_t *s);                  /* ★★ 2026-10-15：**
                                                         *   （owner 实跑「电大哥无敌一直存在」✓）。*/
 int  pea_needs_cap(const pea_state_t *s);              /* 1 = 本帧要抬每敌每帧伤害上限 */
 int  pea_burst_left(const pea_state_t *s);             /* ★ P54：开大还剩几帧（0 = 没在开大）✓ —— 爆发无敌用它 ✓ */
+/* ★★ 2026-10-15（owner 报「**电大哥的弹幕把我主机的弹幕也弄成全方向随机的了**」✗ ⇒ 判据抽纯 ✓）：
+ *   `on_bullet_created` 是**每颗弹出生都广播** ✓ 的钩子 ⇒ 必须能判"这颗弹是不是 77 的" ✓。
+ *   判据 = 弹上的 **packed id**（`bullet+0xac` ✓）的**高 8 位就是 shooterset 组号** ✓
+ *   —— 一手：`Player__shoot_one_bullet(player, (set << 8) | 组内行号, timer, &pos, option)` ✓
+ *   而该 packed id 一路存进 `bullet+0xac` ✓（`engine/sht/th18/02-shooter-record.md:68-70` ✓）。
+ *   两个组号由**调用方**传进来 ✓（卡侧传 `sht_ids.h` 生成物里的 `CE_SHT_SET_PEA_NORMAL/_GATLING`
+ *   = **0x17 / 0x18** ✓）⇒ 本函数保持**纯整数** ✓、不依赖引擎也不写死字面量 ✓、主机可测 ✓。
+ *   ⚠ 卡片侧那两个 `PE_SET_NORMAL/GATLING`（0/1 ✗）**不是**组号 ✓ —— 它们是卡侧自建弹的块内序号 ✓。*/
+int  pea_bullet_is_ours(uint32_t packed_id, uint32_t set_normal, uint32_t set_gatling);
 /* ★★ 2026-10-14（P40，owner 需求「电大哥」协同）：**电弹连锁**的选目标（纯函数 ✓，主机可测 ✓）。
  *   从 (cx, cy) 出发，在 n 个候敌里挑一个：**在半径 r 内**、**id 不在 visited 里**（去过的不再连 ✓）、
  *   且**离 (cx, cy) 最近**的那个 ⇒ 返回下标；没有合格的就返回 -1 ✓。

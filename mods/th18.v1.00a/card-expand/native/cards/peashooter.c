@@ -517,11 +517,10 @@ static int on_bullet_created(ce_card_t *c, void *bullet)
 {
     ps_card_t *s = ce_state(c, ps_card_t);
     uint8_t *b = (uint8_t *)bullet;
-    uint32_t set;
     if (!b || !s) return 0;
     if (pea_burst_left(&s->st) <= 0) return 0;          /* 不在开大 ⇒ 什么都不做 ✓ */
-    set = *(const uint32_t *)(b + PS_BULLET_SETID) >> 8;    /* ★ 认弹：shooterset 组号 ✓ */
-    if (set != (uint32_t)CE_SHT_SET_PEA_NORMAL && set != (uint32_t)CE_SHT_SET_PEA_GATLING)
+    if (!pea_bullet_is_ours(*(const uint32_t *)(b + PS_BULLET_SETID),
+                            CE_SHT_SET_PEA_NORMAL, CE_SHT_SET_PEA_GATLING))
         return 0;                                        /* ★ 不是本卡的弹 ⇒ 一颗都不许碰 ✗ */
     *(float *)(b + PS_BULLET_ANGLE) = s_rand_spread[(int)(ce_rand() % PS_SPREAD_N)].abs;
     return 0;
