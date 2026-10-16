@@ -32398,8 +32398,27 @@ DLL 未重发 ⇒ 本轮的 5 处改动**尚未进入游戏** ✓（下次发版
 - **怎么验证**：真 modkit 的启用组合 ⇒ **rc=0** ✓（白名单那条按预期放行 ✓、C2 报告 28 个 gitignored 资产 ✓）；
   人造"两包同路径"的假 modkit ⇒ **rc=1** ✓；`--all-pairs` 能列出 9 处同名（全为 `th18.v1.00a.js` ✓ 属已知 ✓）。
 - **影响面**：**只加检查 + 一条发布断言** ⇒ 不改任何卡行为、不改产物 ✓；`Makefile` 属共享件 ⇒ 本条即协作须知 ✓。
-- **待办（阻塞在别人那边 ✓）**：**leveledit 正本不在本机** ✗（modkit 的 `thcrap/repos/` 只有
-  `Renko_1055` 与 `nmlgc` ✓；文档指它的家是 `thcrap/repos/leveledit/th18_leveledit_stage02_mystia/` 一类 ✓）
-  ⇒ 一旦到位，第一件事就是跑本闸的**真实两包组合** ✓，并确认 §1.4 的疑点：**它是否也 patch `default.ecl`** ✗
-  —— 若是 ⇒ 需按"一文件一主人"定归属（倾向 `default.ecl` 归我方 ✓，关卡改动由 leveledit 用**自己的**
-  `st0X.ecl` 表达 ✓），并登记到本 §BE ✓。
+- **★ owner 裁定（2026-10-15，同日）**：
+  1. 「**关卡线就这样吧，别改了**，这个我现在也基本不用」✓ ⇒ 本 goal 里"取 leveledit / 把米斯蒂亚三处编辑
+     落到它的源"那两项**取消** ✗；我方**不改** leveledit 的任何文件 ✓（它自己那条线已自行做完 ✓）。
+  2. `test` 包那份 `th18.v1.00a.js`：**保留 + 登记** ✓（现状即如此 ✓；`test` 的 `patch.js` 已声明
+     `dependencies:["th18_card_expand_255"]` ✓，属"有意的依赖覆盖" ✓，白名单已登记 ✓）。
+  3. `renkolab-a/local`：**保持现状**（软链到本仓 `local/`）✓ ⇒ 约定：**同一时刻只让一个会话用 th18 的
+     Ghidra 工程** ✓（工程锁互斥 ✓）；他基本不用关卡线 ⇒ 撞锁机会很小 ✓。
+- **★ leveledit 的实况（本轮一手 ✓，本机 clone = `/home/nipporita/th18-leveledit`，树外 ✓）**：
+  · 它的正本在 **GitHub `Fantasyguide/th18-leveledit`（私有，SSH-only）** ✓，当前分支
+    `mystia-familiar-trail` ✓（`local/_scratch/leveledit-up/NOTES.md` 记了可达方式 ✓）；
+  · 要同开的那个 patch = `mods/stage02-mystia/` ⇒ `thcrap.json` 自述：
+    **「覆盖 `st02bs.ecl` / `st02enm.anm` / `front.anm` / `st02a–d.msg`。纯资源替换，不需要 dll。」** ✓
+    ⇒ ★ **它的文件集与我方 `_255`/`_test` 的 32 个文件零同名** ✓（我的是
+    `abcard.anm`/`ability.anm`/`ability.txt`/`cards.js`/`default.ecl`/`pl00–03.anm`/`pl00–03.sht`/`voice.js`/`voice/*` ✓）；
+  · ★ 它**不 patch `default.ecl`** ✓（全仓 `find` 无此文件 ✓）⇒ §1.4 的疑点**解决**：走 **D1**（同批纪律 ✓，
+    不需改归属 ✓）；
+  · ★ 它**不带 DLL** ✓ ⇒ 与我的 exe 站点/DLL **无冲突** ✓；
+  · 它另外有 `mods/stage02-mystia-spell-name/config/th18.v1.00a.js` ✓，但那在 **`config/`** 子目录 ✓
+    （不是包根的 `th18.v1.00a.js` ✓，且属**另一个** mod ✓）⇒ 与本闸的 C1 无碰撞 ✓；
+  · ⚠ **顺手发现我这边一处过期描述** ✗：`assets/mystia/build_st02.py` 的规格写「`scriptNewPos`(505)」✓，
+    而 leveledit 已订正为 **`scriptNewRoot`(504)**（其 commit `fc67cee`：「**505 会把火花画到世界原点**」✗）
+    ⇒ 该脚本头注释应改成 504 ✓（**只在规格里 ✓，不动任何产物 ✓**）。
+- **待办**：已按 owner 裁定收敛 ✓ —— 唯一保留项：**leveledit 侧要发布/更新时，本闸的 C1 必须对新组合再跑一次**
+  ✓（命令：`python3 tools/check_modkit_packages.py --modkit <modkit>` ✓；它带 DLL 或带 `default.ecl` 的那天就会响 ✓）。
