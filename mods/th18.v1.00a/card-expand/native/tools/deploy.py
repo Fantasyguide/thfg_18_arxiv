@@ -48,13 +48,122 @@ def run(cmd, dry):
     return subprocess.call(cmd, cwd=NATIVE)
 
 
+# ════════════════════════════════════════════════════════════════════════════════════════════════
+# ★★★ 2026-10-17（owner 批准 ✓「多路 agent 并行」的机器化）：**发布并发安全**三件套
+#
+# 为什么（**全是今天的一手事故** ✗ —— PR/worktree 管不到这些"共享可写单点" ✗）：
+#   · 2026-10-17 00:58 本脚本发 `600b6d30…` ⇒ **01:04 被别人覆盖成 `f502eaae…`**（那份是从**落后
+#     12 条**的主检出构建的、没有当天修复）⇒ owner 实测「360° 还在 / 无敌还是无限 / 感觉你的修改
+#     没部署」✗ ⇒ 我**手工比 md5+时间戳**才发现 ✗。
+#   · 同源事故：156 条 109 早苗**直接提交在主检出的 `main`** 上 ⇒ 领先 156 / 落后 240 ⇒ 从它构建的
+#     产物**缺共享线内容** ✗。
+# ⇒ 三件：① 来源校验（落后就拒绝发布 ✗）② 发布锁（同一 modkit 同一时刻只许一个发布者 ✓）
+#     ③ 台账（谁、基于哪个 commit、发了什么 md5 ⇒ 一眼看出被覆盖 ✓）。登记：AUDIT §BE-DEPLOY-RACE。
+# ════════════════════════════════════════════════════════════════════════════════════════════════
+LOCK_FRESH_SEC = 30 * 60          # 锁的"新鲜"窗口：30 分钟内视为别人正在发（❓自定，登记 TUNING ✓）
+
+
+def _git(*args):
+    """跑一条 git（任何异常都吞掉 ⇒ 返回 rc≠0 ✓：**本闸不允许因为环境问题制造假红** ✗）。"""
+    try:
+        return subprocess.run(["git", *args], cwd=NATIVE, capture_output=True, text=True)
+    except Exception as e:                                     # 没装 git / 不是仓库
+        return subprocess.CompletedProcess(args, 127, "", str(e))
+
+
+def guard_source(dry):
+    """① **来源校验**：拒绝从**落后 `origin/main`** 的树发布 ✗（判据 = origin/main 是 HEAD 的祖先 ✓）。
+
+    · 落后 ⇒ **拒绝** ✗（返回 ok=False ⇒ 调用方 return 1 ✓）；
+    · HEAD ≠ origin/main 但**不落后**（未合并分支做测试发布 ✓）⇒ 只**警告** ✓（并记进台账 ✓）；
+    · 拿不到 git 信息 ⇒ **警告但不拦** ✓（不制造假红 ✗）。
+    返回 `(ok, head, main_commit)` ✓。"""
+    # ★ 2026-10-17 订正：**dry-run 也要跑** ✓（只读 git ✓）—— 第一版给它留了"dry 直接放行"的早退 ✗，
+     #   结果拿"落后 12 条的主检出"做负例时**没被拦住**、白测一次 ✗（dry-run 只打印、不写文件 ✓，
+     #   本来就没有理由跳过这道只读检查 ✓）。
+    head = (_git("rev-parse", "--short", "HEAD").stdout or "").strip()
+    mainc = (_git("rev-parse", "--short", "origin/main").stdout or "").strip()
+    if not head or not mainc:
+        print("⚠ 拿不到 git 来源信息（HEAD=%r origin/main=%r）⇒ 跳过来源校验（请自行确认树是干净的 ✓）"
+              % (head, mainc))
+        return True, head or "?", mainc or "?"
+    if _git("merge-base", "--is-ancestor", "origin/main", "HEAD").returncode != 0:
+        print("❌ 来源校验不过：本树**落后** origin/main ⇒ **拒绝发布** ✗")
+        print("   理由：从落后共享线的树构建 ⇒ 发出去的产物会**缺共享线内容** ✗")
+        print("   先例：2026-10-17 01:04 就是这样把 modkit 的 DLL 换成旧件、owner 实测「修复没生效」✓")
+        print("   HEAD=%s · origin/main=%s ⇒ 先 `git fetch && git merge --ff-only origin/main` ✓"
+              % (head, mainc))
+        return False, head, mainc
+    if head != mainc:
+        print("⚠ 来源提醒：HEAD(%s) ≠ origin/main(%s) —— 允许（测试发布 ✓），但会记进台账 ✓" % (head, mainc))
+    else:
+        print("✓ 来源校验通过：HEAD == origin/main == %s ✓" % head)
+    return True, head, mainc
+
+
+def _lock_path(modkit):
+    return os.path.join(modkit, ".deploy.lock")
+
+
+def lock_acquire(modkit, force, dry):
+    """② **发布锁**：`<modkit>/.deploy.lock` 存在且**新鲜**（<30 分钟 ✓）⇒ **拒绝**第二次发布 ✗。
+
+    先例：00:58 我发 `600b6d30…` ⇒ 01:04 被覆盖 ⇒ owner 实测到旧行为 ✗。
+    `--force` 可抢占 ✓（台账里写明"抢占" ✓）。返回 True = 拿到锁 ✓。"""
+    import time as _t                                            # 只用一处 ⇒ 局部 import ✓
+    p = _lock_path(modkit)
+    if not dry and os.path.exists(p):
+        try:
+            age = _t.time() - os.path.getmtime(p)
+        except OSError:
+            age = 1e9
+        if age < LOCK_FRESH_SEC and not force:
+            print("❌ 发布锁被占：%s（%.1f 分钟前）⇒ 拒绝发布 ✗" % (p, age / 60.0))
+            try:
+                print("   持锁者：%s" % open(p, encoding="utf-8").read().strip().replace("\n", " · "))
+            except OSError:
+                pass
+            print("   ⇒ 确认对方已结束再用 `--force` 抢占 ✓（会记进台账 ✓）")
+            return False
+        if age < LOCK_FRESH_SEC and force:
+            print("⚠ --force：抢占**新鲜**锁（%.1f 分钟前）✓ 会记进台账 ✓" % (age / 60.0))
+    if not dry:
+        os.makedirs(modkit, exist_ok=True)
+        with open(p, "w", encoding="utf-8") as f:
+            f.write("pid=%d\nwho=%s\nhead=%s\nmain=%s\ntime=%s\n" % (
+                os.getpid(), os.environ.get("DSH_SESSION", "?"),
+                (_git("rev-parse", "--short", "HEAD").stdout or "?").strip(),
+                (_git("rev-parse", "--short", "origin/main").stdout or "?").strip(),
+                _t.strftime("%Y-%m-%d %H:%M:%S")))
+    return True
+
+
+def lock_release(modkit, dry):
+    if not dry:
+        try:
+            os.remove(_lock_path(modkit))
+        except OSError:
+            pass
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--modkit", default=os.environ.get("MODKIT_DIR", ""),
                     help="modkit 根目录（也可用 MODKIT_DIR 环境变量；本脚本不写死任何机器路径）")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--skip-build", action="store_true", help="只发布已构建好的产物（仍会校验）")
+    ap.add_argument("--force", action="store_true",
+                    help="★ 2026-10-17：抢占**新鲜**的发布锁（默认拒绝 ✓；抢占会记进台账 ✓）")
     a = ap.parse_args()
+
+    # ★★★ 2026-10-17：发布前两道闸（① 来源校验 ② 发布锁 ✓，实体见本文件上方那段注释 ✓）。
+    #   ⚠ 在**任何写动作之前**；⚠ 锁会在下面的正常出口 release ✓ —— 若中途 `return 1` 退出，
+    #     锁会留到 30 分钟新鲜窗口过期（自愈 ✓）或由 `--force` 抢占 ✓（有意如此：宁可留锁也别并发写 ✗）。
+    ok_src, head_c, main_c = guard_source(a.dry_run)
+    if not ok_src:
+        return 1
+    if a.modkit and not lock_acquire(a.modkit, a.force, a.dry_run):
+        return 1
 
     targets = []
     if a.modkit:
@@ -149,6 +258,46 @@ def main():
             rc = run(["bash", local], a.dry_run)
             if rc:
                 print("⚠ 本地同步脚本返回 %d（BGM / start_deck 可能没同步上）" % rc)
+    # ★★★ 2026-10-17（③ **发布台账** ✓）：把「谁 · 基于哪个 commit · 发了什么 md5」追加进
+    #   `<modkit>/deploy-manifest.json` ⇒ 事后一眼看出"是不是被别人覆盖了" ✓
+    #   （今天 01:04 那次我是**手工比 md5+时间戳**才发现的 ✗）。**追加式** ✓（不抹历史 ✓，只留最近 50 条 ✓）。
+    if a.modkit and not a.dry_run:
+        import json as _j
+        import time as _t
+        four = [
+            os.path.join(a.modkit, "mods", "th18_card_expand.dll"),
+            os.path.join(a.modkit, "thcrap", "bin", "mod_th18_card_expand.dll"),
+            os.path.join(a.modkit, "thcrap", "repos", "Renko_1055", PKG, "th18_card_expand.dll"),
+            os.path.join(a.modkit, "thcrap", "repos", "Renko_1055", PKG, "th18.v1.00a.js"),
+        ]
+        got = {os.path.relpath(p, a.modkit): (md5(p) if os.path.exists(p) else "(缺失)") for p in four}
+        dll_seen = {v for k, v in got.items() if k.endswith(".dll")}
+        if len(dll_seen) != 1:                       # 三处 DLL 必须同 md5 ✓（不同 ⇒ 半批/被并发写花 ✗）
+            print("❌ 回读异常：三处 DLL 出现 %d 种不同 md5 ⇒ 可能有**并发发布**把它写花了 ✗" % len(dll_seen))
+            for k, v in got.items():
+                print("   %-58s %s" % (k, v))
+            lock_release(a.modkit, a.dry_run)
+            return 1
+        led = os.path.join(a.modkit, "deploy-manifest.json")
+        try:
+            hist = _j.load(open(led, encoding="utf-8")) if os.path.exists(led) else []
+            if not isinstance(hist, list):
+                hist = []
+        except Exception:
+            hist = []
+        hist.append({
+            "time": _t.strftime("%Y-%m-%d %H:%M:%S"),
+            "who": os.environ.get("DSH_SESSION", "?"),
+            "head": head_c, "origin_main": main_c, "on_origin_main": (head_c == main_c),
+            "forced": bool(a.force), "targets": len(targets),
+            "src_dll_md5": md5(DLL), "deployed": got,
+        })
+        with open(led, "w", encoding="utf-8") as f:
+            _j.dump(hist[-50:], f, ensure_ascii=False, indent=2)
+        print("③ 台账已记：%s（本次第 %d 条，保留最近 50 ✓）"
+              % (os.path.relpath(led, a.modkit), len(hist)))
+    if a.modkit:
+        lock_release(a.modkit, a.dry_run)
     print("✅ deploy 完成" + ("（dry-run，未改任何文件）" if a.dry_run else ""))
     return 0
 
