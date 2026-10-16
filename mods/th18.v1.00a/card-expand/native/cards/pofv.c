@@ -4958,6 +4958,41 @@ static void pofv_c4s_tick(void)
     if (s_c4s.timer > 3600) s_c4s.active = 0;        /* ★ 一手是无限循环 ✓；本卡给个上限 ❓ ✓ */
 }
 
+/* ★★★★★ 2026-10-16 ★★★ **C4 通用件（owner 明确要求"务必抽出一个通用函数"✓）** ★★★
+ *   owner 原话：「★ **计时脚本是通用的，包括红色魔法阵和霸气，是 C4 通用的**」✓
+ *            ＋「★ **包括咲夜尚未开始做的 C4 也是有计时、红色魔法阵、霸气**」✓
+ *            ＋「★ **请务必抽出一个通用函数**」✓
+ *
+ *   ★ 本函数 = ★ **全角色 C4 共用的一套装饰**（★ 与角色无关 ✓：跟的是**自机位置** ✓、层固定 6 ✓）：
+ *     · ★ **红色魔法阵**（脚本 461 `POFV109_MAGICSQUARE` ✓，句柄 `s_c4_magic_vm` ✓）
+ *     · ★ **霸气**（脚本 462 `POFV109_BOSS_AURA_RED` ✓，句柄 `s_c4_aura_vm` ✓）
+ *     · ★ **羽化圆**（脚本 463 ✓，句柄 `s_c4_fog_vm` ✓，本函数只负责按 C4 结束同帧收掉 ✓）
+ *     · ★ **计时**由 `s_c4.timer` / `POFV_C4_DURATION` 给出（★ 计时文字 VM `s_c4_timer_txt` ✓
+ *       是 HUD 列表的另一支，句柄已在**文件作用域** ✓ ⇒ `pofv_c4_clear()` 也看得到 ✓，铁律满足 ✓）。
+ *   ★ **咲夜将来的 C4 只要走 `pofv_c4_tick()` 就自动有这三件** ✓ —— ★ 不需要各写一遍 ✓。
+ *   ★ 收尾三条路都覆盖 ✓：★ ① C4 末帧（本函数内 `ce_anm_delete` ✓）② 删卡/换局（`pofv_c4_clear()` ✓）
+ *     ★ ③ 角色被换（同一支 `pofv_c4_clear()` ✓）。
+ *   ⚠ ★ 行为与抽出前**一字不改** ✓（★ 只是把原来那个匿名块命名 ✓）。*/
+static void pofv_c4_common_decor_tick(void)
+{
+    const float *pp4 = ce_player_pos();
+    if (!s_c4_magic_vm)
+        s_c4_magic_vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
+                            CE_ANM_ABILITY_SCRIPT_POFV109_MAGICSQUARE, 6);
+    if (!s_c4_aura_vm)
+        s_c4_aura_vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
+                            CE_ANM_ABILITY_SCRIPT_POFV109_BOSS_AURA_RED, 6);
+    if (pp4) {
+        if (s_c4_magic_vm) vm_set_world_pos((uint32_t)s_c4_magic_vm, pp4[0], pp4[1]);
+        if (s_c4_aura_vm)  vm_set_world_pos((uint32_t)s_c4_aura_vm,  pp4[0], pp4[1]);
+    }
+    if (s_c4.timer + 1 >= POFV_C4_DURATION) {   /* ★ 最后一帧：同帧收掉三台 ✓ */
+        if (s_c4_magic_vm) { ce_anm_delete((uint32_t)s_c4_magic_vm); s_c4_magic_vm = 0; }
+        if (s_c4_aura_vm)  { ce_anm_delete((uint32_t)s_c4_aura_vm);  s_c4_aura_vm  = 0; }
+        if (s_c4_fog_vm)   { ce_anm_delete((uint32_t)s_c4_fog_vm);   s_c4_fog_vm   = 0; }
+    }
+}
+
 static void pofv_c4_tick(void)
 {
     /* ★★ 一手 `Ecl_EtBreak`（§5.1 ✓）：**每帧一档**、共 POFV_EB_LV4_FRAMES 帧 ⇒ 消弹 + 撒道具 + 范围圈 ✓
@@ -5069,24 +5104,7 @@ static void pofv_c4_tick(void)
          *   ⚠ 句柄是**函数内静态**（持久 ✓，本轮不新增文件级声明 ✓）；★ 收尾：★ C4 最后一帧
          *     与本块同帧 `ce_anm_delete` ✓；★ 删卡 / 换局那条路另由 `pofv_c4_clear()` 收 ✓
          *     （句柄已在**文件作用域** ✓ ⇒ 那一侧看得到 ✓，铁律满足 ✓）。*/
-        {
-            const float *pp4 = ce_player_pos();
-            if (!s_c4_magic_vm)
-                s_c4_magic_vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
-                                    CE_ANM_ABILITY_SCRIPT_POFV109_MAGICSQUARE, 6);
-            if (!s_c4_aura_vm)
-                s_c4_aura_vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
-                                    CE_ANM_ABILITY_SCRIPT_POFV109_BOSS_AURA_RED, 6);
-            if (pp4) {
-                if (s_c4_magic_vm) vm_set_world_pos((uint32_t)s_c4_magic_vm, pp4[0], pp4[1]);
-                if (s_c4_aura_vm)  vm_set_world_pos((uint32_t)s_c4_aura_vm,  pp4[0], pp4[1]);
-            }
-            if (s_c4.timer + 1 >= POFV_C4_DURATION) {   /* ★ 最后一帧：同帧收掉两台 ✓ */
-                if (s_c4_magic_vm) { ce_anm_delete((uint32_t)s_c4_magic_vm); s_c4_magic_vm = 0; }
-                if (s_c4_aura_vm)  { ce_anm_delete((uint32_t)s_c4_aura_vm);  s_c4_aura_vm  = 0; }
-                if (s_c4_fog_vm)   { ce_anm_delete((uint32_t)s_c4_fog_vm);   s_c4_fog_vm   = 0; }
-            }
-        }
+        pofv_c4_common_decor_tick();   /* ★ C4 通用件（计时/红魔法阵/霸气 ✓）—— 定义见本文件上方 ✓ */
         /* ★★★★★ 2026-10-15（owner：「★ 一手 boss 还有一个现在看清似乎是**深蓝色**的"**霸气**"，
          *   **大小跟魔法阵差不多**」✓ + 「★ **就是按照那个 ecl 来做，只做这个羽化的圆**」✓ +
          *   「★ **按照所处的状态，道中深蓝，boss 深红来做**」✓）—— ★ **第三件 = ECL opcode 629 `fog`
