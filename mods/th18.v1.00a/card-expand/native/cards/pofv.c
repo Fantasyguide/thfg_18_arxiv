@@ -5764,10 +5764,21 @@ static void pofv_c4m_tick(void)
          *   **直接删弹** ✗ ⇒ ★ 与 C4 / C4S **不一致** ✗（★ 那两档都有 ✓）。
          *   ★ 反射：★ 屏幕 y 向下 ⇒ 方向 `(cos, sin)` 的 y 翻号 ⇒ ★ **`ang = -ang`** ✓（只翻一次 ✓）。
          *   ★ 本卡这一次版顶 = 对一手的**简化** ✗（★ 一手是 4 次 + 含左右墙 ✓，已登记 ✓）。*/
-        if (b->y < 0.0f && !b->bounced) {
-            b->y = 0.0f;
-            b->ang = -b->ang;
-            b->bounced = 1;
+        /* ★★★★★ 2026-10-16（★ owner 口径 ✓ ＋ 一手 §14.3/§14.4 ✓）：★ **把上面那句"简化"补齐** ✗ ——
+         *   ★ 一手 `Boss00BossCard1_at` 里是 `ins_611(0, 1, 64, **4**, **13**, …)` = `EX_BOUNCE`：
+         *   ★ **反弹 4 次** ✓、★ **walls 13 = 上|左|右** ✓（★ 不含下边 ✓ —— 与 owner 在 `:4264`
+         *   定的口径一致 ✓："版顶反弹、版底漏走" ✓）。
+         *   ★ 反射：★ 上/下两面 ⇒ `ang = -ang` ✓；★ 左/右两面 ⇒ `ang = π − ang` ✓（★ 屏幕 y 向下 ✓）。
+         *   ★ 次数用 `bounced` 当**计数器** ✓（结构里它本来就是 `int` ✓）⇒ ★ 到 **4** 次即不再反弹，
+         *   之后撞墙由下面的出界判据收掉 ✓（= 一手"第 5 次收"✓，与本卡 C3 的 `BOUNCE_MAX 4` 同款 ✓）。*/
+        if (b->bounced < 4) {
+            if (b->y < 0.0f) {                                  /* ★ 上墙 ✓ */
+                b->y = 0.0f; b->ang = -b->ang; ++b->bounced;
+            } else if (b->x < -POFV_FIELD_HALF_W) {             /* ★ 左墙 ✓ */
+                b->x = -POFV_FIELD_HALF_W; b->ang = 3.1415927f - b->ang; ++b->bounced;
+            } else if (b->x > POFV_FIELD_HALF_W) {              /* ★ 右墙 ✓ */
+                b->x = POFV_FIELD_HALF_W; b->ang = 3.1415927f - b->ang; ++b->bounced;
+            }
         }
         if (b->x < -(POFV_FIELD_HALF_W + POFV_C1_OFF_MARGIN) ||
             b->x >  (POFV_FIELD_HALF_W + POFV_C1_OFF_MARGIN) ||
