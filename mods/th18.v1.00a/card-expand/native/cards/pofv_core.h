@@ -478,15 +478,37 @@ int     pofv_acc_take2c(pofv_acc_t *a, int32_t diff);
 #define POFV_POWER_GRAVITY            0.03f
 /* ★ 一手（同上）：`vy > 2.0 → 2.0`（`0x494558`）⇒ 从 0 加速到 2.0 封顶（约 67 帧）。*/
 #define POFV_POWER_FALL_MAX           2.0f
-/* ★ 一手（TH16 出生）：初速 = `randf_0_to_1() × 1.9 + 0.2` ⇒ **0.2..2.1**（`0x41d880`–`0x41d8bb`）。*/
-#define POFV_POWER_SPEED_SCALE        1.9f
-#define POFV_POWER_SPEED_MIN          0.2f
+/* ★★★★★ 2026-10-16 **owner 口径**：「★ **上抛速度按 th19 一手**」✓（并明确「不是 116」✗）——
+ *   ★ **TH19 一手 = 速度恒 2.2 px/帧、角度随机** ✓：`th19.exe` 的生成函数 `FUN_00521d60`
+ *   （`local/th19.v1.10c/decomp/all.c:221235` ✓）里
+ *     `+0xc8c = cos(param_5) * param_6;  +0xc90 = sin(param_5) * param_6;` ✓
+ *   ⇒ ★ `param_6` = 速度、`param_5` = 角度 ✓；★ 而**各调用点传的速度都是 `0x400ccccd`** ✓
+ *   （`all.c:13115` / `:207100` / `:207295` ✓）★ = float **2.2** ✓
+ *   ⇒ ★ 所以本卡改成"**速度固定 2.2**、随机只留在角度上" ✓（`SCALE = 0`、`MIN = 2.2` ✓）。
+ *   ⚠ ★ **有意偏离**上面那条 TH16/TH18 的 `rand×1.9+0.2`（0.2..2.1 ✗）—— 按 owner 口径改 ✓，登记 `TUNING.md` ✓。
+ *   ★ 目的（owner 实跑现象 ✓）：★ 2.2 px/帧 × 32 帧 ≈ **70 px** ✓ ⇒ ★ 出生后头 32 帧内就能跑出
+ *   **吸收半径 12 px** ✓ ⇒ ★ 到门口时早已离开 ⇒ **该看得见的都看得见** ✓（不再"只涨灵力、看不见道具"✓）。*/
+#define POFV_POWER_SPEED_SCALE        0.0f
+#define POFV_POWER_SPEED_MIN          2.2f
 /* ★ 一手：出生的道具 `item+0xc50 = 6` ⇒ **待发射 6 帧**（期间不动、不建 VM）。*/
 #define POFV_POWER_LAUNCH_DELAY         6
 /* ★ 一手：`player.y < POC` 过**回收线** ⇒ 飞向自机、速度 = `sht+8` ——
  *   实读零售 `pl00.sht` 的 `+8` = **6.0**（`2.0, 6.0, 28.0, 4.5` 里的第二个）。*/
 #define POFV_POWER_LINE_SPEED         6.0f
 /* ★ 一手：进**吸引矩形** ⇒ 速度 = `sht+8 / 3` = **2.0**，**每帧 +0.2、上限 12.0**（`0x4945d4`）。*/
+/* ★★★★★ 2026-10-16 **owner 口径（照 116 做 ✓）**：「★ **核实清楚了，做法上照着 116 做**」✓
+ *   —— ★ 116 的真做法 = **自己的 VM + 一手运动学 + 参数读自机字段** ✓（`season.c:16/:35` ✓、`:816-836` ✓）：
+ *     `CE_PLAYER_ITEM_ATTRACT_SPD`（`0x47988` ✓，初值 **5.0** ✓）、`CE_PLAYER_ITEM_COLLECT_R`（`0x4798c` ✓，初值 **30** ✓）、
+ *     `CE_PLAYER_ITEM_ATTRACT_RF/_RU`（`0x47990/0x47994` ✓，初值 **70/70** ✓，按 `CE_PLAYER_FOCUSED()` 二选一 ✓）。
+ *   ⇒ ★ 本核心是 **SDK-free 的可测件** ✗（不能在这里读 `CE_PLAYER()` ✓）⇒ ★ **由卡侧读出、通过本 setter 传进来** ✓。
+ *   ★ 默认值 = 一手初值（`{5,30,70,70}` ✓）⇒ ★ 宿主测试与"没调 setter"的情形照旧 ✓。
+ *   ⚠ ★ 与 owner 之前那句冲突的地方以本口径为准 ✓：★ **矩形（`BOX_HALF_W/H`）不是一手概念** ✗
+ *   —— 一手是**半径**（吸引半径 ✓），所以下面的 tick 将改用传入的半径 ✓（下一笔 ✓）。*/
+void pofv_power_set_params(float collect_r, float attract_r, float mag_spd);
+#define POFV_POWER_PARAM_DEF_COLLECT_R   30.0f   /* ★ 一手初值（`0x4798c` ✓）*/
+#define POFV_POWER_PARAM_DEF_ATTRACT_R   70.0f   /* ★ 一手初值（`0x47990/94` ✓）*/
+#define POFV_POWER_PARAM_DEF_MAG_SPD      5.0f   /* ★ 一手初值（`0x47988` ✓）*/
+
 #define POFV_POWER_MAG_SPEED0         2.0f
 #define POFV_POWER_MAG_ACCEL          0.2f
 #define POFV_POWER_MAG_SPEED_MAX     12.0f

@@ -274,6 +274,15 @@ cards: 35 registered from cards.js; shop pool 700/8192 slots, guaranteed offers 
   别按墨迹裁：`scale.x` 乘的是 sprite 矩形宽，`th18:0x481703`）；
   **追加在 ORDER.txt 末尾** ⇒ 新 sprite = **430**、同批新脚本 = **275/276**，
   **既有 sprite / 脚本号一个都没动**（`ORDER.frozen.txt` 的前 186 行逐行未变，构建期已核）。
+- **★ 2026-10-15 新增 `ATLAS_BOSS_AURA_RED`（`CE_ANM_ABILITY_ATLAS_ATLAS_BOSS_AURA_RED`，
+  `ability.anm` 的 entry **180**，画布 **384×48**、8 个 sprite）**：卡 109 的「C4 期间模仿 boss」观感件之一
+  —— 把 TH18 **原生 `enemy.anm` script107**（sprite152–159，`enemy/enemy_aura.png` 48×48/格、y=0）
+  原样搬到**自机身上**（owner 2026-10-15 口径：「这个是 th18 自己就有的 effect」「我只是让你"复制粘贴"到自机身上」）。
+  成员 8 条 `RED_AURA_0..7` 各 `@x,0,48x48`（x = 0,48,…,336），**追加在 ORDER.txt 末尾** ⇒
+  新 sprite = **799..806**、同批新脚本 **461/462**（`461_pofv109_magicsquare` / `462_pofv109_boss_aura_red`）；
+  ★ 同批另一件是**单图行**（`MAGICSQUARE` = 原生 `effect/eff_magicsquare.png` 256×256，sprite **798**）
+  ⇒ 它是**单图行、不是图集 entry**，不吃本段的画布（同 :140 那条口径）；
+  **既有 sprite / 脚本号一个都没动**（ORDER.frozen 前 186 行构建期已核）。
 - **★ 2026-09-24 新增 `ATLAS_FONT2B`（`CE_ANM_ABILITY_ATLAS_ATLAS_FONT2B`，`ability.anm` 的 entry **69**；
   ⚠ 补宏名与现值的是 110/111 这条线，只为让 `capcheck` 的硬门认得出 —— 正文与口径都是 112 那位写的，
   见 `AUDIT.md` §BE 详录 #85）**：卡 112 的 HUD 文字字形

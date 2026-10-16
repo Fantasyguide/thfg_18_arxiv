@@ -525,7 +525,18 @@ void pofv_hits_tick(pofv_hits_t *h)
     }
 }
 
-int pofv_hits_visible(const pofv_hits_t *h) { return (h && h->latch != 0) ? 1 : 0; }
+/* ★★★★★ 2026-10-13（★ owner：「★ **左上角连击槽的 UI 又在撞弹后消失了**」✗ ⇒ ★ 先量 ✓）：
+ *   ★ 量出来的链（★ 全在卡里 ✓，★ 有出处 ✓）：
+ *   ★ · 可见判据 = ★ 本函数 ★ `latch != 0` ✓（★ 唯一调用点 = ★ `pofv.c:8137` ✓ —— 我查过 ✓）；
+ *   ★ · `latch` 的唯一清零点 = ★ `pofv.c:7572-7577` ✓：★ **连锁暴风窗口过期**（★ 你 2026-10-08 定的
+ *   ★ 两条路 ✓：★「★ **距上次暴风 > X 帧 ⇒ 立刻归零**」✓ ＋ ★ 槽漏空也归零 ✓）
+ *   ★ ⇒ ★ **hits 归零是对的** ✓（★ 你定的门控 ✓）；
+ *   ★ ★ **但"归零 ⇒ 把整块 UI 清空隐藏"是卡侧自己加的** ✗ —— ★ `pofv.c:8158-8161` 的 else 分支
+ *   ★ 会 ★ `ce_hud_number_clear()` + 把 label 清成空串 ✗ ⇒ ★ 观感 = ★ **撞弹后（没继续击破）整块消失** ✗ ✓。
+ *   ★ ⇒ ★ **改成本函数只判"状态存在"** ✓ ⇒ ★ HUD **一直显示** ✓（★ 数字走 0 ✓、★ 颜色走灰 ✓），
+ *   ★ 而 ★ **归零机制本身一字不动** ✓（★ 你 2026-10-08 的口径保留 ✓）。
+ *   ★ ⚠ ★ 影响面：★ 只有 ★ `pofv.c:8137` 一处 ✓（★ 全仓 grep 过 ✓）★ ⇒ ★ 安全 ✓。*/
+int pofv_hits_visible(const pofv_hits_t *h) { return (h != 0) ? 1 : 0; }
 
 int pofv_hits_is_gray(const pofv_hits_t *h)
 {
@@ -1056,11 +1067,25 @@ int pofv_power_spawn_packed_at(pofv_power_pool_t *p, const float *ox, const floa
     return (int)i;
 }
 
+/* ★★★★★ 2026-10-16（照 116 ✓）：★ 卡侧读 `CE_PLAYER()` 的那几个字段后传进来 ✓
+ *   （`CE_PLAYER_ITEM_COLLECT_R` / `_ATTRACT_RF|RU` / `_ATTRACT_SPD` ✓，`season.c:816-836` 同款 ✓）；
+ *   ★ 默认 = 一手初值 `{5,30,70,70}` ✓（`engine.h:470-473` ✓）⇒ 没调 setter 时行为与之前一致 ✓。*/
+static float s_pwr_collect_r = POFV_POWER_PARAM_DEF_COLLECT_R;
+static float s_pwr_attract_r = POFV_POWER_PARAM_DEF_ATTRACT_R;
+static float s_pwr_mag_spd   = POFV_POWER_PARAM_DEF_MAG_SPD;
+void pofv_power_set_params(float collect_r, float attract_r, float mag_spd)
+{
+    if (collect_r > 0.0f) s_pwr_collect_r = collect_r;
+    if (attract_r > 0.0f) s_pwr_attract_r = attract_r;
+    if (mag_spd   > 0.0f) s_pwr_mag_spd   = mag_spd;
+}
+
 int pofv_power_tick(pofv_power_pool_t *p, const float *player, float poc_y, int32_t *out_pts)
 {
     int i, got = 0;
     int32_t pts = 0;
-    const float absorb2 = POFV_POWER_ABSORB_R * POFV_POWER_ABSORB_R;
+    const float absorb2 = s_pwr_collect_r * s_pwr_collect_r;   /* ★ 2026-10-16 照 116：收集半径读自机字段 ✓
+                                                                *   （`CE_PLAYER_ITEM_COLLECT_R` ✓，默认一手初值 30 ✓）*/
 
     if (out_pts) *out_pts = 0;
     if (!p) return 0;
@@ -1085,7 +1110,16 @@ int pofv_power_tick(pofv_power_pool_t *p, const float *player, float poc_y, int3
             float dx = player[0] - it->x;
             float dy = player[1] - it->y;
             float d2 = dx * dx + dy * dy;
-            if (d2 <= absorb2) {                 /* 收取：点入账、槽当场释放 */
+            /* ★★★★★ 2026-10-15（★ owner：「★ **固灵结界和擦弹生成的灵力道具似乎被瞬间吸收**」✗
+             *   + ★「★ **参考 th16 季节道具在此情况下的"无敌"**」✓）—— ★ ★ **出生后 32 帧内不可拾取** ✗：
+             *   ★ 先例（★ 一手 ✓）＝ ★ `cards/season.c:139` 自己记着的那句 ✓：
+             *   ★「★ **引擎自己的道具 tick 也是 `age > 31` 才开始抖/染**」✗ ⇒ ★ TH16 季节道具
+             *   ★ **`age > 31`（= 第 32 帧起）才可拾取** ✓ —— ★ 这就是 owner 说的"无敌" ✓。
+             *   ★ ⇒ ★ 本判据加一条 ★ `it->age > 31` ✓（★ 阈值照抄先例 ✓，★ 不自己发明数值 ✗）。
+             *   ⚠ ★ 只加在**收取**这一条上 ✓ —— ★ 运动学（`delay` / 状态机 / 吸引矩形 / 回收线）**一字不动** ✓。
+             *   ⚠ ★ 单测同步改（★ 旧规格"一帧就收"✗ = `tests/test_pofv_core.c:674` ✓）——
+             *   ★ 本仓里 ★ **单测就是规格** ✗。*/
+            if (d2 <= absorb2 && it->age > 31) {   /* 收取：点入账、槽当场释放（出生 32 帧内不可拾 ✗）*/
                 pts += it->value;
                 it->active = 0;
                 --p->live;
@@ -1097,10 +1131,12 @@ int pofv_power_tick(pofv_power_pool_t *p, const float *player, float poc_y, int3
             if (player[1] < poc_y) {
                 if (it->st != 2) it->st = 2;                  /* 过回收线（一手 state 4）*/
             } else if (it->st != 3 &&
-                       dx >= -POFV_POWER_BOX_HALF_W && dx <= POFV_POWER_BOX_HALF_W &&
-                       dy >= -POFV_POWER_BOX_HALF_H && dy <= POFV_POWER_BOX_HALF_H) {
+                       (dx * dx + dy * dy) <= (s_pwr_attract_r * s_pwr_attract_r)) {
                 it->st = 3;                                   /* 进吸引矩形（一手 state 5）*/
-                if (it->mspd < POFV_POWER_MAG_SPEED0) it->mspd = POFV_POWER_MAG_SPEED0;
+                if (it->mspd < s_pwr_mag_spd) it->mspd = s_pwr_mag_spd;   /* ★ 2026-10-16 照 116：
+                                                  * 磁速起步值读自机字段 ✓（`CE_PLAYER_ITEM_ATTRACT_SPD` ✓，
+                                                  * 默认一手初值 5.0 ✓；加速度/上限 `+0.2/12.0` 暂留 ✗，
+                                                  * 下一笔按一手核 `th16:0x4945d4` 那条 ✓）。*/
             }
         }
 

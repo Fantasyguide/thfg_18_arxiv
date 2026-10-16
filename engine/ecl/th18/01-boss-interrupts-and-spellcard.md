@@ -113,6 +113,7 @@ boss 找法照 `0x4237F0`：`boss_ids[i]` → 走 `+0x18c` 链表比 `enemy+0x68
 | st07bs | `Boss2` … `Boss10` `BossDead`（Card9 耐久符 → `Boss10`，Card10 终符 → `BossDead`）|
 | st07mbs | `MBoss2` `MBoss3` `MBossDead` |
 | st01–06mbs | 无 `spell` / `spellEx`：主线道中 boss 只有计时非符（`setInterrupt(1, 0, t, "MBossDead")`）|
+| ⚠ **订正（2026-10-16，用户口径）** | ★ 上一条**只在部分难度成立** ✗：★ **L 难度道中是有符卡的** ✓ ⇒ ★ **别拿"道中无 spell"当判据** ✗（卡 109 曾据此设计，已作废 ✓）；★ 本表**未按难度分档**核过 ✓ |
 
 - **结论 ✅（th18 全覆盖）**：boss 当前活动槽（§2 的「第一个 `hp_value > -1 && time > 0`」）的子程序名含 `Dead` ⇔ 这段攻击结束即 boss 死亡 ⇔ 最后一张符卡。
   Extra 道中槽 1 常驻 `MBossDead`（整体计时），但符卡用槽 0、序号在前，不会被误取。

@@ -27,7 +27,10 @@ from PIL import Image
 ROOT = pathlib.Path(__file__).resolve().parent
 _r = ROOT
 for _ in range(8):
-    if (_r / "local").is_dir():
+    # ★★★ 2026-10-15：判据从"存在 `local/`"收窄成"存在 `local/th19.v1.10c`" ✗ ——
+    #   因为 `mods/local` 也存在（别的东西放那儿）⇒ 原判据会**提前停在 `mods/`**，
+    #   `SRC1/SRC6` 解析成 `mods/local/th19.v1.10c/...` ⇒ 生成器直接 FileNotFoundError ✗。
+    if (_r / "local" / "th19.v1.10c").is_dir():
         break
     _r = _r.parent
 SRC1 = _r / "local/th19.v1.10c/dat/bullet/bullet1.png"
@@ -37,11 +40,33 @@ OUTDIR = ROOT / "bball"
 # ★ (名字, 文件名, 源, rect) —— 全部一手 ✓
 FRAMES = [
     ("POFV109_C3_ORB",       "C3_ORB.png",        SRC6, (1, 33, 63, 95)),      # sprite596：62×62 大红玉
-    ("POFV109_C4_ORB_FADE",  "C4_ORB_FADE.png",   SRC1, (97, 209, 127, 239)),  # sprite326：淡版蓝玉
-    ("POFV109_C4_ORB_SOLID", "C4_ORB_SOLID.png",  SRC6, (97, 1, 127, 31)),     # sprite583：实心蓝玉
+    # ★★★ 2026-10-15（owner：「C4 阴阳玉颜色应当是粉色」+「第一行第三个应该是 C4 的阴阳玉」+
+    #   「（出生）这段图应当还是 (65,1,95,31)」）：原先 FADE 取 bullet1.png (97,209,127,239)
+    #   （出图 30×30 / 455 px / 均值 (167,150,244) 淡蓝紫）、SOLID 取 bullet6.png (97,1,127,31)
+    #   （735 px / 均值 (101,111,141) 蓝灰）⇒ owner 实跑「看着怎么是蓝色的」，且出生段不像阴阳玉。
+    #   ⇒ 两张都改取 bullet6.png **row1 col3 = (65,1,95,31)**（735 px / 均值 (163,86,137) 偏粉）。
+    ("POFV109_C4_ORB_FADE",  "C4_ORB_FADE.png",   SRC6, (65, 1, 95, 31)),      # 出生段：同格的粉玉
+    ("POFV109_C4_ORB_SOLID", "C4_ORB_SOLID.png",  SRC6, (65, 1, 95, 31)),      # 稳定段：同格的粉玉
     ("POFV109_BBALL_BORN",   "BBALL_BORN.png",    SRC1, (8, 240, 16, 248)),    # 8×8 彩弹：出生
     ("POFV109_BBALL_IDLE",   "BBALL_IDLE.png",    SRC1, (0, 240, 8, 248)),     # 8×8 彩弹：稳定
     ("POFV109_BBALL_DIE",    "BBALL_DIE.png",     SRC1, (16, 240, 24, 248)),   # 8×8 彩弹：消失
+]
+
+# ★★★★★ 2026-10-13（★ 本 goal 待办 1 ✓）：★ **纯灵本体那 8 帧** ✗ ——
+#   ★ 一手（★ 复核 `ab9b54e5` ✓ 高置信 ✓）：★ 标准纯灵 = ★ `GhostPure()` → ★ `ins_303(0,106)` → ★ **script106**
+#   ★ → ★ **`enemy.anm` entry1 `enemy2.png` 的 sprite 144–151（黄、8 帧、32×32、y=96）** ✓；
+#   ★ 固化态 = ★ `GhostPureDisable()` → ★ **同一支 script106** ✓ ⇒ ★「★ 固化不换族、颜色也一样」✓。
+#   ★ ★ **为什么必须补** ✗：★ 本卡当年只切了 **144–148 这 5 帧** ✗（★ `ORDER.txt:1168-1172` ✓）
+#   ★ ⇒ ★ **"环"的那三帧 149/150/151 从来没切进来** ✗ ⇒ ★ 这就是 owner 报的
+#   ★ 「★ **固化态出生时外面那圈蓝环没了**」✗ ✓（★ 一手那个循环是 ★ **球 → … → 空心环** ✓）。
+#   ★ 矩形 = ★ **x = 0/32/64/96/128/160/192/224** ✓、★ y = 96 ✓、★ 32×32 ✓（★ 步长 32 ✓）。
+# ★ 2026-10-13 订正路径 ✗：`dat/enemy/enemy2.png` **不存在** ❓（`dat/` 要 `thdat -x` 解包才有）
+#   ⇒ 用仓库里**已经解出来的**那张 ✓（`glob **/enemy2.png` 查到的 TH19 那份 ✓）。
+SRC_SPIRIT = _r / "local/th19.v1.10c/anm/enemy/enemy/enemy2.png"
+SPIRIT_DIR = ROOT / "spirit"
+SPIRIT_FRAMES = [
+    (f"SPIRIT_DISP4_{i}", f"SPIRIT_DISP4_{i}.png", (0 + 32 * i, 96, 32 + 32 * i, 128))
+    for i in range(8)
 ]
 
 
@@ -52,6 +77,12 @@ def main() -> int:
         cut = im.crop(rect)
         cut.save(OUTDIR / fn)
         print(f"{name:<24} ability/bball/{fn} {cut.width}x{cut.height}")
+    SPIRIT_DIR.mkdir(parents=True, exist_ok=True)
+    for name, fn, rect in SPIRIT_FRAMES:
+        im = Image.open(SRC_SPIRIT).convert("RGBA")
+        cut = im.crop(rect)
+        cut.save(SPIRIT_DIR / fn)
+        print(f"{name:<24} ability/spirit/{fn} {cut.width}x{cut.height}")
     print("# —— 以上各行追加/替换到 ability/entries/ORDER.txt ——")
     return 0
 

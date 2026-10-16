@@ -482,7 +482,12 @@ static void check_hits(void)
     pofv_hits_t h;
     int i;
     pofv_hits_init(&h);
-    CHECK(pofv_hits_visible(&h) == 0);                       /* latch=0 ⇒ 不画 ✓ */
+    /* ★★★★★ 2026-10-13（★ owner 实跑：「★ **左上角连击槽的 UI 又在撞弹后消失了**」✗）：
+     *   ★ 原断言是 ★ `== 0`（★ "latch=0 ⇒ 不画"✗）★ —— ★ 那正是"★ **归零就整块 UI 消失**"✗ 的**规格** ✓。
+     *   ★ 但 ★ 归零机制本身是 ★ **owner 2026-10-08 定的门控** ✓（★ 距上次暴风 > X 帧 ⇒ hits 归零 ✓），
+     *   ★ 他**要的是"数值归零"** ✓、★ **不是"整块 UI 消失"** ✗ ⇒ ★ 改判为 ★ **状态存在就可见** ✓
+     *   ★（★ 数字走 0 ✓ / 颜色走灰 ✓；★ 实现改动见 ★ `pofv_core.c` 的 `pofv_hits_visible()` ✓）。*/
+    CHECK(pofv_hits_visible(&h) == 1);                       /* ★ 2026-10-13：归零不再隐藏整块 UI ✓ */
     pofv_hits_bump(&h, 1); pofv_hits_tick(&h);
     /* ★★★ 2026-10-08 **owner 口径**（实跑：「即使我认定帧是 1 帧那我也应当能看见连击是 1」✓）：
      *   门从一手的 `1 < cur` **放宽到 `0 < cur`** ⇒ **连击 = 1 也要锁存** ✓（有意的偏差，已登记 TUNING ✓）。*/
@@ -551,9 +556,20 @@ static void check_power(void)
     CHECK(POFV_POWER_DECEL == 0.03f);
     CHECK(POFV_POWER_GRAVITY == 0.03f);
     CHECK(POFV_POWER_FALL_MAX == 2.0f);
-    CHECK(POFV_POWER_SPEED_SCALE == 1.9f && POFV_POWER_SPEED_MIN == 0.2f);
+    /* ★ 2026-10-16 owner 口径：「**上抛速度按 th19 一手**」✓（明确「不是 116」✗）：
+     *   ★ 一手 = **速度恒 2.2、角度随机** ✓（`th19.exe` `FUN_00521d60`
+     *   `local/th19.v1.10c/decomp/all.c:221235`：`+0xc8c = cos(param_5)*param_6` ✓；
+     *   各调用点传的速度 = `0x400ccccd` = float **2.2** ✓，见 `all.c:13115/207100/207295` ✓）
+     *   ⇒ ★ 规格同步为 `SCALE = 0.0f` / `MIN = 2.2f` ✓（**有意偏离**旧的 TH16 散射 0.2..2.1 ✗）。*/
+    CHECK(POFV_POWER_SPEED_SCALE == 0.0f && POFV_POWER_SPEED_MIN == 2.2f);
     CHECK(POFV_POWER_LAUNCH_DELAY == 6);
     CHECK(POFV_POWER_MAG_SPEED0 == 2.0f && POFV_POWER_MAG_ACCEL == 0.2f);
+    /* ★ 2026-10-16 **照 116（owner 口径 ✓）**：★ 磁速/收集半径/吸引半径的**起步值**改由
+     *   **自机字段**传入 ✓（`CE_PLAYER_ITEM_ATTRACT_SPD` / `COLLECT_R` / `ATTRACT_RF|RU` ✓，
+     *   读法见 `cards/season.c:816-836` ✓）⇒ ★ 默认值 = **一手初值 `{5,30,70,70}`** ✓
+     *   （`engine.h:470-473` ✓）。*/
+    CHECK(POFV_POWER_PARAM_DEF_MAG_SPD == 5.0f && POFV_POWER_PARAM_DEF_COLLECT_R == 30.0f
+          && POFV_POWER_PARAM_DEF_ATTRACT_R == 70.0f);
     CHECK(POFV_POWER_MAG_SPEED_MAX == 12.0f);
     CHECK(POFV_POWER_OUT_Y == 472.0f && POFV_POWER_OUT_X == 200.0f);
     CHECK(POFV_POWER_DROP_SPEED == 2.2f);
@@ -666,8 +682,18 @@ static void check_power(void)
     pc[0] = 100.0f; pc[1] = 200.0f; pc[2] = 0.0f;       /* 自机就站在道具上 */
     power_launch(&pool, pc, 100.0f, &pts);
     CHECK(pool.live == 1 && pts == 0);
-    CHECK(pofv_power_tick(&pool, pc, 100.0f, &pts) == 1);
-    CHECK(pts == 30 && pool.live == 0 && pool.absorbed == 1);
+    /* ★★★★★ 2026-10-15 新规格（★ owner：「★ **灵力道具似乎被瞬间吸收**」✗
+     *   + ★「★ **参考 th16 季节道具在此情况下的"无敌"**」✓）：
+     *   ★ 出生 **32 帧内不可拾取** ✓ —— ★ 一手先例 = ★ `season.c:139` 的 ★「★ 引擎自己的道具 tick
+     *   ★ 也是 `age > 31` 才开始抖/染」✗ ⇒ ★ 阈值取 **31** ✓（★ 与实现同一处出处 ✓）。
+     *   ★ 本用例的道具 `spawn_dir(..., 0.0f, 0.0f)` ⇒ **就地不动** ✓，★ 所以"跑满 33 帧"必然被收 ✓。*/
+    CHECK(pofv_power_tick(&pool, pc, 100.0f, &pts) == 0);   /* ★ 头一帧：站在道具上**也不收** ✓ */
+    CHECK(pts == 0 && pool.live == 1 && pool.absorbed == 0);
+    {
+        int g = 0;
+        while (g < 40 && pool.absorbed == 0) { (void)pofv_power_tick(&pool, pc, 100.0f, &pts); ++g; }
+    }
+    CHECK(pts == 30 && pool.live == 0 && pool.absorbed == 1);   /* ★ 过 32 帧后照旧收 ✓ */
 
     /* ---- 状态机①：待发射 6 帧（一手 `item+0xc50 = 6`）→ 飞散（定角、速度 −0.03/帧、无重力）----
      * 用「角 0 = +x」的道具，飞散段就是纯水平 ⇒ 断言 x 的位移与方向/重力的关系都干净。*/
@@ -725,13 +751,17 @@ static void check_power(void)
 
     /* ---- 状态机④：吸引盒 ⇒ 起步 2.0、每帧 +0.2、上限 12.0 ---- */
     pofv_power_pool_init(&pool);
-    pofv_power_spawn_dir(&pool, POFV_POWER_BOX_HALF_W * 0.5f, 300.0f, 10, POFV_POWER_SRC_KILL,
+    pofv_power_spawn_dir(&pool, POFV_POWER_PARAM_DEF_ATTRACT_R * 0.4f, 300.0f, 10, POFV_POWER_SRC_KILL,
                          0.0f, 2.0f);
-    pu[0] = 0.0f; pu[1] = 400.0f; pu[2] = 0.0f;    /* 同列、dy = 100 ≤ 半高 120 ⇒ 进盒 */
+    pu[0] = 0.0f; pu[1] = 350.0f; pu[2] = 0.0f;    /* ★ 2026-10-16 规格同步：吸引已由**自造矩形**改为
+                                                   * **一手半径**（`s_pwr_attract_r`，默认 70 ✓）
+                                                   * ⇒ 本处 dx = 28、dy = 50 ⇒ d² = 3284 < 70² = 4900 ✓ 进吸引圈 ✓。
+                                                   * （原来按矩形 56/120 写的是 dy = 100 ✗，半径语义下出圈 ✗）*/
     power_launch(&pool, pu, 128.0f, &pts);
     pofv_power_tick(&pool, pu, 128.0f, &pts);
     CHECK(pool.s[0].st == 3);
-    CHECK(feq(pool.s[0].mspd, POFV_POWER_MAG_SPEED0 + POFV_POWER_MAG_ACCEL));  /* 起步 2.0，本帧 +0.2 */
+    CHECK(feq(pool.s[0].mspd, POFV_POWER_PARAM_DEF_MAG_SPD + POFV_POWER_MAG_ACCEL));  /* ★ 2026-10-16 起步值改
+                                                                                      * 自机字段（默认一手 5.0）⇒ 本帧 5.2 */
     { float m0 = pool.s[0].mspd;
       pofv_power_tick(&pool, pu, 128.0f, &pts);
       CHECK(feq(pool.s[0].mspd, m0 + POFV_POWER_MAG_ACCEL)); }
@@ -742,7 +772,7 @@ static void check_power(void)
     CHECK(feq(pool.s[0].mspd, POFV_POWER_MAG_SPEED_MAX));
     /* 放进收取半径 ⇒ 必被收（盒内朝自机走 ⇒ 有限帧内收干净）*/
     pofv_power_pool_init(&pool);
-    pofv_power_spawn_dir(&pool, POFV_POWER_BOX_HALF_W * 0.5f, 300.0f, 10, POFV_POWER_SRC_AURA,
+    pofv_power_spawn_dir(&pool, POFV_POWER_PARAM_DEF_ATTRACT_R * 0.4f, 300.0f, 10, POFV_POWER_SRC_AURA,
                          0.0f, 2.0f);
     power_launch(&pool, pu, 128.0f, &pts);
     { int n2 = 0;

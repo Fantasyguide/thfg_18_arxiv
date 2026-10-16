@@ -648,6 +648,11 @@ static int   s_boss_prev;   /* ★ owner 2026-10-05：boss 表 0→1 的**边沿
 /* ★★ 底色标的 `scale`：贴图路径下 `scale` = **矩形倍率**（屏幕宽 = 贴图宽 × scale.x、屏幕高 = 贴图高 × scale.y
  *   ⇒ `th18:0x481703`）⇒ **恒 1.0 = 4×24 表面 px**（= 一手常显态 ✓；逐 texel 对上 ⇒ 脚本 425 用最近邻 ✓）。*/
 #define POFV_HUD_CHG_DIA_SCALE    1.0f
+/* ★ 2026-10-15：★ **退回 1.0** ✗ —— 上一轮我把 owner 的"晕光要两倍大"错落在**标本身**上了 ✗
+ *   （这个常量喂的是 `s_hud_chg_tick_vm[i]` = **标**本身 ✓，见 `:1096` ✓）。
+ *   ★ owner 订正：「★ 你似乎把蓄力槽的**标本身**放大了一倍，但是应该是把**蓄力到那里的晕光**放大一倍」✓
+ *   ⇒ ★ 要放大的是 **`s_hud_chg_halo_vm[i]`（脚本 `426` 的晕光 ✓）** ✗，它的尺寸目前**全在脚本 426 里**
+ *   （`scale(6,6)` / `scale2(2,2)` + `interruptLabel(2)` 的脉冲数列 ✓）⇒ 下一轮在那台 VM 上落 ✓。*/
 /* ★ **未达（蓄力 < 标位）= 一手 `interruptLabel(3)` 的「细针」**：`scale(6,0.2); scale2(0.2,0.2)`
  *   ⇒ 表面 **≈0.4 × 24**（宽 = `2 × 0.2` ✓、高仍是 `2 × 6 × 2` = 24 ✓）⇒ 卡侧**只把 `scale.x` 压到**
  *   `0.4 / 4 = **0.1**`（同一张底色贴图；高度不动）⇒ 观感 = 一根 24 px 高的细针
@@ -818,7 +823,27 @@ static int32_t s_hud_lv_left;       /* ★ 弹出剩余帧（>0 = 正在弹；�
  *   · 一手 A/B 组的偏移是 **TH09（640×480）字面量** ⇒ 到表面同样 **×2**：
  *     `-40→-80` / `-12→-24` / `+12→+24` / `-8→-16` / `+18→+36` / `-28→-56` ✓；
  *     精灵同理：一手 12×12 的 640 空间字形 ⇒ 表面 **24×24** ⇒ 每帧 `ce_anm_set_scale(vm, 2, 2)` ✓。*/
-#define POFV_HUD_SURF_X(x)   (640.0f + (x) * 2.0f)   /* 自机世界 x → 表面 px（117 `animal.c:3204` 同式 ✓）*/
+/* ★★★★★ 2026-10-15 订正（owner：「重新核实 engine 里的研究 —— **屏幕正中心与游玩正中心有一个偏移**，
+ *   看上去就是这个偏移量（或者是它的 1/2）」✓）：★ 原来这里是 **640**（= **屏幕**中心 ⇒ 1280/2 ✗），
+ *   而 ★ 本卡要的是 **游玩区**中心 ✓ —— 仓里早有结论 ✓：
+ *     · `TUNING.md` 的「屏幕（HUD/anm 绘制用）」行：★ **场地画在 `(32,16)`、尺寸 `(384,448)`** ✓
+ *       ⇒ 640 空间的游玩区中心 = `(32+192, 16+224)` = **(224, 240)** ✓，屏幕中心是 (320,240) ✓；
+ *     · `AUDIT.md` §BE 详录 #213 追加 C 的标题就是 ★「**游玩区中心 = 640 空间的 224，不是 320**」✓；
+ *     · `engine/anm/th18/01-vm-instantiate.md`（底边 928 ⇐ `32 + 448×2` ✓）与
+ *       `engine/player/th18/04-warp-yukari-gap.md`（游玩区 384×448、x 钳位 ±184 ✓）对得上 ✓。
+ *   ★ 本宏产出的是**表面 px**（640 = 1280 的一半 ✓、字形 `scale(2,2)` 也是 12→24 表面 ✓）
+ *     ⇒ 表面左沿 = 32×2 = 64 ✓、宽 = 384×2 = 768 ✓ ⇒ ★ **游玩区表面中心 = 64 + 384 = 448** ✓
+ *     ⇒ ★ 偏移 = `640 − 448 = **192**` ✓（= 640 空间那个 96 的**两倍** ✓ —— owner 给的"或 1/2"即此歧义）。
+ *   ⚠ **y 那条链本来就是游玩区口径** ✓（`32 + y*2`：y=0 → 32 = 场地顶边 ✓，与底边 928 同源 ✓）⇒ **y 不动** ✓。
+ *   ⚠ 若实跑显示**过头一倍**（即正确值是 640−96=544）：把本行的 448 改成 **544** 即可（一个常量 ✓）。*/
+/* ★★★★★ 2026-10-16 **订正（owner 实跑）**：「★ **偏左** —— ★ 很奇怪，你现在修的那个**蓄力 UI
+ *   实际上也偏左**」✓ ⇒ ★ 说明我 2026-10-15 那一刀**改过头**了 ✗：当时 owner 给的是
+ *   「屏幕正中心与游玩正中心有一个偏移 ⇒ **看上去就是这个偏移量（或者是它的 1/2）**」✓，
+ *   ★ 我取了**整量**（`640 → 448`，偏移 192 表面 px ✗）⇒ ★ **现在整体偏左** ✓
+ *   ⇒ ★ 正确 = **取 1/2**：★ `640 − 96 = **544**` ✓（= 448 + 96 ✓，正好是两候选的中点 ✓）。
+ *   ⚠ 对照：★ 640 空间里这 96 表面 px = **48** ✓ ⇒ ★ 同一条偏移在卡内那些"直接写 640 空间字面量"
+ *   的地方（如 C4 计时器的 x ✓）也要 **+48** ✓（计时器从 224 → **272** ✓）。*/
+#define POFV_HUD_SURF_X(x)   (544.0f + (x) * 2.0f)   /* 自机世界 x → 表面 px（★ 基点 = 屏幕中心 − 偏移/2 ✓）*/
 #define POFV_HUD_SURF_Y(y)   ( 32.0f + (y) * 2.0f)   /* 自机世界 y → 表面 px（117 `animal.c:3220` 同式 ✓）*/
 
 /* ★★★★ 2026-10-10 owner：「A/B 两组**比子机偏右**，有一个**恒定的 x 差**，y 方面应当没问题」✓
@@ -827,6 +852,11 @@ static int32_t s_hud_lv_left;       /* ★ 弹出剩余帧（>0 = 正在弹；�
  *     不是挂在子机上 ✗）⇒ 这里取 **−32 表面 px**（≈ 1.3 个字形宽 = 24px 再留一点 ✓），
  *     实跑按观感调这**一个数**即可（A/B 同时动 ✓）。见 `TUNING.md`。*/
 #define POFV_HUD_TH09_DX      (-32.0f)
+/* ★ 2026-10-15：★ **退回 −32** ✗ —— 上一轮我按 owner 的"一个贴图整体宽度"把它从 −32 调到 −56 ✓，
+ *   但随后 owner 给了**真因** ✓：★ **屏幕中心与游玩区中心的偏移** ✓ ⇒ 那一刀是在补错东西 ✗
+ *   ⇒ ★ 真修在 `POFV_HUD_SURF_X`（基点 640 → 448 ✓，见那一段）✓；★ 本常量恢复它原本的
+ *   "A/B 两组相对子机的 x 差"校准值 ✓（下面那段 2026-10-10 的说明仍然有效 ✓）。*/
+
 
 /* ★★★★ 2026-10-10 ★ **一手「自动位置冲突解决」，复刻** ✓（owner：「这两个我记得一手是有一个
  *   **自动的位置冲突解决**的，目前是两个重合」✓）—— 出处逐字：
@@ -1454,6 +1484,8 @@ static void pofv_graze_scan_drop(void)
         if (!pofv_power_has_room()) continue;       /* ★ 池满 ⇒ **不置位** ✓（以后还能掉 ✓）*/
         s_aura_bullet_done[i] = 1;
         {
+            /* ★ 2026-10-16 **已撤（同结界那处 ✓）**：上一版改成引擎道具 ✗ ⇒ 现改回**卡侧池** ✓
+             *   —— 116 的做法是"自己的 VM + 一手运动学 + 参数读自机字段" ✓（`season.c:16/:35`、`:816-836` ✓）。*/
             float gx[1], gy[1]; int32_t gpts = 0;
             gx[0] = bx; gy[0] = by;
             pofv_power_spawn_packed_at(&s_power, gx, gy, 1, POFV_POWER_PTS_AURA, 1,
@@ -1737,7 +1769,25 @@ static int cancel_white_in_circle(const float *pos, float r, int max_count, int 
             /* ★★ 一手：**每消一颗**就在**那颗弹的位置**播一次 `etbreak` 火花 ✓（见上面那节 ✓）*/
             const float bx = *(const float *)(b + CE_BULLET_POS);
             const float by = *(const float *)(b + CE_BULLET_POS + 4);
-            ((pofv_fn_bullet_cancel_t)POFV_FN_BULLET_CANCEL)(b, mode);
+            /* ★ 2026-10-16：★ **`mode < 0` = "只数不杀"** ✓（owner：「把 C2 消弹圈杀掉」✓）——
+             *   ★ 不调引擎的 `Bullet__cancel` ✓、不播 `etbreak` 火花 ✓、不置 `s_aura_bullet_done[]` 闩锁 ✓
+             *   ⇒ ★ 弹**原样留在场上** ✓，但本函数照旧**返回颗数** ✓（调用方拿它撒道具 ✓）。*/
+            if (mode >= 0) {
+                ((pofv_fn_bullet_cancel_t)POFV_FN_BULLET_CANCEL)(b, mode);
+            /* ★★★★★ 2026-10-16 **只读诊断**（owner：「C4 持续期间（消弹环已消失）怎么还有消弹特效」✗）：
+             *   ★ 消弹点（`pofv_ca_ring_tick` / `do_storm_frame`）**都走本函数** ✓
+             *   ⇒ ★ 在这一处打一行就够 ✓（每颗一颗一行 ✓，颗数多时才知道是谁在消 ✓）。
+             *   ★ 带上：位置 / 半径 / `mode` / **C4 状态**（`s_c4.live` + `s_c4.timer` ✓）/
+             *   ★ **环的存活数与最大半径** ＋ **暴风的存活数**（据此一眼看出是"环"还是"暴风"还是 C2 ✓）。
+             *   ★ 纯诊断：不改任何行为 ✓；定位完就删 ✓。*/
+            {
+                /* ★ 注：环（`s_ca_ring`）与暴风（`s_storm`）的结构体声明都在**本函数之后** ✗
+                 *   ⇒ 这里取不到 ✗ ⇒ 只打本处可得的：**位置 + 半径 + mode + C4 状态** ✓
+                 *   ★ 定位判据：★ 环的圆心 = 起环点（自机处 ✓）且只活 **128 帧** ✓；
+                 *   ★ C2 的消弹圈 = 每次掉落点 ✓；★ 暴风 = 暴风实体的位置 ✓ ⇒ 三者的"位置 + 时间"互不相同 ✓。*/
+                ce_log("pofv: [CANCEL] at (%.0f,%.0f) r=%.1f mode=%d",
+                       (double)bx, (double)by, (double)r, mode);
+            }
             pofv_spark_spawn(bx, by);
             /* ★★★★★ 2026-10-12 goal-b68a8c72 ① **修"同一颗弹同帧掉两次"** ✓
              *   （审计 `89c60c46` 抓到 ✓）：★ 消弹之后**槽 state 仍非 0** ✓（一手：`Bullet__cancel` 写
@@ -1747,6 +1797,7 @@ static int cancel_white_in_circle(const float *pos, float r, int max_count, int 
              *     **统一到 `s_aura_bullet_done[]`** ✓ = spec §8.3 的"**一套共享规则**" ✓
              *     ⇒ ★ 同一颗弹**只掉一次** ✓。*/
             s_aura_bullet_done[i] = 1;
+            }   /* ★ 结束 `if (mode >= 0)` ✓（只数不杀时跳过上面整段 ✓）*/
         }
         if (++n >= max_count) break;
     }
@@ -1855,19 +1906,19 @@ typedef struct {
 static pofv_aura_tint_t s_aura_tint[POFV_AURA_TINT_MAX];
 static int s_aura_tint_n;
 
-/* G = clamp(2 * (0x68 − n), 0x60, 0xff) —— 一手公式（n 见上）。*/
-static uint32_t pofv_aura_tint_g(uint16_t n)
-{
-    int32_t v = 2 * (0x68 - (int32_t)n);
-    if (v < 0x60) v = 0x60;
-    if (v > 0xff) v = 0xff;
-    return (uint32_t)v;
-}
-
-/* 一条 AARRGGBB dword（一手写法；A=0xff、R=0xff、B=0x80、G 见上）。*/
+/* ★★★★ 2026-10-15（owner 一手口径）：「固灵结界碰弹的一手行为 = ①运动速度×1/2 ②抖动 ③染色
+ *   （**瞬间染色不变化**）」——★ 其中 ① 在本作会**打乱符卡节奏** ⇒ **主动去掉** ✓；② 抖动
+ *   **因视觉问题** ⇒ 也**主动去掉** ✓（`POFV_AURA_BULLET_SHAKE` 保持 0 ✓）；⇒ ★ 只剩 ③ 要修 ✗。
+ *
+ *   原来这里实现的是 ★ `G = clamp(2 * (0x68 − n), 0x60, 0xff)` ✓（`n` = 这颗弹**连续被结界碰到
+ *   的帧数** ✓）⇒ ★ 弹在圈里待得越久 `G` 越小 ⇒ 观感 **橙 → 红渐变** ✗ —— ★ owner 实跑指出
+ *   「一手不会有变化」✗ ⇒ ★ **改成常量** ✓：`G = 0xd0` ✓（= 原公式 **`n = 0` 的入口值** ✓，
+ *   即"接触第一帧那一档颜色"，之后**不再变** ✓）。
+ *   ⚠ 只改**颜色**：`n` 的计数、去重、快照/还原表**一字不动** ✓（它们管"染过谁、何时还原" ✓）。*/
 static uint32_t pofv_aura_tint_color(uint16_t n)
 {
-    return 0xff000000u | (POFV_AURA_TINT_R << 16) | (pofv_aura_tint_g(n) << 8) | POFV_AURA_TINT_B;
+    (void)n;   /* 不再随帧数变（一手：瞬间染色、之后不变化 ✓）*/
+    return 0xff000000u | (POFV_AURA_TINT_R << 16) | (0xd0u << 8) | POFV_AURA_TINT_B;
 }
 
 /* 还原整张表（删卡 / 换关 / 重开 —— `clear_card()` 里调，**不依赖 tick** ✓ 铁律「长持续效果要交代」）。
@@ -1880,7 +1931,13 @@ static void pofv_aura_tint_restore_all(void)
     for (i = 0; i < s_aura_tint_n; ++i) {
         volatile uint32_t *col =
             (volatile uint32_t *)(s_aura_tint[i].b + POFV_BULLET_VM_OFF + CE_ANM_VM_COLOR1);
-        *col = s_aura_tint[i].orig;
+        /* ★★★★★ 2026-10-15 订正（owner：「★ **在固灵结界里面出生的弹幕，透明度会变成 50% 左右**」✗）：
+         *   ★ 病根 = ★ **还原时把整条 `color_1`（含 alpha）写回快照** ✗ —— 领域内**出生的**弹，
+         *   被染的第一帧它的脚本 alpha 还在淡入（≈50% ✓）⇒ 那一帧被快照成 `orig` ✓ ⇒ 离开结界时
+         *   写回 `orig` ⇒ ★ 弹**卡在 50%** ✗ ✓（本文件 `:1999` 的注释早就记着 115 的这条教训 ✓：
+         *   `*p = (*p & 0xff000000u) | (orig & 0x00ffffffu);` ✓ = **只改 RGB、alpha 用当前的** ✓）。
+         *   ⇒ ★ 改成同样写法 ✓（染/还原**都不碰 alpha** ✓ —— 与 115/111「只改 RGB、保 alpha」一致 ✓）。*/
+        *col = (*col & 0xff000000u) | (s_aura_tint[i].orig & 0x00ffffffu);
     }
     s_aura_tint_n = 0;
 }
@@ -1936,7 +1993,11 @@ static void pofv_aura_tint_tick(void)
             volatile uint32_t *col =
                 (volatile uint32_t *)(b + POFV_BULLET_VM_OFF + CE_ANM_VM_COLOR1);
             if (s_aura_tint[i].n < 0xffffu) ++s_aura_tint[i].n;   /* 一手：每帧 +1 */
-            *col = pofv_aura_tint_color(s_aura_tint[i].n);
+            /* ★ 2026-10-15：★ **只改 RGB、alpha 用当前的** ✗ —— 原来这里写整条 dword（`A=0xff` ✗）
+             *   ⇒ 会把弹的淡入（脚本 `alphaTime`）**钉成不透明** ✗，与"还原时写回旧 alpha"✗
+             *   正好是一对反方向的同一个病 ✓（owner 报的是后者：领域内出生的弹卡在 ~50% ✓）。
+             *   ⇒ 与本文件 `:2015` 的写法统一 ✓（115/111 也是只改 RGB ✓）。*/
+            *col = (*col & 0xff000000u) | (pofv_aura_tint_color(s_aura_tint[i].n) & 0x00ffffffu);
 #if POFV_AURA_BULLET_SHAKE
             pofv_aura_shake_apply(b);
 #endif
@@ -1944,7 +2005,13 @@ static void pofv_aura_tint_tick(void)
         } else {
             volatile uint32_t *col =
                 (volatile uint32_t *)(b + POFV_BULLET_VM_OFF + CE_ANM_VM_COLOR1);
-            *col = s_aura_tint[i].orig;         /* 无条件还原（lolk.c 的教训）*/
+            /* ★★★★★ 2026-10-15 订正（owner：「★ **在固灵结界里面出生的弹幕，透明度会变成 50% 左右**」✗）：
+         *   ★ 病根 = ★ **还原时把整条 `color_1`（含 alpha）写回快照** ✗ —— 领域内**出生的**弹，
+         *   被染的第一帧它的脚本 alpha 还在淡入（≈50% ✓）⇒ 那一帧被快照成 `orig` ✓ ⇒ 离开结界时
+         *   写回 `orig` ⇒ ★ 弹**卡在 50%** ✗ ✓（本文件 `:1999` 的注释早就记着 115 的这条教训 ✓：
+         *   `*p = (*p & 0xff000000u) | (orig & 0x00ffffffu);` ✓ = **只改 RGB、alpha 用当前的** ✓）。
+         *   ⇒ ★ 改成同样写法 ✓（染/还原**都不碰 alpha** ✓ —— 与 115/111「只改 RGB、保 alpha」一致 ✓）。*/
+        *col = (*col & 0xff000000u) | (s_aura_tint[i].orig & 0x00ffffffu);         /* 无条件还原（lolk.c 的教训）*/
         }
     }
     s_aura_tint_n = w;
@@ -2064,17 +2131,12 @@ static void storm_vm_sync(void)
  *   理由：① 结界键 = 本卡里唯一"玩家主动按下"的边沿事件 ✓；② 不动 `s_aura_charge` 语义 ✓；
  *   ③ 上升沿天然"只发一次" ✓（与一手"只发一轮"同形 ✓）。
  *   影响：按 C/Shift **立刻**出弹，**不受**灵力/`POFV_REI_C1` 门控 ✗（一手要蓄到 500 才出）
- *   ⇒ 手感偏强。
- *   ★ 2026-10-15（owner 拍板 ✓）：「**灵力初值是 500**」⇒ 与本宏现值**一致** ✓
- *     （`POFV_REI_C1 = 500.0f`，开局 `s_reiryoku = POFV_REI_C1` ✓）。
- *     ⚠ 这条注释里的旧话"现 2500"**是过期的** ✗ —— 2500 是**夹取上限** `POFV_REI_MAX` 与 C4 阈值，不是初值 ✓。
+ *   ⇒ 手感偏强；且 `POFV_REI_C1`（现 2500，一手 500）owner 未拍板 ⇒ 本轮**不动它** ✓。
  *   ⇒ 定案登记在 `TUNING.md` 的 C1 节。
  *
  * ❓**观感自定**：一手是 `pl00.anm` script10 的 30×30 弹；本卡**暂用现成脚本占位**
  *   （`CE_ANM_ABILITY_SCRIPT_POFV109_SPIRIT_BODY`），**不新切贴图、不动 `ORDER.txt`** ✗。
- * ❓**伤害源自定**：`ce_damage_rect` 的 `life/w/h` 一手没给 ⇒ 用下面的常量。
- *   ★ 2026-10-15 核实（owner 问「现在代码是多大」✓）：现值 = **`POFV_C1_HIT_W` / `POFV_C1_HIT_H` = 30.0f**
- *     ⇒ **30×30**，与一手 `sprite38` 的 30×30 **一致** ✓（旧注释写的"32×32"是过期值 ✗）。
+ * ❓**伤害源自定**：`ce_damage_rect` 的 `life/w/h` 一手没给 ⇒ 先用下面的常量（32×32 ≈ 一手 30×30 ✓）。
  */
 typedef struct { float x, y; int dmg; float ang, spd; } pofv_c1_shot_t;
 
@@ -2300,7 +2362,8 @@ static void c3_dir5(int idx5, float *dx, float *dy);
 /* ★★ 一手的**逐档消弹环序列**（`Ecl_EtBreakLvN` ✓，§5.1）—— ★ 三档都有、只有 C1 没有 ✓：
  *   Lv2 = **8/12/16/20**（每帧 +4、共 4 帧 ✓，C2 已用 ✓）；
  *   Lv3 = **16/24/32**（每帧 +8、共 3 帧 ✓）；Lv4 = **16/24/32/40/48**（每帧 +8、共 5 帧 ✓）。
- * ★ 一手这三档做的事 = **消弹 + 撒道具**（**没有伤害** ✓）⇒ ★ 本卡正好用现成的 `c2_cancel_drop` ✓。
+ * ★ 一手这三档做的事 = **消弹 + 撒道具**（**没有伤害** ✓）⇒ ★ 本卡**用现成的一手 CA 环**（`pofv_ca_ring_tick` ✓ = `0x41c8e0` 的推进律 ✓）✓
+ *   ★ 2026-10-16：早先那个 ❓自造函数（"圈心一次消 + 一次撒" ✗）**已删** ✓（owner 口径 ✓）。
  * ★ 侧别：一手 Lv2 留本侧、**Lv3/Lv4 送对侧**（写 `1−side` ✓）—— ★ 本作是"我方场地打我方 E" ✓
  *   ⇒ ★ **都留在本侧** ✓（正是 owner 那两处改动之一 ✓）。*/
 #define POFV_EB_LV3_R0     16.0f
@@ -2424,16 +2487,11 @@ static int pofv_aura_rise_edge(int held)
 
 /* 圈内消弹 + 在圈心撒道具（一手「命中点撒道具」的**单场地对应物** ❓自定；面值 / 上限走本仓既有值 ✓）。
  * 返回消掉的颗数。位置 = 圈心（一手是逐个命中点，本卡不复刻逐点坐标 ⇒ 见 `TUNING.md` 的 ❓）。*/
-static int c2_cancel_drop(const float *pos, float r)
-{
-    const int n = cancel_white_in_circle(pos, r, POFV_CANCEL_MAX, POFV_BULLET_CANCEL_MODE);
-    if (n > 0) {
-        int32_t pts = 0;
-        (void)pofv_power_spawn_packed(&s_power, pos[0], pos[1], n, POFV_POWER_PTS_CANCEL,
-                                      POFV_AURA_ITEMS_PER_FRAME, POFV_POWER_SRC_REIGEKI, &pts);
-    }
-    return n;
-}
+/* ★★★★★ 2026-10-16 **本函数已删除** ✗（owner：「★ **不是不是，我所谓的 C2 消弹圈杀，是那个突兀的
+ *   自造函数杀掉，全部走 CA 的那个函数**」✓）—— 这里原来那个 ❓**自造**函数（"圈心一次消 + 一次撒" ✗，
+ *   一手是"逐个命中点撒道具" ✓）**整条作废** ✓：★ **消弹与撒道具全部由一手那支 CA 环负责** ✓
+ *   （`pofv_ca_ring_tick()` ✓ = 一手 `0x41c8e0` 的推进律 ✓，"半径内逐颗消 + 命中就撒" ✓）。
+ *   ★ 五个调用点也一并摘除 ✓（`:2548/:2597/:2669/:4121/:4872` 一带 ✓，行号随改动已移 ✓）。*/
 
 /* 可见扩张环（❓自定画法）：建 / 每帧跟随自机 + 写 scale(=半径)。脚本 396 的半径由外部每帧写 ✓。*/
 /* ★★ 2026-10-10 owner 实跑订正：「**C1 C2 包括其他 C 的消弹圈是扩张的红色圆环**」✓
@@ -2490,7 +2548,7 @@ static void pofv_c2_tick(uint32_t id)
     if (s_c2.age < POFV_C2_GEN_FRAMES) {
         float pos[3];
         pos[0] = p[0]; pos[1] = p[1]; pos[2] = 0.0f;
-        (void)c2_cancel_drop(pos, POFV_C2_GEN_R0 + POFV_C2_GEN_STEP * (float)s_c2.age);
+        /* ★ 2026-10-16 删除（owner：全部走 CA 环那一支 ✓）—— 原来这里调那个**自造函数** ✗ */
     }
 
     if (s_c2.age < POFV_C2_ORB_END) {   /* ★ C2-⑤ 后半 ✓：orb 摆到 **60** ✓（一手 = 管家/434 的 `+60` ✓；
@@ -2539,7 +2597,7 @@ static void pofv_c2_tick(uint32_t id)
                 pos[0] += (p[0] - pos[0]) * u;      /* ★ 线性拉回自机（= 中心 ✓）*/
                 pos[1] += (p[1] - pos[1]) * u;
             }
-            (void)c2_cancel_drop(pos, POFV_C2_POINT_CANCEL_R);      /* 半径 64 的消弹圈 ✓ */
+            /* ★ 2026-10-16 删除（原"半径 64 的消弹圈"那条自造路 ✗）—— 消弹/撒道具全部走 CA 环 ✓ */
             /* ★★ 可见物（一手 ✓）：★ 每点一台 `pl00.anm` script20 的复刻（脚本 434 ✓）——
              *   一手 tick 里这 3 台就是**跟着三个环绕点跑** ✓（`+10°/帧` ✓、半径见下 ✓）。*/
             if (i == 0) { s_c2_pt0x = pos[0]; s_c2_pt0y = pos[1]; }   /* ★ 环心用它 ✓ */
@@ -2611,7 +2669,7 @@ static void pofv_c2_tick(uint32_t id)
         /* c2_ring_vm_sync(r); */   /* ★ 2026-10-13 停用 ✗：滞后那台 ⇒ 统一到 CA ✓ */
         float pos[3];
         pos[0] = s_c2_pt0x; pos[1] = s_c2_pt0y; pos[2] = 0.0f;   /* ★ 一手：环心 = 第 1 个环绕点 ✓（原为自机 ✗）*/
-        (void)c2_cancel_drop(pos, r);
+        /* ★ 2026-10-16 删除（最后一处 ✓）—— 原来这里调那个**自造函数** ✗ */
         (void)(void)storm_hit_clipped(s_c2_pt0x, s_c2_pt0y, r, POFV_C2_RING_DMG);   /* ★ 一手：环心 ✓ */
     }
 
@@ -2872,6 +2930,15 @@ static void pofv_ca_ring_tick(void)
         int n;
         if (!R->active) continue;
         pos[0] = R->x; pos[1] = R->y; pos[2] = 0.0f;
+        /* ★ 2026-10-16：★ 这一行**恢复原样** ✓ —— 我曾把 owner 的「只有 C2–C4 的消弹环会消弹」
+         *   误读成"环的 kind ≥ 2 才消弹" ✗，随后 owner 更正（原话）：
+         *   「★ **不不不，C1 也会消弹** ✓；我所谓的**只有**是只限定 **C2–C4 的效果** ✓」
+         *   ＋「★ **只有暴风是条件消弹，C2–C4 的消弹环应当是无条件消弹**」✓
+         *   ＋「★ **暴风的是对的，我所谓的落点是它是击破敌人的效果，不是 C 系列的效果**」✓
+         *   ⇒ ★ 结论（都按 owner 口径，**两处都不改** ✓）：
+         *     · ★ **C1–C4 的消弹环 = 无条件消弹** ✓（C1 也消，只是不画环 ✓）★ ⇒ 本行保持"所有 kind 都消" ✓；
+         *     · ★ **暴风 = 击破敌人那一下的触发效果** ✓（不属于 C 系列 ✓）★ ⇒ `do_storm_frame()` 的消弹
+         *       也是**对的** ✓，不要给它加"条件门" ✗。*/
         if (R->r > 0.0f) {
             n = cancel_white_in_circle(pos, R->r, POFV_CANCEL_MAX, POFV_BULLET_CANCEL_MODE);
             if (n > 0)
@@ -3146,12 +3213,21 @@ static void power_flash_fire(int slot, float x, float y)
  *   ⚠ 道具脚本（423）也**不自己 `delete()`**（一手 script123 是 `static()` 常驻）⇒ 收/出界一律由我们删；
  *     闪光脚本（424）则**自己 delete**（一手如此）⇒ 它的句柄只探活、不在这里删。*/
 static int32_t s_item_spawn_ok, s_item_spawn_fail;   /* ★ 自证计数（诊断用 ✓）*/
+/* ★★★★ 2026-10-16 **只读诊断**（owner：「灵力道具一颗都看不见」✓；已证 `spawn_ok` 在涨、VM 活着 ✗）：
+ *   ⇒ ★ 把**每颗道具的 VM 自己眼里的字段**曝光一次 ✓ —— 每个槽只打一次（建 VM 之后**第 2 帧**打 ✓，
+ *     那时脚本首批指令（`scale` 动画 / `sprite` / `alpha`）已经跑过 ✓）。
+ *   读法（★ 决定修法的那一条）：
+ *     · `flags & 0x400`（`CE_ANM_VM_FLAGS_LO` 的 bit10 ✓）= **绘制点走 `__pos_2`(0x4e4)** ✓
+ *       ⇒ 若该位**置起**而 `pos2=(0,0)` ✗ ⇒ ★ 要写的是 **`+0x4e4`** ✓；
+ *     · 该位**没置** ⇒ 绘制点走 **`+0x30`** ✓ ⇒ 若 `draw=(0,0)` ✗ ⇒ ★ 要写的是 **`+0x30`** ✓。*/
+static uint8_t s_item_vm_dbg[POFV_POWER_MAX];
+
 static void power_vm_sync(void)
 {
     int i;
     for (i = 0; i < POFV_POWER_MAX; ++i) {
         pofv_power_t *it = &s_power.s[i];
-        if (!it->active) { power_vm_drop(it); continue; }
+        if (!it->active) { power_vm_drop(it); s_item_vm_dbg[i] = 0; continue; }
         if (!it->vm && it->delay <= 0) {
             uint32_t id = ce_anm_spawn(CE_ABILITY_ANM(), POFV_POWER_VM_SCRIPT, POFV_POWER_VM_LAYER);
             if (!id) { ++s_item_spawn_fail; continue; }   /* ★ 自证计数 ✓ */
@@ -3169,6 +3245,26 @@ static void power_vm_sync(void)
             power_flash_fire(i, it->x, it->y);   /* ★ 同一刻点一台几何闪光（一手 effect.anm script94）*/
         }
         if (it->vm) ce_anm_set_pos((uint32_t)it->vm, it->x, it->y, 0.0f);
+        /* ★★★★ 2026-10-16 只读诊断（**只加日志，不改行为** ✓）：每颗道具的 VM 只曝光一次 ✓
+         *   —— 建 VM 之后第 2 帧打（那时脚本首批指令已跑过 ✓）。判据见 `s_item_vm_dbg` 上方注释 ✓。*/
+        if (it->vm && s_item_vm_dbg[i] < 2) {
+            if (++s_item_vm_dbg[i] == 2) {
+                uint8_t *v = ce_anm_get_vm((uint32_t)it->vm);
+                if (v) {
+                    const float *ent = (const float *)(v + CE_ANM_VM_POS);
+                    const float *drw = (const float *)(v + 0x30);
+                    const float *po2 = (const float *)(v + CE_ANM_VM_POS_2);
+                    ce_log("pofv: [ITEMVM1] set=(%.0f,%.0f) age=%d delay=%d | ent=(%.0f,%.0f) draw=(%.0f,%.0f) pos2=(%.0f,%.0f) scale=%.3f c1=%08x spr=%d flags=%08x",
+                           (double)it->x, (double)it->y, (int)it->age, (int)it->delay,
+                           (double)ent[0], (double)ent[1], (double)drw[0], (double)drw[1],
+                           (double)po2[0], (double)po2[1],
+                           (double)*(const float *)(v + CE_ANM_VM_SCALE),
+                           *(const uint32_t *)(v + CE_ANM_VM_COLOR1),
+                           *(const int32_t *)(v + CE_ANM_VM_SPRITE_ID),
+                           (unsigned)*(const int32_t *)(v + CE_ANM_VM_FLAGS_LO));
+                }
+            }
+        }
     }
     /* ★★★ 2026-10-11 自证日志（owner：「灵力道具全没了，一个没掉」✗，而日志显示**逻辑在跑**
      *   —— `[REI] got=1..3` ✓ + `power +N (N items …)` ✓ ⇒ ★ 那就是**看不见** ✗）：
@@ -3176,12 +3272,77 @@ static void power_vm_sync(void)
      *   ⇒ ★ 下一局正常打就能分辨："逻辑在跑但没有 VM" ✗ vs "VM 建了却没画出来" ✗ ✓。*/
     if ((s_card_frames % 120) == 0) {
         int act = 0, has_vm = 0, k9;
+        int by_src[4] = { 0, 0, 0, 0 };   /* ★ 2026-10-16（owner：「按 C 的固灵结界才掉、按 shift 不掉」✓
+                                           *   已修 ✓）：★ **按来源分计数** ✓ ⇒ 以后"哪条在撒"一眼可查 ✓。
+                                           *   ★ 来源 = 池里每颗自带的 `src` ✓（`pofv_power_spawn*` 的入参 ✓，
+                                           *   不改 core ✓），越界的归到最后一格 ✓。*/
         for (k9 = 0; k9 < POFV_POWER_MAX; ++k9) {
             if (s_power.s[k9].active) ++act;
             if (s_power.s[k9].vm) ++has_vm;
+            if (s_power.s[k9].active) {
+                int s9 = (int)s_power.s[k9].src;
+                if (s9 < 0 || s9 > 3) s9 = 3;
+                ++by_src[s9];
+            }
         }
-        ce_log("pofv: [ITEM] active=%d vm=%d spawn_ok=%d spawn_fail=%d", act, has_vm,
-               (int)s_item_spawn_ok, (int)s_item_spawn_fail);
+        ce_log("pofv: [ITEM] active=%d vm=%d spawn_ok=%d spawn_fail=%d | cancel=%d kill=%d aura=%d reigeki=%d",
+               act, has_vm, (int)s_item_spawn_ok, (int)s_item_spawn_fail,
+               by_src[0], by_src[1], by_src[2], by_src[3]);
+        {
+            /* ★ 2026-10-16 只读诊断（owner：「C 也不掉、shift 也不掉」✓ 而日志显示 active=14/vm=13 ✓）：
+             *   ★ 活着且有 VM ⇒ ★ 若还看不见，最可能是**坐标投到了画面外** ✗（坐标空间不一致 ✓）
+             *   ⇒ ★ 打一颗活道具的坐标 ＋ 自机坐标 ＋ 最小/最大 age ✓（三项一比就分得开 ✓：
+             *   ★ 道具坐标远离自机 ⇒ 位置/空间问题 ✓；★ age 全都很小 ⇒ 被秒收 ✓；★ 都正常 ⇒ 绘制层问题 ✓）。*/
+            const float *pp9 = ce_player_pos();
+            float ix = 0.0f, iy = 0.0f;
+            int32_t amin = 9999, amax = -1, first_vm = 0;
+            for (k9 = 0; k9 < POFV_POWER_MAX; ++k9) {
+                if (!s_power.s[k9].active) continue;
+                ix = s_power.s[k9].x; iy = s_power.s[k9].y;
+                first_vm = s_power.s[k9].vm;   /* ★ 顺手记下这台 VM 的句柄（诊断 ✓）*/
+                if (s_power.s[k9].age < amin) amin = s_power.s[k9].age;
+                if (s_power.s[k9].age > amax) amax = s_power.s[k9].age;
+                break;
+            }
+            ce_log("pofv: [ITEMP] item=(%.0f,%.0f) player=(%.0f,%.0f) age=%d..%d vm=%d alive=%d spr=%d | poc_y=%.0f pl_y=%.0f",
+                   (double)ix, (double)iy,
+                   (double)(pp9 ? pp9[0] : 0.0f), (double)(pp9 ? pp9[1] : 0.0f),
+                   (int)amin, (int)amax,
+                   (int)first_vm, (first_vm && ce_anm_get_vm((uint32_t)first_vm)) ? 1 : 0,
+                   (int)POFV_POWER_VM_SPRITE,
+                   (double)ce_poc_height_semantic(),
+                   (double)(pp9 ? pp9[1] : 0.0f));
+            /* ★ 2026-10-16 **只读诊断**（定案"看不见"= 画在哪/画成什么样 ✓；13:26 日志已排除
+             *   生成/VM/存活/贴图/寿命/坐标/POC ✓）：★ 打 **VM 自己**的 `0x5f0` 实体坐标（`ce_anm_set_pos`
+             *   写进去的 ✓）、`+0x30` ExpHP 前缀坐标（**绘制点** ✓）、`scale`、`color1`（含 α ✓）、`sprite` ✓。
+             *   ★ 判读：★ 绘制点 ≠ 实体坐标 ⇒ **写错字段/空间** ✗（画到 (0,0) 角落 ✓）；★ 都对但 `scale≈0`
+             *   或 α≈0 ⇒ **脚本 423 参数** ✗；★ 都对却看不见 ⇒ **层/列表** ✗（13 ⇄ 6 ✓）。*/
+            if (first_vm) {
+                uint8_t *v5 = ce_anm_get_vm((uint32_t)first_vm);
+                if (v5) {
+                    const float *vent  = (const float *)(v5 + CE_ANM_VM_POS);
+                    const float *vdraw = (const float *)(v5 + 0x30);
+                    const float  sc5   = *(const float *)(v5 + CE_ANM_VM_SCALE);
+                    const uint32_t c15 = *(const uint32_t *)(v5 + CE_ANM_VM_COLOR1);
+                    const int32_t sp5  = *(const int32_t *)(v5 + CE_ANM_VM_SPRITE_ID);
+                    ce_log("pofv: [ITEMVM] set=(%.0f,%.0f) vm_ent=(%.0f,%.0f) vm_draw=(%.0f,%.0f)"
+                           " scale=%.3f c1=%08x spr=%d",
+                           (double)ix, (double)iy,
+                           (double)vent[0], (double)vent[1],
+                           (double)vdraw[0], (double)vdraw[1],
+                           (double)sc5, (unsigned)c15, (int)sp5);
+                }
+            }
+            /* ★ 2026-10-16（owner：「就是被瞬间吃了！」✓，并明确排除"12 px / POC 线"✗）：
+             *   ★ 排除 12 px 是对的 ✓（那支只吃 12 px 内 ✓，够不到结界边缘 ✗）；
+             *   ★ 而 **POC 那一支没有半径** ✗（`pofv_core.c`：`if (player[1] < poc_y)` ⇒ 全屏收 ✓）
+             *   ⇒ ★ 它是"远处也被吃"的头号嫌疑 ✓ ⇒ ★ 本行同时打 `poc_y` 与自机 y ✓：
+             *   ★ 若正常游玩时 `pl_y < poc_y` 成立 ⇒ ★ 那一支**每帧把全场道具全收走** ✓✓ 就是元凶 ✓
+             *   （届时按一手核 POC 的判据与坐标方向 ✓，再改那一处 ✓）。*/
+        }
+        /* ★ 2026-10-16 **槽位含义**（`pofv_core.h:519-525` ✓）：`0 = CANCEL`（消弹）✓、
+         *   ★ `1 = KILL`（击破敌人）✓、★ `2 = AURA`（**固灵结界碰弹** ✓ —— owner 关心的那条 ✓）、
+         *   ★ `3 = REIGEKI`（霊撃）✓ ⇒ ★ 名字直接打进日志 ✓，不再让人对裸数字 ✓。*/
     }
 }
 
@@ -3743,10 +3904,8 @@ static void pofv_c1_tick(void)
  * ❓自定 / 存疑（逐条进 `TUNING.md`）：
  *   ① **档位** = `POFV_C3_LEVEL_DEFAULT`(=1)：一手档位是**每局按难度**取常数（§10.2 实测 `∈{1,3}`）✗
  *      本卡没有那个量 ⇒ 先固定档 1（⇒ `$D=1`、`$C=8`、wait=60 ✓）；
- *   ② **伤害值** = `POFV_C3_HIT_DMG`：一手 `ExtraAttack` 这一段**没给伤害** ✗ ⇒ 暂借 C1 的一手口径
+ *   ② **伤害值** = `POFV_C3_HIT_DMG`(=14)：一手 `ExtraAttack` 这一段**没给伤害** ✗ ⇒ 借 C1 的一手口径
  *      （灵梦本体主炮 = **14** ✓，`HANDOFF-109-C1-C4.md` §3.7）；
- *      ★ 2026-10-15（owner 拍板 ✓）：「**C3 伤害暂时是 1，具体数值再调**」⇒ 本宏现值 = **1** ✓
- *        （见宏定义处的 ★★★★★ 注释 ✓）。⚠ 上面那行"(=14)"是**过期**写法 ✗。
  *   ③ **`%B = [-9888.0f]`** 未定位（一手只用在**加速度系数**上，用法像 0..1 归一化标量）
  *      ⇒ 取 **0.0** ✓（§10.5）⇒ 加速率 = `0.01f` ✓；
  *   ④ **观感** = 现成脚本 **396**（= C1/C2 的占位同款；**不新切贴图 / 不动 `ORDER.txt`** ✗）；
@@ -4056,7 +4215,9 @@ static void pofv_c3_tick(void)
             {   const float *pp3r = ce_player_pos();
                 pos[0] = pp3r ? pp3r[0] : 0.0f; pos[1] = pp3r ? pp3r[1] : 128.0f; }
             pos[2] = 0.0f;
-            (void)c2_cancel_drop(pos, r);
+            /* ★ 2026-10-16 删除（owner：「那个突兀的自造函数杀掉，全部走 CA 的那个函数」✓）：
+             *   原来这里是那个**自造函数的调用** ✗ —— 一手那支 CA 环
+             *   （`pofv_ca_ring_tick()` ✓）负责消弹与撒道具 ✓。*/
             pofv_eb_ring_sync(&s_c3.ring_vm, r);
         }
         ++s_c3.eb;
@@ -4209,7 +4370,13 @@ static void pofv_c3_tick(void)
                      *   ★ 否则在半径里**每帧喷火花** ✗（★ 先例的节拍就是 10 ✓）。
                      *   ★ ⚠ ★ 本锚点**同时命中 C3 与 C4 两处** ✓（★ 两段代码相同 ✓）⇒ ★ 一次改齐 ✓，
                      *   ★ 与 owner「★ C4 也改一样的」✓ 一致 ✓；★ **彩弹（457/459）不在本锚点内** ✗ ✓。*/
-                    if ((b->age % 10) == 0) pofv_spark_spawn(b->x, b->y);
+                    /* ★★★★★ 2026-10-16（★ owner：「★ **C4 的弹幕碰到敌方**会出现一帧像"敌弹碰自机消弹"的特效 ⇒
+                     *   ★ **那个不想要了**」✓）：★ 本行**停用** ✗ —— ★ 原为 `pofv_spark_spawn(b->x, b->y)` ✓
+                     *   （★ = 本卡脚本 431 ✓，★ 一手 `bullet.anm` **script163** 的 `effect/etbreak.png` ✓
+                     *   ★ ⇒ ★ 与引擎"弹被消掉"时播的**是同一张图** ✓，★ 所以看着就像消弹特效 ✓）。
+                     *   ★ 只停"命中火花" ✗：★ 伤害 / 无限穿透 / 10 帧节拍 / 消弹路径（`cancel_white_in_circle`）
+                     *   ★ **全部不动** ✓；★ `pofv_spark_spawn` 本体仍被消弹路径（`:1789` ✓）使用 ✓。*/
+                    /* if ((b->age % 10) == 0) pofv_spark_spawn(b->x, b->y); */
                 }
             }
             if (!b->live) continue;      /* ★ 命中了 ⇒ 本颗到此为止 ✓ */
@@ -4248,6 +4415,27 @@ static void pofv_c3_tick(void)
 #define POFV_C3_THRESH          1700.0f
 /* ★★ 一手 ✓ C4 门槛 = **2500**（= `S+0x38` × 10 ✓）—— ★ 它**恰好等于灵力满值** ✓ ⇒
  *   ★ 只有**灵力吸满**才够得着 C4 ✓（这正是 owner 定的「**灵力 = 蓄力上限**」的字面意思 ✓）。*/
+/* ★ 2026-10-15：★ C4 期间挂在**自机身上**的两件 boss 观感件（脚本 461 = 原生 `effect.anm` script105
+ *   的魔法阵 ✓ / 脚本 462 = 原生 `enemy.anm` script107 的红雾 ✓）★ —— ★ 句柄放**文件作用域** ✗
+ *   （不是函数内静态 ✗）：★ 铁律要求删卡/换局那条路（`pofv_c4_clear()` ⇒ `on_delete`）也能收干净 ✓。*/
+static int32_t s_c4_magic_vm, s_c4_aura_vm, s_c4_fog_vm;
+/* ★ 2026-10-16：★ C4 剩余时间计时器那台**文字 VM** 的句柄也提到文件作用域 ✓ ——
+ *   原来它是 C4 tick 里的**函数内静态** ✗ ⇒ ★ `pofv_c4_clear()`（删卡/换局，以及新增的
+ *   "对话强制退 C4"那条路 ✓）**看不到它** ✗ ⇒ 计时器文字会留在屏幕上 ✗（铁律违规 ✓）。*/
+static ce_hud_vm_text_t s_c4_timer_txt;
+/* ★ 2026-10-15：★ **ECL opcode 629 `fog` 的两个字段**（一手 ✓，见 `engine/enemy/th18/07-boss-aura-mesh.md` §9.31）：
+ *   · 处理器 `0x435fe0`（629 的 case ✓）读 `(float, int)` ⇒ ★ `enemy+0x5594` = **半径** ✓、
+ *     `enemy+0x559c` = **颜色** ✓（`enemy+0x5598 = 16.0f` ✓ 本卡不用）；
+ *   · ECL 里的一手值：★ 道中 `st01mbs` `fog(128.0f, 8421631)` ⇒ `0x8080FF` = **R128 G128 B255 深蓝** ✓、
+ *     半径 **128** ✓；★ 关底 `st01bs` `fog(160.0f, 15732608)` ⇒ `0xF00F80` = **R240 G15 B128 深红** ✓、
+ *     半径 **160** ✓ ⇒ ★ 颜色格式就是 `0xRRGGBB` ✓（与本卡 `ce_anm_set_color` 的 `0xAARRGGBB` 同序 ✓
+ *     ⇒ 读出来直接 `| 0xFF000000` 即可 ✓，**不用换通道** ✓）。
+ *   · ★ 尺度：本卡的羽化圆贴图 256×256 **直径**代表 fog 直径 256（= 半径 128 那档 ✓）⇒ `scale = R / 128` ✓。*/
+#define POFV_C4_FOG_R_OFF      0x5594
+#define POFV_C4_FOG_C_OFF      0x559c
+#define POFV_C4_FOG_REF_R      128.0f        /* ★ 半径基准（道中那档 ✓）*/
+#define POFV_C4_FOG_FALLBACK_R 160.0f        /* ★ 读不到时的兜底 = 关底那档（深红 160 ✓）*/
+#define POFV_C4_FOG_FALLBACK_C 0x00F00F80u   /* ★ 关底颜色 `0xF00F80` ✓（R240 G15 B128 ✓）*/
 #define POFV_C4_THRESH         2500.0f
 #define POFV_BARRIER_R          40.0f
 /* ★★ 2026-10-10 owner 实跑订正：「半径上感觉**大了 1.5 倍**」✗ —— 真因 = 外层曾写
@@ -4609,6 +4797,15 @@ static void pofv_c4_clear(void)
         if (s_c4_b[k].vm) { ce_anm_delete((uint32_t)s_c4_b[k].vm); s_c4_b[k].vm = 0; }
         s_c4_b[k].live = 0; s_c4_b[k].age = 0;
     }
+    /* ★ 2026-10-15（铁律）：★ C4 期间挂在自机身上的两件 boss 观感件（脚本 461/462 ✓）**也必须在这里收** ✗
+     *   —— 删卡 / 换局走 `pofv_c4_clear()` ✓（AbilityManager 冻住时只有 `on_delete` 跑得到 ✓）★ ⇒
+     *   ★ 无条件探活再删 ✓（脚本可能已自删 ⇒ 不能盲删 ✓）。*/
+    if (s_c4_magic_vm) { if (ce_anm_get_vm((uint32_t)s_c4_magic_vm)) ce_anm_delete((uint32_t)s_c4_magic_vm); s_c4_magic_vm = 0; }
+    if (s_c4_aura_vm)  { if (ce_anm_get_vm((uint32_t)s_c4_aura_vm))  ce_anm_delete((uint32_t)s_c4_aura_vm);  s_c4_aura_vm  = 0; }
+    if (s_c4_fog_vm)   { if (ce_anm_get_vm((uint32_t)s_c4_fog_vm))   ce_anm_delete((uint32_t)s_c4_fog_vm);   s_c4_fog_vm   = 0; }
+    ce_hud_vm_text_clear(&s_c4_timer_txt);   /* ★ 2026-10-16：C4 计时器的**文字 VM** 也在这里收 ✓
+                                              *   （原来只在"最后一帧"收 ✗ ⇒ 强制退 C4（对话那条 ✓）
+                                              *   与删卡/换局（本函数 ✓）这两条路都会留残影 ✗）。*/
     s_c4.timer = 0; s_c4.emitted = 0; s_c4.dir = 1; s_c4.live = 0; s_c4.base = 0.0f; s_c4.sweep = 0;
 }
 
@@ -4713,11 +4910,28 @@ static void pofv_c4s_emit(float ang, float spd)
          *    ⚠ 方向那半**还没改** ✗：★ 现在仍由调用者 `pofv_c4s_fire()` 传进来的 `ang` 决定 ✓，
          *    ★ 下一轮翻成"向上" ✓（★ 一次一样 ✓，★ 账里已写 ✓）。*/
         s_c4_b[k].x = pp ? pp[0] : 0.0f;
-        s_c4_b[k].y = POFV_FIELD_H;            /* ★ 版底 ✓（owner 定 ✓）*/
+        /* ★★★★★ 2026-10-16 **按 owner 最新口径翻正**（一级证据 ✓）：
+         *   ★「★ **早苗 C4 是从天上下雨，全部 x 范围都在"顺溜"地往下下雨**」✓
+         *   ⇒ ★ 出生点 = ★ **"天"上方** ✓：★ 本卡 y 向下增（`y=0` 是顶 ✓、`y=POFV_FIELD_H` 是底 ✓）
+         *     ⇒ ★ 取 **顶外一点负值** ✓，让它**从顶外落进来** ✓（★ 不是原来的版底 ✗）。
+         *   ⚠ ★ 旧口径「从版底往上发」✗ ★ **作废** ✓（★ 那是镜像前的写法 ✓，★ 现已按 owner 口述翻正 ✓）。*/
+        s_c4_b[k].y = -16.0f;
     }
     s_c4_b[k].live = 1; s_c4_b[k].age = 0; s_c4_b[k].bounced = 0;
     s_c4_b[k].ang = ang; s_c4_b[k].spd = spd;
-    s_c4_b[k].vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), POFV_C_RING_SCRIPT, POFV_C4_VM_LAYER);
+    /* ★★★★★ 2026-10-16 **owner：「必须核出来早苗 C3 和 C4 的外观」✓ —— 她 C4 的外观在这里收口 ✓**：
+     *   ★ 一手：`_ext/ecl/pl02.txt:178 Boss00BossCard1_at()` 的 `ins_602($A, $B, $C)` ✓
+     *   ★ ⇒ 按"**全局 sprite 序号**"读法（★ 已由 `sprite38`／`sprite351` 两次互证 ✓）：
+     *     ★ `sprite16` = `bullet.anm.txt:33` `{ x: 0, y: 192, w: 8, h: 8 }` ✓（8×8 点 ✓）
+     *     ⇒ ★ 素材 `assets/ability/POFV109_C4S_BULLET.png` ✓ ＋ 脚本 **467** ✓（已生成宏 ✓）。
+     *   ★ 本行 = ★ **这台 VM 是"早苗 C4 专用"** ✓（★ `s_c4_b[]` 全卡只有 `pofv_c4s_fire()` 在用 ✓，
+     *   即紧随本块之后的那个函数 ✓）⇒ ★ 所以**直接换掉**即可、**不需要按角色分岔** ✓。
+     *   ⚠ ★ 未改的（如实标 ✗）：★ 出生点/方向的"翻正"（本块上面那段注释的 ❓ 项 ✓）——
+     *   那属于**另一个口径**（旧口述"从版底往上"✗ vs 现口述"从天下雨"✓），★ **本笔不动** ✗，
+     *   ★ 留待与 owner 对口径后单独一笔 ✓（一次一样 ✓）。*/
+    s_c4_b[k].vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
+                                         CE_ANM_ABILITY_SCRIPT_POFV109_C4S_BULLET,
+                                         POFV_C4_VM_LAYER);
     if (s_c4_b[k].vm) {
         ce_anm_set_color((uint32_t)s_c4_b[k].vm, 0xffffffffu);
         ce_anm_set_scale((uint32_t)s_c4_b[k].vm, 0.5f, 0.5f);
@@ -4729,8 +4943,11 @@ static void pofv_c4s_fire(void)
     s_c4s.active = 1;
     s_c4s.timer = -POFV_C4_PRE_WAIT;                 /* ★ 一手 ✓ `ins_23(60)`：先等 60 帧再发 ✓ */
     s_c4s.wait  = s_c4s_wait_tab[pofv_c4_rank()];    /* ★ 一手 ✓ 8 档 wait ✓ */
-    s_c4s.tgt   = -1.5707963f;                       /* ★ 目标角 −π/2 = **朝上（背对我）** ✓（模型 ④ ✓）*/
-    s_c4s.aim   = 1.5707963f + 1.5707963f * ((float)(ce_rand() % 1024u) / 1024.0f);  /* ★ 一手 ✓ 初始角 [π/2, π] ✓ */
+    /* ★ 2026-10-16 **按 owner 最新口径翻正** ✓：★「早苗 C4 是从天上下雨…顺溜地往下」✓
+     *   ⇒ ★ 目标角 = **+π/2 = 朝下（朝我）** ✓（★ 原来 −π/2 = 朝上 ✗ = 镜像前的口径 ✓）*/
+    s_c4s.tgt   = 1.5707963f;
+    /* ★ 初始角 = ★ **向下半圈内的随机** ✓（★ 镜像：原来 `π/2 + (π/2)·rand` ∈ [π/2, π] ✗）*/
+    s_c4s.aim   = 1.5707963f - 1.5707963f * ((float)(ce_rand() % 1024u) / 1024.0f);
 }
 
 static void pofv_c4s_tick(void)
@@ -4761,6 +4978,41 @@ static void pofv_c4s_tick(void)
     if (s_c4s.timer > 3600) s_c4s.active = 0;        /* ★ 一手是无限循环 ✓；本卡给个上限 ❓ ✓ */
 }
 
+/* ★★★★★ 2026-10-16 ★★★ **C4 通用件（owner 明确要求"务必抽出一个通用函数"✓）** ★★★
+ *   owner 原话：「★ **计时脚本是通用的，包括红色魔法阵和霸气，是 C4 通用的**」✓
+ *            ＋「★ **包括咲夜尚未开始做的 C4 也是有计时、红色魔法阵、霸气**」✓
+ *            ＋「★ **请务必抽出一个通用函数**」✓
+ *
+ *   ★ 本函数 = ★ **全角色 C4 共用的一套装饰**（★ 与角色无关 ✓：跟的是**自机位置** ✓、层固定 6 ✓）：
+ *     · ★ **红色魔法阵**（脚本 461 `POFV109_MAGICSQUARE` ✓，句柄 `s_c4_magic_vm` ✓）
+ *     · ★ **霸气**（脚本 462 `POFV109_BOSS_AURA_RED` ✓，句柄 `s_c4_aura_vm` ✓）
+ *     · ★ **羽化圆**（脚本 463 ✓，句柄 `s_c4_fog_vm` ✓，本函数只负责按 C4 结束同帧收掉 ✓）
+ *     · ★ **计时**由 `s_c4.timer` / `POFV_C4_DURATION` 给出（★ 计时文字 VM `s_c4_timer_txt` ✓
+ *       是 HUD 列表的另一支，句柄已在**文件作用域** ✓ ⇒ `pofv_c4_clear()` 也看得到 ✓，铁律满足 ✓）。
+ *   ★ **咲夜将来的 C4 只要走 `pofv_c4_tick()` 就自动有这三件** ✓ —— ★ 不需要各写一遍 ✓。
+ *   ★ 收尾三条路都覆盖 ✓：★ ① C4 末帧（本函数内 `ce_anm_delete` ✓）② 删卡/换局（`pofv_c4_clear()` ✓）
+ *     ★ ③ 角色被换（同一支 `pofv_c4_clear()` ✓）。
+ *   ⚠ ★ 行为与抽出前**一字不改** ✓（★ 只是把原来那个匿名块命名 ✓）。*/
+static void pofv_c4_common_decor_tick(void)
+{
+    const float *pp4 = ce_player_pos();
+    if (!s_c4_magic_vm)
+        s_c4_magic_vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
+                            CE_ANM_ABILITY_SCRIPT_POFV109_MAGICSQUARE, 6);
+    if (!s_c4_aura_vm)
+        s_c4_aura_vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
+                            CE_ANM_ABILITY_SCRIPT_POFV109_BOSS_AURA_RED, 6);
+    if (pp4) {
+        if (s_c4_magic_vm) vm_set_world_pos((uint32_t)s_c4_magic_vm, pp4[0], pp4[1]);
+        if (s_c4_aura_vm)  vm_set_world_pos((uint32_t)s_c4_aura_vm,  pp4[0], pp4[1]);
+    }
+    if (s_c4.timer + 1 >= POFV_C4_DURATION) {   /* ★ 最后一帧：同帧收掉三台 ✓ */
+        if (s_c4_magic_vm) { ce_anm_delete((uint32_t)s_c4_magic_vm); s_c4_magic_vm = 0; }
+        if (s_c4_aura_vm)  { ce_anm_delete((uint32_t)s_c4_aura_vm);  s_c4_aura_vm  = 0; }
+        if (s_c4_fog_vm)   { ce_anm_delete((uint32_t)s_c4_fog_vm);   s_c4_fog_vm   = 0; }
+    }
+}
+
 static void pofv_c4_tick(void)
 {
     /* ★★ 一手 `Ecl_EtBreak`（§5.1 ✓）：**每帧一档**、共 POFV_EB_LV4_FRAMES 帧 ⇒ 消弹 + 撒道具 + 范围圈 ✓
@@ -4777,7 +5029,9 @@ static void pofv_c4_tick(void)
             {   const float *pp4r = ce_player_pos();
                 pos[0] = pp4r ? pp4r[0] : 0.0f; pos[1] = pp4r ? pp4r[1] : 128.0f; }
             pos[2] = 0.0f;
-            (void)c2_cancel_drop(pos, r);
+            /* ★ 2026-10-16 删除（owner：「那个突兀的自造函数杀掉，全部走 CA 的那个函数」✓）：
+             *   原来这里是那个**自造函数的调用** ✗ —— 一手那支 CA 环
+             *   （`pofv_ca_ring_tick()` ✓）负责消弹与撒道具 ✓。*/
             pofv_eb_ring_sync(&s_c4.ring_vm, r);
         }
         ++s_c4.eb;
@@ -4815,6 +5069,183 @@ static void pofv_c4_tick(void)
                        s_c4.base += POFV_C4_BASE_SPIN;
                        if (s_c4.timer >= POFV_C4_DURATION) s_c4.live = 0; }
             }
+        }
+        /* ★★★★★ 2026-10-15（owner：「敌人 boss 符卡时**版顶正中心**有一个还剩多少时间的计时器
+         *   ⇒ **C4 要在版底做一个一样的**，指示 C4 的剩余时间」✓；并说「完全不涉及切图、肯定是原生」✓）
+         *   —— ★ **照原生符卡计时器落** ✓，一手出处：
+         *   · 位置/字：`AUDIT.md` §AI（反 `zGui__on_draw 0x43cd00`）＝ ★ 符卡计时在
+         *     **`(224, 144/150/160/166)`**（640 空间 ✓）、**font 4 group 2**、表里注明"**随 VM**" ✓；
+         *     双空间版见 `HUD-LAYOUT.md:56`：640 `(224,144)` ＝ 表面 `(448,288)` ✓（×2 关系，与卡侧
+         *     `POFV_HUD_SURF_X/Y` 同源 ✓）。
+         *   · 格式：该字体支持 `'.'`（4 px ✓，`sdk.h:806` ✓）＋ `NEXT.md:1792` 的「同帧符卡计时 **00.00**」
+         *     ⇒ ★ 显示 **`秒.帧`** ✓（主数字那块 + `'.'`）。
+         *   · 通道：★ 走 **原生 HUD 文字 API** ✓ `ce_hud_vm_text_set_font()`（`sdk.h:820` ✓），
+         *     收 **640×480 空间**的点（`sdk.h:1219` ✓，引擎内部自己 ×倍率 ✓）⇒ 不切图、不自画数字 ✓。
+         *   ★ **版底镜像**：版顶那条在 640 空间 y=144（= 场地顶 16 + 128 ✓）⇒ 版底取
+         *     **场地底 464 − 128 = 336** ✓、x 仍取**游玩区正中 224** ✓ ⇒ `(224, 336)` ✓。
+         *   ★ 内容：剩余 = `POFV_C4_DURATION(1800, 一手 ✓) − s_c4.timer` ✓ ⇒ 秒 = /60、帧 = %60 ✓。
+         *   ★ 收尾：C4 最后一帧（本块的 `s_c4.live = 0` 同帧）就清掉 ✓（`on_delete` 另有 `pofv_c4_clear`，
+         *     这里用函数内静态句柄 + 同帧清 ⇒ 不会有残留 ✓）。*/
+        {
+            /* ★ 2026-10-16：句柄已提到**文件作用域** ✓（`s_c4_timer_txt` ✓）⇒ 这里不再重复声明 ✗
+             *   —— 目的：让"对话强制退 C4"与 `pofv_c4_clear()` 也收得到它 ✓（铁律 ✓）。*/
+            const int32_t rf = POFV_C4_DURATION - s_c4.timer;
+            const int32_t rr = (rf > 0) ? rf : 0;
+            int32_t sec = rr / 60, frm = rr % 60;
+            char tb[8];
+            if (sec > 99) sec = 99;                    /* 两位数（与 00.00 同形 ✓）*/
+            tb[0] = (char)('0' + (sec / 10) % 10);
+            tb[1] = (char)('0' + (sec % 10));
+            tb[2] = '.';
+            tb[3] = (char)('0' + (frm / 10) % 10);
+            tb[4] = (char)('0' + (frm % 10));
+            tb[5] = 0;
+            /* ★ 2026-10-16 **A2 起不用我们自己的文字 VM 了** ✗ —— 计时器改由 `on_draw` 用**原生 ascii**
+             *   （`font 4 group 2` ✓，见那边那一大段注释 ✓）⇒ 这里**只保留字符串拼装**（供日志/降级用 ✓）
+             *   与"最后一帧清 VM"（句柄已空 ⇒ 无操作 ✓），不再调 `ce_hud_vm_text_set_font` ✓
+             *   （否则会**双份显示** ✗：我们的 VM 一份 ＋ 原生一份 ✓）。*/
+            (void)tb;
+            if (s_c4.timer + 1 >= POFV_C4_DURATION)     /* ★ 最后一帧：同帧清掉 ✓ */
+                ce_hud_vm_text_clear(&s_c4_timer_txt);
+        }
+        /* ★★★★★ 2026-10-15（owner：「★ **在 C4 期间要模仿 boss**」✓ + 「★ **这个是 th18 自己就有的
+         *   effect**」✓ + 「★ **我只是让你"复制粘贴"到自机身上**」✓）—— ★ **把 TH18 原生那两件原样
+         *   挂到自机身上** ✓（只在 C4 期间 ✓）：
+         *   · ★ 红色旋转魔法阵 = ★ 脚本 **461**（= 原生 `effect.anm` **script105** 的 1:1 ✓，
+         *     贴图 = 原生 `effect/eff_magicsquare.png` 256×256 ✓）；
+         *   · ★ 那圈红雾/红光 = ★ 脚本 **462**（= 原生 `enemy.anm` **script107** 的 1:1 ✓，
+         *     sprite152–159 = `enemy/enemy_aura.png` 8 帧 ✓）。
+         *   ★ 层：★ 走**原生 `layer(6)`** ✓（脚本自己写 ✓；本卡 layer 6 实测可用 ✓ ——
+         *     罩子内层 `POFV_BARRIER_VM_LAYER_DISC`/暴风都用它 ✓）；★ 伴随 `script106`（炸开收尾）
+         *     **先不做** ✗（owner 没要）。
+         *   ★ 挂载方式 = ★ **本卡现成写法** ✓（同 `:8761` 那三台破罩爆发 VM ✓）：
+         *     `ce_anm_spawn(CE_ABILITY_ANM(), 脚本, 6)` ＋ ★ 每帧 `vm_set_world_pos(..., 自机)` ✓
+         *     ＝ ★ owner 的"复制粘贴到自机身上" ✓。
+         *   ⚠ 句柄是**函数内静态**（持久 ✓，本轮不新增文件级声明 ✓）；★ 收尾：★ C4 最后一帧
+         *     与本块同帧 `ce_anm_delete` ✓；★ 删卡 / 换局那条路另由 `pofv_c4_clear()` 收 ✓
+         *     （句柄已在**文件作用域** ✓ ⇒ 那一侧看得到 ✓，铁律满足 ✓）。*/
+        pofv_c4_common_decor_tick();   /* ★ C4 通用件（计时/红魔法阵/霸气 ✓）—— 定义见本文件上方 ✓ */
+        /* ★★★★★ 2026-10-15（owner：「★ 一手 boss 还有一个现在看清似乎是**深蓝色**的"**霸气**"，
+         *   **大小跟魔法阵差不多**」✓ + 「★ **就是按照那个 ecl 来做，只做这个羽化的圆**」✓ +
+         *   「★ **按照所处的状态，道中深蓝，boss 深红来做**」✓）—— ★ **第三件 = ECL opcode 629 `fog`
+         *   的那个羽化圆** ✓（脚本 463 ✓ = 一支自烤径向渐变的圆 ✓；一手出处与字段见上面那两个宏 ✓）。
+         *   ★ **半径与颜色不写死** ✗ —— ★ **每帧从当前敌机读** `enemy+0x5594`/`+0x559c` ✓
+         *   ⇒ ★ 道中自动深蓝 128、关底自动深红 160 ✓（= owner 的"按所处状态" ✓）。
+         *   ★ 取法：★ 遍历全场敌机、**取半径最大那台** ✓（关底在场时压过道中 ✓；多 boss 也稳 ✓）。
+         *   ★ 读不到（无敌机 / 两字段都是 0 ⇒ ECL 这帧没调 `fog`）⇒ ★ 退回**上次读到的值**（静态 ✓、
+         *   从 0 起 ⇒ 第一次就有值时就固定 ✓）；★ 再没有就用关底那套（深红 160 ✓）。
+         *   ⚠ ❓ 待实跑校准（登记 TUNING）：VE 与贴图的**尺度关系**（`scale = R / 128` 是"贴图直径 256
+         *   = fog 直径 256"的直读 ✓，但 VM 空间的倍率若与推测不同，就是这一个数要改 ✓）。*/
+        {
+            static float s_fog_r_last;
+            static uint32_t s_fog_c_last;
+            float best_r = 0.0f;
+            uint32_t best_c = 0;
+            uint8_t *em3;
+            uint8_t *e3;
+            /* ★ 2026-10-16 **崩溃修复** ✗：★ 原来在这里用 `CE_ENEMY_FOREACH` 全场遍历读
+             *   `enemy+0x5594` ✗ ⇒ ★ **实跑崩了** ✓（日志停在 `[REL] tier=4` 之后的 `[BARRIER]`
+             *   那几帧 ⇒ 崩点就是本块 ✓；全场结点并非都够长 ⇒ 越界读 ✗）。
+             *   ⇒ ★ 改成只对**引擎认定的 boss** 读 ✓：`CE_ENEMY_MGR() + CE_EM_BOSS_IDS`（`int[4]` ✓）
+             *   ＋ `ce_enemy_by_id()`（`sdk.h:617` ✓ —— 注释写明它照 `get_boss_enemy_full 0x4237f0`
+             *   且带 guard ✓）★ ⇒ 不再扫非 boss 结点 ✓。*/
+            {
+                uint8_t *em3 = CE_ENEMY_MGR();
+                if (em3) {
+                    const int32_t *bids = (const int32_t *)(em3 + CE_EM_BOSS_IDS);
+                    int bi;
+                    for (bi = 0; bi < 4; ++bi) {
+                        uint8_t *e3;
+                        /* ★ 2026-10-16 **只读诊断**（owner：「道中还是红的」✗ + 「ECL 应该有现在是什么的线索」✓）：
+                         *   `[FOG]` 恒读到 0 ⇒ 先分清"槽里本来就没 id / id 语义我猜错" ✓
+                         *   ⇒ ★ 每 120 帧打一次**四个槽的原始 id** ✓（只在 bi == 0 那一轮 ✓，不刷屏 ✓）。*/
+                        if (bi == 0) {
+                            static int32_t s_fogid_t;
+                            if (++s_fogid_t >= 120) {
+                                s_fogid_t = 0;
+                                ce_log("pofv: [FOGID] slots=%d/%d/%d/%d",
+                                       (int)bids[0], (int)bids[1], (int)bids[2], (int)bids[3]);
+                            }
+                        }
+                        if (bids[bi] <= 0) continue;
+                        e3 = ce_enemy_by_id(em3, bids[bi]);
+                        /* ★ 2026-10-16 只读诊断（`[FOGID] slots=177/0/0/0` ✓ 但 `[FOG] best_r=0` ✗）：
+                         *   ★ 有 id ⇒ 把这一步再切开：★ **查表有没有命中** ＋ **命中那台的字段值** ✓
+                         *   （★ 命中且 `r=128/160` ⇒ 那就通了 ✓；★ 命中但 `r=0` ⇒ 字段位置/时机不对 ✗；
+                         *    ★ 没命中 ⇒ `ce_enemy_by_id` 与 boss 槽的 id 语义不同 ✗ ⇒ 换查法 ✓）。*/
+                        if (bi == 0 && e3) {
+                            static int32_t s_foghit_t;
+                            if (++s_foghit_t >= 120) {
+                                s_foghit_t = 0;
+                                ce_log("pofv: [FOGHIT] id=%d e=%p r=%.1f c=0x%06X",
+                                       (int)bids[0], (void *)e3,
+                                       (double)*(const float *)(e3 + POFV_C4_FOG_R_OFF),
+                                       (unsigned)(*(const uint32_t *)(e3 + POFV_C4_FOG_C_OFF) & 0xFFFFFFu));
+                            }
+                        }
+                        if (!e3) continue;
+                        {
+                            const float rr = *(const float *)(e3 + POFV_C4_FOG_R_OFF);
+                            if (rr > best_r) { best_r = rr; best_c = *(const uint32_t *)(e3 + POFV_C4_FOG_C_OFF); }
+                        }
+                    }
+                }
+            }
+            if (best_r > 0.0f) { s_fog_r_last = best_r; s_fog_c_last = best_c; }
+            else if (s_fog_r_last <= 0.0f) { s_fog_r_last = POFV_C4_FOG_FALLBACK_R; s_fog_c_last = POFV_C4_FOG_FALLBACK_C; }
+            /* ★ 2026-10-16 **只读诊断**（owner：「道中是红的」✗ ⇒ 与一手"道中深蓝 128 / 关底深红 160"不符）：
+             *   ★ 每 120 帧打一行 ⇒ ★ 一次实跑就能分清是"**读到 0**（⇒ 走兜底 160 深红 ✓）"
+             *   还是"**读到红**（⇒ 我挑 boss 槽/挑目标的规则不对 ✓）"。★ 不改行为 ✓，定位完删 ✓。*/
+            {
+                static int32_t s_fog_log_t;
+                if (++s_fog_log_t >= 120) {
+                    s_fog_log_t = 0;
+                    ce_log("pofv: [FOG] best_r=%.1f best_c=0x%06X last_r=%.1f last_c=0x%06X",
+                           (double)best_r, (unsigned)(best_c & 0xFFFFFFu),
+                           (double)s_fog_r_last, (unsigned)(s_fog_c_last & 0xFFFFFFu));
+                }
+            }
+            if (!s_c4_fog_vm)
+                s_c4_fog_vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
+                                  CE_ANM_ABILITY_SCRIPT_POFV109_FOG_CIRCLE, 6);
+            {
+                const float *pp6 = ce_player_pos();
+                if (s_c4_fog_vm && pp6) vm_set_world_pos((uint32_t)s_c4_fog_vm, pp6[0], pp6[1]);
+            }
+            if (s_c4_fog_vm) {
+                const float k6 = s_fog_r_last / POFV_C4_FOG_REF_R;
+                ce_anm_set_scale((uint32_t)s_c4_fog_vm, k6, k6);
+                ce_anm_set_color((uint32_t)s_c4_fog_vm, 0xFF000000u | (s_fog_c_last & 0x00FFFFFFu));
+            }
+            if (s_c4.timer + 1 >= POFV_C4_DURATION) {   /* ★ 最后一帧：同帧收掉 ✓ */
+                if (s_c4_fog_vm) { ce_anm_delete((uint32_t)s_c4_fog_vm); s_c4_fog_vm = 0; }
+            }
+        }
+        /* ★★★★★ 2026-10-16 **新需求（owner）**：「★ **对话期间强制退出 C4，返还
+         *   (C4−C1) × 未消耗时长 / C4总时长**」✓ —— ★ 复刻来源 = ★ **本仓 112 卡（飞碟 token）**
+         *   已经在用的同一判据 ✓（`CE_GUI_MSG_ACTIVE()` ✓，`engine.h:386`：`zGui.msg`（`+0x1b0`）
+         *   非 0 ＝ 对话中 ✓；112 的用法见 `cards/ufo.c:6032` ✓）⇒ ★ 不自己写偏移 ✓。
+         *   ★ 落地：★ ① 算 `remaining = POFV_C4_DURATION(1800) − s_c4.timer` ✓；
+         *   ★ ② `refund = (POFV_C4_THRESH(2500) − POFV_C1_THRESH(500)) × remaining / 1800` ✓
+         *   ⇒ ★ 乘进 `s_aura_charge` ✓（蓄力那一栏 ✓，与 `:7052` 的累加同一条 ✓）；
+         *   ★ ③ 清掉计时器文字 ✓ ＋ ★ 走 `pofv_c4_clear()` ✓（它收环/暴风/三件观感件 ✓）
+         *   ⇒ ★ 一条路收干净 ✓（含 `on_delete` 那条 ✓，因为都汇到 `pofv_c4_clear()` ✓）。
+         *   ⚠ ★ **一手差异（如实登记）**：`engine/spirit/th13/04-dialogue-and-gauge-refund.md` 的实测
+         *   是「**等比返还不成立** ✓，一手是在槽上**减一个固定 200**（= 一整格 ✓，
+         *   `th13:0x405cdd`）」✗ ⇒ ★ 本卡按 **owner 口径的比例式** ✓（差异记 `TUNING.md` ✓）。
+         *   ⚠ 位置：★ 放在本块**最后**（`++s_c4.timer` 之前 ✓）⇒ ★ 观感件先按常规起/刷一帧 ✓
+         *   再被收掉 ✓（不会留半帧残留 ✓）。*/
+        if (CE_GUI_MSG_ACTIVE()) {
+            const int32_t rem4 = POFV_C4_DURATION - s_c4.timer;
+            if (rem4 > 0) {
+                const float refund = (POFV_C4_THRESH - POFV_C1_THRESH)
+                                     * ((float)rem4 / (float)POFV_C4_DURATION);
+                s_aura_charge += refund;
+                ce_log("pofv: [C4BREAK] 对话 ⇒ 强制退 C4：剩余 %d/%d 帧 ⇒ 返还 %.1f（蓄力 %.1f）",
+                       (int)rem4, (int)POFV_C4_DURATION, (double)refund, (double)s_aura_charge);
+            }
+            ce_hud_vm_text_clear(&s_c4_timer_txt);   /* ★ 计时器文字同帧清掉 ✓ */
+            pofv_c4_clear();                         /* ★ 环/暴风/三件观感件一条路收干净 ✓ */
         }
         ++s_c4.timer;   /* ★ 收尾条件改成"三条扫描都跑完" ✓（见上面 ✓）*/
     }
@@ -4930,7 +5361,13 @@ static void pofv_c4_tick(void)
                      *   ★ 否则在半径里**每帧喷火花** ✗（★ 先例的节拍就是 10 ✓）。
                      *   ★ ⚠ ★ 本锚点**同时命中 C3 与 C4 两处** ✓（★ 两段代码相同 ✓）⇒ ★ 一次改齐 ✓，
                      *   ★ 与 owner「★ C4 也改一样的」✓ 一致 ✓；★ **彩弹（457/459）不在本锚点内** ✗ ✓。*/
-                    if ((b->age % 10) == 0) pofv_spark_spawn(b->x, b->y);
+                    /* ★★★★★ 2026-10-16（★ owner：「★ **C4 的弹幕碰到敌方**会出现一帧像"敌弹碰自机消弹"的特效 ⇒
+                     *   ★ **那个不想要了**」✓）：★ 本行**停用** ✗ —— ★ 原为 `pofv_spark_spawn(b->x, b->y)` ✓
+                     *   （★ = 本卡脚本 431 ✓，★ 一手 `bullet.anm` **script163** 的 `effect/etbreak.png` ✓
+                     *   ★ ⇒ ★ 与引擎"弹被消掉"时播的**是同一张图** ✓，★ 所以看着就像消弹特效 ✓）。
+                     *   ★ 只停"命中火花" ✗：★ 伤害 / 无限穿透 / 10 帧节拍 / 消弹路径（`cancel_white_in_circle`）
+                     *   ★ **全部不动** ✓；★ `pofv_spark_spawn` 本体仍被消弹路径（`:1789` ✓）使用 ✓。*/
+                    /* if ((b->age % 10) == 0) pofv_spark_spawn(b->x, b->y); */
                 }
             }
             if (!b->live) continue;      /* ★ 命中了 ⇒ 本颗到此为止 ✓ */
@@ -5118,7 +5555,14 @@ static void pofv_c2m_tick(void)
 #define POFV_C3M_MAX_BEAMS   40
 #define POFV_C3M_VM_LAYER     6
 #define POFV_C3M_X0       140.0f          /* ★ 一手 ✓ 起始 `%G = 140` */
-#define POFV_C3M_Y        448.0f          /* ★ 一手 ✓ 横扫所在行 */
+#define POFV_C3M_Y          0.0f          /* ★★ 2026-10-16 **镜像**（owner 口径 ✓）：
+                                          *   ★ 一手 = `pl01.txt:419` `ExtraAttack()` 里 `ins_400(%G, 448.0f)`
+                                          *   ⇒ ★ **放在 y = 448（版底那一行）** ✓（原来这里就是 448 ✓，一字不差 ✓）；
+                                          *   ★ 而 owner：「★ 一手 boss 是**从版底**爆菊的激光 ⇒ **咱们得从版顶往下**」✓
+                                          *   ⇒ ★ 本卡（自机侧）取**版顶那一行** = `y = 0` ✓
+                                          *   （全场 384×448 ✓ ⇒ 上边 = 0 ✓、下边 = 448 ✓）。
+                                          *   ⚠ 其余**一个字不动** ✗：`%G = 140` ✓、`125 / ($C−1)` 收窄 ✓、
+                                          *   左右镜像 `±%G` ✓、`$C/$D/$E/%F` 四张表 ✓ 全部照一手 ✓。*/
 #define POFV_C3M_XSPAN    125.0f          /* ★ 一手 ✓ 每波收窄 125 */
 
 static const unsigned char s_c3m_steps[8] = { 3, 3, 5, 4, 3, 3, 4, 5 };   /* $C ✓ */
@@ -5150,11 +5594,38 @@ static void pofv_c3m_beam(float x)
     s_c3m[k].live = 1; s_c3m[k].age = 0;
     s_c3m[k].life = 90;                     /* ❓②：出屏/寿命上限 */
     s_c3m[k].x = x; s_c3m[k].y = POFV_C3M_Y;
-    s_c3m[k].vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_POFV109_AURA_MARISA,
+    s_c3m[k].vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
+                         /* ★★★★★ 2026-10-16 **owner 报告修正**：「★ **魔理沙 C3 的激光很细，贴图不对**」✓
+                          *   ★ 原来这里借的是 ★ `POFV109_AURA_MARISA`（= **结界的竖带** ✗，本来就是细带 ✓）
+                          *   ⇒ ★ 与"很细 + 图不对"**完全吻合** ✓。
+                          *   ★ 一手（`local/th19.v1.10c/_ext/ecl/pl01.txt:427 ExtraAttack()` ✓）用
+                          *   ★ `ins_602($A, 38, 6)` = ★ **`bullet.anm` 的 `sprite38`**（`bullet.anm.txt:55`
+                          *   = `(48,240,8,8)` ✓）⇒ ★ 已照此切图（`thanm` 解 `bullet/bullet1.png` 后切 ✓）
+                          *   为 `assets/ability/POFV109_C3M_LASER.png`（8×8 ✓）＋ 脚本 **464** ✓。
+                          *   ⚠ ★ **横向宽度仍标 ❓** ✗ —— 一手 `ins_700($A, 512,512,0,14)` 的**量纲未坐实**；
+                          *   ★ 其中 "512" 已由本卡 C1 光束那支注释确认为"**长度**" ✓（`442_…anm.txt` ✓）
+                          *   ⇒ ★ 宽度先按"同族同宽"的观感给 ✓，★ **不写成"一手"** ✗（已登记 `TUNING` ✓）。*/
+                         CE_ANM_ABILITY_SCRIPT_POFV109_C3M_LASER,
                                         POFV_C3M_VM_LAYER);
     if (s_c3m[k].vm) {
         ce_anm_set_pos((uint32_t)s_c3m[k].vm, x, POFV_C3M_Y, 0.0f);
         ce_anm_set_scale((uint32_t)s_c3m[k].vm, 0.5f, 1.0f);
+        /* ★ 2026-10-16 **只读对比诊断**（★ 定案"灵力道具看不见" ✓ —— 日志已证道具 VM 的
+         *   `vm_draw(+0x30 绘制点) = (0,0)` ✗ 而 `vm_ent(0x5f0) = 写进去的值` ✓ ⇒ ★ 疑似绘制点没被维护 ✓）：
+         *   ★ 这里对**能正常看见**的 C3 激光 VM 打同一组字段 ✓ ⇒ ★ 两者一比即分家 ✓：
+         *   · ★ 若本行 `vm_draw == vm_ent`（正常 ✓）而道具那行 `vm_draw = (0,0)` ✗
+         *     ⇒ ★ 差异在"**道具那台 VM 自身**"（类型/创建时机/列表 ✓）⇒ 按此修 ✓；
+         *   · ★ 若两者**都**是 (0,0) ⇒ ★ 那就是**我们读错了字段** ✗（`+0x30` 不是绘制点 ✓）⇒ 换字段 ✓。*/
+        {
+            uint8_t *v6 = ce_anm_get_vm((uint32_t)s_c3m[k].vm);
+            if (v6) {
+                const float *e6 = (const float *)(v6 + CE_ANM_VM_POS);
+                const float *d6 = (const float *)(v6 + 0x30);
+                ce_log("pofv: [C3MVM] set=(%.0f,%.0f) vm_ent=(%.0f,%.0f) vm_draw=(%.0f,%.0f)",
+                       (double)x, (double)POFV_C3M_Y,
+                       (double)e6[0], (double)e6[1], (double)d6[0], (double)d6[1]);
+            }
+        }
     }
 }
 
@@ -5307,7 +5778,17 @@ static void pofv_c4m_emit(float ang)
      *   ★ 归属 ★ **❓自定（owner 定）** ✓，★ 一手那边靠"★ boss 不动"自然一致 ✓（★ 见结构声明处的注释 ✓）。*/
     s_c4m[k].x = s_c4m_st.ox;
     s_c4m[k].y = s_c4m_st.oy;
-    s_c4m[k].vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), POFV_C_RING_SCRIPT, POFV_C4_VM_LAYER);
+    s_c4m[k].vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
+                         /* ★★★★★ 2026-10-16 **owner 实跑反馈修正**：「★ **C4 符卡端我就看见一些红色环在那发射**」✗
+                          *   ⇒ ★ 原来这里用的是 `POFV_C_RING_SCRIPT`（= **红色环** ✗ ✓）⇒ ★ 换成 **★ 星星** ✓。
+                          *   ★ 一手素材（owner 口述 ＋ 只读核出 ✓）：★「魔理沙激光碰壁之后，从碰壁点放出来的
+                          *   那些星星就是 `bullet.png` 里面应该是**第十一行**的星星」✓
+                          *   ⇒ ★ `bullet/bullet1.png` 第 11 行 = ★ `sprite256..269`（`bullet.anm.txt:273` ✓，
+                          *   `(1,177,14,14)` … 共 14 颗同排不同色 ✓）⇒ ★ 已切为
+                          *   `assets/ability/POFV109_C4M_STAR.png`（14×14 ✓）＋ 脚本 **465** ✓。
+                          *   ⚠ ★ 待补（未完成 ✗）：★ **"碰壁点撒一小簇星"**（反弹那一帧 ✓）—— 本笔只换**弹的外观** ✓。*/
+                         CE_ANM_ABILITY_SCRIPT_POFV109_C4M_STAR,
+                         POFV_C4_VM_LAYER);
     if (s_c4m[k].vm) {
         ce_anm_set_color((uint32_t)s_c4m[k].vm, 0xffffffffu);
         ce_anm_set_scale((uint32_t)s_c4m[k].vm, 0.4f, 0.4f);
@@ -5333,7 +5814,17 @@ static void pofv_c4m_tick(void)
                 /* ★★★ C3/C4 审计 60f3724f ⑦（中）✓：★ 一手是**逐发 `ins_604(..., 0.0f)`**
                  *   ⇒ ★ **每一发角度完全相同** ✓（★ 只有 `base` 那一项 ✓）；★ 而卡原来给它加了
                  *   `+ 0.2617994f × 已发数` ✗ = ★ **自造了一个 15°/发的扇形** ✗ ⇒ ★ **删掉** ✓。*/
-                pofv_c4m_emit(s_c4m_st.base + 3.1415927f);
+                pofv_c4m_emit(s_c4m_st.base + 3.1415927f
+                              /* ★★★★★ 2026-10-16 **owner 实跑反馈修正**：「★ **撞墙是弹回了，但怎么是
+                               *   【直上直下】的**」✗ ⇒ ★ 原来这里**逐发都用同一个固定角**（`base + π` = 3π/2 ✗）
+                               *   ⇒ ★ 所以整簇只朝一个方向走 ✓。
+                               *   ★ 一手（`pl01.txt:368-419` `Boss00BossCard1_at` ✓）：
+                               *   `%D = [-9989] + [-9987]×0.08726646f`（= 5° ✓）⇒ ★ 起手角**带随机** ✓；
+                               *   循环里逐发 `ins_604($A, (%D + 3.1415927f) + ([-9987]×1.5707964f), 0)`
+                               *   ⇒ ★ **每一发再叠加 `随机 × π/2`（0…90° ✓）** ✓ ⇒ ★ 这才是"铺开"的来源 ✓。
+                               *   ★ 本处照抄该式 ✓：★ `ce_rand()` 取 0..1 ⇒ 再乘 `π/2` ✓。
+                               *   ⚠ ★ 一手的随机是引擎的 RNG ✓，本卡用 `ce_rand()` ✓（同分布意图 ✓）。*/
+                              + ((float)(ce_rand() % 10001u) * 0.0001f) * 1.5707964f);
             }
             ++s_c4m_st.emitted;
         }
@@ -5376,10 +5867,47 @@ static void pofv_c4m_tick(void)
          *   **直接删弹** ✗ ⇒ ★ 与 C4 / C4S **不一致** ✗（★ 那两档都有 ✓）。
          *   ★ 反射：★ 屏幕 y 向下 ⇒ 方向 `(cos, sin)` 的 y 翻号 ⇒ ★ **`ang = -ang`** ✓（只翻一次 ✓）。
          *   ★ 本卡这一次版顶 = 对一手的**简化** ✗（★ 一手是 4 次 + 含左右墙 ✓，已登记 ✓）。*/
-        if (b->y < 0.0f && !b->bounced) {
-            b->y = 0.0f;
-            b->ang = -b->ang;
-            b->bounced = 1;
+        /* ★★★★★ 2026-10-16（★ owner 口径 ✓ ＋ 一手 §14.3/§14.4 ✓）：★ **把上面那句"简化"补齐** ✗ ——
+         *   ★ 一手 `Boss00BossCard1_at` 里是 `ins_611(0, 1, 64, **4**, **13**, …)` = `EX_BOUNCE`：
+         *   ★ **反弹 4 次** ✓、★ **walls 13 = 上|左|右** ✓（★ 不含下边 ✓ —— 与 owner 在 `:4264`
+         *   定的口径一致 ✓："版顶反弹、版底漏走" ✓）。
+         *   ★ 反射：★ 上/下两面 ⇒ `ang = -ang` ✓；★ 左/右两面 ⇒ `ang = π − ang` ✓（★ 屏幕 y 向下 ✓）。
+         *   ★ 次数用 `bounced` 当**计数器** ✓（结构里它本来就是 `int` ✓）⇒ ★ 到 **4** 次即不再反弹，
+         *   之后撞墙由下面的出界判据收掉 ✓（= 一手"第 5 次收"✓，与本卡 C3 的 `BOUNCE_MAX 4` 同款 ✓）。*/
+        if (b->bounced < 4) {
+            /* ★★★★★ 2026-10-16 **owner 口述（一级证据 ✓）**：「★ **魔理沙激光碰壁之后，从碰壁点放出来的
+             *   那些星星就是 `bullet.png` 里面应该是第十一行的星星**」✓
+             *   ⇒ ★ 每次撞墙时，从**碰壁点**再放出**一小簇星**（★ = 一手 `bullet1.png` 第 11 行
+             *   `sprite256..269`（`(1,177,14,14)` ✓，已切为 `POFV109_C4M_STAR.png` + 脚本 465 ✓））✓。
+             *   ★ 做法（不改任何函数签名 ✓）：★ 临时把"原点锁"（`s_c4m_st.ox/oy` ✓）指向**碰壁点** ✓
+             *   ⇒ ★ 连调 `POFV_C4M_SPARK_N` 次 `pofv_c4m_emit()`（★ 出射角 = **朝场内**的方向 ＋ 小扇形 ✓）
+             *   ⇒ ★ 再**还原原点**（★ 保证"三束同源"不被破坏 ✓）。
+             *   ⚠ ★ 数量 3 与扇形 ±20° 是 ★ **按 owner 口述的观感取的 ❓ 自定值** ✗（一手里没直接读到
+             *   "碰壁撒星"的确切参数 ✓）⇒ ★ 已登记 `TUNING` ✓，**不写成"一手"** ✗。*/
+            float inward = 0.0f;
+            const int hit_top   = (b->y <= 0.0f);
+            const int hit_left  = (b->x <= -POFV_FIELD_HALF_W);
+            float sx = b->x, sy = b->y;
+            if (hit_top) {
+                b->y = 0.0f; b->ang = -b->ang; ++b->bounced;
+                inward = 1.5707964f;                 /* ★ 版顶被弹回 ⇒ 朝下（场内）✓ */
+            } else if (hit_left) {
+                b->x = -POFV_FIELD_HALF_W; b->ang = 3.1415927f - b->ang; ++b->bounced;
+                inward = 0.0f;                       /* ★ 左墙 ⇒ 朝右（场内）✓ */
+            } else if (b->x >= POFV_FIELD_HALF_W) {
+                b->x = POFV_FIELD_HALF_W; b->ang = 3.1415927f - b->ang; ++b->bounced;
+                inward = 3.1415927f;                 /* ★ 右墙 ⇒ 朝左（场内）✓ */
+            }
+            if (b->bounced > 0 && b->bounced <= 4) {
+                const float ox0 = s_c4m_st.ox, oy0 = s_c4m_st.oy;   /* ★ 保存原点 ✓ */
+                int s9;
+                s_c4m_st.ox = sx; s_c4m_st.oy = sy;                 /* ★ 原点 = 碰壁点 ✓ */
+                for (s9 = 0; s9 < 3; ++s9) {                        /* ★ 一小簇 = 3 颗 ✓ */
+                    const float off = ((float)s9 - 1.0f) * 0.3490659f;   /* ±20° ✓ */
+                    pofv_c4m_emit(inward + off);
+                }
+                s_c4m_st.ox = ox0; s_c4m_st.oy = oy0;               /* ★ 还原原点 ✓ */
+            }
         }
         if (b->x < -(POFV_FIELD_HALF_W + POFV_C1_OFF_MARGIN) ||
             b->x >  (POFV_FIELD_HALF_W + POFV_C1_OFF_MARGIN) ||
@@ -5515,7 +6043,15 @@ static const unsigned char s_c3s_e[8]    = { 20,18,16,14,10, 9, 8, 7 };   /* $E 
 static const unsigned char s_c3s_f[8]    = { 10,10, 9, 9, 8, 8, 7, 7 };   /* %F ✓ */
 static const unsigned char s_c3s_wait[8] = { 15,15,13,13,12,11,10,10 };   /* $G ✓ */
 
-typedef struct { int live, age, life; float x, y; int32_t vm; } pofv_c3s_t;
+/* ★★★★★ 2026-10-16 **加三个字段**（owner：「必须核出来早苗 C3 的外观」✓ ⇒ 照一手 `script35` 补全 ✓）：
+ *   ★ 一手（`anm/bullet/bullet.anm.txt:872 script35` ✓）在**出生**时抽两件事 ✓：
+ *     · ★ `fsetMul(%F0, %RANDF2, 12.0f)` ＋ `fsetMul(%F1, %RANDF2, 12.0f); fsub(%F1, 24.0f)`
+ *       ⇒ ★ `%F0 ∈ [0,12]`、`%F1 ∈ [−24,−12]` ✓（★ 一个**随机偏移** ✓）；
+ *     · ★ `rotate(0.0f, 0.0f, %RANDRAD)` ⇒ ★ **随机自转** ✓；
+ *     · ★ `posTime(28, 0, %F0, %F1, 0.0f)` ⇒ ★ **28 帧内从出生点飘到（出生点＋偏移）** ✓。
+ *   ⇒ ★ 所以要有：★ `rx/ry`（偏移 ✓）、★ `rot`（自转基角 ✓），★ 以及一手那个 **28 帧寿命** ✓。
+ *   ⚠ ★ 字段先加上 ✓；★ **填值（spawn）与逐帧应用（tick）下一笔做** ✓（★ 本轮不构建不提交 ✗）。*/
+typedef struct { int live, age, life; float x, y; float rx, ry, rot; int32_t vm; } pofv_c3s_t;
 static pofv_c3s_t s_c3s[POFV_C3S_MAX];
 static struct { int active, wave, step, timer, level, side; float f0; } s_c3s_st;
 
@@ -5535,9 +6071,44 @@ static void pofv_c3s_spawn(float x, float y)
     int k;
     for (k = 0; k < POFV_C3S_MAX; ++k) if (!s_c3s[k].live) break;
     if (k >= POFV_C3S_MAX) return;
-    s_c3s[k].live = 1; s_c3s[k].age = 0; s_c3s[k].life = 120;
+    /* ★★★★★ 2026-10-16 **照一手 `script35` 补全"出生时抽的那两项"** ✓：
+     *   ★ 一手：★ `life = 28` ✓（`+14: delete()` 前的 `+14` 加上前面的 14 ✓ = 28 帧 ✓ —— 原来 **120** ✗）；
+     *   ★ `fsetMul(%F0, %RANDF2, 12.0f)` ⇒ ★ `rx ∈ [0, 12]` ✓；
+     *   ★ `fsetMul(%F1, %RANDF2, 12.0f); fsub(%F1, 24.0f)` ⇒ ★ `ry ∈ [−24, −12]` ✓；
+     *   ★ `rotate(0.0f, 0.0f, %RANDRAD)` ⇒ ★ 自转基角 = 随机整圈 ✓。
+     *   ⚠ ★ 逐帧**应用**（`posTime(28, 0, %F0, %F1, 0)` = 28 帧内线性飘到"出生点＋偏移" ✓）
+     *   ★ 在 tick 里做 ✓（下一笔 ✓ —— ★ 本笔先把值抽出来 ✓）。*/
+    s_c3s[k].live = 1; s_c3s[k].age = 0; s_c3s[k].life = 28;   /* ★ 一手 ✓ script35 共 28 帧 */
+    s_c3s[k].rx = (float)(ce_rand() % 13u);                        /* ★ 一手 ✓ [0,12] */
+    s_c3s[k].ry = (float)(ce_rand() % 13u) - 24.0f;                /* ★ 一手 ✓ [−24,−12] */
+    s_c3s[k].rot = ((float)(ce_rand() % 1024u) / 1024.0f) * 6.2831853f;   /* ★ 一手 ✓ 随机整圈 */
     s_c3s[k].x = x; s_c3s[k].y = y;
-    s_c3s[k].vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), POFV_C_RING_SCRIPT, POFV_C4_VM_LAYER);
+    s_c3s[k].vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
+                         /* ★★★★★ 2026-10-16 **owner：「必须核出来早苗 C3 和 C4 的外观」✓ —— 核完了 ✓**：
+                          *   ★ 一手（`local/th19.v1.10c/_ext/ecl/pl02.txt:311 ExAttack2()` ✓）：
+                          *   ★ `ins_302(3); ins_500(32,32); ins_502(35);` ⇒ ★ **放 anm 脚本 35** ✓。
+                          *   ★ 脚本 35 的正文（`local/th19.v1.10c/anm/bullet/bullet.anm.txt:872` ✓）：
+                          *   ★ `type(1); blendMode(1); layer(10); `**`sprite(sprite351)`**`; alpha(128);
+                          *      scaleTime(14, 4, 1.9f, 1.9f);` ＋ 每帧随机 ±12 偏移、随机自转、
+                          *      `posTime(28, 0, …)`、`+8: alpha(20)`、`+14: scaleTime(14,1,0.8,0.8)`、
+                          *      `+14: delete()` ⇒ ★ **短命 28 帧、加算、淡出放大的随机飘动光点** ✓。
+                          *   ★ `sprite351` 的矩形（`bullet.anm.txt:368` ✓）＝ ★ `(241, 177, 14, 14)` ✓
+                          *   ⇒ ★ **y=177 就是那一行"星星"** ✓（与魔理沙 C4 的弹 `sprite256..269` **同一行** ✓，
+                          *   只差**最右一列**的颜色 ✓）★ ⇒ ★ 所以本处**直接复用**已切好的星素材
+                          *   （`POFV109_C4M_STAR` ✓，来自同排第一列 ✓）。
+                          *   ⚠ ★ 与一手的差别（如实标 ✗）：★ 一手里她是**第 14 列**（x=241 ✓）、
+                          *   本处用**第 1 列**（x=1 ✓）⇒ 颜色略不同 ✓；★ 若 owner 要按一手取色，
+                          *   只需再切一张 `(241,177,14,14)` 并换这一行 ✓（登记 `TUNING` ✓）。
+                          *   ⚠ ★ 本笔只换**贴图** ✓；一手那套"28 帧 α/scale 曲线 + 随机飘动"★ 待下一笔做 ✓。
+                          *   ★★★ **2026-10-16 二次更正（owner 质问"早苗 C3 外观 tmd 是星吗？"✓）**：
+                          *   ★ 放大目视后确认 ★ **她一手那格是"圆球"** ✓（`sprite351` = `(241,177,14,14)` ✓，
+                          *   在 **y=177 那一行 = 圆球行** ✓；★ **真·星行是 y=161 = 第 11 行**
+                          *   `sprite288..301` ✓，见 `TUNING.md`「素材错行更正」✓）
+                          *   ⇒ ★ 本处改用 ★ **`POFV109_C3S_ORB`**（= 一手 `sprite351` 的原格 ✓，
+                          *   已目视确认是**白色的球** ✓）＋ 脚本 **466** ✓（一手 `script35` 的初值：
+                          *   `alpha(128)` ＋ 加算 ✓）⇒ ★ **一手 ✓**。*/
+                         CE_ANM_ABILITY_SCRIPT_POFV109_C3S_ORB,
+                         POFV_C4_VM_LAYER);
     if (s_c3s[k].vm) {
         ce_anm_set_color((uint32_t)s_c3s[k].vm, 0xffffffffu);
         ce_anm_set_pos((uint32_t)s_c3s[k].vm, x, y, 0.0f);
@@ -5617,7 +6188,36 @@ static void pofv_c3s_tick(void)
             if (b->vm) { ce_anm_delete((uint32_t)b->vm); b->vm = 0; }
             b->live = 0; continue;
         }
-        if (b->vm) ce_anm_set_pos((uint32_t)b->vm, b->x, b->y, 0.0f);
+        /* ★★★★★ 2026-10-16 **照一手 `script35` 补上"28 帧曲线"** ✓（owner：「必须核出来早苗 C3/C4 的外观」✓）：
+         *   ★ 一手（`anm/bullet/bullet.anm.txt:872 script35` ✓）：★ `alpha(128)` 起 ✓、
+         *   ★ `scaleTime(14, 4, 1.9f, 1.9f)`（★ 0→14 帧长到 **1.9 倍** ✓）、★ `+8: alpha(20)` ✓、
+         *   ★ `+14: scaleTime(14, 1, 0.8f, 0.8f)`（★ 14→28 帧缩到 **0.8** ✓）、★ `+14: delete()`（★ **共 28 帧** ✓）。
+         *   ⇒ ★ 本处按 `age` **逐帧**算 scale/alpha ✓（★ 卡侧驱动 ✓，与一手曲线同形 ✓）。
+         *   ⚠ ★ 一手的"随机 ±12 偏移 ＋ 随机自转"是**出生时抽一次** ✓ ⇒ ★ 那半属**出生点**（`pofv_c3s_spawn` ✓）
+         *   ★ 仍**待做** ✗（本笔只做 α/scale 这两条曲线 ✓）。
+         *   ⚠ ★ 一手寿命 **28 帧** ✓；★ 卡里 `life = 120` ✗ ⇒ ★ 本处曲线在 28 帧后**保持** ✓（★ 不擅自改寿命 ✗，
+         *   ★ 那属另一处、且要与窗口逻辑一起看 ✓ —— 已登记 ✓）。*/
+        if (b->vm) {
+            const float ag = (float)b->age;
+            float sc;
+            if (ag < 14.0f)      sc = 1.0f + (1.9f - 1.0f) * (ag / 14.0f);             /* ★ 一手 ✓ 0→14 帧 ⇒ ×1.9 */
+            else if (ag < 28.0f) sc = 1.9f + (0.8f - 1.9f) * ((ag - 14.0f) / 14.0f);  /* ★ 一手 ✓ 14→28 帧 ⇒ ×0.8 */
+            else                 sc = 0.8f;
+            ce_anm_set_scale((uint32_t)b->vm, sc, sc);
+            /* ★ 一手 `alpha(128)` ⇒ 第 8 帧起 `alpha(20)` ✓（写 ARGB 的 AA 位 ✓）*/
+            ce_anm_set_color((uint32_t)b->vm,
+                             (b->age < 8) ? 0xffffff80u : 0xffffff14u);
+        }
+        if (b->vm) {
+            /* ★ 2026-10-16 **一手 `posTime(28, 0, %F0, %F1, 0)` 的线性飘动** ✓：
+             *   28 帧内从出生点线性飘到（出生点＋(rx,ry)）✓ ⇒ ★ 之后保持 ✓（一手 28 帧就 delete ✓）。*/
+            const float t = (b->age < 28) ? ((float)b->age / 28.0f) : 1.0f;
+            ce_anm_set_pos((uint32_t)b->vm,
+                           b->x + b->rx * t,
+                           b->y + b->ry * t, 0.0f);
+            /* ★ 2026-10-16 **一手 `rotate(0,0,%RANDRAD)` 的随机自转** ✓（★ 这里按出生基角匀速转 ✓ ❓）*/
+            ce_anm_set_rotation((uint32_t)b->vm, 0.0f, 0.0f, b->rot + 0.05f * (float)b->age);
+        }
         pos[0] = b->x; pos[1] = b->y; pos[2] = 0.0f;
         (void)ce_damage_rect(pos, 0.0f, 2, 14.0f, 24.0f, 24.0f);   /* ❓④ */
     }
@@ -6833,6 +7433,27 @@ static int on_tick_2(ce_card_t *c)
                 if (rate < 0.0f) rate = 0.0f;
                 if (rate > POFV_CHG_RATE_SRC_MAX) rate = POFV_CHG_RATE_SRC_MAX;
                 s_aura_charge += rate * (POFV_CHG_RATE_AT_SRC_MAX / POFV_CHG_RATE_SRC_MAX);
+                /* ★★★★★ 2026-10-16 **调试键（owner：「调试键空格，C3 换 C4」✓）**：
+                 *   ★ 蓄力已到 **C3 档**（`>= POFV_C3_THRESH(1700)` ✓）但还没到 C4（`< 2500` ✓）时，
+                 *   ★ 按一下**空格** ⇒ ★ 直接把蓄力顶到 **C4 阈值（2500 ✓）** ⇒ ★ 当帧就能放 C4 ✓
+                 *   （省得等满蓄 ✓；★ 只在 C3 档内生效 ⇒ 不会把 C1/C2 也跳上去 ✓，也不会误触发别的档 ✓）。
+                 *   ⚠ `CE_VK_SPACE` 是 SDK 现成的键码 ✓（`sdk.h:838` ✓）；★ 注意本卡别处
+                 *   （`:6564` ✓）也读空格 —— 那条是另一个用途 ✓，两者不冲突（本条只动蓄力值 ✓）。*/
+                /* ★ 2026-10-16 owner 订正：「★ **空格应当是直接放 C4，你去掉 C3 就行**」✓
+                 *   ⇒ ★ **去掉 C3 档那道门** ✗ ⇒ ★ 只要按空格，蓄力**一律顶到 C4 阈值** ✓
+                 *   （不再要求"已到 C3 且未到 C4" ✓）⇒ 之后由卡自己的释放逻辑放 C4 ✓。*/
+                if (ce_key_down(CE_VK_SPACE))
+                    s_aura_charge = POFV_C4_THRESH;
+                /* ★★★★★ 2026-10-16 **调试键（owner：「★ **那这样的话，I 键安排一下无敌（参考 108），
+                 *   我没有 L 的底力**」✓）**：★ 按住 **I** ⇒ 每帧向 SDK **声明无敌** ✓ —— 走的是
+                 *   一手那条路 ✓（`sdk.h:1055-1063` ✓：★ 各卡每帧**声明**自己想要的帧数 ✓，
+                 *   层取**最大值** ✓，由 SDK 落到 `player+0x47774` ✓；★ **107 结界结束 0.67s**、
+                 *   **109 自己的爆风 C1–C4**、**117 霊撃 40 帧**都在用同一条 ✓）。
+                 *   ★ 每帧声明 `5` 帧 ⇒ 只要按住就一直续上 ✓（松开后自然过期 ✓，不会留永久无敌 ✓）。
+                 *   ⚠ `0x49` = Windows 虚拟键 **'I'** ✓（SDK 只给了 C/Shift/Space 三个键码 ✓，
+                 *     这里用字面量并注明 ✓）。*/
+                if (ce_key_down(0x49))
+                    ce_invuln_request(109, 5);
             }
             if (s_aura_charge > cap) s_aura_charge = cap;
         }
@@ -6871,6 +7492,13 @@ static int on_tick_2(ce_card_t *c)
                    tier_rel, (double)s_aura_charge, (int)chg_held, (int)s_chg_prev,
                    (int)aura_held, (int)s_card_frames,
                    s_aura_kind, s_c1_set_sel, s_c1_win_left, (double)s_reiryoku);
+            /* ★★★ 2026-10-15（owner 一手口径 **(b)**：「C3 与 C4 释放都重发罩子」✓）——
+             *   原来罩子只有一条来源：拿到 / 重新拿到卡（`s_barrier_grant_pending` 唯一写点见
+             *   `pofv_new_run` 那侧）⇒ 放完 C3/C4 不会重发 ⇒ owner 实跑「C3 没给罩子」✗。
+             *   ⇒ 在**释放分派**这里：★ `tier_rel >= 3`（= C3 / C4 ✓，按松手那一刻的蓄力定档 ✓）
+             *   置一次"待发放" ✓；实际发放与守卫都在 `pofv_barrier_grant_tick()`（`s_barrier_on` 已有
+             *   罩子时它自己会处理 ✓）⇒ 本处只置标志、不直接改罩子状态 ✓。*/
+            if (tier_rel >= 3) s_barrier_grant_pending = 1;
             /* ★★★★ 2026-10-11 **修一个明显的 bug**（owner：「早苗 C2 也不是发灵梦的那三颗大球啊，
              *   就是青蛙」✗ + 上一轮「意外释放 C2 C3 …**其他人也应该都有**」✓）：
              *   ★ 这里原来**写死了灵梦那三支**（`pofv_c2_fire/c3_fire/c4_fire` ✗）⇒
@@ -7290,7 +7918,15 @@ static int on_tick_2(ce_card_t *c)
              *     待一手的真实换算到位 ⇒ **改这一个常量**即可 ✓。*/
             s_aura_anim_cur = POFV_AURA_K_SAKUYA * e;   /* 0 → 3.0×20 = 60 ✓ */
         }
-        s_aura_r = s_aura_anim_cur;
+        /* ★★★★★ 2026-10-16 owner 口径（原话）：「★ **你不用管 th09 了，你就按照在固灵结界本身，
+         *   shift == C，只是 C 额外挂一个蓄力**」✓ ⇒ ★ **判定半径不许因"没蓄力"而退成插值起点** ✗。
+         *   ★ 病根（owner 实跑观察 ✓）：「★ **按 C 的时候固灵结界才会掉，按 shift 不会掉**」✓ ——
+         *   ★ 因为 `s_aura_anim_cur = 1.0f + (target − 1.0f)·e` ✓ 的插值**从 1.0 起** ⇒
+         *   ★ 只按 shift（`e == 0`）时 `s_aura_r = **1.0 px**` ✗ ⇒ 掉落那条路的圈内判定全落空 ✓
+         *   ⇒ ★ **一颗都不撒** ✓（而看得见的那圈用的是 `target` ✓ ⇒ "**看得见却不掉**" ✓）。
+         *   ★ 修法：★ **没蓄力时判定半径取 `target`（= 可见那圈）** ✓ ⇒ ★ `shift` 与 `C` 的结界
+         *   **同一档** ✓，C 只是额外把蓄力挂上去 ✓（= owner 口径 ✓）。*/
+        s_aura_r = (e > 0.0f) ? s_aura_anim_cur : target;
         /* ★★ 只有**咲夜**用它（owner 明确：「总之是你就改咲夜的，其他别动」✓）：
          *   一手（`engine/versus/th09/02-ghost-and-seal.md` §3.6e ✓）：领域扇节点 = `EffectSys` sid 7
          *   ⇒ `etama.anm` **script91** ⇒ `scale(24.0f, 24.0f)`（opcode 7 ✓）⇒ 写进 `VM+0x288`
@@ -8499,6 +9135,11 @@ static int on_tick_2(ce_card_t *c)
             int hit = aura_scan_bullets(ppa, POFV_AURA_ITEMS_PER_FRAME, ox, oy);
             if (hit > 0) {
                 int32_t apts = 0;
+                /* ★ 2026-10-16 **已撤：做法改按 116** ✗✓（owner：「★ 核实清楚了，**做法上照着 116 做**」✓）——
+                 *   ★ 上一版这里改成了引擎道具 `ce_spawn_item(...)` ✗，那是"另一条路" ✓ **不是** 116 的做法 ✗；
+                 *   ★ 116 的真做法 = ★ **自己的 anm VM + 一手运动学 + 参数读自机字段** ✓
+                 *   （`season.c:16/:35` ✓ 与 `:816-836` ✓）⇒ ★ 本处**改回卡侧池** ✓，
+                 *   而"参数读自机字段"那一步在池那一侧做（见本卡 `pofv_core.h` / 卡侧读值处 ✓）。*/
                 pofv_power_spawn_packed_at(&s_power, ox, oy, hit, POFV_POWER_PTS_AURA,
                                            POFV_AURA_ITEMS_PER_FRAME, POFV_POWER_SRC_AURA, &apts);
                 s_aura_bullets += hit;
@@ -8648,6 +9289,115 @@ static int on_draw(ce_card_t *c)
     if (now != s_aura_tint_frame) {
         s_aura_tint_frame = now;
         pofv_aura_tint_tick();
+        /* ★★★★★ 2026-10-16 **修"看不见灵力道具"**（owner 实跑：「★ **当且仅当我灵梦的固灵领域在 x 方向
+         *   上和敌方弹幕相交的时候，我才能看见生成的灵力道具，甚至在我正前方的都不行**」✓）：
+         *   ★ 病根 = ★ `power_vm_sync()`（给每颗道具**建/跟随可视 VM** 的那一步 ✓）原来只嵌在
+         *   `on_tick_2` 里**某个分支内** ✗ ⇒ ★ 那条分支不成立时，道具**没有 VM 或不跟随** ⇒
+         *   ★ **撒了也被收、却看不见** ✓（正好等于日志里 `spawn_ok` 与 `power +N` 都在涨、
+         *   但人眼看不到 ✓）。
+         *   ⇒ ★ **在这里（`on_draw` 的同帧守卫内）无条件再同步一次** ✓ —— 本函数**幂等** ✓
+         *   （已存在的 VM 只更新位置 ✓、缺的补建 ✓）⇒ ★ 重复调用无副作用 ✓，且不再受那条分支约束 ✓。*/
+        power_vm_sync();
+        /* ★★★★★ 2026-10-16 **照 116 的做法（owner：「核实清楚了，做法上照着 116 做」✓）**：
+         *   ★ 道具池的"收集半径 / 吸引半径 / 磁速"**读自机自己的字段** ✓ —— 与 116 同款 ✓
+         *   （`season.c:816-836` ✓）⇒ ★ 原生卡 `ITEM_CATCH(21)` / `ITEM_LINE(22)` 一改，
+         *   ★ 本卡道具**跟着一起变** ✓。
+         *   ★ 字段（`engine.h:470-473` ✓）：`CE_PLAYER_ITEM_ATTRACT_SPD`(`0x47988`) /
+         *     `CE_PLAYER_ITEM_COLLECT_R`(`0x4798c`) / `CE_PLAYER_ITEM_ATTRACT_RF`(`0x47990`，聚焦) /
+         *     `_RU`(`0x47994`，非聚焦 ✓)；★ 一手初值 `{5,30,70,70}` ✓ ⇒ **照 116 同值兜底** ✓
+         *   （读不到/≤0 时用初值 ✓，不让池掉到 0 半径 ✗）。*/
+        {
+            const uint8_t *pl5 = CE_PLAYER();
+            float collect_r = POFV_POWER_PARAM_DEF_COLLECT_R;
+            float attract_r = POFV_POWER_PARAM_DEF_ATTRACT_R;
+            float mag_spd   = POFV_POWER_PARAM_DEF_MAG_SPD;
+            if (pl5) {
+                const float mr = *(const float *)(pl5 + CE_PLAYER_ITEM_ATTRACT_SPD);
+                const float cr = *(const float *)(pl5 + CE_PLAYER_ITEM_COLLECT_R);
+                const float ar = *(const float *)(pl5 + (CE_PLAYER_FOCUSED()
+                                                        ? CE_PLAYER_ITEM_ATTRACT_RF
+                                                        : CE_PLAYER_ITEM_ATTRACT_RU));
+                if (mr > 0.0f) mag_spd   = mr;
+                if (cr > 0.0f) collect_r = cr;
+                if (ar > 0.0f) attract_r = ar;
+            }
+            pofv_power_set_params(collect_r, attract_r, mag_spd);
+        }
+        /* ★★★★★ 2026-10-16 **A2（owner：「A 加」✓ + 「为什么 th18 本身还在用的东西要新切」✓）**：
+         *   ★ C4 剩余时间计时器改走**引擎自己的字符串管线** ✓ —— ★ **不切图、不起我们自己的 VM** ✓：
+         *   · 入口 = ★ `ce_hud_text_ex(x, y, bgra, shadow, font_id, group, align_h, scale, fmt, …)` ✓
+         *     （`sdk.h:851` ✓ 公开；内部 `ce_hud_text_raw` 写环境字段后调 **`create_string` `0x419b90`** ✓，
+         *     一手链见 `engine/anm/th18/03-ascii-text.md` §0b ✓）；
+         *   · ★ `font_id = 4, group = 2` ✓ ＝ ★ **原生符卡计时用的同一档** ✓（`AUDIT.md` §AI 表 ✓）
+         *     ⇒ 字形 = 原生 `ascii.anm`（`preloaded[2]` ✓）里的数字精灵 **289..298**、点 **288** ✓
+         *     （★ 精灵表实测 ✓，比文档那个基址 `0xef` 大 2 ⇒ **以实测为准** ✓）；
+         *   · ★ 必须写在 `on_draw`（虚表 `+0x48` ✓）里 ✓ —— `sdk.h:960` 明写"`ce_hud_text` 只允许在
+         *     `+0x48` 里用" ✓；本卡 `on_draw` 已有**同帧守卫** ✓（`ce_sdk_frame()` ✓）⇒ 不会一帧多条 ✓；
+         *   · ★ **字符串记录有寿命** ✓（环境字段 `mgr+0x1924c` = 存活帧数 ✓，`03-ascii-text.md:65` ✓；
+         *     记录表上限 `0x140` ✓、步长 `0x138` ✓）⇒ ★ 画之前把寿命设成 **2 帧** ✓
+         *     ⇒ 同时最多 2~3 条记录 ✓（远低于上限 ✓），画完**还原**环境 ✓；
+         *   · 位置/内容沿用已发布的：★ x = 224（游玩区正中 ✓）、y = 440（场地底沿 ✓）、
+         *     内容 = `POFV_C4_DURATION(1800) − s_c4.timer` 的 `秒.帧` ✓。
+         *   ⚠ ❓ 待实跑校准（登记 TUNING）：① 原生记录若带淡入淡出 ⇒ 会轻微闪动（那时改成"每帧一条
+         *     长寿命记录 + 同位置复用"或退回我们自己的 VM 方案 ✓）；② `align_h = 2`（居中 ✓）与
+         *     `scale = 0.0f`（沿用引擎默认 ✓）这两个数是观感旋钮 ✓。*/
+        if (s_c4.live) {
+            uint8_t *am = *(uint8_t **)CE_ADDR_ASCII_MANAGER_PTR;
+            if (am) {
+                const int32_t rf = POFV_C4_DURATION - s_c4.timer;
+                const int32_t rr = (rf > 0) ? rf : 0;
+                const uint32_t old_life = *(uint32_t *)(am + 0x1924c);
+                int32_t sec = rr / 60, frm = rr % 60;
+                if (sec > 99) sec = 99;
+                *(uint32_t *)(am + 0x1924c) = 2u;      /* ★ 寿命 2 帧 ✓（防记录表溢出 ✓）*/
+                /* ★ 2026-10-16 owner 实跑三条订正 ✓：
+                 *   ① ★ **偏左** ⇒ ★ x 224 → **272**（= 与蓄力 UI 那条同源：640 空间 +48 ✓，
+                 *      见 `POFV_HUD_SURF_X` 上面那段订正 ✓）；
+                 *   ② ★ **小数部分一手是一半大** ⇒ ★ **分两次画**：★ 秒数用默认尺寸 ✓、
+                 *      小数（`.ff`）用**一半尺寸** ✓（= `scale = half` ✓；
+                 *      ⚠ 本表 `scale` 是"整体倍率" ✓，先取引擎默认的一半：用 `old_scale * 0.5f` ✓
+                 *      取不到旧值就退回 0.0f「不动」✗ ⇒ 这里直接给一个小数档位值待实跑校准 ✓）；
+                 *   ③ ★ **y 得再往下** ⇒ ★ 440 → **456**（场地底 464 再上 8 px ✓）。*/
+                /* ★ 2026-10-16 owner 口径（原话）：「★ **那你怎么画怎么是中间呗**」✓ +
+                 *   「★ **原生的时长显示不也是定义了中间吗**」✓ ⇒ ★ **这条 GUI 文字路的"中间"就是原生自己那个值**
+                 *   ✓（`AUDIT.md` §AI：符卡计时在 640 空间 **`x = 224`** ✓）★ ⇒ ★ **x 回到 224** ✓
+                 *   —— ★ 与蓄力条那条链（UI 列表、`POFV_HUD_PLAY_CX = 320` ✓）**互不相干** ✗，
+                 *   不拿 320/544 那套来套它 ✓（x=272 是我上一笔的错误套用 ✗，已退回 ✓）。
+                 *   ★ 其余照 owner 实跑：★ y = 456（场地底沿再上 8 px ✓）、
+                 *   ★ 小数分两次画、`.ff` 用**半尺寸** ✓。*/
+                /* ★ 2026-10-16 owner：「★ **你难道不能照抄计时器怎么画的**」✓ +
+                 *   「★ 字间距也**略宽一点点**」✓ ⇒ ★ **照抄原生那颗的两块排法** ✓：
+                 *   ★ 原生符卡计时本来就是**两个元素**：★ 主数字 `(224,144)` ＋
+                 *   ★ **小数块 `(268,150)`** ✓（`HUD-LAYOUT.md:56` ✓＝ 偏右 **+44** / 偏下 **+6** ✓；
+                 *   `AUDIT.md` §AI 那四条 y `144/150/160/166` 也对应这几块 ✓）★ 且小数块**更小** ✓
+                 *   （owner：「小数部分一手是**一半大**」✓）。
+                 *   ⇒ ★ 本卡镜像到版底：★ 主块 `(224, 456)` ✓、★ 小数块 `(224+44, 456+6) = (268, 462)` ✓
+                 *   （★ 两块用**同一档字体/组** ✓，只差坐标与尺寸 ✓ —— 上一笔我把两块叠在同一坐标 ✗
+                 *   ⇒ 观感就是"挤且偏" ✓，现按原生排法分开 ✓）。
+                 *   ⚠ ❓ 待核（下一轮）：原生那两个调用点的**对齐与 scale 原值**（在 `0x43cd00` 那段的
+                 *   调用处 ✓）—— 核到就逐项对齐 ✓；★ 你感觉"字间距略宽"多半也来自这一处 ✓
+                 *   （advance 由 font id + group 决定 ✓，若原生还压了 scale，那就是差在这里 ✓）。*/
+                /* ★ 2026-10-16 owner 实跑四条（第 1 轮）✓：
+                 *   ② ★ **小数部分偏右** ⇒ ★ 偏移从原生表里的 `+44` **收到 `+24`** ✓（❓ 数值待实跑再调：
+                 *      原生那 `+44` 是**它那一档字宽**下的值 ✓，我们主块只有两位数字 ⇒ 右边距更小 ✓）；
+                 *   ③ ★ **整体偏下、没有坐在边缘** ⇒ ★ y 从 456 **收回到 448** ✓（上一笔"再往下"我落到了
+                 *      456 ✗ ⇒ 现在是"过下" ✓ ⇒ 取 448 = 场地底 464 之上 16 px ✓，实跑按"坐在版底沿"再微调 ✓）。*/
+                /* ★ 2026-10-16 owner 实跑订正：「★ **小数点消失了**；★ **小数部分在（大概是把小数部分
+                 *   也按整数部分大小画的所占长方形区域的）右上**；★ **整数部分对了**」✓ ⇒
+                 *   ① ★ **小数点回到整数那串的末尾** ✓（画在**主块**里：`"%02d."` ✓ —— 上一笔我把点
+                 *      放进小数块 ✗，而小数块是**半尺寸**且用**居中对齐** ✗ ⇒ 点被"吃"掉了 ✓）；
+                 *   ② ★ 小数块改成**左对齐**（`align_h = 0` ✓）＋ 起点取**主块右沿**（`224 + 24 = 248` ✓）
+                 *      ★ ⇒ 不会再跑到"整数全尺寸矩形"的右上角 ✗（那是半尺寸 + 居中对齐导致的 ✓）。*/
+                ce_hud_text_ex(248.0f, 448.0f, 0xFFFFFFFFu, 0u, 4, 2, 2, 0.0f, "%02d.", (int)sec);
+                ce_hud_text_ex(272.0f, 452.0f, 0xFFFFFFFFu, 0u, 4, 2, 0, 0.5f, "%02d", (int)frm);
+                /* ★ 2026-10-16 owner 实跑订正（原话）：「★ **你小数部分改更靠右了何意味呢 —— 错了，
+                 *   比对之后是你整数部分太靠左了，但是你小数部分是上沿对齐整数部分，应当是下沿**」✓
+                 *   ⇒ ★ ① **主块 x 224 → 248**（整数整体往右 ✓）；★ ② **小数块 y 448 → 452**
+                 *   （半尺寸那串**下沿对齐**主块 ✓ —— 原来同 y ⇒ 是**上沿**对齐 ✗）；
+                 *   ★ ③ x 相应取 **272**（= 主块 248 + 24 ✓，仍让点后紧跟小数 ✓）。*/
+                *(uint32_t *)(am + 0x1924c) = old_life;   /* ★ 还原环境 ✓ */
+            }
+        }
     }
     return 0;
 }

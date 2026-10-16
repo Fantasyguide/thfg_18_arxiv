@@ -1164,12 +1164,19 @@ SPIRIT_CALMR_4         ability/spirit/SPIRIT_CALMR_4.png   @272,40,48x48
 SPIRIT_CALMR_5         ability/spirit/SPIRIT_CALMR_5.png   @320,40,48x48
 SPIRIT_CALMR_6         ability/spirit/SPIRIT_CALMR_6.png   @368,40,48x48
 SPIRIT_CALMR_7         ability/spirit/SPIRIT_CALMR_7.png   @416,40,48x48
-ATLAS ATLAS_SPIRIT_DISABLE_PURE 160x32
+ATLAS ATLAS_SPIRIT_DISABLE_PURE 256x32
+# ★ 2026-10-13（★ 本 goal 待办 1 ✓）：★ **5 帧 → 8 帧**✗ —— ★ 一手（★ 复核 `ab9b54e5` ✓）：
+#   ★ 标准纯灵 / 固化态都 = `enemy.anm` **script106** = `enemy2.png` **sprite 144–151（黄、8 帧）** ✓
+#   ★ ⇒ ★ 当年只切了前 5 帧 ✗ ⇒ ★ **"环"那三帧（149/150/151）从没进来** ✗
+#   ★ ⇒ ★ 这就是「固化态出生时外面那圈蓝环没了」✗ ✓（★ 切图器 = `make_pofv109_ball_art.py` ✓）。
 SPIRIT_DISP4_0         ability/spirit/SPIRIT_DISP4_0.png            @0,0,32x32
 SPIRIT_DISP4_1         ability/spirit/SPIRIT_DISP4_1.png            @32,0,32x32
 SPIRIT_DISP4_2         ability/spirit/SPIRIT_DISP4_2.png            @64,0,32x32
 SPIRIT_DISP4_3         ability/spirit/SPIRIT_DISP4_3.png            @96,0,32x32
 SPIRIT_DISP4_4         ability/spirit/SPIRIT_DISP4_4.png            @128,0,32x32
+SPIRIT_DISP4_5         ability/spirit/SPIRIT_DISP4_5.png            @160,0,32x32
+SPIRIT_DISP4_6         ability/spirit/SPIRIT_DISP4_6.png            @192,0,32x32
+SPIRIT_DISP4_7         ability/spirit/SPIRIT_DISP4_7.png            @224,0,32x32
 ATLAS ATLAS_SAKUYA_FIELD 32x128
 SAKUYA_FIELD_STRIP      ability/spirit/SAKUYA_FIELD_STRIP.png   @0,0,32x128
 ATLAS ATLAS_HUD_HITS 56x14
@@ -1315,3 +1322,31 @@ POFV109_C4_ORB_SOLID          ability/bball/C4_ORB_SOLID.png       30x30
 POFV109_BBALL_BORN           ability/bball/BBALL_BORN.png           8x8
 POFV109_BBALL_IDLE           ability/bball/BBALL_IDLE.png           8x8
 POFV109_BBALL_DIE            ability/bball/BBALL_DIE.png            8x8
+# ★★★★★ 2026-10-15（owner：「C4 期间要模仿 boss」✓ + 「这个是 th18 自己就有的 effect」✓ +
+#   「我只是让你'复制粘贴'到自机身上」✓）：★ **把 TH18 原生那两件 effect 原样搬到自机身上** ✓。
+#   · 魔法阵 = 原生 `effect.anm` script105（贴图 `effect/eff_magicsquare.png` 256×256 ✓，源图在
+#     `local/th18.v1.00a/anm/effect/effect/` 里 ✓ —— owner 提醒的"th18 自己就有" ✓）；
+#     ⇒ 直接用 `local/...` 源图那行（ORDER 语法 ①，构建时取 ✓），不再派生一份入库 ✓。
+#   · 红雾 = 原生 `enemy.anm` script107 的 sprite152–159（`enemy/enemy_aura.png`，**48×48 一格、y=0** ✓）
+#     ⇒ 已切 8 张入库（`assets/ability/boss_aura_red/RED_AURA_0..7.png` ✓，与 lolk/RING 同规矩 ✓）。
+MAGICSQUARE          local/th18.v1.00a/anm/effect/effect/eff_magicsquare.png   256x256
+# ★ 2026-10-15（owner：「一手 boss 还有一个深蓝色的"霸气"，大小跟魔法阵差不多」✓ +
+#   「就是按照那个 ecl 来做，只做这个羽化的圆」✓ + 「按照所处的状态，道中深蓝，boss 深红来做」✓）：
+#   ECL opcode 629 `fog(半径,颜色)` 的观感件（一手见 engine/enemy/th18/07-boss-aura-mesh.md §9.31）。
+#   贴图 = 自烤径向渐变 256×256（❓ 自定：原生是 17 段圆盘 mesh + 引擎 alpha 渐变 ⇒ 登记 TUNING）。
+#   ⚠ 必须写在 `ATLAS ATLAS_BOSS_AURA_RED` **段头之前** ✗（写进那段会被当成图集成员 ⇒
+#     报"显式段的成员要写 @x,y,WxH"⇒ 段内只许放成员行 ✓）。
+FOG_CIRCLE             ability/fog/FOG_CIRCLE.png                   256x256
+POFV109_C3M_LASER      ability/POFV109_C3M_LASER.png                254x14
+POFV109_C3S_ORB        ability/POFV109_C3S_ORB.png                  14x14
+POFV109_C4S_BULLET     ability/POFV109_C4S_BULLET.png               8x8
+POFV109_C4M_STAR       ability/POFV109_C4M_STAR.png                 14x14
+ATLAS ATLAS_BOSS_AURA_RED 384x48
+RED_AURA_0             ability/boss_aura_red/RED_AURA_0.png        @0,0,48x48
+RED_AURA_1             ability/boss_aura_red/RED_AURA_1.png        @48,0,48x48
+RED_AURA_2             ability/boss_aura_red/RED_AURA_2.png        @96,0,48x48
+RED_AURA_3             ability/boss_aura_red/RED_AURA_3.png        @144,0,48x48
+RED_AURA_4             ability/boss_aura_red/RED_AURA_4.png        @192,0,48x48
+RED_AURA_5             ability/boss_aura_red/RED_AURA_5.png        @240,0,48x48
+RED_AURA_6             ability/boss_aura_red/RED_AURA_6.png        @288,0,48x48
+RED_AURA_7             ability/boss_aura_red/RED_AURA_7.png        @336,0,48x48
