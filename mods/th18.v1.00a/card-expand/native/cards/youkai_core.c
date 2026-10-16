@@ -2426,18 +2426,25 @@ int yk_orbit_offset(unsigned step, float radius, float *dx, float *dy)
  * 常量一填好，就把 `YK_LE_TRUSTED` 改 1 ✓（并把 `youkai.c` 的探针 `YK_LE_PROBE` 关掉 ✓）。*/
 int yk_le_is_levelledit_fight(int boss_sub274, int boss_anm_main, int iv0)
 {
-    if (!YK_LE_TRUSTED) return 0;                    /* ❓常量未实测 ⇒ 保守回退 ✓ */
-    (void)boss_anm_main; (void)iv0;                  /* 实测后按日志里真正有区分度的那几项启用 ✓ */
-    if (YK_LE_BOSS_SUB274_MIN == YK_LE_BOSS_SUB274_MAX) return 0;   /* 未填 ⇒ 不命中 ✓ */
-    return boss_sub274 >= YK_LE_BOSS_SUB274_MIN && boss_sub274 <= YK_LE_BOSS_SUB274_MAX;
+    if (!YK_LE_TRUSTED) return 0;                    /* 保守回退（常量未钉死时）✓ */
+    (void)boss_anm_main; (void)iv0;                  /* 这两项实测**没有区分度** ✗ ⇒ 不用 ✓ */
+    /* ★★ 2026-10-17 钉死：`boss_sub274` 这个参数现在接的是 **boss ECL VM 的 `subroutine_index`** ✓
+     *   （参数名是历史遗留 ✗，链路与出处见头文件那段 ✓）。
+     *   判据 = `subroutine_index >= 24` ✓ —— 零售那份 ECL 只有 **24 个 sub**（最大索引 23 ✓），
+     *   而 leveledit 那份有 **62 个**（第 24 个之后全是米斯蒂娅专用段 ✓）⇒ 这条**只有他们能满足** ✓。*/
+    return boss_sub274 >= YK_LE_SUB_INDEX_MIN && boss_sub274 <= YK_LE_SUB_INDEX_MAX;
 }
 
 int yk_le_is_their_familiar(int enemy_id, int anm_main, int anm_slot0)
 {
-    if (!YK_LE_TRUSTED) return 0;                    /* ❓同上 ✓ */
-    (void)anm_main; (void)anm_slot0;
-    if (YK_LE_FAM_ID_FIRST == YK_LE_FAM_ID_LAST) return 0;
-    return enemy_id >= YK_LE_FAM_ID_FIRST && enemy_id <= YK_LE_FAM_ID_LAST;
+    if (!YK_LE_TRUSTED) return 0;
+    (void)enemy_id; (void)anm_main; (void)anm_slot0;
+    /* ✗ **仍未钉死**：他们的使魔在 TH18 里是"普通敌机"（README:127 ✓），
+     *   但**拿什么字段把它与别的敌机区分开**目前**没有任何一手依据** ✗ ——
+     *   旧口径（`YK_LE_FAM_ID_*` 的 id 区间）**已被实测否定** ✗ ⇒ 一律返回 0 ✓（不猜 ✓）。
+     *   ⇒ 接管那半（1/2 转伤 / 人妖切换）**尚未接线** ✗，待有依据再做 ✓；
+     *     `yk_le_mode()` 目前只影响**建不建自建使魔壳**那一条 ✓（= 老 goal 卡住的那半 ✓）。*/
+    return 0;
 }
 
 int yk_le_mode(int has_108, int boss_sub274, int boss_anm_main, int iv0)

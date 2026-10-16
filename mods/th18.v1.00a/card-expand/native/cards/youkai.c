@@ -1262,18 +1262,41 @@ static int yk_boss_active(void)
  *   ② 把**他们的**使魔当我们的使魔接管 ✓（下一批：喂进使魔台账 ⇒ **1/2 转伤** + 参与**人妖切换** ✓）；
  *   ③ **没装 108 时，绝不对它们做形态切换** ✗ —— 由"形态切换全部挂在本卡上"天然保证 ✓。
  *
- * ★ 本函数现在**恒返回 0** ✓：`yk_le_mode()` 内 `YK_LE_TRUSTED` 仍为 0（判别常量**必须**由 P113 探针的
- *   实跑日志钉死 ✓，不许猜 ✗）⇒ 这道门**完全惰性** ✓，行为与今天一致 ✓。
- * 读的都是 boss 敌机上的**只读字段** ✓，偏移出处 = vendor `zEnemyData`（与探针同源 ✓）。*/
-#define YK_LE_B_SUB274        0x274   /* __probably_cur_subscript_for_anm_main ✓ */
+ * ★★ 2026-10-17（老 goal 卡住的那半**收口** ✓）：判据已由**两份 dump 实测**钉死 ✓ ⇒ `YK_LE_TRUSTED = 1` ✓
+ *   本门**不再恒惰性** ✗ —— 命中条件 = **boss ECL VM 的 `subroutine_index >= 24`** ✓
+ *   （零售 `st02bs.ecl` 只有 **24 个 sub**、最大索引 23 ✓；leveledit 那份 **62 个** ✓ —— 详见头文件那段 ✓）。
+ *   ⚠ `+0x270` / `+0x28c` 实测**没有区分度** ✗ ⇒ 仍读出来只为留探针旁证 ✓。
+ * 读的都是 boss 敌机上的**只读字段** ✓，偏移出处 = vendor `zEnemyData` / `zEnemy`（与探针同源 ✓）。*/
+#define YK_LE_B_SUB274        0x274   /* __probably_cur_subscript_for_anm_main（★ **已不作判据** ✗）*/
 #define YK_LE_B_ANM_MAIN      0x270
 #define YK_LE_B_IV0           0x28c   /* ecl_int_vars[0] ✓ */
+/* ★ ECL VM 链（**全在 th18 的 vendor 里有一手** ✓）：
+ *   `zEnemy+0x0 = struct zEclVm`（内嵌 ✓）→ `+0xc = zEclRunContextHolder`（内嵌 ✓）
+ *   → `holder+0x0 = current_context`（`zEclRunContext*` ✓）→ `+0x4 = cur_location`（内嵌 `zEclLocation` ✓）
+ *   → `+0x0 = subroutine_index`（int32 ✓）
+ *   ⚠ 起点：`zEnemy` = `zEnemyData - CE_ENEMY_DATA(0x122c)` ✓（`engine.h:191` ✓）。*/
+#define YK_LE_ENEMY_DATA_OFF  0x122c  /* = CE_ENEMY_DATA ✓ */
+#define YK_LE_VM_CTX_HOLDER   0x0c    /* zEclVm.context ✓ */
+#define YK_LE_HOLDER_CUR      0x00    /* zEclRunContextHolder.current_context ✓ */
+#define YK_LE_CTX_CURLOC      0x04    /* zEclRunContext.cur_location ✓ */
+#define YK_LE_LOC_SUBIDX      0x00    /* zEclLocation.subroutine_index ✓ */
+static int yk_le_boss_sub_index(const uint8_t *b)
+{
+    const uint8_t *vm, *holder;
+    const uint8_t *ctx;
+    if (!b) return -1;
+    vm     = b - YK_LE_ENEMY_DATA_OFF;                     /* zEnemy ✓ */
+    holder = vm + YK_LE_VM_CTX_HOLDER;                     /* zEclRunContextHolder（内嵌）✓ */
+    ctx    = *(const uint8_t *const *)holder;              /* current_context ✓ */
+    if (!ctx) return -1;                                   /* 没在跑 ⇒ 不命中 ✓ */
+    return *(const int32_t *)(ctx + YK_LE_CTX_CURLOC + YK_LE_LOC_SUBIDX);
+}
 static int yk_le_here(void)
 {
     uint8_t *b = yk_boss();
     if (!b) return 0;
     return yk_le_mode(1 /* 本卡在场 ✓ */,
-                      *(const int32_t *)(b + YK_LE_B_SUB274),
+                      yk_le_boss_sub_index(b),             /* ★ 判据 = ECL subroutine_index ✓ */
                       *(const int32_t *)(b + YK_LE_B_ANM_MAIN),
                       *(const int32_t *)(b + YK_LE_B_IV0));
 }

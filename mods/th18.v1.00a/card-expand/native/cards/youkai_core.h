@@ -2692,15 +2692,27 @@ int yk_orbit_offset(unsigned step, float radius, float *dx, float *dy);
  *   （P113 的只读探针，见交接单 §4 ✓）。在 `YK_LE_TRUSTED` 置 1 之前，
  *   本组判据**一律返回"不命中 / 不抑制"** ✓ ⇒ **行为与今天完全一致** ✗（不猜 ✓）。
  *
- * 输入都是**只读字段**（与探针同源 ✓，出处 = vendor `type-structs-own.json` 的 `zEnemyData` ✓）：
- *   `boss_sub274` = boss 敌机的 `+0x274`（`__probably_cur_subscript_for_anm_main` ✓）；
- *   `boss_anm_main` = `+0x270`；`iv0` = `ecl_int_vars[0]`（`+0x28c` ✓）；
- *   `enemy_id` = `CE_ENEMY_ID`；`anm_main` / `anm_slot0` = `+0x270` / `+0x26c` ✓。*/
-#define YK_LE_TRUSTED            0   /* ❓待实测：P113 探针跑完「零售 / leveledit」两局后再置 1 ✓ */
-#define YK_LE_BOSS_SUB274_MIN    0   /* ❓待实测：只在 leveledit 局出现的那组值（见交接单 §4）*/
+ * 输入都是一手只读字段 ✓：
+ *   ★ `boss_sub274`（**参数名是历史遗留** ✗）现在接的是 **boss 那台 ECL VM 的 `subroutine_index`** ✓，
+ *     链路（**全在 th18 的 vendor `type-structs-own.json` 里** ✓）：
+ *       `zEnemy + 0x0 = struct zEclVm`（内嵌 ✓）→ `+0xc = zEclRunContextHolder`（内嵌 ✓）
+ *       → `holder + 0x0 = current_context`（`zEclRunContext*` ✓）→ `+0x4 = cur_location`（内嵌 `zEclLocation` ✓）
+ *       → `+0x0 = subroutine_index`（int32 ✓）；起点 `zEnemy = zEnemyData - CE_ENEMY_DATA(0x122c)` ✓（engine.h:191 ✓）。
+ *   `boss_anm_main` = `+0x270`；`iv0` = `ecl_int_vars[0]`（`+0x28c` ✓）；`enemy_id` = `CE_ENEMY_ID` ✓。
+ *
+ * ★★ **判据 `subroutine_index ≥ 24` 的来源**（2026-10-17 实测 ✓，两份 dump 逐条对过 ✓）：
+ *   · **零售** `local/th18.v1.00a/dat/st02bs.ecl`：`thecl -m th18.eclm -d 18` 解出 **24 个函数**
+ *     （末尾 `BossEscape` ✓）⇒ 零售**不可能**出现 ≥ 24 的 `subroutine_index` ✓；
+ *   · **leveledit** `stage02-mystia/files/st02bs.ecl`：解出 **62 个**，第 24 个之后全是米斯蒂娅专用段
+ *     （`MystiaMaskAnimate` / `MystiaSongStart` / `MystiaStars` … ✓）⇒ 那场**必然**用到 ≥ 24 的索引 ✓；
+ *   · 旁证：`mods/stage02-mystia/README.md` 的 sub 表（`Sub26–31 / 33–49 / 52–55 / 58/59/61` ✓）✓。
+ *   ✗ **被取代**：原打算用 `+0x274` 与 `YK_LE_FAM_ID_*`（敌机 id 区间 ✗）—— 两者都**没有实测支撑** ✗。*/
+#define YK_LE_TRUSTED            1   /* ★ 2026-10-17 置 1 ✓：判据已由两份 dump 实测钉死 ✓ */
+#define YK_LE_SUB_INDEX_MIN     24   /* ★ 零售 24 个 sub ⇒ 最大索引 23 ✓ ⇒ ≥24 只可能是 leveledit 版 ✓ */
+#define YK_LE_SUB_INDEX_MAX 0x7fffffff
+/* ⚠ 旧口径遗留 ✗（`+0x274` 那条）—— 只为兼容旧调用签名保留 ✓，判据看 `YK_LE_SUB_INDEX_*` ✓。*/
+#define YK_LE_BOSS_SUB274_MIN    0
 #define YK_LE_BOSS_SUB274_MAX    0
-#define YK_LE_FAM_ID_FIRST       0   /* ❓待实测：他们使魔敌机的 id 区间（探针的 le-probe(enemy) 行）*/
-#define YK_LE_FAM_ID_LAST        0
 
 /* 那场是不是 leveledit 版？（判据 = 上面那组常量；未钉死 ⇒ 恒 0 ✓）*/
 int yk_le_is_levelledit_fight(int boss_sub274, int boss_anm_main, int iv0);
