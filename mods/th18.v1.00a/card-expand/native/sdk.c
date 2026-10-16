@@ -2955,8 +2955,14 @@ int __cdecl BP_ce_item_frame(x86_reg_t *regs, void *bp_info)
      *     但**判据不再陈旧** ✓ —— 新一关的认领（`ce_hud_stage_begin` 的纪元 ✓）与卡侧
      *     "先算宽度"的查询（`ce_hud_row_remaining_w()` ✓）都读到当前真实状态 ✓。
      *   ⚠ 只**读** `mgr+0x38`（与上方各认领入口同一读法 ✓），不写引擎 ✗；
-     *     `CE_PLAYER()` 为 0（非游玩态）时不动 ✓ —— 与 `ce_invuln_apply()` 的守卫同款 ✓。*/
-    if (CE_PLAYER()) ce_hud_card_refresh();
+     *     `CE_PLAYER()` 为 0（非游玩态）时不动 ✓ —— 与 `ce_invuln_apply()` 的守卫同款 ✓；
+     *     并且**先验可读** ✓（`ce_ptr_readable(CE_ABILITY_MGR(), +0x38 之后 4 字节 ✓)`）——
+     *     这条是从本文件 P26 的教训来的 ✓（那是"守卫写反 ⇒ 静默扫 0 次" ✗；而这里是
+     *     新的**每帧**读写点 ⇒ 按 `sdk_core.h` 的规矩：**涉及引擎指针的新代码先做只读探针** ✓）。
+     *     认领入口那四处没加这道是因为它们只在认领瞬间跑 ✓（那时管理器必然在 ✓）；
+     *     本句是**每帧**跑 ⇒ 菜单/结算等边界也要安全 ✓。*/
+    if (CE_PLAYER() && ce_ptr_readable(CE_ABILITY_MGR(), CE_MGR_SELECTED_ACTIVE + 4))
+        ce_hud_card_refresh();
     /* ★ 2026-09-15：把「PoC 高度层」（收点线 `player+0x47998`）的聚合值落到字段上（每帧一次）。
      *   有声明 ⇒ 写 + 置 `Gui+0x194` bit `0x2000`（开那条开局指示线）；声明全撤 ⇒ 写回基准；都没有 ⇒ 一个字不写。
      *   ★ 本帧点**在道具池 body 之前**（见 `sites.py` 的 `ce_item_frame`）⇒ 引擎自己那四条
