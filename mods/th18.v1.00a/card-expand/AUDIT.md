@@ -32436,19 +32436,29 @@ owner 2026-10-15 实跑逐字：
 > 77 自己的文件（`cards/peashooter.c` / `cards/peashooter_core.{c,h}` / `tests/test_peashooter_core.c`）
 > ＋ 一个**共享件** `sdk.c`（下面第 ③ 条 ✓，对既有卡的影响面写在条目里 ✓）。
 
-| # | 文件 → 改了什么 | 为什么 | 怎么验证的 |
+| # | 文件 → 改了什么 | 为什么（短版）| 怎么验证的 |
 | --- | --- | --- | --- |
-| ① | `cards/peashooter.c` → `on_bullet_created` 里加**认弹闸**：读 `bullet+0xac`（= `(set<<8)\|行号` ✓ 一手 `engine/sht/th18/02-shooter-record.md:68-70` ✓）取 `>>8` 组号，只有 ∈ {`CE_SHT_SET_PEA_NORMAL`(**0x17**), `CE_SHT_SET_PEA_GATLING`(**0x18**)}（生成物 `native/sht_ids.h:4-5` ✓）才动 | 该钩子是**每颗弹出生都广播** ✓，原来只判"本卡在开大"、**没判这颗弹是谁的** ✗ ⇒ 开大期间**玩家主机每一颗弹**的朝向都被改写 ✗ | `make dll` rc=0；主机单测全绿（63 套 ✓）|
-| ② | `cards/peashooter.c` → 删掉 P54 的 `s_rand16[16]`（**整圈 16 向** ✗），换 `s_rand_spread[PS_SPREAD_N=41]`（**±20° / 1° 步长** ✓ 均匀抽 ✓）；新增生成脚本 `native/tools/gen_pea_spread_table.py` ✓ | owner 口径「前方一个角度范围内随机散射」✓「±20° 完全随机」✓；卡侧禁 libm ✗（`make dllx87`）⇒ 离线常量表 ✓ | 生成器产物与文件里 41 项 **diff 逐字一致** ✓ |
-| ③ | `cards/peashooter_core.{c,h}` → 新增 `pea_burst_frame()`（**每帧** ✓），把爆发的 `--gat_left` 从 `pea_shoot_frame()` **搬走** ✗；卡侧 `on_tick_2` 每帧调 ✓（`pea_out_t.burst_end` 退役 ✗）| 病根：`gat_left` 只在 `pea_shoot_frame()` 里减 ✓（`core.c:43`），而它**只在 `on_tick_shooters`（按住射击键才广播 ✗）**里被调 ⇒ 松手 ⇒ 爆发冻结 ⇒ `pea_burst_left()>0` 永远成立 ⇒ 卡侧每帧的无敌声明一直挂着 ✗ | ★ 回归 `test_burst_ends_without_firing()`：**一枪不打**、只按帧跑 ⇒ 爆发在 `PEA_GAT_FRAMES` 内走完 ✓ |
-| ④ | **共享件** `sdk.c` → 帧初钩子（`ce_invuln_apply()` 旁 ✓）加 `if (CE_PLAYER() && ce_ptr_readable(…)) ce_hud_card_refresh();` ✓ = **每帧重采**"原生'当前主动卡'UI 在不在" | 该标志原来**只在认领 HUD 槽那一刻采样一次** ✗ ⇒ 之后牌组/当前卡变了没人再刷 ⇒ 陈旧 1 ⇒ 货架永远让出 `68..124` ⇒ owner 看到**空位** ✓（引擎判据 `mgr+0x38` ✓，见 `engine/card/th18/15-selected-card-hud.md:70` ✓）| `make dll` rc=0；既有 `test_sdk_core.c` 的 HUD 让位用例全绿 ✓ |
-| ④′ | `cards/youkai.c`（**本卡自己的** ✓，不需 §BE）→ `yk_hud_claim()` 里加一段**只读诊断**：状态变化时打一行 `mgr+0x38` 指针 + `present` + `ce_hud_row_remaining_w()`（**700 = 让位 / 756 = 不让位** ✓）| 把 ④ 的两种可能分开：`+0x38 == NULL` 而宽 700 ⇒ **陈旧**（已被 ④ 修掉 ✓）；`+0x38 != NULL` ⇒ **判据语义**问题（引擎对非主动卡也留了对象 ✗）⇒ 那就要改判据（读当前卡 `category == 0` ✓：`cards_def.c:93` 写在表行 `+0x0c` ✓，卡对象 `+0x4c` 指向表行 ✓ 一手 `15-selected-card-hud.md:74` ✓）| 待 owner 实跑一局（108+77+71 ✓）读日志一行即可判定 ✓；定位后本段删掉 ✗ |
-| ⑤ | `tests/test_peashooter_core.c` → 驱动函数按新契约同步（每帧 `pea_burst_frame()` ✓）+ 新回归 ✓ | ③ 改了契约 ⇒ 必须同步测试 ✓（旧断言读 `o.burst_end` ✗ 会红 ✓）| `make quick` rc=0 ✓ |
-| ⑥ | **共享件** `native/tools/gen_drift.py` → 新增 `check_pea_spread()` ✓：跑 `gen_pea_spread_table.py`，把它吐的数据行与 `cards/peashooter.c` 里 `s_rand_spread[]` 那段**逐行**比对（两侧都先砍行尾注释与空白 ✓）| ② 那张表是**生成物** ✓（卡侧禁 libm ✗ ⇒ 离线算 ✓）⇒ 手改一个数字**没人会发现** ✗ ⇒ 与 `patch/*.js` 同一类风险 ✓，纳入同一道漂移闸 ✓ | ★ **正负双向都验过** ✓：现状 rc=0「41 项一致」✓；把第 0 项 `-0.3420f` 手改成 `-0.3421f` ⇒ rc=**1** ✓ 且指名「第一处不同在第 0 项」+ 两侧原值 ✓；改回后 rc=0 ✓、工作区无残留 ✓ |
-| ⑦ | `tests/test_peashooter_core.c` → 新增 `test_bullet_is_ours()` ✓（纯判据 `pea_bullet_is_ours()` 的边界 ✓：我们两组 × 行号 0/7/255 判是 ✓；组号 0x00–0x2f 里除我们两组**全部**判不是 ✗，含原生普攻 0x00 / 原生装备卡子机组 0x0a–0x15 / **108 那组 0x16** ✓；紧邻 0x16/0x19 也判不是 ✗）| ① 的判据原来只写在**卡侧接线**里 ✗ ⇒ 63 套主机单测碰不到 ⇒ 只能靠实跑验 ✓；抽成纯函数后 ⇒ 谁改坏当场红 ✓ | `make quick` rc=0 ✓（含本条 ✓）|
-| ⑧ | ★ **删除 P44 的「一扇 13 颗」扇形** ✗（`cards/peashooter.c`）：`PS_FAN_*` 四常量 ＋ `s_fan[]` 13 项表 ＋ `ps_proj_fan()` ＋ `s_ball_last`/`s_log_fan`/`s_fan_n` ＋ `on_tick_shooters()` 两处调用 ＋ `clear` 复位 ＋ 诊断行的 `大招扇=%u` —— **整组删除** ✗ | **owner 裁定**：「**我是要用 (a) 替换 (b)**」✓「**一手的大招只有一种发弹**」✓ ⇒ 那扇铺到 **±50°** ✗，与"±20° 内随机"矛盾 ✓，且一手没有第二种发弹 ✗；开大只剩 `ps_proj_fire()` 一条 ✓ | 残留 `grep` = 0 处（只剩注释 ✓）；`make dll`/`quick`/★`dllx87`/`cards-check` 全 rc=0 ✓ |
-| ⑨ | ★ **「一帧一颗」+ 每颗 10** ✓（三处必须一致 ✗）：`peashooter_core.h`（`PEA_GAT_INTERVAL` **5→1**、`PEA_GAT_ROWS` **7→1**、`PEA_GAT_DMG` **7→10**、`PE_DMG_GATLING` **7→10**）＋ **共享资产** `assets/sht/append_shooterset.py`（0x18 组：`fire_rate=5`+**7 条**±48px ⇒ `fire_rate=1`+**1 条**居中、`damage=10`）⇒ `make sht` 重生成 ✓ ＋ `tests/test_peashooter_core.c`（总伤 `2352→2400` ✓）| **owner 口径**：「**最好是一帧发一颗**」✓「**那就每颗 10**」✓ ⇒ 一次爆发 = 240 × 1 × 10 = **2400** ✓（原 2352 ✓，+2% ✓）；每帧 10 仍远低于最低上限（咲夜 60）✓ | `make sht` rc=0 ✓（`sht_ids.h:5` 自动变「**1 shooter**」✓）；`make quick`/`dll`/`dllx87`/`cards-check`/`dllverify`/`snd-check`/`gen_drift`/`contract_check` 全 rc=0 ✓ |
-| ⏳ | **玩家可见文案待 owner 定** ✗（我没擅自改 ✓）：卡面「一口气泼出**一百多颗**豌豆」⇒ 改成一帧一颗后一次爆发是 **240 颗** ✓ ⇒ 按本仓规矩应改成「**两百多颗**」✓ | 文案必须与实现一致 ✓ | — |
+| ① | `cards/peashooter.c`：`on_bullet_created` 加**认弹闸** ✓ | 该钩子**每颗弹都广播** ✗、原来没判"是不是我的弹" ✗ | `make dll` rc=0；63 套单测 ✓ |
+| ② | `cards/peashooter.c`：整圈 16 向表 ⇒ **±20° / 41 项** ✓ ＋ 生成脚本 ✓ | owner：「前方…随机散射」✓「±20° 完全随机」✓；卡侧禁 libm ✗ | 生成器产物 41 项**逐字一致** ✓ |
+| ③ | `peashooter_core.{c,h}`：新增 `pea_burst_frame()`（**每帧** ✓）| 倒计时原来只在射击帧减 ✗ ⇒ 松手冻结 ⇒ 无敌永挂 ✗ | ★ 新回归 `test_burst_ends_without_firing()` ✓ |
+| ④ | **共享件** `sdk.c`：帧初**每帧重采**"当前主动卡 UI 在不在" ✓ | 该标志只在认领时采一次 ✗ ⇒ 陈旧 1 ⇒ 货架空位 ✗ | `make dll` rc=0；`test_sdk_core.c` 全绿 ✓ |
+| ④′ | `cards/youkai.c`：`yk_hud_claim()` 加**只读诊断**一行 ✓ | 分开"陈旧"与"判据语义"两种可能 ✓ | 待 owner 实跑一局读日志 ✓ |
+| ⑤ | `tests/test_peashooter_core.c`：驱动按新契约同步 ✓ | ③ 改了契约 ⇒ 测试必须同步 ✓ | `make quick` rc=0 ✓ |
+| ⑥ | **共享件** `tools/gen_drift.py`：加 `check_pea_spread()` ✓ | 那张表是生成物 ✓ ⇒ 手改数字没人发现 ✗ | ★ **正负双向**验过 ✓ |
+| ⑦ | `tests/test_peashooter_core.c`：新增 `test_bullet_is_ours()` ✓ | ① 的判据抽纯 ⇒ 可主机回归 ✓ | `make quick` rc=0 ✓ |
+| ⑧ | `cards/peashooter.c`：**整组删除 P44 扇形** ✗ | owner：「用 (a) 替换 (b)」✓「一手只有一种发弹」✓ | 残留 `grep`=0 ✓；`dll`/`quick`/`dllx87`/`cards-check` ✓ |
+| ⑨ | `peashooter_core.h` ＋ **共享资产** `assets/sht/append_shooterset.py` ＋ 测试：**一帧一颗 + 每颗 10** ✓ | owner：「一帧发一颗」✓「那就每颗 10」✓ | `make sht` rc=0 ✓（`sht_ids.h` 变「1 shooter」✓）|
+| ⏳ | 卡面文案待 owner 定 ✗（"一百多颗" ⇒ 240 颗）| 文案必须与实现一致 ✓ | — |
+
+**细节（长句放表外 ✓ —— `check-docs` 的 `[tables]` 闸要求单元格 ≤200 字符 ✓）**
+
+- ① 判据：`bullet+0xac` = `(set<<8)|行号` ✓（一手 `engine/sht/th18/02-shooter-record.md:68-70` ✓）⇒ `>>8` 组号 ∈ {`CE_SHT_SET_PEA_NORMAL`=**0x17**, `CE_SHT_SET_PEA_GATLING`=**0x18**}（生成物 `native/sht_ids.h:4-5` ✓）；⚠ 不是卡侧 `PE_SET_*` 的 0/1 ✗。
+- ③ 病根：`gat_left` 只在 `pea_shoot_frame()` 里减 ✓（`peashooter_core.c:43`），而它**只在 `on_tick_shooters`（按住射击键才广播 ✗）**里被调 ⇒ 松手 ⇒ 爆发冻结 ⇒ `pea_burst_left()>0` 永远成立 ⇒ 卡侧每帧的无敌声明一直挂着 ✗。
+- ④ 病根：该标志原来**只在认领 HUD 槽那一刻采样一次** ✗ ⇒ 之后牌组/当前卡变了没人再刷 ⇒ 陈旧 1 ⇒ 货架永远让出 `68..124` ⇒ owner 看到**空位** ✓（引擎判据 `mgr+0x38` ✓，`engine/card/th18/15-selected-card-hud.md:70` ✓）。
+- ④′ 的两种可能：`+0x38 == NULL` 而宽 700 ⇒ **陈旧**（已被 ④ 修掉 ✓）；`+0x38 != NULL` ⇒ **判据语义**问题（非主动卡也留了对象 ✗）⇒ 那就要读当前卡 `category == 0` ✓（`cards_def.c:93` 表行 `+0x0c` ✓、卡对象 `+0x4c` 指向表行 ✓）。
+- ⑥ 负向验证：把第 0 项 `-0.3420f` 手改成 `-0.3421f` ⇒ rc=**1** ✓ 且指名「第一处不同在第 0 项」+ 两侧原值 ✓；改回后 rc=0 ✓、工作区无残留 ✓。
+- ⑧ 删的范围：`PS_FAN_*` 四常量 ＋ `s_fan[]` 13 项表 ＋ `ps_proj_fan()` ＋ `s_ball_last`/`s_log_fan`/`s_fan_n` ＋ `on_tick_shooters()` 两处调用 ＋ `clear` 复位 ＋ 诊断行的 `大招扇=%u` ✓。
+- ⑨ 三处一致性：`PEA_GAT_INTERVAL` **5→1**、`PEA_GAT_ROWS` **7→1**、`PEA_GAT_DMG` **7→10**、`PE_DMG_GATLING` **7→10** ＋ 0x18 组 `fire_rate=1`/1 条/`damage=10` ✓ ⇒ 一次爆发 240 颗 × 10 = **2400** ✓（原 2352 ✓，+2% ✓）；每帧 10 仍远低于最低每帧上限（咲夜 60）✓。
 
 **对既有卡的影响面（共享件 ④ ✓）**：`sdk.c` 这一句只**读**引擎的 `mgr+0x38`（与 `sdk.h` 里四个认领入口
 同一读法 ✓）⇒ **不写引擎** ✗、不改任何卡的声明数据 ✓；唯一行为变化 = 货架让位判据**不再陈旧** ✓
