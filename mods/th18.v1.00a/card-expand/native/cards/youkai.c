@@ -413,6 +413,75 @@ static int yk_focused(void)
 static int yk_trance_active(void) { return ce_card_flag_any(CE_CARD_FLAG_TRANCE); }
 static int yk_roar_active(void)  { return ce_card_flag_any(CE_CARD_FLAG_ROAR); }
 
+/* ★★ 2026-10-15 **只读诊断探针**（为 owner 的「同开」需求：leveledit 米斯蒂亚那场要接管他们的使魔 ✓）。
+ *
+ * 目的 = **把"那场"的判别信号实测出来** ✓，而不是照 README 猜 ✗ —— 已实测证伪一条：
+ * 他们改的 `st02enm.anm` 脚本号**仍是 0–18** ✓（`thanm -l 18` ✓ ⇒ README 说的「追加 scripts 28/29」
+ * 指的是 **TH08 源侧 `anm8/enemy.anm`** ✗，不是 TH18 运行时的号 ✓）。
+ * 另一条（ECL sub 索引）本机拿不到：他们编译要的 `th08.dat` 修订（sha256 `9d7edf43…`）不在这台机器上 ✗
+ * ⇒ 所以**改成实测**：拿零售局与 leveledit 局的日志一比，哪个字段能区分一目了然 ✓。
+ *
+ * 做法：**只在有 boss 在场时**、每 30 帧一行 ✓；字段**全部只读** ✓：
+ *   boss：id / flags / `anm_main` / `anm_slot_0_script` / `+0x274` / `own_boss_id` / `time_in_ecl.cur`
+ *         / **`ecl_int_vars[4]`** / **`ecl_float_vars[]`** ✓
+ *   其它敌机（最多 8 只 ✓）：id / `anm_main` / `slot0` / `+0x274` / `time_in_ecl.cur` ✓
+ *   —— 他们的使魔是「移植为 TH18 **普通敌人**」✓ ⇒ 会出现在这一列 ✓。
+ * 之后把判别常量钉进 `youkai_core` ✓，**再回来把本探针关掉** ✓（`YK_LE_PROBE` 改 0 ✓）。
+ *
+ * 偏移出处 = `local/vendor/th-re-data/data/th18.v1.00a/type-structs-own.json` 的 `zEnemyData` ✓
+ * （`anm_slot_0_script` +0x26c / `anm_main` +0x270 / `__probably_cur_subscript_for_anm_main` +0x274 /
+ *  `ecl_int_vars` +0x28c / `ecl_float_vars` +0x29c / `time_in_ecl` +0x2bc（`zTimer`：cur = +4）/ `own_boss_id` +0x5140 ✓）。*/
+#define YK_LE_PROBE 1
+#if YK_LE_PROBE
+#define YK_E_ANM_SLOT0_SCRIPT 0x26c
+#define YK_E_ANM_MAIN        0x270
+#define YK_E_SUB274          0x274
+#define YK_E_TIN_ECL_CUR     0x2c0      /* zTimer @+0x2bc：prev(+0)/current(+4)/current_f(+8) ✓ */
+#define YK_E_ECL_IVARS       0x28c
+#define YK_E_ECL_FVARS       0x29c
+#define YK_E_OWN_BOSS        0x5140
+static void __attribute__((noinline)) yk_le_probe(void)
+{
+    static uint32_t s_probe_n;
+    uint8_t *em, *e;
+    int32_t i, shown = 0;
+    if (s_probe_n++ % 30u) return;                        /* 30 帧一行 ✓ */
+    em = CE_ENEMY_MGR();
+    if (!em) return;
+    for (i = 0; i < CE_EM_BOSS_SLOTS; ++i) {
+        int32_t bid = *(int32_t *)(em + CE_EM_BOSS_IDS + (size_t)i * 4);
+        if (!bid) continue;
+        e = ce_enemy_by_id(em, bid);
+        if (!e) continue;
+        ce_log("le-probe(boss%d): id=%d fl=%08x anmMain=%d slot0=%d sub274=%d own=%d tin=%d iv=%d,%d,%d,%d fv=%.2f,%.2f,%.2f",
+               (int)i, (int)bid, (unsigned)*(const uint32_t *)(e + CE_ENEMY_FLAGS),
+               (int)*(const int32_t *)(e + YK_E_ANM_MAIN),
+               (int)*(const int32_t *)(e + YK_E_ANM_SLOT0_SCRIPT),
+               (int)*(const int32_t *)(e + YK_E_SUB274),
+               (int)*(const int32_t *)(e + YK_E_OWN_BOSS), (int)*(const int32_t *)(e + YK_E_TIN_ECL_CUR),
+               (int)*(const int32_t *)(e + YK_E_ECL_IVARS),
+               (int)*(const int32_t *)(e + YK_E_ECL_IVARS + 4),
+               (int)*(const int32_t *)(e + YK_E_ECL_IVARS + 8),
+               (int)*(const int32_t *)(e + YK_E_ECL_IVARS + 12),
+               (double)*(const float *)(e + YK_E_ECL_FVARS),
+               (double)*(const float *)(e + YK_E_ECL_FVARS + 4),
+               (double)*(const float *)(e + YK_E_ECL_FVARS + 8));
+    }
+    CE_ENEMY_FOREACH(em, e) {
+        if (shown >= 8) break;
+        if (!ce_enemy_lockable(e)) continue;
+        ce_log("le-probe(enemy): id=%d anmMain=%d slot0=%d sub274=%d tin=%d",
+               (int)*(const int32_t *)(e + CE_ENEMY_ID),
+               (int)*(const int32_t *)(e + YK_E_ANM_MAIN),
+               (int)*(const int32_t *)(e + YK_E_ANM_SLOT0_SCRIPT),
+               (int)*(const int32_t *)(e + YK_E_SUB274),
+               (int)*(const int32_t *)(e + YK_E_TIN_ECL_CUR));
+        ++shown;
+    }
+    ce_log("le-probe: live=%d", (int)*(const int32_t *)(em + CE_EM_ENEMY_COUNT));
+}
+#endif /* YK_LE_PROBE */
+
 /* 每帧一次（在 `on_tick_2` 最前面调用）：更新「锁形态」状态机。
  * 「真 B」判据 = `bomb_mgr+0x30`（`do_bomb`，`engine.h`）**且起手那一帧不在决死窗口里**：
  *   灵击 = 决死窗口（自机状态 4，`player+0x476ac`，`Player__die` 写、持续 8 帧
@@ -422,6 +491,9 @@ static int yk_roar_active(void)  { return ce_card_flag_any(CE_CARD_FLAG_ROAR); }
  *     只看瞬时状态会把它的后半段误判成真 B。*/
 static void yk_side_lock_tick(void)
 {
+#if YK_LE_PROBE
+    yk_le_probe();          /* ★ 只读诊断：把"那场"的判别信号实测出来（常量钉死后关掉 ✓）*/
+#endif
     uint8_t *m = CE_BOMB_MGR();
     int act = (m && *(const int32_t *)(m + CE_BOMB_MGR_ACTIVE) != 0) ? 1 : 0;
     int state4 = yk_deathbomb_window(*(const int32_t *)(CE_PLAYER() + CE_PLAYER_STATE));
