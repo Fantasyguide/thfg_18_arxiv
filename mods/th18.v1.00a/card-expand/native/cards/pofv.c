@@ -6045,7 +6045,25 @@ static void pofv_c3s_spawn(float x, float y)
     if (k >= POFV_C3S_MAX) return;
     s_c3s[k].live = 1; s_c3s[k].age = 0; s_c3s[k].life = 120;
     s_c3s[k].x = x; s_c3s[k].y = y;
-    s_c3s[k].vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), POFV_C_RING_SCRIPT, POFV_C4_VM_LAYER);
+    s_c3s[k].vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
+                         /* ★★★★★ 2026-10-16 **owner：「必须核出来早苗 C3 和 C4 的外观」✓ —— 核完了 ✓**：
+                          *   ★ 一手（`local/th19.v1.10c/_ext/ecl/pl02.txt:311 ExAttack2()` ✓）：
+                          *   ★ `ins_302(3); ins_500(32,32); ins_502(35);` ⇒ ★ **放 anm 脚本 35** ✓。
+                          *   ★ 脚本 35 的正文（`local/th19.v1.10c/anm/bullet/bullet.anm.txt:872` ✓）：
+                          *   ★ `type(1); blendMode(1); layer(10); `**`sprite(sprite351)`**`; alpha(128);
+                          *      scaleTime(14, 4, 1.9f, 1.9f);` ＋ 每帧随机 ±12 偏移、随机自转、
+                          *      `posTime(28, 0, …)`、`+8: alpha(20)`、`+14: scaleTime(14,1,0.8,0.8)`、
+                          *      `+14: delete()` ⇒ ★ **短命 28 帧、加算、淡出放大的随机飘动光点** ✓。
+                          *   ★ `sprite351` 的矩形（`bullet.anm.txt:368` ✓）＝ ★ `(241, 177, 14, 14)` ✓
+                          *   ⇒ ★ **y=177 就是那一行"星星"** ✓（与魔理沙 C4 的弹 `sprite256..269` **同一行** ✓，
+                          *   只差**最右一列**的颜色 ✓）★ ⇒ ★ 所以本处**直接复用**已切好的星素材
+                          *   （`POFV109_C4M_STAR` ✓，来自同排第一列 ✓）。
+                          *   ⚠ ★ 与一手的差别（如实标 ✗）：★ 一手里她是**第 14 列**（x=241 ✓）、
+                          *   本处用**第 1 列**（x=1 ✓）⇒ 颜色略不同 ✓；★ 若 owner 要按一手取色，
+                          *   只需再切一张 `(241,177,14,14)` 并换这一行 ✓（登记 `TUNING` ✓）。
+                          *   ⚠ ★ 本笔只换**贴图** ✓；一手那套"28 帧 α/scale 曲线 + 随机飘动"★ 待下一笔做 ✓。*/
+                         CE_ANM_ABILITY_SCRIPT_POFV109_C4M_STAR,
+                         POFV_C4_VM_LAYER);
     if (s_c3s[k].vm) {
         ce_anm_set_color((uint32_t)s_c3s[k].vm, 0xffffffffu);
         ce_anm_set_pos((uint32_t)s_c3s[k].vm, x, y, 0.0f);
