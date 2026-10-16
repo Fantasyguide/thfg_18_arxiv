@@ -15,8 +15,12 @@
 用法：
   MODKIT_DIR="/mnt/d/项目/幻想指南/18/th18_modkit" python3 tools/deploy.py
   python3 tools/deploy.py --modkit <dir> [--dry-run] [--skip-build]
-发布内容：patch js + DLL（3 个路径）。资产（pl0X.sht / ability.anm）与其余 modkit 同步交给机器本地的
-`local/sync_modkit_dll.sh`（若存在则自动执行；它才是知道本机路径那一半）。
+发布内容：patch js + DLL（3 个路径）+ **资产（`ability.anm` / `pl0X.sht`）**。
+★ 2026-10-15 起**资产也由本脚本发**（走 `tools/sync_assets.py`：md5 相同跳过 / 不同先备份再拷 /
+回读校验，**不一致就中止发布**）—— 之前那句「资产交给机器本地的 `local/sync_modkit_dll.sh`」**是错的** ✗：
+那个脚本只发 DLL + BGM + `start_deck`，**anm 没人发** ⇒ modkit 里的图集可能是别的批次
+⇒ 所有 sprite 索引按错图集解释 ⇒ **全屏错位** ✗（owner 实跑受害一次）。
+其余 modkit 同步（BGM / `start_deck`）仍交给 `local/sync_modkit_dll.sh`（它知道本机路径那一半）。
 """
 import argparse
 import hashlib
@@ -126,13 +130,25 @@ def main():
             n_pat = sum(1 for s2, _ in targets if s2 == PATCH)
             print("  ✅ 全部回读一致：patch %s（%d 份）、DLL %s（%d 份）、数据文件 %d 份" %
                   (pmd5, n_pat, dmd5, n_dll, len(targets) - n_pat - n_dll))
+        # ★★ 2026-10-15 新增：**资产（anm / sht）必须与 DLL、patch 同批**。
+        #   事故形态：deploy 只发 patch+DLL、本机脚本只发 DLL+BGM ⇒ modkit 里的
+        #   `th18/ability.anm` 是**别人批次**的 ⇒ 所有 sprite 索引按错图集解释 ⇒ **全屏错位** ✗
+        #   （DLL 是新的、sht 也对，只有图集是旧的 —— md5 对比才看出来）。
+        #   ⇒ 把资产同步做成发布的**一步**，且**不一致就中止**（别让半批出去）。
+        print("⑤ 资产同步（anm / sht，必须与 DLL 同批）")
+        rc = run([sys.executable, os.path.join(HERE, "sync_assets.py"), "--modkit", a.modkit], a.dry_run)
+        if rc:
+            print("❌ 资产同步失败（rc=%d）⇒ **不要拿去实跑**：modkit 现在可能与构建不同批" % rc)
+            return 1
+        print("  ✅ 资产回读一致（与 DLL/patch 同一次构建）" if not a.dry_run
+              else "  （dry-run：只打印命令，未真校验）")
         local = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(MOD)))),
                              "local", "sync_modkit_dll.sh")
         if os.path.exists(local):
-            print("⑤ 机器本地同步（资产等）：%s" % local)
+            print("⑥ 机器本地同步（BGM / start_deck 等）：%s" % local)
             rc = run(["bash", local], a.dry_run)
             if rc:
-                print("⚠ 本地同步脚本返回 %d（资产可能没同步上）" % rc)
+                print("⚠ 本地同步脚本返回 %d（BGM / start_deck 可能没同步上）" % rc)
     print("✅ deploy 完成" + ("（dry-run，未改任何文件）" if a.dry_run else ""))
     return 0
 

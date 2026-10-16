@@ -1,0 +1,30 @@
+// 卡 109「boss 的深蓝色霸气」—— TH18 原生 effect.anm script116 的 1:1 复刻（该族的深蓝档）
+// （owner 2026-10-15 一手表现：「boss 还有一个现在看清似乎是**深蓝色**的『霸气』？**大小跟魔法阵大小差不多**」）
+//
+// 一手出处：engine/enemy/th18/07-boss-aura-mesh.md §9.28／§9.28a（th18 v1.00a）
+//   · 原生族 = `effect.anm` **光环云族**：贴图 `effect/eff_aura.png` 的 sprite34/35（**48×48**）；
+//     每台 VM 用引擎给的随机量（`%RANDF`/`%RANDF2`/`%RANDRAD`）自己决定位置/大小/角度
+//     ⇒ ★ **多起几台 = 一片随机云**（单支 50–130 px，成簇 ≈200–300 px ⇒ 与魔法阵 256 px 同量级 ✓）。
+//   · 本色档三支（原生号 → 内容）：
+//       **116** `sprite35; blendMode(1); layer(3); type(1); rotate(0,0,%RANDRAD); color(0,0,160); …`  ← ★ 本文件
+//       **115** `sprite34; blendMode(1); layer(6); anchor(0,2); color(32,32,160); …`（见同目录 464）
+//       **109** `sprite35; layer(6); color(255,255,255); …`（同位置的白雾伴侣，草案暂缺）
+//   · 贴图切法（原生 → 我们的图集，见同目录 README）：
+//       AURA_PUFF  = eff_aura.png 的 (48,0,48,48)  ← 原生 sprite35
+//       AURA_PLUME = eff_aura.png 的 (0,0,48,48)   ← 原生 sprite34
+script script463 {
+    sprite(@AURA_PUFF);
+    blendMode(1);                 // 加算
+    layer(3);                     // ★ 原生在层 3（比红魔法阵的层 6 更靠下）
+    type(1);
+    rotate(0.0f, 0.0f, %RANDRAD); // 随机朝向
+    color(0, 0, 160);             // ★ 深蓝
+    fsetMul(%F0, %RANDF, 0.7f);
+    fadd(%F0, 1.6f);
+    scale(%F0, %F0);
+    scaleTime(30, 4, 0.7f, 0.7f);
+    alpha(0);
+    alphaTime(30, 4, 255);
++30: // 30
+    delete();
+}

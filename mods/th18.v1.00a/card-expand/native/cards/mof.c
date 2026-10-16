@@ -249,6 +249,17 @@ typedef struct {
 /* ★ 2026-09-16r：跨关账本的**权威副本**（见 `ctor` 的说明）。`ctor` 恢复它、每帧同步它。*/
 static faith_slot_t s_slot_keep;
 static int32_t      s_slot_stage = -1;
+/* ★★★ 2026-10-14（P30，修 P17 审计 **F4**，owner：**F4 肯定得动** ✓）：**奖残账本的跨关镜像** ✓。
+ *   `mof_bonus`（蓝点奖残计数 `mof_bonus_t` ✓）在 ctor 里原来**无条件** `mof_bonus_init()` ✗ ⇒
+ *   换面时 ctor 一跑就归零 ✗（本卡 `ctor` 在**关卡切换**时也会跑 ✓）。而它的语义是**一局一份** ✓
+ *   （阈值 `MOF_BONUS_MAX` 是「一局能拿几次奖残」，不是「一关」✓）。
+ *   修法 = 与 `s_slot_keep` **完全同款**（同一处判据、同一条时序 ✓，不发明新机制 ✓）：
+ *     · `on_stage_start`（引擎在换关时**先**调它、再调 `ctor` ✓ —— 实测日志 `on_stage_start (+0x34) first hit`
+ *       → `ctor (+0x00) first hit` ✓）里把当前账本**存进本镜像** ✓；
+ *     · `ctor` 走「同关/换面」支路时**从镜像恢复** ✓；走「新局」支路时正常 init ✓；
+ *     · `mof_clear()`（retry / 删卡 ✓）把镜像**重设成干净账本** ✓ + 哨兵置 -1 ⇒ 下一次 `ctor` 必走新局支路 ✓。
+ *   ⚠ 计分口径的复核按 owner 说的**往后放** ✓（本批只保证「换面不清」✓）。*/
+static mof_bonus_t  s_bonus_keep;
 
 _Static_assert(sizeof(mof_card_t) <= 496, "ce_state 上限 496 字节（超了会静默返回 NULL）");
 
@@ -1577,6 +1588,20 @@ static void mof_clear(ce_card_t *c)
      * 重新装卡后的第一帧误判成「没换关」而带着旧计数走）。`mof_stage_frames()` 首帧见 -1 ⇒ 归零。*/
     s->stage_frames_ref = -1;
     s->stage_id_ref = -1;
+    /* ★★ 2026-10-14（P21，修 P17 审计 F2/F3）：**账本镜像与哨兵一起归零** ⇒ 之后无论哪个时序的 `ctor`
+     *   （`+0x4c` 之后紧跟的那次 ✓，或新拿卡时的分配 ✓）都必然走"新局"支路 ✓，两条时序结果一致 ✓。
+     *   修的正是下面两件事（`LIFECYCLE-AUDIT.md` §4）：
+     *     · **F2**：同一关 retry / 从第 1 关退主菜单再重进 ⇒ 关号**没变小** ⇒ 旧判据落进恢复支路，
+     *       把上一局的 Δ/连击（更早还叠加 `s_slot_keep` 的陈旧镜像）恢复进新局 ✗；
+     *     · **F3**：进程内第一次 ctor 时哨兵 = -1 ⇒ 旧判据 `> 0` 为假 ⇒ 同样走恢复 ⇒ 去恢复
+     *       **全零静态** ⇒ `base = 0`（110 本应恒 `FAITH_BASE_110`）⇒ `mof_declare_score()` 的耦合
+     *       声明恒 0 ✗（数值级 ✓）。
+     *   等价先例 = 112 把哨兵置 `NONE`（`ufo.c:6330`）✓；这里是"干净镜像 + 哨兵 -1"的等价写法 ✓。
+     *   ⚠ 副作用（有意 ✓）：被删掉后**又以同 id 回来**的卡也从干净账本起步 ✓ —— 与 `s_p_item` 那种
+     *     「绝对干净」的声明一致 ✓（此前它会继承被摧毁那张卡的旧 Δ ✗，见审计 F7g）。*/
+    faith_slot_init_110(&s_slot_keep);
+    mof_bonus_init(&s_bonus_keep);        /* ★ P30：镜像也重设成干净账本（配哨兵 -1 ⇒ 下次 ctor 走新局 ✓）*/
+    s_slot_stage = -1;
 }
 
 /* ★★ 2026-09-18：把「注册共享池 + 认领组合 UI 块」抽出来 —— `on_load` 与 `on_tick_2` 都调它。
@@ -1640,17 +1665,23 @@ static int ctor(ce_card_t *c)
      * 机制：`on_run_reset` / 卡对象重建在**关卡切换**时也会跑（`mof_clear()` 那个 `memset` 会把
      *   Δ / 连击 / 信号一起抹掉）⇒ 账本**搬进文件静态**（卡是单例；与 `s_opt[]` / `s_tint_*` 同一层做法），
      *   `ctor` 从这里**恢复**，只有「关卡号变小」（回到第 1 关 / 重开一局 / 练习重选关）才重新初始化。*/
-    if (s_slot_stage > 0 && (int32_t)CE_CURRENT_STAGE() < s_slot_stage) {
+    if (s_slot_stage < 0 || (int32_t)CE_CURRENT_STAGE() < s_slot_stage) {
+        /* ★★ 2026-10-14（P21，修 P17 审计 F2/F3）：
+         *   · `s_slot_stage < 0` = **进程内第一次**（首次获得 / 新拿卡 / 刚被 `mof_clear` 归零）也算新局 ✓
+         *     —— 旧判据 `> 0` 让首局落进恢复支路、去恢复一个**全零静态** ⇒ `base = 0`（F3 ✗）；
+         *   · 「同关 retry / 从第 1 关退主菜单再重进」时关号**没变小** ⇒ 旧判据也落进恢复支路，
+         *     把上一局的 Δ/连击带进新局（F2 ✗）—— 现在由 `mof_clear()` 把哨兵置 -1 兜住 ✓。*/
         ce_log("mof: 新一局（stage %d -> %d）⇒ 信仰账本归零（原 Δ %d）",
                (int)s_slot_stage, (int)CE_CURRENT_STAGE(), (int)(s_slot_keep.delta / FAITH_FIXED));
         faith_slot_init_110(&s->slot);        /* 基础恒 50000、Δ 从 0 起算、下限 0 */
+        mof_bonus_init(&s->bonus);            /* ★ P30：奖残账本也是「一局一份」⇒ 只有新局才清 ✓ */
     } else {
+        s->bonus = s_bonus_keep;              /* ★ P30：奖残账本同理，换面**不清** ✓ */
         s->slot = s_slot_keep;                /* ★ 一面→二面：**不清**（跨关保留 Δ 与连击）
                                                * ⚠ 「信号槽每关归零」那条只归 111（110 没有信号槽，
                                                *   见 `faith_hud.c` 的声明：110 的 `v.signal` 恒 0）*/
     }
     s_slot_stage = (int32_t)CE_CURRENT_STAGE();
-    mof_bonus_init(&s->bonus);
     s->last_graze = -1;
     s->last_lives = -1;
     s->stage_frames_ref = -1;             /* ★ 门③的关卡帧计数：首帧起算（见 `mof_stage_frames()`）*/
@@ -1661,8 +1692,17 @@ static int ctor(ce_card_t *c)
     return 0;
 }
 
-static void on_run_reset(ce_card_t *c) { mof_clear(c); }   /* ⚠ 不再清账本：`ctor` 会从 s_slot_keep 恢复 */
-static void on_delete(ce_card_t *c)    { mof_clear(c); }
+/* ★★ 2026-10-14（P32，owner 口径「哦，retry可以重走一次入场」✓）：**retry / 新一局** ⇒ 共享 HUD
+ *   **重走一次入场** ✓ —— `mof_clear()` 里那次 `faith_hud_departed()` 走的是**删卡**语义
+ *   （另一张还在就留着 ✗，因为删卡发生在商店、tick 全停 ⇒ 收掉没人重建 ✗）；这里在局末/retry 这一路
+ *   **再无条件收一次** ✓ ⇒ 下一帧 `on_draw` 照旧按需重建 16 支 VM ⇒ 脚本自带的 20 帧淡入**重播一次** ✓。
+ *   ⚠ 幂等：`mof_clear()` 已经收过也不怕（`fh_kill()` 里句柄已置 0 ✓）。*/
+static void on_run_reset(ce_card_t *c) { mof_clear(c); faith_hud_run_reset(); }
+/* ★★ 2026-10-14（P20）：**删卡时注销**灵击提供者（唯一必须走 `on_delete` 而不是 `on_run_reset` 的一步 ✗）——
+ *   理由见 `bomb10.h` 的 `bomb10_unregister_host()`：卡被删后 `ce_state` 的内存会被别的卡领走，
+ *   而机器每帧仍会拿这条注册去调 `gate`/`on_start`/`on_cancel`（都写那块内存）⇒ 写进别人的活状态 ✗✗。
+ *   `on_run_reset`（retry）时卡**还在场**，注销会让它的灵击平白失效 ⇒ 只在 `on_delete` 调 ✓。*/
+static void on_delete(ce_card_t *c)    { mof_clear(c); bomb10_unregister_host(&s_bomb_host); }
 
 /* ★ 2026-09-15：换关时把**灵击**收掉（一手：TH10 的灵击是一个 per-stage 的对象 ——
  *   `Bomb` 的 anm VM 归关卡所有，换关时 bullet.anm 的 VM 被清 ⇒ VM 没了 `Bomb::on_tick` 就把
@@ -1677,6 +1717,7 @@ static void on_stage_start(ce_card_t *c)
     mof_card_t *s = st(c);
 
     if (!s) return;
+    s_bonus_keep = s->bonus;   /* ★ P30：换关前把奖残账本存进镜像（本回调先于 ctor ✓）*/
     bomb10_reset();
     s->spell_watch.was = 0;
     s->spell_watch.bombed = 0;

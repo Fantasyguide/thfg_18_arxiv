@@ -69,3 +69,113 @@ int pea_needs_cap(const pea_state_t *s)
 {
     return s->inflight != 0;
 }
+
+/* ★ P40：电弹连锁的选目标（见 peashooter_core.h 的注释 ✓）——半径内、未访问过、最近的那个 ✓；
+ *   没有合格的返回 -1 ✓。纯函数 ⇒ 主机单测覆盖 ✓（tests/test_peashooter_core.c）。*/
+int pea_chain_pick(const float *xy, const uint32_t *id, int n, float cx, float cy, float r,
+                   const uint32_t *visited, int nv)
+{
+    int i, k, best = -1;
+    float best_d2;
+    if (!xy || !id || n <= 0 || r <= 0.0f) return -1;
+    best_d2 = r * r;
+    for (i = 0; i < n; ++i) {
+        float dx, dy, d2;
+        int seen = 0;
+        if (id[i] == 0) continue;                        /* 0 = 没 id ⇒ 不敢当目标 ✓ */
+        for (k = 0; k < nv; ++k)
+            if (visited && visited[k] == id[i]) { seen = 1; break; }
+        if (seen) continue;                              /* 已连过的不再连 ✓（防成环 ✓）*/
+        dx = xy[2 * i] - cx;
+        dy = xy[2 * i + 1] - cy;
+        d2 = dx * dx + dy * dy;
+        if (d2 <= best_d2) { best_d2 = d2; best = i; }    /* `<=` ⇒ 等距取后一个（入参顺序稳定 ⇒ replay 稳 ✓）*/
+    }
+    return best;
+}
+
+/* ★ P42：电弧按敌人对去重（见 peashooter_core.h 注释 ✓；纯函数 ⇒ 主机单测覆盖 ✓）。*/
+uint32_t pea_arc_key(uint32_t a, uint32_t b)
+{
+    uint32_t lo = (a < b) ? a : b, hi = (a < b) ? b : a;
+    return (lo << 16) ^ (hi & 0xffffu);          /* 两个 id 各 16 位以内 ⇒ 无序对唯一 ✓（与顺序无关 ✓）*/
+}
+
+int pea_arc_find(const uint32_t *keys, int n, uint32_t key)
+{
+    int i;
+    if (!keys || n <= 0) return -1;
+    for (i = 0; i < n; ++i) if (keys[i] == key) return i;
+    return -1;
+}
+
+int pea_arc_put(uint32_t *keys, uint32_t *vms, const uint8_t *alive, int n, uint32_t key, uint32_t vm)
+{
+    int i, free_i = -1;
+    if (!keys || !vms || n <= 0) return -1;
+    for (i = 0; i < n; ++i) {
+        if (keys[i] == key) { vms[i] = vm; return i; }      /* 同对 ⇒ 复用那个槽（不新建 ✓）*/
+        if (free_i < 0 && (!alive || !alive[i])) free_i = i;/* 记下第一个"已死"的槽 ✓ */
+    }
+    if (free_i < 0) return -1;                              /* 表满且无同对 ⇒ 宁可不建 ✓ */
+    keys[free_i] = key; vms[free_i] = vm;
+    return free_i;
+}
+
+/* ★ P43：卡侧电弹（见 peashooter_core.h 注释 ✓）——纯逻辑，主机单测覆盖 ✓。*/
+void pe_proj_clear_all(pe_proj_t *a, int n)
+{
+    int i;
+    if (!a) return;
+    for (i = 0; i < n; ++i) { a[i].alive = 0; a[i].cd = 0; }
+}
+
+int pe_proj_spawn(pe_proj_t *a, int n, float x, float y, float vx, float vy, int set, int dmg)
+{
+    int i;
+    if (!a || n <= 0) return -1;
+    for (i = 0; i < n; ++i) {
+        if (a[i].alive) continue;
+        a[i].alive = 1;
+        a[i].x = x; a[i].y = y;
+        a[i].vx = vx; a[i].vy = vy;
+        a[i].set = set;
+        a[i].dmg = dmg;
+        a[i].cd = 0;                       /* 出生当帧就能结算（与 89 一致 ✓）*/
+        return i;
+    }
+    return -1;                             /* 满了（只影响数量 ✓，不炸 ✓）*/
+}
+
+/* 便捷版：照那一组的默认速度/伤害、正上方 ✓（正常 = 1 颗大豌豆 / 机枪 = 小豌豆 ✓）。*/
+int pe_proj_new(pe_proj_t *a, int n, float x, float y, int set)
+{
+    int gat = (set == PE_SET_GATLING);
+    /* ★ P47：电弹比普通豌豆**慢一倍**（owner 口径 ✓）⇒ 用镜像速度除以 PE_ELEC_SLOW ✓ */
+    float spd = (gat ? PE_SPD_GATLING : PE_SPD_NORMAL) / PE_ELEC_SLOW;
+    return pe_proj_spawn(a, n, x, y, 0.0f, -spd, set, gat ? PE_DMG_GATLING : PE_DMG_NORMAL);
+}
+
+void pe_proj_move(pe_proj_t *p)
+{
+    if (!p || !p->alive) return;
+    p->x += p->vx;
+    p->y += p->vy;
+    if (p->cd) --p->cd;
+}
+
+int pe_proj_hit_now(const pe_proj_t *p) { return (p && p->alive && p->cd == 0) ? 1 : 0; }
+void pe_proj_fired(pe_proj_t *p) { if (p) p->cd = PE_HIT_COOLDOWN; }
+
+int pe_proj_out(const pe_proj_t *p)
+{
+    if (!p || !p->alive) return 0;
+    return (p->x < -PE_VIEW_X || p->x > PE_VIEW_X || p->y < PE_VIEW_Y_MIN || p->y > PE_VIEW_Y_MAX) ? 1 : 0;
+}
+
+/* ★ P54：开大还剩几帧（0 = 没在开大）—— on_tick_2 用它决定要不要声明"爆发无敌" ✓。*/
+int pea_burst_left(const pea_state_t *s)
+{
+    if (!s) return 0;
+    return (s->gat_left > 0) ? (int)s->gat_left : 0;
+}

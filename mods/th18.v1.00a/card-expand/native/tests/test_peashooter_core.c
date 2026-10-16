@@ -36,9 +36,9 @@ static void test_wait_range(void)
         CHECK(s.wait >= PEA_WAIT_MIN && s.wait < PEA_WAIT_MIN + PEA_WAIT_SPAN,
               "rnd=%u → wait=%u 越界", r, s.wait);
     }
-    /* 周期 = 等待 + 开大，落在 20–30 s（1200–1800 帧）*/
-    CHECK(PEA_WAIT_MIN + PEA_GAT_FRAMES == 1200, "周期下界 = %d", PEA_WAIT_MIN + PEA_GAT_FRAMES);
-    CHECK(PEA_WAIT_MIN + PEA_WAIT_SPAN - 1 + PEA_GAT_FRAMES == 1800,
+    /* 周期 = 等待 + 开大；P54（owner：爆发拉长）把开大从 100 帧加到 240 帧 ⇒ 22–32 s（1340–1940 帧）*/
+    CHECK(PEA_WAIT_MIN + PEA_GAT_FRAMES == 1340, "周期下界 = %d", PEA_WAIT_MIN + PEA_GAT_FRAMES);
+    CHECK(PEA_WAIT_MIN + PEA_WAIT_SPAN - 1 + PEA_GAT_FRAMES == 1940,
           "周期上界 = %d", PEA_WAIT_MIN + PEA_WAIT_SPAN - 1 + PEA_GAT_FRAMES);
 }
 
@@ -93,7 +93,7 @@ static void test_gatling_shape(void)
     CHECK(normal == n0, "开大期间还在打平时的豌豆");
     CHECK(gat == PEA_GAT_FRAMES / PEA_GAT_INTERVAL * PEA_GAT_ROWS,
           "开大该打 %d 颗，实际 %d", PEA_GAT_FRAMES / PEA_GAT_INTERVAL * PEA_GAT_ROWS, gat);
-    CHECK(gat * PEA_GAT_DMG == 980, "开大总伤 = %d", gat * PEA_GAT_DMG);
+    CHECK(gat * PEA_GAT_DMG == 2352, "开大总伤 = %d", gat * PEA_GAT_DMG);
     CHECK(s.pending_wait, "开完大该要一个新的随机等待");
     CHECK(s.bursts == 1 && s.peas == (uint32_t)(normal + gat), "bursts=%u peas=%u", s.bursts, s.peas);
 
@@ -149,6 +149,111 @@ static void test_clear(void)
           s.bursts == 0 && s.peas == 0 && s.pending_wait == 1, "pea_clear 没清干净");
 }
 
+
+/* ★ P40：电弹连锁的选目标（纯函数 ✓）—— 最近 / 排除去过的 / 半径外 / 空表 四种情形 ✓ */
+static void test_chain_pick(void)
+{
+    static const float xy[6] = { 100.0f, 0.0f,  60.0f, 0.0f,  400.0f, 0.0f };
+    static const uint32_t id[3] = { 7u, 8u, 9u };
+    uint32_t vis[4];
+    int k;
+
+    k = pea_chain_pick(xy, id, 3, 0.0f, 0.0f, 150.0f, 0, 0);
+    CHECK(k == 1, "半径内最近的应是 B(60px)，实际 %d", k);
+
+    vis[0] = 8u;
+    k = pea_chain_pick(xy, id, 3, 0.0f, 0.0f, 150.0f, vis, 1);
+    CHECK(k == 0, "排除已连过的 B 之后应挑 A，实际 %d", k);
+
+    vis[0] = 7u; vis[1] = 8u;
+    k = pea_chain_pick(xy, id, 3, 0.0f, 0.0f, 150.0f, vis, 2);
+    CHECK(k == -1, "只剩半径外的 C 时应返回 -1，实际 %d", k);
+
+    k = pea_chain_pick(xy, id, 3, 0.0f, 0.0f, 500.0f, 0, 0);
+    CHECK(k == 1, "半径放大后仍是最近的 B，实际 %d", k);
+
+    k = pea_chain_pick(xy, id, 0, 0.0f, 0.0f, 150.0f, 0, 0);
+    CHECK(k == -1, "没有候敌时应返回 -1，实际 %d", k);
+
+    k = pea_chain_pick(xy, id, 3, 0.0f, 0.0f, 0.0f, 0, 0);
+    CHECK(k == -1, "半径 0 应返回 -1，实际 %d", k);
+}
+
+
+/* ★ P42：电弧按敌人对去重（纯函数 ✓）—— key 无序 / 找同对 / 复用死槽 / 表满不新建 ✓ */
+static void test_arc_dedupe(void)
+{
+    uint32_t keys[3] = { 0, 0, 0 };
+    uint32_t vms[3] = { 0, 0, 0 };
+    uint8_t  alive[3] = { 0, 0, 0 };
+    uint32_t k1 = pea_arc_key(7u, 8u), k2 = pea_arc_key(8u, 7u);
+    int i;
+
+    CHECK(k1 == k2, "无序对：key(7,8) 应等于 key(8,7)（%u vs %u）", k1, k2);
+    CHECK(pea_arc_find(keys, 3, k1) == -1, "空表里不该找到 ✓");
+
+    i = pea_arc_put(keys, vms, alive, 3, k1, 111u);
+    CHECK(i == 0 && vms[0] == 111u, "第一次应放进 0 号槽（i=%d vm=%u）", i, vms[0]);
+    i = pea_arc_put(keys, vms, alive, 3, k2, 222u);
+    CHECK(i == 0 && vms[0] == 222u, "★ 同一对（反向写）应复用 0 号槽、只换 VM（i=%d vm=%u）", i, vms[0]);
+    CHECK(pea_arc_find(keys, 3, k1) == 0, "同对应能找到 0 号槽 ✓");
+
+    alive[0] = 1;                                    /* 0 号还活着 ⇒ 新对放 1 号 ✓ */
+    i = pea_arc_put(keys, vms, alive, 3, pea_arc_key(1u, 2u), 333u);
+    CHECK(i == 1, "0 号活着 ⇒ 新对应放 1 号（i=%d）", i);
+    alive[0] = 0;                                    /* 0 号死了 ⇒ 新对复用 0 号 ✓ */
+    i = pea_arc_put(keys, vms, alive, 3, pea_arc_key(3u, 4u), 444u);
+    CHECK(i == 0 && vms[0] == 444u, "0 号死后应被复用（i=%d vm=%u）", i, vms[0]);
+
+    alive[0] = alive[1] = alive[2] = 1;              /* 全活 + 无同对 ⇒ 不新建 ✓ */
+    i = pea_arc_put(keys, vms, alive, 3, pea_arc_key(9u, 9u), 555u);
+    CHECK(i == -1, "表满且无同对 ⇒ 必须返回 -1（宁可不建 ✓），实际 %d", i);
+    i = pea_arc_put(keys, vms, alive, 3, pea_arc_key(3u, 4u), 666u);
+    CHECK(i == 0, "表满但**有同对** ⇒ 仍要复用（i=%d）", i);
+}
+
+
+/* ★ P43：卡侧电弹（纯逻辑 ✓）—— 两组数值 / 每 10 帧才结算 / 出界判定 / 满了不炸 ✓ */
+static void test_proj(void)
+{
+    pe_proj_t a[3];
+    int i;
+    pe_proj_clear_all(a, 3);
+
+    i = pe_proj_new(a, 3, 0.0f, 400.0f, PE_SET_NORMAL);
+    CHECK(i == 0 && a[0].alive == 1, "起一颗正常弹应在 0 号（i=%d）", i);
+    CHECK(a[0].dmg == PE_DMG_NORMAL && a[0].vy == -(PE_SPD_NORMAL / PE_ELEC_SLOW),
+          "★ P47 普攻电球：伤害照 PEA_NORMAL、速度是它的一半（dmg=%d vy=%.1f 应为 %.1f）",
+          a[0].dmg, a[0].vy, -(PE_SPD_NORMAL / PE_ELEC_SLOW));
+
+    i = pe_proj_new(a, 3, 16.0f, 400.0f, PE_SET_GATLING);
+    CHECK(i == 1 && a[1].dmg == PE_DMG_GATLING && a[1].vy == -(PE_SPD_GATLING / PE_ELEC_SLOW),
+          "★ P47 机枪电弹同样半速（dmg=%d vy=%.1f 应为 %.1f）",
+          a[1].dmg, a[1].vy, -(PE_SPD_GATLING / PE_ELEC_SLOW));
+
+    CHECK(pe_proj_hit_now(&a[0]) == 1, "刚出生就该能结算 ✓");
+    pe_proj_fired(&a[0]);
+    CHECK(pe_proj_hit_now(&a[0]) == 0, "★ 出过源之后应等冷却（不许帧伤 ✓）");
+    for (i = 0; i < PE_HIT_COOLDOWN; ++i) pe_proj_move(&a[0]);
+    CHECK(pe_proj_hit_now(&a[0]) == 1, "★ 过了 %d 帧应能再结算一次（= 对同一敌每 10 帧 1 跳 ✓）", PE_HIT_COOLDOWN);
+
+    a[0].x = 0.0f; a[0].y = 400.0f;
+    CHECK(pe_proj_out(&a[0]) == 0, "画面内不该判出界 ✓");
+    a[0].y = PE_VIEW_Y_MIN - 1.0f;
+    CHECK(pe_proj_out(&a[0]) == 1, "越过上界就该收 ✓");
+
+    CHECK(pe_proj_new(a, 1, 0.0f, 0.0f, PE_SET_NORMAL) == -1, "池满应返回 -1（不炸 ✓）");
+
+    /* ★ P44：扇形弹幕 = 显式方向 ✓（x 也要动 ✓）*/
+    pe_proj_clear_all(a, 3);
+    i = pe_proj_spawn(a, 3, 100.0f, 400.0f, 7.0f, -18.0f, PE_SET_GATLING, PE_DMG_GATLING);
+    CHECK(i == 0 && a[0].vx == 7.0f && a[0].vy == -18.0f, "显式方向应写进 vx/vy（vx=%.1f vy=%.1f）", a[0].vx, a[0].vy);
+    pe_proj_move(&a[0]);
+    CHECK(a[0].x == 107.0f && a[0].y == 382.0f, "一帧后应同时按 vx/vy 走（x=%.1f y=%.1f）", a[0].x, a[0].y);
+    pe_proj_clear_all(a, 3);
+    CHECK(pe_proj_hit_now(&a[0]) == 0 && pe_proj_out(&a[0]) == 0, "清空之后都不该有反应 ✓");
+}
+
 int main(void)
 {
     test_wait_range();
@@ -158,6 +263,9 @@ int main(void)
     test_two_cycles();
     test_inflight_and_cap();
     test_clear();
+    test_chain_pick();
+    test_arc_dedupe();
+    test_proj();
     printf(fails ? "peashooter_core: %d FAILED\n" : "peashooter_core: OK\n", fails);
     return fails != 0;
 }

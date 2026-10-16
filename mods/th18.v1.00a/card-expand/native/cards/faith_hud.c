@@ -388,10 +388,19 @@ void faith_hud_on_load(void)
 {
     const int32_t stage = (int32_t)CE_CURRENT_STAGE();
 
-    if (stage != s_stage) {          /* 新关卡：货架会在本关第一次认领时清表 ⇒ 强制重认领 */
+    /* ★★★ 2026-10-14（P24，owner 报：「**换面重新播放左下角 hud 的入场动画**，这个显然不太对」✗）：
+     *   这里**不再重置 `s_age`** ✗ —— 原来那行 `s_age = 0;` 会把 C 侧的「前 `FH_WARMUP_FRAMES` 帧
+     *   不写 alpha」那道门（见 `fh_dim_tick()` 的两处 20 帧门）**重新打开** ⇒ 于是**换面重建**出来的
+     *   UI VM 自己脚本里那 20 帧 `alpha(0)` + `alphaTime(20,0,255)` 淡入被显出来 ⇒
+     *   **每关都重播一次入场动画** ✗。
+     *   为什么换面会重建：16 支 VM 都是**每帧按需 spawn**（`fh_alive()` 守卫，见 `fh_place_gauge()` 等 ✓），
+     *   而换面时引擎会拆 anm 管理器 ⇒ 我们的 UI VM 全没 ⇒ 下一帧重建 ⇒ 脚本从头跑（淡入必然重播）✗。
+     *   现在：`s_age` 只在**块真正起用/收尾**时归零（`fh_kill()` ✓ = 首次装卡、删卡、两张卡都走 ✓），
+     *   换面则**保持计数** ⇒ C 侧照常写满 alpha ⇒ 重建出来的 VM 立刻全亮 ✓（**lazy**，owner 口径 ✓）。
+     *   ⚠ `s_stage` / `s_owner` 仍然要重置 ✓（货架槽每关会被清表，必须重认领 ✓）。*/
+    if (stage != s_stage) {
         s_stage = stage;
         s_owner = 0;
-        s_age = 0;                   /* 淡入重来（脚本的 20 帧 alphaTime）*/
     }
     fh_claim();
 }
@@ -445,6 +454,31 @@ void faith_hud_departed(void)
     memset(s_decl, 0, sizeof s_decl);
     s_stage = -1;                      /* 下次 on_load 当作「新关卡」重认领 */
 }
+
+/* ★★★ 2026-10-14（P32，owner 口径逐字：「哦，**retry可以重走一次入场**」✓）：
+ *   **局末 / retry 专用的收尾** ✓ —— 与 `faith_hud_departed()` 的**唯一区别**是：
+ *   它**不管另一张卡在不在场**，一律**整套收掉** ✓。
+ *
+ *   为什么这样就能"重走一次入场"：16 支 VM 都是**每帧按需 spawn** ✓（`fh_alive()` 守卫 ✓）
+ *   ⇒ 收掉之后，回到游玩帧的**下一帧**就会重新 spawn ✓ ⇒ 脚本自带的
+ *   `alpha(0)` + `alphaTime(20,0,255)` 淡入**自然重播一次** ✓（一手 `th11` 的入场配方 ✓）。
+ *
+ *   ⚠ 与 `faith_hud_departed()` 的**分工不能混**：
+ *     · `faith_hud_departed()` 走**删卡**路 ✓ —— 删卡发生在**商店**里，那一刻 tick 全停、
+ *       `on_draw` 不会再来 ⇒ **收掉就没人重建** ✗ ⇒ 所以另一张还在场时它必须留着 ✓；
+ *     · 本函数走**局末 / retry**路（`+0x4c` ✓）—— 之后一定会回到游玩帧 ⇒ 收掉是**安全**的 ✓。
+ *   ⇒ 所以 110/111 的 `on_run_reset` 应该调**本函数**，而 `on_delete` 继续调
+ *     `faith_hud_departed()` ✓。*/
+void faith_hud_run_reset(void)
+{
+    fh_kill();
+    if (s_owner) { ce_hud_slot_release(s_owner); }
+    s_owner = 0;
+    memset(s_decl, 0, sizeof s_decl);
+    s_stage = -1;                      /* 下次 on_load 当作「新关卡」重认领 ✓（与 departed 的收尾同款 ✓）*/
+    s_claim_cool = 0;                  /* ⚠ 顺带把"认领冷却"清掉 ✓：否则 retry 后要等几帧才重新认领 */
+}
+
 
 /* ============================ 每帧：起 VM + 摆位 + 上色 ============================ */
 

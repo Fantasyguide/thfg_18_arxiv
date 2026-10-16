@@ -17,10 +17,10 @@
  *   引 th07 一律带前缀 `th07:0x…`。
  *
  * ── 这张卡怎么玩（一句话）─────────────────────────────────────────────────────────────
- * 收道具 / 结界中擦弹 / 自机弹命中 → **樱点**与 **+C** 一起涨；**+C 到 50000 自动开森罗结界**（7 s）。
+ * 收道具 / 结界中擦弹 / 自机弹命中 → **樱点**与 **+C** 一起涨；**+C 到 50000 自动开森罗结界**（9 s = 540 帧）。
  * 结界中：**每帧全屏收点**、**擦弹同时涨樱点与最大樱点**、+C 按剩余计时比例**持续下降**。
  * **中弹或按 B ⇒ 灵击**：结界中断 + **全屏弹转原生小分道具**（= TH07 的 ★，每颗收下 +20 樱点/+C）
- * + **0.67 s 无敌**（40 帧）。
+ * + **0.69 s（540 帧） 无敌**（40 帧）。
  * **自然到期** ⇒ 樱点与最大樱点各 **+10000** + **樱点分**的 Border Bonus。**Miss / Bomb 扣樱点**（不动 +C、不动最大樱点）。
  * 樱点是本卡的「最大得点」：吃一颗点道具（TH18 金钱）的得分 = 樱点。
  * ★ 2026-09-13 计分层重做后，本卡在 `on_item_score` 里只**声明**这份 `G_07`（未耦合通道），
@@ -1713,12 +1713,56 @@ static void senro_clear(ce_card_t *c, int keep_slot)
     (void)keep_slot;         /* 槽位由 `CE_CARD` 的 on_run_reset / opdelete 自动 release（§6.1）*/
 }
 
+/* ★★★ 2026-10-14（P31a，owner 口径逐字：「**107 也都不清空**」✓）：**run 级账本的跨关镜像** ✓。
+ *   `on_ctor` 在**关卡切换**时也会跑（一手）⇒ 它原来无条件 `senro_clear` + `senro_init` ✗
+ *   ⇒ 每关把「符卡奖励残 / 六项统计 / 掉落轮转」整块抹掉 ✗（审计 §3 的 107 行 ✓）。
+ *   修法 = 110/113 的**同一个范式**（把要跨关保住的账本挪出清空范围 ✓，不发明新机制 ✓）：
+ *     · 本镜像在 `on_stage_start`（引擎换关时**先**调它、再调 `ctor` ✓ —— 实测日志
+ *       `on_stage_start (+0x34) first hit` → `ctor (+0x00) first hit` ✓）里存；
+ *     · `on_ctor` 只在**新局**（哨兵 `< 0` 或关号变小 ✓）走 init ✓，否则 restore ✓；
+ *     · `on_run_reset` / `on_delete` 把哨兵置 `-1` ⇒ 下次 `ctor` 必走新局 ✓。
+ *   ⚠ **刻意保留**：`cherry` / `cherry_max` / `cherry_max_base` / `plus` 仍**每关按难度表重取** ✓
+ *     —— 那是 TH07 的**一手行为**（`th07:0x4043b9`：关卡开始块重设樱点基准 ✓），不属于"清空数据" ✗。
+ *     若 owner 要连它也跨关，改这里一处即可 ✓。*/
+typedef struct { int32_t spell_bonuses, last_bonus; int32_t stat[6]; } senro_run_keep_t;
+static senro_run_keep_t s_run_keep;
+static int32_t          s_run_stage = -1;
+
+static void senro_run_save(const senro_state_t *st8)
+{
+    s_run_keep.spell_bonuses = st8->spell_bonuses;
+    s_run_keep.last_bonus    = st8->last_bonus;
+    s_run_keep.stat[0] = st8->stat_open;    s_run_keep.stat[1] = st8->stat_natural;
+    s_run_keep.stat[2] = st8->stat_libyou;  s_run_keep.stat[3] = st8->stat_cancel;
+    s_run_keep.stat[4] = st8->stat_items;   s_run_keep.stat[5] = st8->stat_hits;
+}
+
+static void senro_run_restore(senro_state_t *st8)
+{
+    st8->spell_bonuses = s_run_keep.spell_bonuses;
+    st8->last_bonus    = s_run_keep.last_bonus;
+    st8->stat_open = s_run_keep.stat[0];    st8->stat_natural = s_run_keep.stat[1];
+    st8->stat_libyou = s_run_keep.stat[2];  st8->stat_cancel = s_run_keep.stat[3];
+    st8->stat_items = s_run_keep.stat[4];   st8->stat_hits = s_run_keep.stat[5];
+}
+
 static int on_ctor(ce_card_t *c)
 {
     senro_card_t *s = st(c);
     if (!s) return 0;
-    senro_clear(c, 0);
-    senro_init(&s->st, senro_difficulty());
+    {
+        const int32_t st_now = (int32_t)CE_CURRENT_STAGE();
+        const int fresh = (s_run_stage < 0 || st_now < s_run_stage);
+        senro_clear(c, 0);
+        senro_init(&s->st, senro_difficulty());
+        if (fresh) {
+            senro_run_save(&s->st);          /* ★ P31a：新局 ⇒ 账本从零开始，镜像跟着归零 ✓ */
+            ce_log("senro: 新一局（stage %d -> %d）⇒ run 级账本归零", (int)s_run_stage, (int)st_now);
+        } else {
+            senro_run_restore(&s->st);       /* ★ P31a：换面 ⇒ run 级账本原样带回 ✓ */
+        }
+        s_run_stage = st_now;
+    }
     senro_declare_score(s);
     ce_log("senro: ctor (difficulty %d, cherry_max 初值 %d, 结界 %d 帧, 满槽 %d)",
            senro_difficulty(), (int)s->st.cherry_max, (int)SENRO_BORDER_FRAMES, (int)SENRO_PLUS_FULL);
@@ -1795,18 +1839,34 @@ static void senro_small_burst(senro_card_t *s, int32_t bullets)
 {
     const float *pp = ce_player_pos();
     const int32_t per = SENRO_SMALL_CHERRY_ADD + SENRO_SMALL_CHERRY_EXTRA;   /* 100 */
-    int32_t total, bundle;
+    int32_t total, bundle, extra_n;
     int k, i, made = 0;
 
     if (!pp || bullets <= 0) return;
-    total = bullets * per;                                  /* 一手的**总**樱点量 */
+    total = bullets * per;                                  /* 一手的**总**樱点量（恒为 per 的倍数 ✓）*/
     k = (bullets > SENRO_SMALL_MAX_SPAWN) ? SENRO_SMALL_MAX_SPAWN : (int)bullets;
-    bundle = total / k;                                     /* 每颗带的打包值（余数忽略，≤ k−1 点）*/
+    /* ★★★ 2026-10-14（P22，owner 实跑：「没开过森罗结界时，+C 与樱点的个位数不一致、樱点个位不是 0」）：
+     *   旧写法 `bundle = total / k` 是**整数除法** ✗ ⇒ 每颗携带的值不再是 `per`(100) 的倍数
+     *   （例：`bullets = 25`、`k = 24` ⇒ `2500/24 = 104` ✗）⇒ 拾取时
+     *   `plus_part = value×30/100 = 31` ✗ ⇒ **樱点 +104（个位 4）、+C +31（个位 1）**，
+     *   两条账的个位都不为 0 且彼此不等 ✗ —— 正是 owner 看到的现象 ✓。
+     *   一手的不变量 = 「**每一笔加值都是 10 的倍数**」（★=20 / 擦弹=80·30 / 大樱点=1000+100k，
+     *   见 `senro_core.h:125-129`）⇒ 打包这一层必须守住它 ✓。
+     *   改法：每颗先压成 **`per` 的倍数**（`k ≤ bullets` ⇒ `total/k ≥ per` ⇒ `bundle ≥ per` ✓），
+     *   再把余数**按 `per` 分摊给前 `extra_n` 颗**（`extra_n < k` ✓）：
+     *     ① 总值**精确不变** ✓（`bundle×k + extra_n×per == total` ✓）；
+     *     ② 每颗都是 `per` 的倍数 ⇒ `plus_part = value×30/100 = 30m` 也是 10 的倍数 ✓
+     *        ⇒ **樱点与 +C 的个位恒为 0** ✓；
+     *     ③ 单颗失败最多损失 `bundle + per` ✓（旧写法把余数全堆在最后一颗 ⇒ 失败时损失更大 ✗）。*/
+    bundle = (total / k) / per * per;
+    if (bundle < per) bundle = per;                         /* 兜底（数学上到不了：k ≤ bullets ⇒ total/k ≥ per）*/
+    extra_n = (total - bundle * k) / per;                   /* ∈ [0, k−1] ✓ */
 
     for (i = 0; i < k; ++i) {
         /* 自机为中心撒成一圈（❓ 自定：TH18 到这一刻弹已经没了，拿不到逐颗原位）——与灵击那 32 颗同形。*/
         const float ang = SENRO_ITEM_SPAWN_ANGLE + (6.2831853f * (float)i) / (float)k;
-        if (faith_spawn_art(pp[0], pp[1], FAITH_TIER_SMALL, 1 << FAITH_SLOT_107, bundle, ang,
+        const int32_t v = bundle + (i < extra_n ? per : 0);
+        if (faith_spawn_art(pp[0], pp[1], FAITH_TIER_SMALL, 1 << FAITH_SLOT_107, v, ang,
                             CE_ANM_ABILITY_SPRITE_SAKURA_SMALL,
                             CE_ANM_ABILITY_SCRIPT_SAKURA_SMALL)) {
             ++made;
@@ -1814,8 +1874,8 @@ static void senro_small_burst(senro_card_t *s, int32_t bullets)
     }
     s->stat_small += made;
     s->stat_small_bullets += bullets;
-    ce_log("senro: boss 死亡消弹 %d 颗 → 小樱点实体 %d 颗（每颗打包 %d；樱点总量 +%d）",
-           (int)bullets, made, (int)bundle, (int)(bundle * made));
+    ce_log("senro: boss 死亡消弹 %d 颗 → 小樱点实体 %d 颗（每颗 %d%s；樱点总量应 +%d）",
+           (int)bullets, made, (int)bundle, extra_n ? "（前若干颗 +100）" : "", (int)total);
 }
 
 /* ---- ★★ 2026-10-01：**逐敌大樱点**（一手 = 敌人自带掉落槽的 32 项轮转表）----
@@ -1937,6 +1997,7 @@ static void on_stage_start(ce_card_t *c)
 {
     senro_card_t *s = st(c);
     if (!s) return;
+    senro_run_save(&s->st);   /* ★ P31a：换关前先把 run 级账本存进镜像（本回调先于 ctor ✓）*/
     /* th07 每关重设基准（`th07:0x4043b9` 樱点 = 基准；最大樱点按难度表重取）⇒ 本卡每关从 0 起。 */
     senro_stage_reset(&s->st, senro_difficulty());
     senro_fx_clear(s);       /* ★ 上一关留下的结界特效（环 / 32 颗）不跨关 */
@@ -1955,6 +2016,7 @@ static void on_stage_start(ce_card_t *c)
 static void on_run_reset(ce_card_t *c)
 {
     senro_card_t *s = st(c);
+    s_run_stage = -1;                     /* ★ P31a：新局哨兵（retry / 新一局）*/
     ce_log("senro: run reset");
     senro_clear(c, 0);
     if (s) {

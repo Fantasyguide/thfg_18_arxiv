@@ -1,6 +1,7 @@
 /* youkai_core.c —— 108「永夜抄」的纯逻辑（主机单测：tests/test_youkai_core.c）。
  * 每条规则的出处写在 youkai_core.h；这里只写实现上的取舍。无引擎依赖、无浮点库依赖（只用 < > 比较）。*/
 #include "youkai_core.h"
+#include "../sdk_color.h"   /* ★ P14a：I1 词汇（纯函数；本 core 是主机可测的 ⇒ 不能 include sdk.h ✗）*/
 
 /* ------------------------------------------------------------------ §3.1 止射闸 */
 int yk_should_suppress_native(int player_present, int focused, int character, int power_level)
@@ -1122,23 +1123,25 @@ int32_t yk_half_with_carry(int32_t delta, int32_t *carry)
     return half;
 }
 
-void yk_transfer_feed(yk_transfer_t *t, int32_t delta)
+void yk_transfer_feed(yk_transfer_t *t, int32_t delta, int32_t pct)
 {
     if (!t || delta <= 0) return;
     if (delta > YK_TRANSFER_DELTA_MAX) {          /* ★ 防御：异常大的差分（表复用/复活）⇒ 整笔丢掉 */
         ++t->rejected;
         return;
     }
-#if YK_TRANSFER_PCT == 100
-    /* ★ owner 2026-10-01 口径：**全额转**（逐字节 = delta，**不丢任何余数**、也不动进位器）。*/
-    t->carry = 0;
-    t->pending += delta;
-#elif YK_TRANSFER_PCT == 50
-    t->pending += yk_half_with_carry(delta, &t->carry);         /* 一手 1/2（保留可切回；半整数进位器）*/
-#else
-    /* ❓其它百分比（旋钮）：注意整数除法会**丢余数**（要精确就改回 50/100 两条之一）。*/
-    t->pending += (int32_t)((int64_t)delta * (int64_t)YK_TRANSFER_PCT / 100);
-#endif
+    /* ★★ P59（owner 2026-10-14 口径：「**附加使魔全额转伤，发弹口使魔 1/2**」✓）：
+     *   pct 由**调用点按使魔类别**给 ✓ —— 绕转（附加）使魔 100 ✓、映射（发弹口）使魔 50 ✓。
+     *   100 保留"逐字节 = delta、不丢余数、不动进位器"的语义 ✓；50 走一手半整数进位器 ✓；
+     *   其它百分比仍走整数缩放（有余数，旋钮用 ✓）。*/
+    if (pct == 100) {
+        t->carry = 0;
+        t->pending += delta;
+    } else if (pct == 50) {
+        t->pending += yk_half_with_carry(delta, &t->carry);
+    } else {
+        t->pending += (int32_t)((int64_t)delta * (int64_t)pct / 100);
+    }
     if (t->pending > YK_TRANSFER_PENDING_MAX) {   /* ★ 防御：总量上限（别把天文数字喂给 dmg 参数）*/
         t->pending = YK_TRANSFER_PENDING_MAX;
         ++t->clamped;
@@ -1697,12 +1700,12 @@ int yk_deathbomb_window(int32_t player_state)
 
 uint32_t yk_tint_apply(uint32_t cur)
 {
-    return (cur & 0xff000000u) | (YK_TINT_RED & 0x00ffffffu);
+    return ce_color_keep_alpha(cur, YK_TINT_RED);           /* ★ P14a：I1 词汇 ✓ */
 }
 
 uint32_t yk_tint_restore(uint32_t cur, uint32_t orig)
 {
-    return (cur & 0xff000000u) | (orig & 0x00ffffffu);
+    return ce_color_keep_alpha(cur, orig);                 /* ★ P14a：I1 词汇 ✓ */
 }
 
 /* ============ ★★★ 2026-09-22 夜（owner 工单 P-A · 夜点）：两条纯逻辑 ==========================
@@ -1850,7 +1853,7 @@ int yk_fengma_tint_set(int set_index)
 
 uint32_t yk_fengma_tint_dword(uint32_t color_in)
 {
-    return (color_in & 0xff000000u) | YK_FENGMA_TINT_RGB;   /* 保 alpha（高 8 位），只换 BGR */
+    return ce_color_keep_alpha(color_in, YK_FENGMA_TINT_RGB);   /* ★ P14a：保 alpha、只换 RGB ✓ */
 }
 
 /* ------------- ★★★ 第二十八批：束根光斑 / 束端命中特效 / 极妖染红的三个纯函数（一手见 `youkai_core.h`）--
@@ -2415,4 +2418,30 @@ int yk_orbit_offset(unsigned step, float radius, float *dx, float *dy)
     *dx = yk_orbit_cos[step] * radius;
     *dy = yk_orbit_sin[step] * radius;
     return 1;
+}
+
+/* ── leveledit 同开时的使魔归属（纯判据；口径见 HANDOFF-108-LEVELEDIT-FAMILIARS.md ✓）────────────
+ * ★ 在 `YK_LE_TRUSTED` 置 1 之前，本组**一律返回 0 = 不命中 / 不抑制** ✓
+ *   ⇒ 行为与今天**完全一致** ✗（判别常量必须由 P113 探针的实跑日志钉死 ✓，不许猜 ✓）。
+ * 常量一填好，就把 `YK_LE_TRUSTED` 改 1 ✓（并把 `youkai.c` 的探针 `YK_LE_PROBE` 关掉 ✓）。*/
+int yk_le_is_levelledit_fight(int boss_sub274, int boss_anm_main, int iv0)
+{
+    if (!YK_LE_TRUSTED) return 0;                    /* ❓常量未实测 ⇒ 保守回退 ✓ */
+    (void)boss_anm_main; (void)iv0;                  /* 实测后按日志里真正有区分度的那几项启用 ✓ */
+    if (YK_LE_BOSS_SUB274_MIN == YK_LE_BOSS_SUB274_MAX) return 0;   /* 未填 ⇒ 不命中 ✓ */
+    return boss_sub274 >= YK_LE_BOSS_SUB274_MIN && boss_sub274 <= YK_LE_BOSS_SUB274_MAX;
+}
+
+int yk_le_is_their_familiar(int enemy_id, int anm_main, int anm_slot0)
+{
+    if (!YK_LE_TRUSTED) return 0;                    /* ❓同上 ✓ */
+    (void)anm_main; (void)anm_slot0;
+    if (YK_LE_FAM_ID_FIRST == YK_LE_FAM_ID_LAST) return 0;
+    return enemy_id >= YK_LE_FAM_ID_FIRST && enemy_id <= YK_LE_FAM_ID_LAST;
+}
+
+int yk_le_mode(int has_108, int boss_sub274, int boss_anm_main, int iv0)
+{
+    if (!has_108) return 0;                          /* ★ owner 口径 ③：没 108 ⇒ 什么都不做 ✗ */
+    return yk_le_is_levelledit_fight(boss_sub274, boss_anm_main, iv0);
 }

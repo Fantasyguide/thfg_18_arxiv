@@ -119,7 +119,7 @@ static int32_t wave_rate(const lolk_state_t *s)
     return lolk_rate_phase(s->saw_survival, LOLK_OUT_BROKEN);
 }
 
-static int close_wave(lolk_state_t *s, lolk_settle_t *out)
+static int close_wave(lolk_state_t *s, lolk_settle_t *out, const lolk_in_t *in)
 {
     int32_t bonus, rate;
     int32_t had = (s->graze || s->spawned || s->killed);
@@ -148,8 +148,11 @@ static int close_wave(lolk_state_t *s, lolk_settle_t *out)
              * `CALL th15:0x44fa60`，那函数加的是 `CURRENT_LIFE_FRAGMENTS`(+0x64)、调 `Gui__update_lives`、
              * 凑满播 se_extend(0x11)；Pointdevice 才走 `0x44fbc0` = B 碎片。
              * 对应标签：普通模式保留的 VM 是脚本 0xf2 = sprite150（本卡面板第 6 条 = PANEL_6）。*/
-            out->frag_type = LOLK_FRAG_LIFE;
-            (void)LOLK_FRAG_BOMB;
+            /* ★★ owner 2026-10-15 口径：TH15 原版分**无欠模式**与**传统（遗产）模式**，
+             *   本卡**对标传统模式** ⇒「**一定掉残碎，满了掉 B 碎**」✓
+             *   （无欠模式才是恒掉 B 碎；上面那两条一手路径正是这两支 ✓）。*/
+            
+            out->frag_type = in->lives_full ? LOLK_FRAG_BOMB : LOLK_FRAG_LIFE;
         }
     }
     wave_clear(s);
@@ -219,7 +222,7 @@ int lolk_tick(lolk_state_t *s, const lolk_in_t *in, lolk_settle_t *out)
      *    道中章的边界只认下一个 MainSub 编号。*/
     if (s->boss_present && !boss) {
         if (s->wave_open && s->wave_kind == LOLK_KIND_BOSS) {
-            ev |= close_wave(s, out);
+            ev |= close_wave(s, out, in);
             s->wave_open = 0;
         }
     }
@@ -259,7 +262,7 @@ int lolk_tick(lolk_state_t *s, const lolk_in_t *in, lolk_settle_t *out)
 
     if (want_new) {
         if (s->wave_open) {
-            ev |= close_wave(s, out);
+            ev |= close_wave(s, out, in);
         }
         open_wave(s, in, new_kind);
         s->mid_rule = new_rule;

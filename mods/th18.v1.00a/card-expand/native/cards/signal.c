@@ -79,6 +79,7 @@
 #include <stddef.h>          /* sdk.h 的 ce_item_collect_all 用了 size_t（内置 Linux 头不带）*/
 #include <string.h>
 #include <stdio.h>
+#include "dtap_core.h"   /* ★ P23：双击 Z 的共享状态机（与 116 同一份 ✓）*/
 #include "sdk.h"
 #include "faith.h"
 #include "ufo_bounty.h"   /* ★ 112 压缩包的等价计数广播（owner：三张卡都接）*/
@@ -390,6 +391,7 @@ typedef struct {
     int32_t       opt_script;     /* 当前子机贴图脚本（-1 = 没申请）*/
     int32_t       opt_on;         /* 1 = 本帧本卡是子机声明层的落笔者（开火门的条件）*/
     int32_t       formation;      /* = `th11:0x8bac`，0..4；一手的循环是 `(n+1)%5` */
+    ce_dtap_t     dtap;           /* ★ 2026-10-14（P23）：**双击 Z** 状态机（与 116 共用实现 ✓）；零值即安全 ✓，`clear_card` 的 memset 已够 ✓ */
     int32_t       patch_latch;    /* ❓ 自定：换档的按下沿闩锁（一手是电平，会长按走马灯）*/
     int32_t       z_held;         /* ★ 2026-09-16：Z 已连续按住的帧数（0 = 这一帧没按）—— 换档的新鲜度门用 */
     int32_t       shift_held;     /*   同上，Shift。判据见 `signal_core_patchouli_fresh()` */
@@ -2041,7 +2043,7 @@ static int       s_tint_n;
 static void signal_tint_apply(uint8_t *b)
 {
     volatile uint32_t *col = (volatile uint32_t *)(b + SIGNAL_BULLET_VM_OFF + CE_ANM_VM_COLOR1);
-    *col = (*col & 0xff000000u) | (SIGNAL_REMILIA_TINT_COLOR & 0x00ffffffu);
+    ce_color_set_rgb(col, SIGNAL_REMILIA_TINT_COLOR);        /* ★ P14a：I1 词汇 ✓ */
 }
 
 /* 还原整张表（删卡 / 换关 / 换机体时走）*/
@@ -2057,7 +2059,7 @@ void signal_tint_restore_all(void)
              *   早就保留了 alpha ✓（`(*col & 0xff000000u) | RGB` ✓），★ 但**还原这两处**是整条写回 ✗
              *   ⇒ ★ 弹在擦弹圈内**出生**时，其 alpha 会被旧快照覆盖 ⇒ **变暗** ✗（与 109 同因 ✓）。
              *   ★ 改动已登记 `AUDIT.md §BE`（动的是**别人的卡** ✓）。*/
-        *col = (*col & 0xff000000u) | (s_tint_orig[i] & 0x00ffffffu);
+        ce_color_set_rgb(col, s_tint_orig[i]);              /* ★ P14a：I1 词汇 ✓ */
     }
     s_tint_n = 0;
 }
@@ -2139,7 +2141,7 @@ static void signal_tint_tick(void)
         } else {
             volatile uint32_t *col = (volatile uint32_t *)(b + SIGNAL_BULLET_VM_OFF + CE_ANM_VM_COLOR1);
             /* ★ 同上：★ 保留当前 alpha ✓（`§BE` 已登记 ✓）。*/
-            *col = (*col & 0xff000000u) | (s_tint_orig[i] & 0x00ffffffu);
+            ce_color_set_rgb(col, s_tint_orig[i]);              /* ★ P14a：I1 词汇 ✓ */
         }
     }
     s_tint_n = w;
@@ -2414,14 +2416,20 @@ static void signal_support_patchouli(signal_card_t *s)
 {
     uint32_t in = CE_INPUT_HELD();
 
-    s->z_held     = (in & SIGNAL_IN_SHOT)  ? (s->z_held + 1)     : 0;
-    s->shift_held = (in & SIGNAL_IN_FOCUS) ? (s->shift_held + 1) : 0;
-    if (!signal_core_patchouli_fresh(in, s->z_held, s->shift_held)) { s->patch_latch = 0; return; }
-    if (s->patch_latch) return;
-    s->patch_latch = 1;
+    /* ★★★ 2026-10-14（P23，owner 需求）：「111 魔理沙特技**切换自机**请改成**双击 z**、
+     *   与 116 切换季节一致」✓
+     *   · 旧触发 = `signal_core_patchouli_fresh()`（要求 **Shift+Z 同时按下、且各自都在
+     *     5 帧内** ✗，一手 `th11:0x43605e`/`0x43606d` 那两个 `cmp …,5` 的门）⇒ 与 116 的手势不一致 ✗；
+     *   · 现在 = **与 116 同一份共享状态机** `ce_dtap_tick()`（实现 `cards/dtap_core.c` ✓）：
+     *     手势 = **不按 Z → 按 Z → 放开 → 再按**（窗口 8 帧 ✓，语义与出处见 `dtap_core.h` ✓）。
+     *   ⚠ 本卡**不再调** `signal_core_patchouli_fresh()` ✗ —— 那个函数仍留在 `signal_core.h`
+     *     （未删 ✓，只是本卡不用了 ✓）；`s->z_held` / `s->shift_held` / `s->patch_latch`
+     *     也不再参与换元素（字段保留 ✓，供日后核对历史行为 ✓）。
+     *   ⚠ `s->dtap` 的零值即安全（`window == 0` 会回落到默认 8 帧 ✓）⇒ 不依赖任何初始化调用 ✓。*/
+    if (!ce_dtap_tick(&s->dtap, (in & SIGNAL_IN_SHOT) != 0)) return;
     s->formation = signal_formation_wrap(s->formation + 1);
     ++s->stat_patchouli;
-    ce_log("signal: 帕秋莉·子机配置 -> 元素 %d（档 %d 的子机组 0x%02x / 主炮组 0x%02x）",
+    ce_log("signal: 帕秋莉·子机配置 -> 元素 %d（双击 Z；档 %d 的子机组 0x%02x / 主炮组 0x%02x）",
            (int)s->formation, signal_marisa_level(),
            (int)s_marisa_opt[signal_marisa_elem(s)][signal_marisa_level()][0],
            (int)s_marisa_main[signal_marisa_elem(s)][signal_marisa_level()]);
@@ -3805,6 +3813,14 @@ static void signal_clear(ce_card_t *c)
      *   （那一刻 tick 全停）⇒ 不收它们就会钉在关卡里到本局结束。
      *   ⚠ 幂等：两卡同装时先被删的那张把表清空，另一张照旧每帧驱动 ⇒ 下一波照常补刷。*/
     faith_green_fairy_depart_all();
+    /* ★★★ 2026-10-14（P28，修 P17 审计的 **F5**）：**删卡时也要把「变绿的妖精」还原** ✓ ——
+     *   `faith_green_restore_all()`（`faith.c` ✓，内部调 `faith_green_nodes_release_all()` ✓）
+     *   原来全仓**只有 110 的 `mof_clear()` 一处调** ✗ ⇒ **只装 111** 时删卡/换局**没有任何钩子**
+     *   把改过的妖精还回原色 ✗ —— 因为 `faith_gf_skin_tick()` 只在有卡 tick 时跑，而**删卡那刻
+     *   tick 全停** ✗ ⇒ 场上那几只妖精会一直绿到本关结束 ✗。
+     *   ⚠ 与 110 **对称地无条件调** ✓：若 110 还在场，它下一帧的 `faith_gf_skin_tick()` 会**自己
+     *     重新上绿** ✓（自愈 ✓ —— 与「110 删卡时 111 仍在场」的情形同款 ✓）。*/
+    faith_green_restore_all();
     if (!s) return;
     /* ★ 支援特技的跨帧状态与**卡外**的那一个旋钮（`CE_PLAYER_SPEED_MULT`）先收掉：
      *   删卡发生在**商店**里（AbilityManager 冻住、Player tick 也停了）⇒ 只能靠这里，不能等下一帧。
@@ -3813,6 +3829,16 @@ static void signal_clear(ce_card_t *c)
     memset(s, 0, sizeof *s);
     s->last_graze = -1;
     s->last_lives = -1;
+    /* ★★ 2026-10-14（P21，修 P17 审计 F2/F3，与 110 对称）：**账本镜像与哨兵一起归零** ⇒
+     *   `ctor`（无论在 `+0x4c` 之后紧跟的那次 ✓，还是新拿卡时的分配 ✓）必然走"新局"支路 ✓。
+     *   修的两件事见 `LIFECYCLE-AUDIT.md` §4：
+     *     · **F2**：同关 retry / 从第 1 关退主菜单再重进 ⇒ 关号没变小 ⇒ 旧判据走恢复支路 ⇒
+     *       把上一局的信号账本带进新局 ✗（更早还叠加 `s_slot_keep111` 的陈旧镜像 ✗）；
+     *     · **F3**：首局哨兵 = -1 ⇒ 旧判据 `> 0` 为假 ⇒ 恢复全零静态 ⇒ `base = 0`、`delta_cap = 0` ✗
+     *       （111 的 Δ 声明用 `faith_score_unit - base` ⇒ 声明值仍等于 Δ ✓，受影响的是**上限与显示口径** ✗）。
+     *   ⚠ 不影响 `frag_idx`（它是卡内 `st` 的一部分，`memset` 上面已经清 ✓）。*/
+    faith_slot_init_111(&s_slot_keep111, signal_difficulty());
+    s_slot_stage111 = -1;
 }
 
 /* ★★ 2026-09-18：抽出「注册共享池 + 认领组合 UI 块」—— `on_load` 与 `on_tick_2` 都调它。
@@ -3876,7 +3902,13 @@ static int ctor(ce_card_t *c)
     signal_card_t *s = st(c);
 
     if (!s) return 0;
-    if (s_slot_stage111 > 0 && (int32_t)CE_CURRENT_STAGE() < s_slot_stage111) {
+    if (s_slot_stage111 < 0 || (int32_t)CE_CURRENT_STAGE() < s_slot_stage111) {
+        /* ★★ 2026-10-14（P21，修 P17 审计 F2/F3，与 110 对称）：
+         *   · `s_slot_stage111 < 0` = 进程内第一次（首次获得 / 新拿卡 / 刚被 `signal_clear` 归零）也算新局 ✓
+         *     —— 旧判据 `> 0` 让首局落进恢复支路 ⇒ 恢复全零静态 ⇒ `base = 0`、`delta_cap = 0`（F3 ✗）；
+         *   · 「同关 retry / 从第 1 关退主菜单再重进」关号没变小 ⇒ 旧判据落进恢复支路，
+         *     把上一局的信号账本带回来（F2 ✗）—— 现在由 `signal_clear()` 把哨兵置 -1 兜住 ✓。
+         *   ⚠ 进这个支路时**不动** `frag_idx` ✓（得分奖残索引只在一局开始清，见下面 `ctor` 尾注 ✓）。*/
         ce_log("signal: 新一局（stage %d -> %d）⇒ 信号账本归零（原 Δ %d）",
                (int)s_slot_stage111, (int)CE_CURRENT_STAGE(), (int)(s_slot_keep111.delta / FAITH_FIXED));
         faith_slot_init_111(&s->slot, signal_difficulty());   /* 基础按难度、Δ 上限 = 原版基础（§7.2）*/
@@ -3938,12 +3970,21 @@ static int ctor(ce_card_t *c)
 static void on_stage_start(ce_card_t *c)
 {
     signal_card_t *s = st(c);
+    int32_t keep_remilia_total;   /* ★ P34（F7b）：见下方注释 ✓ */
 
     if (!s) return;
     /* ★ 支援特技的跨帧状态**每关开场归零**（❓ 自定：一手的计数器挂在 zPlayer 上、随场景重建
      *   ⇒ 换关时原版也会归零；我们的卡对象是每关重建 state 但**不清零**，所以显式一次）。
      *   ⚠ 也顺手把 `CE_PLAYER_SPEED_MULT` 写回 1.0 —— 上一关的残留不能让这一关开场就加速。*/
+    /* ★★★ 2026-10-14（P34，修审计 **F7b** —— **代码与注释矛盾** ⇒ 按 owner 总口径①「换面卡内数据
+     *   保持不变」判定 ✓）：`signal_support_reset()` 里的 `signal_remilia_reset()` 会把 `remilia.total`
+     *   （本卡**累计**的擦弹触发次数 ✓）一起清零 ✗，而**同一文件** `:3402` 的注释自称它
+     *   **「跨关保留」** ✓ —— 二者只能取一个 ⇒ 本批按**注释**（也是 owner 口径 ✓）执行：换关把它带过去 ✓。
+     *   ⚠ 只保 `total` 这一个 **run 级累计** ✓；`remilia` 的其余字段（周期 / 游标 / 本关进度 ✓）
+     *     照旧每关归零 ✓ —— 它们是"这一关的扫描进度" ✓，不是累计量 ✓。*/
+    keep_remilia_total = s->remilia.total;
     signal_support_reset(c, s);
+    s->remilia.total = keep_remilia_total;   /* ★ P34（F7b）：跨关保留 ✓ */
     /* ★★ 2026-09-15e：命碎段机**只重挂边沿记忆**（`signal_seg_rebase()`）——
      *   换关时上一关的 boss 对象与相位槽都没了，留着旧指纹会在本关第一个相位上误报一次「段收尾」；
      *   **余数 `pending` 与诊断计数保留**（用户口径的「余数跨段保留」按段算，不按关切）。*/
@@ -3980,11 +4021,26 @@ static void on_run_reset(ce_card_t *c)
      *   `faith_hud_departed()`；它只在**两张卡都不在场**时才真收那 16 支 VM（只 111 走了、110 还在
      *   ⇒ 块与 VM 一个都不动，用户 ③）。⚠ 上面那行注释里说的「不用 signal_clear()」现在只针对
      *   **信仰槽的注册**（那个仍归 `on_delete`），HUD 这一支两者都可以调（幂等）。*/
-    faith_hud_departed();
+    faith_hud_run_reset();   /* ★ P32：retry ⇒ 重走一次入场 ✓（owner 口径 ✓）*/
+    /* ★★★ 2026-10-14（P25，owner 实跑 A3：「111 retry **信仰和信号均保留**，110 正常」✗）：
+     *   上面这一路**故意不调 `signal_clear()`** ✓（要保住信仰槽注册与 HUD 认领 ✓），
+     *   而 P21 修的「账本镜像归零 + 哨兵置 -1」那两行**写在 `signal_clear()` 的尾部** ✗
+     *   ⇒ **retry 这条路根本没跑到它们** ✗ ⇒ 紧接着的 `ctor`（`+0x00`，每关都会跑 ✓）
+     *   又从**旧的** `s_slot_keep111` 把上一局的 Δ/连击/信号**恢复回来** ✗
+     *   ⇒ 用户看到的「信仰与信号都保留」✓（110 正常 ✓ 正是因为它 `on_run_reset == mof_clear` ✓）。
+     *   这里补齐**与 `signal_clear()` 尾部同款**的两行 ✓：镜像重设成干净账本 + 哨兵置 `-1`
+     *   ⇒ 之后无论是 retry 后紧跟的 `ctor` ✓ 还是新拿卡的分配 ✓，都会走 `ctor` 的「新局」支路 ✓。
+     *   ⚠ `faith_slot_init_111()` 就是「一局开始」的账本初值（`base` 按难度、Δ/连击/小绿点余数归零 ✓）。*/
+    faith_slot_init_111(&s_slot_keep111, signal_difficulty());
+    s_slot_stage111 = -1;
     signal_declare_score(s);
 }
 
-static void on_delete(ce_card_t *c) { signal_clear(c); }
+/* ★★ 2026-10-14（P20）：**删卡时注销**灵击提供者（同 110）—— 理由见 `bomb10.h` 的
+ *   `bomb10_unregister_host()`：卡被删后 `ce_state` 的内存会被别的卡领走，而机器仍会拿这条注册
+ *   去调 `gate`/`on_start`/`on_cancel`（都写那块内存）⇒ 写进别人的活状态 ✗✗。
+ *   `on_run_reset`（retry）时卡**还在场** ⇒ 只在这里注销 ✓。*/
+static void on_delete(ce_card_t *c) { signal_clear(c); bomb10_unregister_host(&s_bomb_host); }
 
 /* ---- ★★ 2026-09-16q：**原生 B**（引擎自己那发炸弹花掉之后）⇒ 同一支河童罩子 ----
  * 用户口径（逐字）：「对于**原生的B**，河童特效也会引入**不撞破罩子 no miss 和一个罩子**」。

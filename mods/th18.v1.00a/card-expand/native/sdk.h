@@ -11,6 +11,7 @@
  */
 #pragma once
 #include <stdint.h>
+#include "sdk_color.h"     /* ★ P14a：I1 词汇的纯函数（主机可测 ✓，见该文件头注）*/
 #include "engine.h"
 #include "anm_ids.h"      /* build_ability.py 生成：ability.anm 追加的 sprite / 脚本号 */
 #include "sht_ids.h"      /* append_shooterset.py 生成：pl0X.sht 追加的 shooterset 索引（§12）*/
@@ -294,6 +295,28 @@ static inline int ce_anm_set_rotation(uint32_t id, float rx, float ry, float rz)
 }
 /* 写 VM 的 color_2（`+0x528`，TH18 zAnmVm 字段图；`color2()` 写的就是它）。
  * 渐变图元（`drawRectGrad`）的第二个色只能靠它 —— `ce_anm_set_color` 只写 color_1。*/
+/* ★★★ 2026-10-14（P14a，owner 授权逐字：「**抽取那个 set color 的 sdk 可以做**」✓）：
+ *   **I1 词汇** —— 「只改 `color_1` 的 **RGB**、**保住 alpha**」✓（普查见 `VM-IDIOM-MAP.md` §1 的 I1 ✓）。
+ *
+ *   为什么要有它：这条表达式原来被各卡**各自手写** ✓（散布在 6 个文件里），语义**逐字相同** ⇒ 抽成一个词汇 ✓。
+ *   三层，**逐位等价** ✓（就是同一个表达式 ✓）：
+ *     · `ce_color_keep_alpha(c, rgb)` —— **纯函数** ✓：给"先算后写"或 `return` 的站点用 ✓，**主机可测** ✓（不碰引擎 ✓）；
+ *     · `ce_color_set_rgb(p, rgb)`    —— **指针版** ✓：**子弹的内嵌 VM** 只有 `color_1` 指针、**没有 VM id** ⇒ 只能走这一支 ✓；
+ *     · `ce_anm_set_color_rgb(id, rgb)` —— **id 版** ✓：HUD 等有 id 的 VM ✓（内部走 `ce_anm_get_vm` ✓）。
+ *   ⚠ **绝不碰 alpha** ✓：alpha 归引擎插值器 / 各卡自己的 alpha 通道管 ✓；写成整条 `color_1`
+ *     会把它钉死（历史教训见 `lolk.c` 的「第三十三轮」注释 ✓）。
+ *   ⚠ 与 `ce_anm_set_color()`（写**整条** `0xAARRGGBB` ✓）**不是**替代关系 ✗：那个要你自己带 alpha ✓，
+ *     这个**从当前值里取** alpha ✓。*/
+/* 纯函数 `ce_color_keep_alpha()` 在 `sdk_color.h` ✓（主机可测 ⇒ 单独成头 ✓）。*/
+/* 指针版 `ce_color_set_rgb()` 与纯函数一样在 `sdk_color.h` ✓（主机可测 ✓）。*/
+static inline int ce_anm_set_color_rgb(uint32_t id, uint32_t rgb)
+{
+    uint8_t *vm = ce_anm_get_vm(id);
+    if (!vm) return 0;
+    ce_color_set_rgb((volatile uint32_t *)(vm + CE_ANM_VM_COLOR1), rgb);
+    return 1;
+}
+
 static inline int ce_anm_set_color2(uint32_t id, uint32_t rgba)
 {
     uint8_t *vm = ce_anm_get_vm(id);
@@ -838,6 +861,15 @@ void ce_hud_digit_clear(ce_hud_digit_t *d);
 #define CE_VK_SPACE 0x20
 #define CE_VK_CONTROL 0x11   /* VK_CONTROL：调试组合键（Ctrl+空格）用 */
 #define CE_VK_SHIFT 0x10
+
+/* ★★★ 2026-10-14（P27，owner 口径）：「**需要提前摘除所有卡的调试空格键**」✗ ——
+ *   因为新的调试卡要**独占空格**（删除目标卡 ✓）与 **A / S**（左右切换目标 ✓），
+ *   而各卡历史上都用 `ce_key_down(CE_VK_SPACE)` 做过调试动作：117 出动物灵 / 108 杀使魔 /
+ *   109 造弹 / 113 造神灵 / 106 补 P / 112 造令牌 / `input_synth` 的合成键 ✓。
+ *   ⇒ 这里给一个**总开关**：置 `0` 后**所有**读空格的地方一律视为没按 ✓（代码保留、随时开回 ✓）。
+ *   ⚠ 只关**空格** ✗；别的调试键（如 108 的 `'I'` 无敌、`CE_VK_CONTROL` 组合键）**不在**本开关范围 ✓。
+ *   ⚠ 这些键都不进 replay 输入流（`GetKeyboardState`）⇒ 回放里本来也不会触发 ✓。*/
+#define CE_DEBUG_SPACE_KEYS 0
 int ce_key_down(int vk);
 
 /* 在 HUD 上写一行字（只能在虚表 `+0x48 on_draw` 里调 —— 原生 `CardMomoyo__on_draw` 同款，AUDIT §AC）。
@@ -1248,7 +1280,10 @@ void ce_hud_native_face_dim_tick(void);
 void ce_bullet_scan_probe(void);
 
 /* ★ z60：**可读性检查的 SDK 薄封装** —— 卡文件不引 `<windows.h>`（也不该引 ⇒ 那是平台头），
- *   所以迭代宏不能直接调 `IsBadReadPtr` ✓。实现见 `sdk.c`（内部就是 `IsBadReadPtr`）。*/
+ *   所以迭代宏不能直接调 `IsBadReadPtr` ✓。实现见 `sdk.c`（内部就是 `IsBadReadPtr`）。
+ *   ★★ 2026-10-14（P26）：**语义写清楚** —— `ce_ptr_readable()` 返回 **1 = 可读** ✓
+ *     （实现 = `p && !IsBadReadPtr(p, n)` ✓）⇒ 判"能不能走"要用 `ce_ptr_readable(...)` ✓，
+ *     **不是** `!ce_ptr_readable(...)` ✗（后者等于"指针坏" ✗）。*/
 int ce_ptr_readable(const void *p, unsigned n);
 
 /* ★ z58：**抽离出来的"怎么走"**（判据仍各卡自己写 ✓，owner 口径）——
@@ -1258,15 +1293,15 @@ int ce_ptr_readable(const void *p, unsigned n);
  *   两者都**不判断有效性** ⇒ 卡体里照旧 `if (!你的判据(b)) continue;` ✓。
  *   ⚠ 每一步都过 `IsBadReadPtr`（坏指针即停 ✓）、链表顺序 ≠ 数组顺序（顺序敏感的卡用 POOL ✓）。
  *
- * ★★★ 2026-10-15：**移植上游 P26 修复**（上游提交 `dd447f70`，merge `bcdce0d1`
- *   「P26: 修回归 —— CE_BULLET_LIVE_FOR_EACH 的守卫反相（11 站点静默扫 0 次）」✓）。
- *   病根：`ce_ptr_readable()` 返回 **1 = 可读**（实现 `p && !IsBadReadPtr(p, n)`）⇒ 判"能不能走"
- *   要用 `ce_ptr_readable(...)` ✓，而本宏原来三处写成 `!ce_ptr_readable(...)` ✗ = 要求「指针**坏**」
- *   才继续 ⇒ **链表一开头就退出、恒 0 次迭代** ✗（引入提交 `8b8c9139`）。
- *   后果（owner 实跑）：所有走本宏的站点静默扫 0 次 —— 11 个站点：`lolk.c:488`、
- *   `signal.c:2100/2156`、`youkai.c:954/6936`、**`pofv.c:1944`（109 固灵结界碰弹染色）**、
- *   `season.c:714/1441`、`great_work.c:204/313`、`reverse.c:20` ⇒「109 固灵结界碰弹不变暗」就是它 ✓。
- *   ⇒ 本卡 109 的那棵树缺这笔（检出落后上游 208 个提交）⇒ 这里按上游原样把三处守卫改回来 ✓。*/
+ * ★★★ 2026-10-14（P26，**修一次真回归** ✗）：本宏原来把三处守卫写成了 `!ce_ptr_readable(...)` ✗
+ *   —— 而 `ce_ptr_readable()` 返回 **1 = 可读** ✓ ⇒ 原写法等于"要求指针**坏**才继续" ✗
+ *   ⇒ **链表一开头就退出、恒 0 次迭代** ✗（引入提交 = `8b8c9139`「敌弹扫描迁移继续」，
+ *     是 2026-10-12 那次抽取里我自己写反的 ✗）。后果：**所有走本宏的站点静默扫 0 次** ✗ ——
+ *     owner 实跑看到的「咲夜 111 支援特技 / 109 固灵结界 / 115 擦弹圈内的**敌弹变色失效**」✗
+ *     就是它 ✓（当时共 **11 个站点**：`lolk.c:488`、`signal.c:2100/2156`、`youkai.c:954/6936`、
+ *     `pofv.c:1944`、`season.c:714/1441`、`great_work.c:204/313`、`reverse.c:20` ✓）。
+ *   现在三处都改成 `ce_ptr_readable(...)` ✓：哨兵头可读 ⇒ 取 `head.next`；
+ *   节点可读、非空、且 ≠ 哨兵头（= 到尾）⇒ 取 `node.entry` 当 `b`；`b` 可读 ⇒ 进循环体 ✓。*/
 #define CE_BULLET_LIVE_FOR_EACH(b)                                                   \
     for (uint8_t *ce_bl_head = (CE_BULLET_MGR() ? (CE_BULLET_MGR() + CE_BM_TICK_LIST_HEAD) : 0), \
                  *ce_bl_node = ((ce_bl_head && ce_ptr_readable(ce_bl_head, 16))          \

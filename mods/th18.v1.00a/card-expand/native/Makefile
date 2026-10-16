@@ -35,6 +35,8 @@ check: quick cards-check anm-verify sht-verify snd-check dllx87 dllverify
 	python3 tools/capcheck.py
 	python3 tools/engine_abi_check.py
 	python3 tools/anm_hud_alpha_check.py
+	python3 ../assets/check_anm_rules.py   # ★ 2026-10-15：anm「看不见」类 linter（弧类缺 iset($I1) / rotate(0) 零弧）
+	python3 tools/check_modkit_packages.py --modkit "$${MODKIT_DIR:-/mnt/d/项目/幻想指南/18/th18_modkit}"; rc=$$?; if [ $$rc -eq 2 ]; then echo "  ⚠ 本机没装那个 modkit ⇒ 同开护栏跳过（装了就是硬拦）"; else exit $$rc; fi
 	python3 ../../../../tooling/check-docs.py
 
 ## package —— 生成可安装的完整发布包。
@@ -244,8 +246,10 @@ test-host:
 	./tests/build/test_vitem_batch
 	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_peashooter_core tests/test_peashooter_core.c cards/peashooter_core.c
 	./tests/build/test_peashooter_core
-	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_season_core tests/test_season_core.c cards/season_core.c
+	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_season_core tests/test_season_core.c cards/season_core.c cards/dtap_core.c   # ★ 2026-10-15：`season_core.h` 的 `season_dtap_*` 已是 static inline 包装（实现在 dtap_core.c）⇒ 必须一起链
 	./tests/build/test_season_core
+	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_dtap_core tests/test_dtap_core.c cards/dtap_core.c   # ★ 2026-10-15：这条此前漏了，`test_dtap_core.c` 一直没被跑
+	./tests/build/test_dtap_core
 	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_lolk_core tests/test_lolk_core.c cards/lolk_core.c
 	./tests/build/test_lolk_core
 	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_ouroboros_core tests/test_ouroboros_core.c cards/ouroboros_core.c

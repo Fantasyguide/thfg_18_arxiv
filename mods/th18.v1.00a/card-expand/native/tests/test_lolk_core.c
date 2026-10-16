@@ -46,6 +46,7 @@ int main(void)
     lolk_state_t s;
     lolk_settle_t out;
     lolk_in_t in;
+    memset(&in, 0, sizeof in);
     int32_t f;
 
     /* 道中：第一个刷出开第一波（不再靠「章号变」开波，见 lolk_core.c 的注释） */

@@ -906,7 +906,7 @@ _Static_assert(UFO_HUD_BLOCK_W > 0.0f && UFO_HUD_BLOCK_H > 0.0f,
 
 /* ============================ ★ 调试键（2026-09-18；★ 2026-09-23 改键位）================================
  * 形状**完全照抄 117（TH17 动物灵）`animal.c` 的那一套**（`ANIMAL_DEBUG_KEY` 那一块）：
- *   · `ce_key_down(CE_VK_SPACE)` + 卡状态里一个 `dbg_key_prev` 做**边沿检测**（拍一下出一批，按住不连发）；
+ *   · `(CE_DEBUG_SPACE_KEYS && ce_key_down(CE_VK_SPACE))` + 卡状态里一个 `dbg_key_prev` 做**边沿检测**（拍一下出一批，按住不连发）；
  *   · 固定落点 + **一行日志**；
  *   · 一个宏开关：`UFO_DEBUG_KEY`（发布前改 0 即可全部停用 —— 117 的发布版就是 0）。
  * ⚠ 为什么能用空格：`ce_key_down` 走 `GetKeyboardState`（user32），空格**不在游戏配置里、也不进 replay
@@ -1442,7 +1442,20 @@ static void ufo_player_xy(float *px, float *py)
 /* 关卡号（填充率公式的入参）。
  * ★❓ 自定（spec §4：逐关阈值是**为 TH12 道具密度**算的，TH18 要重估）⇒ 现在取 **1**（= 一手公式的
  * 第 1 关增量 0.030），这是「照抄一手同一格」最保守的取法，不是本机关卡号。 ⏳ 待实跑标定。 */
-#define UFO_PLACEHOLDER_STAGE 1
+/* ★★ P58（owner：「**按照一手每面数据直接映射**」✓）：填充率公式里的"关卡号"改成**当前关卡** ✓。
+ *   一手（`th12:0x44aca0`）：`fill += 0.032 − 关卡号×0.002` ⇒ 逐关 34/36/39/42/46/51/56 颗 ✓。
+ *   旧版传下面的占位值 1 ⇒ 永远按第 1 关那档（owner 实跑发现 ✓）。
+ *   值域照一手表夹到 **[1, 7]** ✓（0/负 = 还没进关 ⇒ 按第 1 关 ✓；Extra / 练习也落在 7 ✓）。*/
+#define UFO_FILL_STAGE_MIN 1
+#define UFO_FILL_STAGE_MAX 7
+static int32_t ufo_fill_stage(void)
+{
+    int32_t st = CE_CURRENT_STAGE();                 /* engine.h:367 = Globals 的当前关 ✓ */
+    if (st < UFO_FILL_STAGE_MIN) st = UFO_FILL_STAGE_MIN;
+    if (st > UFO_FILL_STAGE_MAX) st = UFO_FILL_STAGE_MAX;
+    return st;
+}
+#define UFO_PLACEHOLDER_STAGE 1  /* ⚠ P58 起**不再用于填充率**（改走 ufo_fill_stage() ✓）；留名只因历史注释/日志引用 ✓ */
 
 /* ==================== ★★ §3.2 令牌池：建 / 撤 / 找（2026-09-12 换池，自建 VM）====================
  * 一只 token = `s_tokpool.tok[i]` 的一条 + **它的那个 anm VM**。池是**紧凑数组**（`[0, n)` 全是活的），
@@ -3489,7 +3502,7 @@ static int ufo_try_item(ufo_card_t *s, uint8_t *it, float ux, float uy)
                        "cherry point; both => one of each - registry-driven, never hardcoded)", paid);
             }
         }
-        if (ufo_absorb_item(&s->u, *(uint32_t *)(it + CE_ITEM_TYPE), UFO_PLACEHOLDER_STAGE,
+        if (ufo_absorb_item(&s->u, *(uint32_t *)(it + CE_ITEM_TYPE), ufo_fill_stage(),
                             UFO_FILL_SCALE_PERMILLE)) {
             /* 吸满：按色吐**一件**（一手 `0x44ad99` 的 switch）——
              *   红 → 道具 4（残机碎片）；绿 → 道具 7（整颗 Bomb，我们映射到 TH18 type 6）；
@@ -3648,7 +3661,7 @@ static void ufo_absorb_faith_tick(ufo_card_t *s, float ux, float uy)
             /* ★ 计数 +1（颜色通道由 `ufo_absorb_item` 一处决定：彩虹时互换）*/
             /* ★★ 2026-09-23（owner #7）：**必须接住返回值** —— 原来 `(void)` 丢掉它 ⇒
              *   被信仰点喂满的那一次不开奖（没 B、没闪烁）。见 `ufo_fill_complete()` 的注。*/
-            if (ufo_absorb_item_ex(&s->u, kind, UFO_PLACEHOLDER_STAGE, UFO_FILL_SCALE_PERMILLE))
+            if (ufo_absorb_item_ex(&s->u, kind, ufo_fill_stage(), UFO_FILL_SCALE_PERMILLE))
                 ufo_fill_complete(s, ux, uy);
             ufo_se(UFO_SEV_ABSORB, UFO_SE_ABSORB, e.x,
                        "一手 th12:0x426970（同上；这一声是共享点池的点被吞）");
@@ -5658,6 +5671,16 @@ static void ufo_withdraw_all(ufo_card_t *s, const char *why)
     ufo_tok_pool_clear_all();                          /* ★ 令牌 VM + 五边形框，全部只看句柄 */
     ufo_drop_kill_all();                               /* ★ 掉落物实体（压缩包 / Bomb）也在静态区 */
     ufo_pull_forget_all();                             /* ★ 拉拽累计速度表（静态区）*/
+    /* ★★ 2026-10-14（P34，修审计 **F7f**）：两个**文件静态 scratch** 也在这里收 ✓ ——
+     *   `s_bolt[]`（闪电碎屑的视觉 scratch ✓）与赏金等价包 `s_bounty_eq*` 原来**没有任何钩子**
+     *   清它们 ✗ ⇒ 删卡/新局之后残留的旧值可能被下一局误读 ✓（防御性清理 ✓，正常流程里
+     *   owner 说过只在商店删卡 ⇒ 这里是"兜底"而不是修症状 ✓）。
+     *   ⚠ `s_bounty_eq_gen` 用**自增**而不是归零 ✓：它是给其它卡看的**代数**（变了就重读 ✓），
+     *     归零可能让"持有旧代数 0"的卡误判"没变" ✗ ⇒ 自增永远能被看见 ✓。*/
+    memset(s_bolt, 0, sizeof s_bolt);
+    s_bounty_eq_pending = 0;
+    memset(&s_bounty_eq, 0, sizeof s_bounty_eq);
+    ++s_bounty_eq_gen;
     if (s_tokpool.dropped)
         ce_log("ufo: token pool dropped %d token(s) while full (cap %d)", s_tokpool.dropped,
                UFO_TOKEN_CAP);
@@ -5880,7 +5903,7 @@ static void on_item_frame(ce_card_t *c)
          *   ★ 2026-09-24 第 21 轮键位（owner）：「**调试改成：Ctrl+空格，掉落一个满 B**」
          *   ⇒ **空格 = 1 枚固定色令牌** / **Shift+空格 = 爆一批 P 点+金钱点** /
          *      **Ctrl+空格 = 掉一颗满 B**（原来那件"1 枚变色令牌"退役；要验证变色链就直接看满 B 那条路）。*/
-        int down  = ce_key_down(CE_VK_SPACE) ? 1 : 0;
+        int down  = (CE_DEBUG_SPACE_KEYS && ce_key_down(CE_VK_SPACE)) ? 1 : 0;
         int shift = ce_key_down(CE_VK_SHIFT) ? 1 : 0;
         int ctrl  = ce_key_down(CE_VK_CONTROL) ? 1 : 0;
         if (down && !s->dbg_key_prev && shift) {

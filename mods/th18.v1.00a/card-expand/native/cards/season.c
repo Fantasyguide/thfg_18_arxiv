@@ -960,10 +960,8 @@ static void points_tick(ce_card_t *c, season_card_t *s)
              * 每帧写死 alpha 255 会把它按掉（同 LoLK 弹染色那个「出圈变透明」的坑，见 lolk.c）。*/
             int tinted = (slow < 1.0f && p->age >= SEASON_POINT_INTANGIBLE);
             {
-                uint8_t *vm = ce_anm_get_vm((uint32_t)p->id);
-                uint32_t cur = vm ? *(uint32_t *)(vm + CE_ANM_VM_COLOR1) : 0xffffffffu;
-                ce_anm_set_color((uint32_t)p->id,
-                                 (cur & 0xff000000u) | (tinted ? 0x00ffd080u : 0x00ffffffu));
+                /* ★ P14a：改用 I1 词汇 —— 与原来那条手写表达式逐位等价 ✓（保 alpha、只换 RGB ✓）。*/
+                ce_anm_set_color_rgb((uint32_t)p->id, tinted ? 0x00ffd080u : 0x00ffffffu);
             }
             if (tinted) {
                 float jx = (float)((int32_t)(ce_rand() % 3) - 1);

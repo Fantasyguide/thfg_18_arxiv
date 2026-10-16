@@ -1,0 +1,25 @@
+// 卡 109「深蓝霸气的烟柱」—— TH18 原生 effect.anm script115 的 1:1 复刻（与 463 配对）
+//
+// 一手出处：engine/enemy/th18/07-boss-aura-mesh.md §9.28a（th18 v1.00a）
+//   · 原生 script115 = `sprite(sprite34); blendMode(1); layer(6); anchor(0, 2);
+//     fsetMul(%F2, %RANDF2, 4.0f); pos(%F2, 0.0f, 0.0f); color(32, 32, 160);
+//     fsetMul(%F0, %RANDF, 0.7f); fadd(%F0, 1.0f); scale(%F0, 0.0f);
+//     fsetMul(%F1, %RANDF, 0.5f); fadd(%F1, 1.9f); scaleTime(30, 4, %F0, %F1); alphaTime(30, 1, 0);`
+//   · `anchor(0,2)` = 以**下边**为锚 ⇒ 配 `pos y=0` 看起来是**从 boss 身上往上冒的烟柱**；
+//     `%F2` = 随机横向偏移（±4 个单位）⇒ 多起几台就是**一片错落的烟**（"霸气"的体积感）✓
+script script464 {
+    sprite(@AURA_PLUME);
+    blendMode(1);
+    layer(6);
+    anchor(0, 2);
+    fsetMul(%F2, %RANDF2, 4.0f);
+    pos(%F2, 0.0f, 0.0f);
+    color(32, 32, 160);
+    fsetMul(%F0, %RANDF, 0.7f);
+    fadd(%F0, 1.0f);
+    scale(%F0, 0.0f);
+    fsetMul(%F1, %RANDF, 0.5f);
+    fadd(%F1, 1.9f);
+    scaleTime(30, 4, %F0, %F1);
+    alphaTime(30, 1, 0);
+}

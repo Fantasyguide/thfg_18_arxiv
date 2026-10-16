@@ -1464,7 +1464,8 @@ int32_t    yk_clamp_spawn_life(int32_t life);
  *   · **100** = owner 口径（使魔多 ⇒ 不能减伤）；
  *   · **50** = 一手 1/2（`research-108-damage-transfer.md`，🟡 `th08:0x451670`/`0x4517f6` 未逐指令复核）
  *     —— **保留可切回**（旋钮不删），对照用。*/
-#define YK_TRANSFER_PCT 100
+#define YK_TRANSFER_PCT       100   /* ★ P59：**附加（绕转）使魔**的转伤比例 —— owner 2026-10-14 口径「附加使魔**全额**转伤」✓ */
+#define YK_TRANSFER_PCT_MAP    50   /* ★ P59：**发弹口（映射）使魔**的转伤比例 —— 同口径「发弹口使魔 **1/2**」✓（一手 1/2 的半整数进位器 ✓）*/
 #define YK_TRANSFER_CAP_PER_FRAME 0             /* ★ TODO(决策 §7.5-1)：单帧转嫁上限。0 = 无上限（占位）。
                                                  *   研究提醒：使魔一刀 2000 ⇒ boss 一帧 1000，会顶掉 boss 的
                                                  *   每帧配额并放大计分 ⇒ 要不要封顶由用户定。*/
@@ -1488,7 +1489,7 @@ typedef struct {
 void    yk_transfer_reset(yk_transfer_t *t);
 /* delta 的一半（向下取整），余数进 `*carry` ⇒ 连续两帧的奇数伤害**不丢半分**。 */
 int32_t yk_half_with_carry(int32_t delta, int32_t *carry);
-void    yk_transfer_feed(yk_transfer_t *t, int32_t delta);
+void    yk_transfer_feed(yk_transfer_t *t, int32_t delta, int32_t pct);   /* ★ P59：pct = 100（附加）/ 50（发弹口）✓ */
 /* cap <= 0 = 无上限（占位默认）；否则钳到 cap。 */
 int32_t yk_transfer_clamp(int32_t pending, int32_t cap);
 /* 采样一只使魔的 life.current：返回本帧掉血量（>0）。
@@ -2679,3 +2680,34 @@ int yk_fam_kind_shot_same(int kind);   /* 1 = 高低速发弹一样；0 = 不一
  * 本仓 .c **禁 x86 浮点库**（不许 `sin`/`cos`/libm）⇒ 这里只有查表 + 两次乘法。
  * 返回 1 = 填好 `*dx`/`*dy`；0 = `dx`/`dy` 是空指针。`step` 越界一律回绕进表内。*/
 int yk_orbit_offset(unsigned step, float radius, float *dx, float *dy);
+
+/* ★★ 2026-10-15 **leveledit（第三方米斯蒂亚补丁）同开时的使魔归属** —— 纯判据。
+ *
+ * 口径（owner 原文与逐条解释见 [`HANDOFF-108-LEVELEDIT-FAMILIARS.md`](../../HANDOFF-108-LEVELEDIT-FAMILIARS.md) §1 ✓）：
+ *   ① 那场 boss 战时 **不建我们自建的使魔壳** ✓；
+ *   ② 把**他们的**使魔当我们的使魔接管（可击破 + **1/2 转伤** + 参与**人妖切换** ✓）；
+ *   ③ **没装 108 时，绝不对它们做任何人妖形态切换** ✗（此时「只有人侧、没有妖侧」✓）。
+ *
+ * ★★ **保守回退（本文件存在的意义之一）**：判别常量**必须先由实跑日志实测** ✓
+ *   （P113 的只读探针，见交接单 §4 ✓）。在 `YK_LE_TRUSTED` 置 1 之前，
+ *   本组判据**一律返回"不命中 / 不抑制"** ✓ ⇒ **行为与今天完全一致** ✗（不猜 ✓）。
+ *
+ * 输入都是**只读字段**（与探针同源 ✓，出处 = vendor `type-structs-own.json` 的 `zEnemyData` ✓）：
+ *   `boss_sub274` = boss 敌机的 `+0x274`（`__probably_cur_subscript_for_anm_main` ✓）；
+ *   `boss_anm_main` = `+0x270`；`iv0` = `ecl_int_vars[0]`（`+0x28c` ✓）；
+ *   `enemy_id` = `CE_ENEMY_ID`；`anm_main` / `anm_slot0` = `+0x270` / `+0x26c` ✓。*/
+#define YK_LE_TRUSTED            0   /* ❓待实测：P113 探针跑完「零售 / leveledit」两局后再置 1 ✓ */
+#define YK_LE_BOSS_SUB274_MIN    0   /* ❓待实测：只在 leveledit 局出现的那组值（见交接单 §4）*/
+#define YK_LE_BOSS_SUB274_MAX    0
+#define YK_LE_FAM_ID_FIRST       0   /* ❓待实测：他们使魔敌机的 id 区间（探针的 le-probe(enemy) 行）*/
+#define YK_LE_FAM_ID_LAST        0
+
+/* 那场是不是 leveledit 版？（判据 = 上面那组常量；未钉死 ⇒ 恒 0 ✓）*/
+int yk_le_is_levelledit_fight(int boss_sub274, int boss_anm_main, int iv0);
+/* 这只敌机是不是"他们的使魔"？（未钉死 ⇒ 恒 0 ✓）*/
+int yk_le_is_their_familiar(int enemy_id, int anm_main, int anm_slot0);
+/* 给 `youkai.c` 的一条总口 ✓：
+ *   `has_108` = 本卡在不在（本卡自己的代码里恒 1 ✓；留参数是为了让单测能喂 0 ✓）
+ *   返回 0 = 照旧（建自建壳 ✓）；1 = 那场（不建自建壳 ✓，并把匹配到的敌机当使魔 ✓）。
+ *   ★ 没装 108 ⇒ **恒 0** ✓（owner 口径 ③ 的机器化 ✓）。*/
+int yk_le_mode(int has_108, int boss_sub274, int boss_anm_main, int iv0);

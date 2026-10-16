@@ -319,11 +319,11 @@ void faith_dot_slow_style(uint32_t anm_id, uint8_t age, int slowed, float x, flo
     }
     if (tinted) ++s_stat_slow_dots;
     if (!anm_id) return;
-    vm = ce_anm_get_vm(anm_id);
-    cur = vm ? *(uint32_t *)(vm + CE_ANM_VM_COLOR1) : FAITH_TINT_NONE;
-    /* 只改 RGB、保留当前 alpha（见上 §二 的 ⚠）。 */
-    ce_anm_set_color(anm_id, (cur & 0xff000000u) |
-                             (tinted ? (FAITH_SLOW_TINT & 0x00ffffffu) : FAITH_TINT_NONE_RGB));
+    /* ★★ 2026-10-14（P14a）：改用 **I1 词汇** ✓ —— `ce_anm_set_color_rgb()` 内部就是
+     *   「读 color_1、保 alpha、只换 RGB」✓（与原来那两行手写表达式**逐位等价** ✓，
+     *   等价性由 `tests/test_sdk_color.c` 的 400 条断言钉死 ✓）。
+     *   ⇒ 原来那两个局部量（`vm` / `cur`）不再需要，一起删掉 ✓（否则 `-Werror=unused` ✗）。*/
+    ce_anm_set_color_rgb(anm_id, tinted ? FAITH_SLOW_TINT : FAITH_TINT_NONE_RGB);
     if (tinted) {
         /* 抖动 = 画出来的位置加 ±1 px（一手 `0x445ce7`：引擎写 VM 的 entity_pos，
          * 我们的实体没有「逻辑坐标 vs 画坐标」两层 ⇒ 直接写 pos）。取值与 116 季节点同分布。*/

@@ -67,7 +67,8 @@
 #define LOLK_BONUS_COEF      50       /* 章节奖系数（TH15 `0x4cffc0` = 50.0）*/
 #define LOLK_FRAG_THRESHOLD  1000000  /* bonus ≥ 此值才发碎片（TH15 `0x43ae42`）*/
 #define LOLK_SCORE_DIV       10       /* 分数增量 = bonus / 10（TH15 `0x43ad19`）*/
-#define LOLK_FRAG_CYCLE      5        /* 每 5 波第 5 波给命碎，其余给符卡碎（本卡新定）*/
+#define LOLK_LIVES_MAX       8        /* 残机上限（满残判据；TH18 满 8 ⇒ 与 `CARDS.md` 的"残机满 8"一致 ✓）*/
+#define LOLK_FRAG_CYCLE      5        /* ⚠ 已被 owner 口径取代（见 lives_full）：**满残才换 B 碎** ✓ */
 #define LOLK_FRAG_BOMB       0x11     /* BOMB2 卡道具 → CardBombFragment（符卡碎）*/
 #define LOLK_FRAG_LIFE       0x10     /* EXTEND2 卡道具 → CardLifeFragment（命碎）*/
 
@@ -116,6 +117,7 @@ typedef struct {
     int32_t stage_chapter;   /* ★ 关卡脚本当前 MainSub 编号（去掉尾部字母；01 与 01b 都 = 1）。
                               *   < 0 = 当前不在 MainSub（main/MainFront/MainLatter，或没认出来）*/
     int32_t spawn_delta;     /* 本帧新建敌人数（zEnemyManager.next_enemy_id 差分，< 0 当 0）*/
+    int32_t lives_full;    /* ★ owner 2026-10-15：「**满残的时候掉的是 B 碎**」⇒ 残机已满 = 1 ✓ */
 } lolk_in_t;
 
 typedef struct {

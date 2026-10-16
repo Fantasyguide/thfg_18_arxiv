@@ -343,7 +343,7 @@ static int on_tick_2(ce_card_t *c)
      *     `CE_VK_CONTROL` 做组合键（SDK 已备好那个常量）。*/
     {
         static int dbg_space_prev;                 /* 106 只会有一份 ⇒ file-local 足够 */
-        const int down = ce_key_down(CE_VK_SPACE) ? 1 : 0;
+        const int down = (CE_DEBUG_SPACE_KEYS && ce_key_down(CE_VK_SPACE)) ? 1 : 0;
         if (down && !dbg_space_prev) {
             const int32_t pmax = *(volatile const int32_t *)CE_ADDR_MAX_POWER;
             if (pmax > 0) {

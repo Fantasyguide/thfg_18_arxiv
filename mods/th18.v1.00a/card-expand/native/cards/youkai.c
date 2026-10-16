@@ -413,6 +413,75 @@ static int yk_focused(void)
 static int yk_trance_active(void) { return ce_card_flag_any(CE_CARD_FLAG_TRANCE); }
 static int yk_roar_active(void)  { return ce_card_flag_any(CE_CARD_FLAG_ROAR); }
 
+/* ★★ 2026-10-15 **只读诊断探针**（为 owner 的「同开」需求：leveledit 米斯蒂亚那场要接管他们的使魔 ✓）。
+ *
+ * 目的 = **把"那场"的判别信号实测出来** ✓，而不是照 README 猜 ✗ —— 已实测证伪一条：
+ * 他们改的 `st02enm.anm` 脚本号**仍是 0–18** ✓（`thanm -l 18` ✓ ⇒ README 说的「追加 scripts 28/29」
+ * 指的是 **TH08 源侧 `anm8/enemy.anm`** ✗，不是 TH18 运行时的号 ✓）。
+ * 另一条（ECL sub 索引）本机拿不到：他们编译要的 `th08.dat` 修订（sha256 `9d7edf43…`）不在这台机器上 ✗
+ * ⇒ 所以**改成实测**：拿零售局与 leveledit 局的日志一比，哪个字段能区分一目了然 ✓。
+ *
+ * 做法：**只在有 boss 在场时**、每 30 帧一行 ✓；字段**全部只读** ✓：
+ *   boss：id / flags / `anm_main` / `anm_slot_0_script` / `+0x274` / `own_boss_id` / `time_in_ecl.cur`
+ *         / **`ecl_int_vars[4]`** / **`ecl_float_vars[]`** ✓
+ *   其它敌机（最多 8 只 ✓）：id / `anm_main` / `slot0` / `+0x274` / `time_in_ecl.cur` ✓
+ *   —— 他们的使魔是「移植为 TH18 **普通敌人**」✓ ⇒ 会出现在这一列 ✓。
+ * 之后把判别常量钉进 `youkai_core` ✓，**再回来把本探针关掉** ✓（`YK_LE_PROBE` 改 0 ✓）。
+ *
+ * 偏移出处 = `local/vendor/th-re-data/data/th18.v1.00a/type-structs-own.json` 的 `zEnemyData` ✓
+ * （`anm_slot_0_script` +0x26c / `anm_main` +0x270 / `__probably_cur_subscript_for_anm_main` +0x274 /
+ *  `ecl_int_vars` +0x28c / `ecl_float_vars` +0x29c / `time_in_ecl` +0x2bc（`zTimer`：cur = +4）/ `own_boss_id` +0x5140 ✓）。*/
+#define YK_LE_PROBE 1
+#if YK_LE_PROBE
+#define YK_E_ANM_SLOT0_SCRIPT 0x26c
+#define YK_E_ANM_MAIN        0x270
+#define YK_E_SUB274          0x274
+#define YK_E_TIN_ECL_CUR     0x2c0      /* zTimer @+0x2bc：prev(+0)/current(+4)/current_f(+8) ✓ */
+#define YK_E_ECL_IVARS       0x28c
+#define YK_E_ECL_FVARS       0x29c
+#define YK_E_OWN_BOSS        0x5140
+static void __attribute__((noinline)) yk_le_probe(void)
+{
+    static uint32_t s_probe_n;
+    uint8_t *em, *e;
+    int32_t i, shown = 0;
+    if (s_probe_n++ % 30u) return;                        /* 30 帧一行 ✓ */
+    em = CE_ENEMY_MGR();
+    if (!em) return;
+    for (i = 0; i < CE_EM_BOSS_SLOTS; ++i) {
+        int32_t bid = *(int32_t *)(em + CE_EM_BOSS_IDS + (size_t)i * 4);
+        if (!bid) continue;
+        e = ce_enemy_by_id(em, bid);
+        if (!e) continue;
+        ce_log("le-probe(boss%d): id=%d fl=%08x anmMain=%d slot0=%d sub274=%d own=%d tin=%d iv=%d,%d,%d,%d fv=%.2f,%.2f,%.2f",
+               (int)i, (int)bid, (unsigned)*(const uint32_t *)(e + CE_ENEMY_FLAGS),
+               (int)*(const int32_t *)(e + YK_E_ANM_MAIN),
+               (int)*(const int32_t *)(e + YK_E_ANM_SLOT0_SCRIPT),
+               (int)*(const int32_t *)(e + YK_E_SUB274),
+               (int)*(const int32_t *)(e + YK_E_OWN_BOSS), (int)*(const int32_t *)(e + YK_E_TIN_ECL_CUR),
+               (int)*(const int32_t *)(e + YK_E_ECL_IVARS),
+               (int)*(const int32_t *)(e + YK_E_ECL_IVARS + 4),
+               (int)*(const int32_t *)(e + YK_E_ECL_IVARS + 8),
+               (int)*(const int32_t *)(e + YK_E_ECL_IVARS + 12),
+               (double)*(const float *)(e + YK_E_ECL_FVARS),
+               (double)*(const float *)(e + YK_E_ECL_FVARS + 4),
+               (double)*(const float *)(e + YK_E_ECL_FVARS + 8));
+    }
+    CE_ENEMY_FOREACH(em, e) {
+        if (shown >= 8) break;
+        if (!ce_enemy_lockable(e)) continue;
+        ce_log("le-probe(enemy): id=%d anmMain=%d slot0=%d sub274=%d tin=%d",
+               (int)*(const int32_t *)(e + CE_ENEMY_ID),
+               (int)*(const int32_t *)(e + YK_E_ANM_MAIN),
+               (int)*(const int32_t *)(e + YK_E_ANM_SLOT0_SCRIPT),
+               (int)*(const int32_t *)(e + YK_E_SUB274),
+               (int)*(const int32_t *)(e + YK_E_TIN_ECL_CUR));
+        ++shown;
+    }
+    ce_log("le-probe: live=%d", (int)*(const int32_t *)(em + CE_EM_ENEMY_COUNT));
+}
+#endif /* YK_LE_PROBE */
+
 /* 每帧一次（在 `on_tick_2` 最前面调用）：更新「锁形态」状态机。
  * 「真 B」判据 = `bomb_mgr+0x30`（`do_bomb`，`engine.h`）**且起手那一帧不在决死窗口里**：
  *   灵击 = 决死窗口（自机状态 4，`player+0x476ac`，`Player__die` 写、持续 8 帧
@@ -422,6 +491,9 @@ static int yk_roar_active(void)  { return ce_card_flag_any(CE_CARD_FLAG_ROAR); }
  *     只看瞬时状态会把它的后半段误判成真 B。*/
 static void yk_side_lock_tick(void)
 {
+#if YK_LE_PROBE
+    yk_le_probe();          /* ★ 只读诊断：把"那场"的判别信号实测出来（常量钉死后关掉 ✓）*/
+#endif
     uint8_t *m = CE_BOMB_MGR();
     int act = (m && *(const int32_t *)(m + CE_BOMB_MGR_ACTIVE) != 0) ? 1 : 0;
     int state4 = yk_deathbomb_window(*(const int32_t *)(CE_PLAYER() + CE_PLAYER_STATE));
@@ -789,7 +861,7 @@ static int yk_emit_coord_seen(uint32_t enemy_id, int slot)
 }
 
 /* ★ 调试键（owner：「**一直以来的空格键都是调试**」）：开关 + 电平边沿状态。
- *   触发 = `ce_key_down(CE_VK_SPACE)`（`sdk.h:832`/`sdk.c:397`，`GetKeyboardState`）；
+ *   触发 = `(CE_DEBUG_SPACE_KEYS && ce_key_down(CE_VK_SPACE))`（`sdk.h:832`/`sdk.c:397`，`GetKeyboardState`）；
  *   ⛔ 旧的 `0x4ca428` 掩码方案（`YK_DEBUG_KEY_MASK/…_MASK2`）**已退役**（该掩码没有空格位）。*/
 #define YK_DEBUG_SPACE_KILL 1
 static int      s_dbg_space_prev;       /* 空格电平边沿 */
@@ -1184,6 +1256,28 @@ static int yk_boss_active(void)
     return 0;
 }
 
+/* ★★ 2026-10-15 **leveledit（第三方米斯蒂亚补丁）「同开」门** —— owner 口径见
+ * [`HANDOFF-108-LEVELEDIT-FAMILIARS.md`](../../HANDOFF-108-LEVELEDIT-FAMILIARS.md) §1 ✓：
+ *   ① 那场 boss 战时**不建我们自建的使魔壳** ✓；
+ *   ② 把**他们的**使魔当我们的使魔接管 ✓（下一批：喂进使魔台账 ⇒ **1/2 转伤** + 参与**人妖切换** ✓）；
+ *   ③ **没装 108 时，绝不对它们做形态切换** ✗ —— 由"形态切换全部挂在本卡上"天然保证 ✓。
+ *
+ * ★ 本函数现在**恒返回 0** ✓：`yk_le_mode()` 内 `YK_LE_TRUSTED` 仍为 0（判别常量**必须**由 P113 探针的
+ *   实跑日志钉死 ✓，不许猜 ✗）⇒ 这道门**完全惰性** ✓，行为与今天一致 ✓。
+ * 读的都是 boss 敌机上的**只读字段** ✓，偏移出处 = vendor `zEnemyData`（与探针同源 ✓）。*/
+#define YK_LE_B_SUB274        0x274   /* __probably_cur_subscript_for_anm_main ✓ */
+#define YK_LE_B_ANM_MAIN      0x270
+#define YK_LE_B_IV0           0x28c   /* ecl_int_vars[0] ✓ */
+static int yk_le_here(void)
+{
+    uint8_t *b = yk_boss();
+    if (!b) return 0;
+    return yk_le_mode(1 /* 本卡在场 ✓ */,
+                      *(const int32_t *)(b + YK_LE_B_SUB274),
+                      *(const int32_t *)(b + YK_LE_B_ANM_MAIN),
+                      *(const int32_t *)(b + YK_LE_B_IV0));
+}
+
 /* ★★★ 2026-09-22（P3 第二批）：「射击中」的判据（TH18 侧）。
  * TH08 是 `Player::shotActive`（一个 999 帧的射击周期标志，`th08:0x17d6ed4`）；TH18 没有同一个
  * 状态量（每帧按 rate 发弹，没有周期）⇒ 本卡用**射击键按住**（`CE_INPUT_HELD` 的 bit0）。
@@ -1277,7 +1371,10 @@ static uint8_t *yk_spawn_familiar_parent(float x, float y, uint32_t parent_id, i
      *   使魔壳**本来就该待在发射口上**，而发射口（`母机位置 + offsets`）经常在画面外 ⇒ 必须免删。
      *   掩码 `0xC` = `flags_lo` bit2|bit3，也是 ZUN 原生 ECL 在会飞出画面的敌人上用的 `flagSet(12)`。*/
     {
-        uint8_t *e = (uint8_t *)ce_spawn_enemy_keep_offscreen("NoEnemyDebug", spawn);
+        /* ★★ 2026-10-15 leveledit「同开」门（口径 ①）：那场里**不建**自建壳 ✓。
+         * 门现在是**惰性**的 ✓（`yk_le_here()` 恒 0 —— 判别常量还没实测 ✓），所以这一行今天
+         * 与原来完全等价 ✓；常量钉死后它会直接跳过建壳 ✓，而下面所有 `if (e …)` 分支自然都不跑 ✓。*/
+        uint8_t *e = yk_le_here() ? 0 : (uint8_t *)ce_spawn_enemy_keep_offscreen("NoEnemyDebug", spawn);
         /* ★ 第二步：真血量 >999 ⇒ 出生后回写三格 life（**只有这条路不置位 30**）。
          *   `yk_clamp_spawn_life(life)` 是幂等的纯函数，这里再算一次只为拿到「spawn 值」。*/
         if (e && life > 0 && life > yk_clamp_spawn_life(life)) {
@@ -1863,6 +1960,60 @@ typedef struct {
 static yk_orbit_gifted_t s_orbit_gifted[YK_ORBIT_GIFTED_MAX];
 static unsigned s_orbit_gift_full;    /* 表满拒绝过几次（只增，诊断用）*/
 static unsigned s_orbit_gift_refused; /* 拦下过几次重复补（只增，诊断用）*/
+
+/* ★★★ P82（owner 2026-10-15）：**映射（发射口）使魔的「当初发过几台」台账** ——
+ *   修 owner 报的「**时序问题**：击破含使魔的敌人时被判定成没有使魔 ⇒ 没有 +N」✗。
+ *   绕转使魔本来就有同款台账（s_orbit_gifted ✓），映射使魔没有 ✗ ⇒ 使魔先被清掉、母机同帧死亡时
+ *   n = 0 ⇒ n_mem = 0 ⇒ `if (!n2)` 整块跳过 ⇒ 连 +N 都没有 ✗。
+ *   这里按**母机 id** 记「哪些发射口键建过壳」（位图 ✓）⇒ 死亡那一帧仍取得出台数 ✓。
+ *   文件级静态、不进卡的 496 B 预算 ✓。*/
+#define YK_MAP_GIFTED_MAX 64
+typedef struct {
+    uint32_t id;
+    uint64_t seen[2];      /* 发射口键（slot + 16*ord，≤ 16*6）位图 ✓ */
+    uint32_t frame;
+} yk_map_gifted_t;
+static yk_map_gifted_t s_map_gifted[YK_MAP_GIFTED_MAX];
+
+static int yk_map_gifted_find(uint32_t id)
+{
+    unsigned i;
+    for (i = 0; i < YK_MAP_GIFTED_MAX; ++i) if (s_map_gifted[i].id == id) return (int)i;
+    return -1;
+}
+
+static void yk_map_gift_mark(uint32_t id, int key, uint32_t frame)
+{
+    unsigned i;
+    int idx;
+    if (!id || key < 0 || key >= 128) return;
+    idx = yk_map_gifted_find(id);
+    if (idx < 0) {
+        for (i = 0; i < YK_MAP_GIFTED_MAX; ++i) {
+            if (!s_map_gifted[i].id) {
+                s_map_gifted[i].id = id;
+                s_map_gifted[i].seen[0] = 0;
+                s_map_gifted[i].seen[1] = 0;
+                idx = (int)i;
+                break;
+            }
+        }
+    }
+    if (idx < 0) return;                      /* 表满 ⇒ 宁可不记（只影响 +N 的值 ✓）*/
+    if (key < 64) s_map_gifted[idx].seen[0] |= (uint64_t)1 << key;
+    else          s_map_gifted[idx].seen[1] |= (uint64_t)1 << (key - 64);
+    s_map_gifted[idx].frame = frame;
+}
+
+static unsigned yk_map_gifted_count(uint32_t id)
+{
+    int idx;
+    if (!id) return 0u;
+    idx = yk_map_gifted_find(id);
+    if (idx < 0) return 0u;
+    return (unsigned)__builtin_popcountll(s_map_gifted[idx].seen[0])
+         + (unsigned)__builtin_popcountll(s_map_gifted[idx].seen[1]);
+}
 
 static int yk_orbit_gifted_find(uint32_t id)
 {
@@ -3014,6 +3165,7 @@ static void yk_run_action(yk_card_t *s, const yk_action_t *act)   /* s 可为 NU
         /* ★ 2026-10-01 晚（owner：空格「啥用没有」= 我们的壳**父链是 0** ⇒ 活体校验全拒）：
          *   spawn 后把父 id 写成**该槽的母机 id** ⇒ ① 空格可用；② 这条父子关系本来就该有。*/
         *(uint32_t *)(f + YK_ENEMY_PARENT_ID) = act->enemy_id;
+        yk_map_gift_mark(act->enemy_id, act->slot, ce_sdk_frame());   /* ★ P82：记账（修 +N 时序 bug ✓）*/
         ce_log("youkai/emit SPAWN: slot %d key %d fam_id=%u ret=%d pos=(%.1f,%.1f) enemy_id %u",
                YK_EMIT_REAL_SLOT(act->slot), act->slot, fid, f ? 1 : 0, (double)act->x, (double)act->y, act->enemy_id);
         /* ★★★ 2026-10-01（owner：「依旧有一系列不该出现的发弹口使魔」）——**建壳诊断**（前 24 只）：
@@ -3850,7 +4002,7 @@ static void __attribute__((noinline)) yk_transfer_tick(yk_card_t *s)
                 ++s_xfer_mapped_feed; s_xfer_mapped_delta += d;
                 s_xfer_parent = sl->enemy_id;                /* ★ 落点 = 映射槽的母机 */
             }
-            yk_transfer_feed(&s->tr, d); }
+            yk_transfer_feed(&s->tr, d, YK_TRANSFER_PCT_MAP); }   /* ★ P59：映射（发弹口）使魔 ⇒ 1/2 ✓ */
     }
 
     /* ===== ★ 第二遍：**绕转 + 外部子敌人**的同一套 1/2 转嫁（owner 2026-09-30 口径）=====
@@ -3900,7 +4052,7 @@ static void __attribute__((noinline)) yk_transfer_tick(yk_card_t *s)
                         {   int32_t d = x->life - life;
                             ++s_xfer_ext_feed; s_xfer_ext_delta += d;
                             s_xfer_parent = parent;              /* ★ 落点 = 外部子敌人的母机 */
-                            yk_transfer_feed(&s->tr, d); }
+                            yk_transfer_feed(&s->tr, d, YK_TRANSFER_PCT_MAP); }   /* ★ P59：映射（发弹口）使魔 ⇒ 1/2 ✓ */
                         ++s_xfam_fed;
                     }
                 }
@@ -3935,7 +4087,7 @@ static void __attribute__((noinline)) yk_transfer_tick(yk_card_t *s)
                     int32_t d = x->life - lc;
                     ++s_xfer_orbit_feed; s_xfer_orbit_delta += d;
                     s_xfer_parent = o->parent_id;            /* ★ 落点 = 这只绕转使魔的母机 */
-                    yk_transfer_feed(&s->tr, d);
+                    yk_transfer_feed(&s->tr, d, YK_TRANSFER_PCT);       /* ★ P59：绕转（附加）使魔 ⇒ 全额 ✓ */
                     ++s_xfam_fed;
                 }
                 x->life = lc;
@@ -5109,7 +5261,7 @@ static int yk_bomb_active(void)
                                  *   1（链根 2n）+ 子机数（≤5）个浮字 ⇒ 3 会丢；池满只丢浮字、
                                  *   不影响道具/计分，见 `yk_popup_spawn` 的降级日志）*/
 #define YK_POPUP_GLYPHS     5
-#define YK_POPUP_ANM_LAYER  16
+#define YK_POPUP_ANM_LAYER  19   /* owner 2026-10-15: 会爆出一大堆永点, +N 的 layer 得在上面 => 取世界层最高档 19 (永点 7 / 道具 12 / 弹幕 14-16 都在下面) */
 /* ★★★ 2026-10-01（owner 第三轮：「依旧没有发红字」；实跑日志已证**字建出来了**）：
  *   日志判据（`th18_card_expand.log`，build 17:54:12）：`youkai/popup spawn: tag root/part/orbit
  *   value 16 …` **86 行**、`youkai/kill:` **64 行**、`youkai/zone: opened 41 … bullets 104`
@@ -5261,7 +5413,7 @@ static void yk_popup_tick(void)
              *   浮字 VM 用的 `YK_GAUGE_SCRIPT_FONT[]` 是**HUD 字形脚本**，它正文自带
              *   `layer(25); resolutionMode(2);` ⇒ 脚本一跑就**覆盖**我们创建时给的层，
              *   于是我们喂的**世界/640 空间**坐标被当成 HUD（表面）参照系 ⇒ 整块偏到别处。
-             *   ⇒ 每帧**再写回**：层 = `YK_POPUP_ANM_LAYER`(11，世界层 3–19)，
+             *   ⇒ 每帧**再写回**：层 = `YK_POPUP_ANM_LAYER`(19，世界层最高档)，
              *     `flags_hi` 的 resolutionMode(bits22–24) = **2**（= `1×`，即「脚本没写
              *     `resolutionMode` 时」的默认档，见 `build_player_anm.py` 的一手理由）
              *   ⇒ 浮字与同批刻符（`yk_orb_spawn`，世界层 7）**同一参照系**。
@@ -6198,7 +6350,13 @@ static void yk_on_enemy_killed(yk_card_t *s, const ce_enemy_death_t *ev)
          *   `n == 0` ⇒ 下面整块被 `if (!n2)` 跳过 ⇒ 连 `+N` 都没有（owner 实跑 `popup spawn` 0 行）。
          *   台账（`yk_orbit_gift_mark` 记的 `made`）知道「这台母机当初发了几台」⇒ 拿它兜底。
          *   ⚠ 只影响**值 / 公式 / 开区**；位置循环仍按 `n_child`（有几个位置画几个位置）。*/
-        n_mem = yk_kill_display_count(n, yk_orbit_gifted_count(ev->id));
+        {
+            /* ★ P82：记忆值取**绕转台账与映射台账的较大者** —— owner 2026-10-15 报的
+             *   「**时序问题**：被杀那一刻被判成没有使魔 ⇒ 没有 +N」正是映射那一支缺台账 ✗。*/
+            unsigned mem_o = yk_orbit_gifted_count(ev->id);
+            unsigned mem_m = yk_map_gifted_count(ev->id);
+            n_mem = yk_kill_display_count(n, (mem_m > mem_o) ? mem_m : mem_o);
+        }
         if (n_mem != n && !s_kill_mem_logged) {
             s_kill_mem_logged = 1;
             ce_log("youkai: kill burst uses the REMEMBERED familiar count (enemy #%u: %u live / "
@@ -6685,10 +6843,52 @@ static void yk_gauge_hud_update(yk_card_t *s)
 }
 
 static void yk_hud_claim(ce_card_t *c, yk_card_t *s);   /* ★ z7：定义在本文件后面（on_load 之后）*/
+/* ★★★ 2026-10-14（P31a，owner 口径逐字：「所有东西**除了一个之外**换面不清空：**单面的夜点计数** …
+ *   **总夜点计数和刻符没有理由清空**」✓）：**run 级字段在换面时原样带回** ✓。
+ *   做法（最稳的一种，不靠"猜哪一行清的" ✗）：`on_ctor` 在**换面**这一路上把 run 级字段先存进
+ *   局部、跑完原有初始化、再写回 ✓ —— 于是无论中间哪一支抹了它们，出来都是上一关的值 ✓；
+ *   新局照旧（`s_run_fresh` = 1 ✓）。
+ *   ⚠ **不**恢复的东西：HUD 字形 VM 句柄（`hud_digit[]` / `hud_night[]` ✓）—— 引擎换关会拆掉
+ *     UI VM ✓，恢复了就是死句柄 ✗ ⇒ 让 `yk_gauge_hud_kill()` 与重建那一支照旧跑 ✓。
+ *   ⚠ owner 说的「**单面的夜点计数**」= 每关那一格（TH08 里给 LS 奖励符卡用 ✓，本 mod 没有它 ✓）
+ *     ⇒ 本批**不特意保留**（它本来就是每关一份 ✓）；其余（总夜点 / 刻符 / 人妖槽 / 各项计数）全部带回 ✓。*/
+typedef struct {
+    int32_t  piv, piv_base, orbs, gauge;
+    uint16_t gauge_focus_run, gauge_hold, orb_peak, gauge_ram, gauge_idle, orb_silence;
+    uint32_t orb_taken, orb_full;
+} yk_run_keep_t;
+static yk_run_keep_t s_run_keep108;
+static int           s_run_fresh = 1;   /* 1 = 下一次 on_ctor 属于「新局」（on_run_reset / on_delete 置回 1 ✓）*/
+
+static void yk_run_save108(const yk_card_t *s)
+{
+    s_run_keep108.piv = s->piv;               s_run_keep108.piv_base = s->piv_base;
+    s_run_keep108.orbs = s->orbs;             s_run_keep108.gauge = s->gauge;
+    s_run_keep108.gauge_focus_run = s->gauge_focus_run; s_run_keep108.gauge_hold = s->gauge_hold;
+    s_run_keep108.orb_peak = s->orb_peak;     s_run_keep108.gauge_ram = s->gauge_ram;
+    s_run_keep108.gauge_idle = s->gauge_idle; s_run_keep108.orb_silence = s->orb_silence;
+    s_run_keep108.orb_taken = s->orb_taken;   s_run_keep108.orb_full = s->orb_full;
+}
+
+static void yk_run_restore108(yk_card_t *s)
+{
+    s->piv = s_run_keep108.piv;               s->piv_base = s_run_keep108.piv_base;
+    s->orbs = s_run_keep108.orbs;             s->gauge = s_run_keep108.gauge;
+    s->gauge_focus_run = s_run_keep108.gauge_focus_run; s->gauge_hold = s_run_keep108.gauge_hold;
+    s->orb_peak = s_run_keep108.orb_peak;     s->gauge_ram = s_run_keep108.gauge_ram;
+    s->gauge_idle = s_run_keep108.gauge_idle; s->orb_silence = s_run_keep108.orb_silence;
+    s->orb_taken = s_run_keep108.orb_taken;   s->orb_full = s_run_keep108.orb_full;
+}
+
 static int on_ctor(ce_card_t *c)
 {
     if (!YK_ENABLE_CARD || !YK_ENABLE_CB_LIFECYCLE) return 0;   /* ★ 总开关 + 回调族 ⑨ */
     yk_card_t *s = ce_state(c, yk_card_t);
+    {   /* ★ P31a：换面 ⇒ 出来时把 run 级字段写回上一关的值 ✓ */
+        yk_run_keep_t keep108;
+        const int was_fresh108 = s_run_fresh;
+        s_run_fresh = 0;
+        if (!was_fresh108) keep108 = s_run_keep108;
     if (!s) return 0;
     /* ★ 先收跟随 VM 再复位静态表：本函数**在局中被重建时也会跑**（每关开始引擎对卡组每张卡
      * 再调一次 ctor）—— 那时 `yk_map_reset` 会把使魔一并忘掉，它们身上的 VM 若不复位就永久留下
@@ -6829,6 +7029,8 @@ static int on_ctor(ce_card_t *c)
         blk.side = CE_HUD_SIDE_PINNED;
         yk_hud_claim(c, s);
     }
+        if (!was_fresh108) yk_run_restore108(s);
+    }
     if (s->hud_ready) yk_gauge_hud_spawn(c, s);
     return 0;
 }
@@ -6968,6 +7170,7 @@ static int on_load(ce_card_t *c)
 
 static void on_run_reset(ce_card_t *c)
 {
+    s_run_fresh = 1;   /* ★ P31a：新局 ✓ */
     if (!YK_ENABLE_CARD || !YK_ENABLE_CB_LIFECYCLE) return;   /* ★ 总开关 + 回调族 ⑨ */
     yk_card_t *s = ce_state(c, yk_card_t);
     /* ★ 2026-10-01（owner：这次发版就为拿这个数）—— **emitkey 收尾汇总**：
@@ -7005,6 +7208,7 @@ static void on_run_reset(ce_card_t *c)
  * tick 回调全停）—— 只有这里收得到。使魔是**真敌人**，必须在这里交代清楚。*/
 static void on_delete(ce_card_t *c)
 {
+    s_run_fresh = 1;   /* ★ P31a：删卡 ⇒ 下次拿到是新局 ✓ */
     if (!YK_ENABLE_CARD || !YK_ENABLE_CB_LIFECYCLE) return;   /* ★ 总开关 + 回调族 ⑨ */
     yk_card_t *s = ce_state(c, yk_card_t);
     s_side_lock = -1;                     /* ★ owner ④：删卡 ⇒ 解锁（形态不再钉住）*/
@@ -8852,9 +9056,9 @@ static int on_tick_2(ce_card_t *c)
      *     输入掩码变化（`held=0x…`）⇒ 若按空格不出 `SPACE` 行，用那行掩码即可定出正确位。*/
     if (YK_DEBUG_SPACE_KILL) {
         /* ★★★★ 2026-10-01 晚（owner：「**一直以来的空格键都是调试**」）——改用 SDK 现成接口：
-         *   **`ce_key_down(CE_VK_SPACE)`**（`sdk.h:832` / `sdk.c:397` = `GetKeyboardState`，
+         *   **`(CE_DEBUG_SPACE_KEYS && ce_key_down(CE_VK_SPACE))`**（`sdk.h:832` / `sdk.c:397` = `GetKeyboardState`，
          *   **user32 原始键盘状态**，不是游戏输入掩码、**不进 replay 输入流**；只给**电平** ⇒
-         *   **边沿自己记**（先例：`animal.c:3988` `ce_key_down(CE_VK_SPACE)`；`input_synth.c:162`）。
+         *   **边沿自己记**（先例：`animal.c:3988` `(CE_DEBUG_SPACE_KEYS && ce_key_down(CE_VK_SPACE))`；`input_synth.c:162`）。
          *   为什么不用 `0x4ca428`：它的掩码里**没有空格位**（log 只见 `0x10/0x20/0x40/0x80`+`0x008`），
          *   且 `sdk.h:822` 说明那批键**不进 replay 输入流**。
          *   ⇒ 按下那一刻触发（长按不连发）；**只读电平、不吞键、不改键**。*/
@@ -8881,7 +9085,7 @@ static int on_tick_2(ce_card_t *c)
                 s_pl_state_prev = st;
             }
         }
-        int down = ce_key_down(CE_VK_SPACE) ? 1 : 0;
+        int down = (CE_DEBUG_SPACE_KEYS && ce_key_down(CE_VK_SPACE)) ? 1 : 0;
         if (down && !s_dbg_space_prev) {
             unsigned m = 0, k = 0, j;
             /* ★★★★★ 2026-10-01 晚（owner：「我空格**直接带走道中 boss** 了」）——**只杀我们注册过的壳**：

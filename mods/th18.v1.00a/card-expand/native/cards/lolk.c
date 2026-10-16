@@ -435,7 +435,18 @@ static void tint_restore_all(void)
 {
     unsigned i;
     for (i = 0; i < s_tint_n; ++i) {
-        volatile uint32_t *p = (volatile uint32_t *)(s_tint_bullet[i] + CE_BULLET_VM + CE_ANM_VM_COLOR1);
+        volatile uint32_t *p;
+        /* ★★★ 2026-10-14（P29，修 P17 审计的 **F7d**）：**先判这颗弹还活着吗** ✗ ——
+         *   表里存的是**上一帧**的子弹指针 ✓，而子弹住在**2000 槽静态池**里、槽会被**新弹复用** ✓
+         *   ⇒ 旧弹死了以后，同一个指针现在指的是**另一颗弹** ✗ ⇒ 不判就写 = 把**别人**的颜色按旧快照
+         *   还原 ✗（观感上就是「某颗弹颜色突然错一下」✓）。
+         *   判据**照抄 109 已有的那一套** ✓（等价证据 ⇒ 不是新发明 ✓）：
+         *   `cards/pofv.c:1943-1945` —— 读 `zBullet.state`（`CE_BULLET_STATE` = `engine.h:837` = `+0xf68`，
+         *   `uint16` ✓），**`st == 0` ⇒ 死弹/空槽**（`pofv.c` 的老注释也记着「老判据只跳 `st == 0`」✓）。
+         *   ⚠ 只跳过、**不重排表** ✓：本函数结尾统一 `s_tint_n = 0` ✓，下一帧由 `tint_mark()` 重建 ✓。*/
+        if (!s_tint_bullet[i]) continue;
+        if (*(const uint16_t *)(s_tint_bullet[i] + CE_BULLET_STATE) == 0) continue;
+        p = (volatile uint32_t *)(s_tint_bullet[i] + CE_BULLET_VM + CE_ANM_VM_COLOR1);
         /* ★★ 2026-09-10 第三十三轮：**只还原 RGB，绝不碰 alpha**。
          * 用户实测（「敌方的生弹点在擦弹范围里 → 出圈后黄色褪去，但变得极其透明」）：
          * 原来把整条 `color_1`（含 alpha）写回「染色前那一帧的快照」，而弹的 alpha 是脚本
@@ -443,7 +454,7 @@ static void tint_restore_all(void)
          * 一还原就把弹钉死在那条低 alpha 上。alpha 归引擎的插值器管，我们只借 RGB 染黄。
          * （旧版还留着「守卫」问题：颜色被别处改过就跳过还原 → 一直黄；无条件还原 + 只动 RGB
          * 两件事一起才干净。）*/
-        *p = (*p & 0xff000000u) | (s_tint_orig[i] & 0x00ffffffu);
+        ce_color_set_rgb(p, s_tint_orig[i]);          /* ★ P14a：I1 词汇 ✓ */
     }
     s_tint_n = 0;
 }
@@ -454,7 +465,7 @@ static void tint_mark(uint8_t *b, uint32_t *col)
     s_tint_bullet[s_tint_n] = b;
     s_tint_orig[s_tint_n] = *col;
     s_tint_n++;
-    *(volatile uint32_t *)col = (*col & 0xff000000u) | (LOLK_GRAZED_COLOR & 0x00ffffffu);   /* ★ 只改 RGB */
+    ce_color_set_rgb((volatile uint32_t *)col, LOLK_GRAZED_COLOR);   /* ★ P14a：只改 RGB ✓ */
 }
 
 static int bullet_in_graze_zone(void)
@@ -960,6 +971,7 @@ static int on_tick_2(ce_card_t *c)
     /* ④ 波边沿（一段攻击 = 一波）：boss 按相位/符卡位翻转；道中按「章 = MainSub 编号」 */
     phase_read(&in);
     in.spawn_delta = spawn_delta;
+    in.lives_full = (CE_CURRENT_LIVES() >= LOLK_LIVES_MAX) ? 1 : 0;   /* ★ 满残 ⇒ B 碎 ✓ */
     {
         int32_t ssub = -1, sch = -1;
         (void)stage_ecl_read(&ssub, &sch);      /* ★ MainSub 编号（去掉尾部字母）*/

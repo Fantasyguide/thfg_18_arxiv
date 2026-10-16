@@ -32338,3 +32338,87 @@ DLL 未重发 ⇒ 本轮的 5 处改动**尚未进入游戏** ✓（下次发版
 - **怎么验证**：`make anm` / `make` / `make check`(460) / `check-docs`(460) / `dist` 全 rc=0；release 四处同 md5 `19ebd291e9e313e91a157314dd7149c7`。
 - **影响面**：只**新增**文件 + 只改**本卡自己的** spawn，**未动共享 `136`** ⇒ 别家卡不受影响。
 - **代价**：`136` 选 25 是为了"折到组 38 = 与暂停模糊罩同桩 ⇒ 字被罩住"；切 20 后**暂停时的模糊表现会变**（若 owner 不接受 ⇒ 回退这一笔）。
+
+### §BE-ANM-LINT（2026-10-15，DSH agent，给 109 的「看不见」类上机器闸）
+
+- **文件**：**新增** `assets/check_anm_rules.py`（anm 规则 linter）+ `assets/anm_rules_allow.txt`（白名单，带理由）；`native/Makefile` 的 `check:` 目标加一行 `python3 ../assets/check_anm_rules.py`。
+- **为什么**：owner 2026-10-15 问「怎么 109 改起来困难重重」——成因之一是**表现层错误是沉默的**：弧类 opcode（anmm 601/600 一族）缺 `iset($I1,…)` ⇒ `dv=0` ⇒ 像被预乘 α；弧类脚本 `rotate` 弧长写成 0 ⇒ `dθ=0` ⇒ 顶点全退化 ⇒ **严格什么都不画**（一手数学见 MEMORY 2026-10-13 定案）。这两条以前只能"猜 + 实跑"。
+- **怎么验证**：真树 `rc=0`（弧类 9 支 I0/I1 齐、`rotate` 非 0）；反例各自 `rc=1`：缺 `iset($I1,…)` ✓、真代码 `rotate(0,…)` ✓、注释里的 `rotate(0,…)` **不误报** ✓、脚本内注记 `// anm-lint: allow-rotate-zero` 可豁免 ✓。接进 `make check` 后整树 rc=0。
+- **影响面**：**只加检查、不改任何脚本/代码** ⇒ 对所有卡零行为影响；`assets/**` 属共享件 ⇒ 本条登记即是协作须知。规则与白名单都在**数据**里（脚本内注记 / `anm_rules_allow.txt`），不改 lint 本体。
+- **代价 / 已知边界**：① 判据是**脚本级**（不区分同一文件里的多支 VM）⇒ 若将来出现"同文件里一支弧 VM + 一支普通 VM"的写法，可能要收紧到段级；② `rotate` 的豁免是**显式**的（白名单里目前只有 `406_pofv109_aura_sakuya`，理由=弧长由卡侧每帧写、故意）；③ R3（缺 `layer()`）与 R4（`interruptLabel` ∉ {1,2,3}）只**报告**不判死——一刀切会假阳性一片（实测报告 53 支 / 30 支，其中道具、HUD、108 的标签映射都是合法的）；④ 第一版没剥注释 ⇒ 5 支假阳性 ✗（已修，并留了教训在 linter 头注释里）。
+
+### §BE-CARD-FACE-2026-10-15（2026-10-15，DSH agent）：卡面去内部话（89 / 92）+ 共享 Makefile 的 `test-host` 链接修复
+
+- **文件**：
+  ① `patch/th18/cards.js` —— **89 星星炮**（**别人的卡**）：删掉「（复刻原版白板星星炮的攻速）」✗（血统说明，玩家用不上）；
+  **92 伟大之作**（**别人的卡**）：按 owner 明令删掉「单次上限 512 弹 / 64 敌；冷却按转换的弹幕数与该敌人血量等比例计算（不转换就不消耗）」✗，
+  并**补上它缺的那件事**：「**发动后自机也会一起化为黄金。**」✓（owner：「伟大之作的描述少了自杀」⇒ 先写成
+  「…化为黄金 —— 自杀。」，owner 同日又说「**去掉"——自杀"**」⇒ 定稿就是现在这句 ✓）；
+  **106 红魔乡**（我的卡）：把「收点/擦弹/吃道具都涨 Rank、中弹与 Bomb 掉 Rank」「Rank 目前只作后台记账」压成一句 ——
+  前者玩家**据此做不了任何事** ✗（Rank 只后台记账）；
+  **116 天空璋**（我的卡）：删掉「按 TH16 阈值分 0..6 档」✗（引别作的阈值 = 内部话）。
+  ② `native/Makefile`（**共享件**）：`test_season_core` 的链接行补 `cards/dtap_core.c`，并补上**一直漏掉**的 `test_dtap_core` 一行。
+- **为什么**：owner 2026-10-15：「伟大之作的描述少了自杀」+「你的卡面文字也有一些玩家不需要知道的东西」+
+  「星星炮的（复刻原版白板星星炮的攻速）这又是何意味呢？」⇒ 卡面是**给玩家看的**：血统说明 / 内部阈值 /
+  玩家据此做不了任何事的规则，都不该印在卡上 ✗。
+  Makefile 那条是**修 `origin/main` 本来就红**：2026-10-14 P23 把 `season_dtap_*` 搬进 `dtap_core.c`、
+  `season_core.h` 改成 `static inline` 包装，却**没更新测试的链接行** ⇒ 任何在**正确树**上跑 `make check` 的人
+  都会撞 `undefined reference to ce_dtap_init` ✗（这也是"只在落后 200 提交的主检出上跑闸"会漏掉的红 ✗）。
+- **怎么验证**：修后整树 `make check` **rc=0** ✓（`test_season_core: 140 passed` ✓、
+  **`test_dtap_core: 33 passed`（此前从未被跑过 ✓）**、`cards.js: 49 张卡全部合规` ✓、`x87: 0` ✓）；`check-docs` 全绿 ✓。
+- **影响面**：`cards.js` 只改 4 张卡的**卡面文字** ⇒ **零行为影响**（数值/机制不动 ✓；`desc` 仍 ≤6 行、每行 <64 字节 ✓）。
+  `Makefile` 只改**测试的链接/执行行** ⇒ 不改产物、不改站点、不改 DLL ✓；顺带让一个**从未跑过的单测**开始跑 ✓。
+- **已知边界 / 待办**：① 卡面里还有若干**边界项我没删**（114 的「碎片按 4:1 循环」、115 的「一个非符 + 一张符卡切成一波」、
+  108 的「子机台数按机体固定」…）—— 它们都**改变玩家预期**，所以留了；owner 认为该删就说一声 ✓。
+  ② **源不一致**：当时 modkit 里部署的 `cards.js` 是**旧版**（没有 512 那段）✗ ⇒ 本批之后必须**重新 deploy**
+  才能让游戏显示新卡面 ✓。
+
+### §BE-COEXIST-GUARD（2026-10-15，DSH agent）：与第三方 `leveledit` **同开**的护栏
+
+- **背景（owner 2026-10-15 三条口径 ✓）**：同一个 TH18 上要**同时开**本 mod 与第三方 **leveledit** 补丁 ✓；
+  两边都允许**小改**以求兼容 ✓；但**必须保持两个各自独立的 thcrap 补丁** ✗不能合并。
+  ★ 这**不是**仓库合并问题 ✓，而是 **thcrap 运行期"同名相对路径、后加载者赢"** ✗ ——
+  [`assets/mystia/build_st02.py:5-11`](assets/mystia/build_st02.py) 早已记下 owner 的口径
+  「**都开强强联合，只开一个也能用**」✓ 与结论「**方案 B（我们 patch 出整文件产物）作废**」✗：
+  我方**不许**把 `th18/st02enm.anm` 之类的关卡产物装进自己的 patch ✓（那会与 leveledit 同名 ✓）。
+- **新增** `native/tools/check_modkit_packages.py` + `native/tools/modkit_packages_allow.txt`：
+  · **C1（硬，rc=1）**：读 `enabled.json`（或 `--packages`）给的**同开组合** ⇒ 两个包提供
+    **同一相对路径**即报错 ✓（`patch.js` / `files.js` 是每包必有元数据 ✓ 不参与 ✓）；**有意的依赖覆盖**
+    在 `modkit_packages_allow.txt` 里逐条登记（现有唯一一条：`_255 × _test` 的 `th18.v1.00a.js` ✓，
+    因为 `_test` 的 `patch.js` 已声明 `dependencies:["th18_card_expand_255"]` ✓）。
+  · **C2（报告，不失败）**：某包目录里的文件**没进它自己的 `files.js`** ✓ —— `mkfiles.py` 会
+    **有意摘掉** gitignored 资产（`ability.anm` / `pl0X.sht` / 语音 wav 等 ✓）⇒ 一刀切会假阳性 ✓；
+    但"漏了一整个新目录"是真故障 ✓，所以仍打印 ✓。
+  · `--all-pairs` 是**体检**模式（不是红灯 ✓）：实测现有包里 `th18.v1.00a.js` 是**多个补丁共有**的同名文件 ✓
+    （`base_tsa` / `mouse_control` / `disable_controller_polling` 都带 ✓）⇒ 只有**实际启用组合**才是判据 ✓。
+  · 接进 `make check` ✓：装了 modkit ⇒ **硬拦** ✓；没装 ⇒ 打印提示后跳过 ✓（rc=2 视为"没装" ✓）。
+- **`native/release.py` 加 `_gate_package_scope()`** ✓（§2C）：发布目标必须落在
+  `thcrap/repos/Renko_1055/<PATCH_DIRS 之一>/…` 之下 ✓，否则**拒绝发布** ✗ ⇒ 我的发布链
+  **不可能**写进 leveledit 的包 ✓（对方包名不写死 ✓）。
+- **怎么验证**：真 modkit 的启用组合 ⇒ **rc=0** ✓（白名单那条按预期放行 ✓、C2 报告 28 个 gitignored 资产 ✓）；
+  人造"两包同路径"的假 modkit ⇒ **rc=1** ✓；`--all-pairs` 能列出 9 处同名（全为 `th18.v1.00a.js` ✓ 属已知 ✓）。
+- **影响面**：**只加检查 + 一条发布断言** ⇒ 不改任何卡行为、不改产物 ✓；`Makefile` 属共享件 ⇒ 本条即协作须知 ✓。
+- **★ owner 裁定（2026-10-15，同日）**：
+  1. 「**关卡线就这样吧，别改了**，这个我现在也基本不用」✓ ⇒ 本 goal 里"取 leveledit / 把米斯蒂亚三处编辑
+     落到它的源"那两项**取消** ✗；我方**不改** leveledit 的任何文件 ✓（它自己那条线已自行做完 ✓）。
+  2. `test` 包那份 `th18.v1.00a.js`：**保留 + 登记** ✓（现状即如此 ✓；`test` 的 `patch.js` 已声明
+     `dependencies:["th18_card_expand_255"]` ✓，属"有意的依赖覆盖" ✓，白名单已登记 ✓）。
+  3. `renkolab-a/local`：**保持现状**（软链到本仓 `local/`）✓ ⇒ 约定：**同一时刻只让一个会话用 th18 的
+     Ghidra 工程** ✓（工程锁互斥 ✓）；他基本不用关卡线 ⇒ 撞锁机会很小 ✓。
+- **★ leveledit 的实况（本轮一手 ✓，本机 clone = `/home/nipporita/th18-leveledit`，树外 ✓）**：
+  · 它的正本在 **GitHub `Fantasyguide/th18-leveledit`（私有，SSH-only）** ✓，当前分支
+    `mystia-familiar-trail` ✓（`local/_scratch/leveledit-up/NOTES.md` 记了可达方式 ✓）；
+  · 要同开的那个 patch = `mods/stage02-mystia/` ⇒ `thcrap.json` 自述：
+    **「覆盖 `st02bs.ecl` / `st02enm.anm` / `front.anm` / `st02a–d.msg`。纯资源替换，不需要 dll。」** ✓
+    ⇒ ★ **它的文件集与我方 `_255`/`_test` 的 32 个文件零同名** ✓（我的是
+    `abcard.anm`/`ability.anm`/`ability.txt`/`cards.js`/`default.ecl`/`pl00–03.anm`/`pl00–03.sht`/`voice.js`/`voice/*` ✓）；
+  · ★ 它**不 patch `default.ecl`** ✓（全仓 `find` 无此文件 ✓）⇒ §1.4 的疑点**解决**：走 **D1**（同批纪律 ✓，
+    不需改归属 ✓）；
+  · ★ 它**不带 DLL** ✓ ⇒ 与我的 exe 站点/DLL **无冲突** ✓；
+  · 它另外有 `mods/stage02-mystia-spell-name/config/th18.v1.00a.js` ✓，但那在 **`config/`** 子目录 ✓
+    （不是包根的 `th18.v1.00a.js` ✓，且属**另一个** mod ✓）⇒ 与本闸的 C1 无碰撞 ✓；
+  · ⚠ **顺手发现我这边一处过期描述** ✗：`assets/mystia/build_st02.py` 的规格写「`scriptNewPos`(505)」✓，
+    而 leveledit 已订正为 **`scriptNewRoot`(504)**（其 commit `fc67cee`：「**505 会把火花画到世界原点**」✗）
+    ⇒ 该脚本头注释应改成 504 ✓（**只在规格里 ✓，不动任何产物 ✓**）。
+- **待办**：已按 owner 裁定收敛 ✓ —— 唯一保留项：**leveledit 侧要发布/更新时，本闸的 C1 必须对新组合再跑一次**
+  ✓（命令：`python3 tools/check_modkit_packages.py --modkit <modkit>` ✓；它带 DLL 或带 `default.ecl` 的那天就会响 ✓）。

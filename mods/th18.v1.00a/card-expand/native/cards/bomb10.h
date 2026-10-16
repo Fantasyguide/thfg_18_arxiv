@@ -228,6 +228,18 @@ int32_t bomb10_last_cost(void);    /* 本发还剩几帧无敌（0 = 已给完�
  *   ⚠ 注册是幂等的（同一个 `host` 指针只占一格，`user` 会被刷新 —— 卡对象可能重建）。*/
 void    bomb10_register_host(const bomb10_host_t *host, void *user);
 
+/* ★★ 2026-10-14（P20）：**注销** —— 与 `bomb10_register_host` 配对，**必须有** ✗。
+ *   为什么：`user` 指向卡的 `ce_state` 块，而 `ce_state_free()` **只清 key**、
+ *   内存块留在 `s_mem[]` 里**会被别的卡领走**（`sdk_core.c:123-127`）✗ ——
+ *   卡被删后若注册表还留着那条，别的卡发动灵击时机器仍会调
+ *   `h->gate(user)` / `h->on_start(user,…)` / `h->on_cancel(user,…)`
+ *   （`bomb10.c` 的三个派发点），而三个回调**都写这块内存** ⇒ 写进别人的活状态 ✗✗。
+ *   ⚠ **只在卡的 `on_delete`（虚表 `+0x50`）里调**：
+ *     · `bomb10_reset()` 每关都跑而卡**还在场** ✓ ⇒ 在它里面清会平白摘掉在场卡的提供者身份 ✗；
+ *     · `+0x4c on_run_reset`（retry）时卡也**还活着** ✗ ⇒ 同理不能在那里清。
+ *   实测受影响：只有 **110**（`mof.c`）与 **111**（`signal.c`）注册 ✓。*/
+void    bomb10_unregister_host(const bomb10_host_t *host);
+
 int32_t bomb10_start(const bomb10_host_t *host, void *user, int32_t by_hit);
 void    bomb10_tick(int32_t driver);
 void    bomb10_reset(void);
