@@ -81,6 +81,28 @@ le-probe: live=<n>
    主检出可能落后很多 ✓，第一版探针就因此编译失败过 ✓）；
 4. 完工后**把 `YK_LE_PROBE` 改 0** ✓（并在此处记一笔 ✓）。
 
+## 5b. 接管（口径 ②）的落点调查 —— ★ **实测前不得开写** ✗
+
+已把 `youkai.c` 里"使魔"那几套台账的 API 摸过一遍 ✓，接管要把"他们的敌机"喂进**其中一套**；
+**选哪套取决于探针日志的形状** ✓ ⇒ 本节**只登记候选** ✓：
+
+| 台账 / 机制 | 关键 API（[`native/cards/youkai.c`](native/cards/youkai.c)）| 适不适合接管"他们的敌机" |
+| --- | --- | --- |
+| **1:1 发射口映射**（`yk_map_t`）| `yk_map_fam_live_count()` / `yk_map_gift_mark()` / `yk_map_gifted_count()` / `yk_fam_mapped_kind()` | 需要"发射口键"（`slot + 16*ord`）✓ ⇒ 只有当他们的使魔**能归到某个发射口**时才适用 ✗ |
+| **绕转使魔**（`yk_orbit_t`）| `yk_orbit_live()` / `yk_orbit_free()` / `yk_orbit_find_parent()` / `yk_orbit_gift_maybe()` / `yk_orbit_vm_sync()` | 自带"跟谁转 + 母机 id"✓ ⇒ 若他们的使魔**一对一跟随本体** ✓ 这套最省 ✓ |
+| **跟随 VM / 形态** | `yk_fam_vm_follow()` / `yk_fam_vm_kind_script()` / `yk_fam_vm_check()` | 口径 ② 里"参与**人妖切换**"的落点 ✓ |
+| **转伤** | `yk_transfer_feed()` 一族（`s_xfer_*` 台账）| 与"选哪套"无关 ✓ ⇒ id 只要进了台账，**1/2 转伤自动生效** ✓ |
+
+**探针日志要回答的四个问题**（决定上表选哪一行 ✓）：
+
+1. 他们的使魔敌机**有几只、id 是否固定** ✓（`le-probe(enemy)` 的 id 列 ✓）；
+2. 它们**是否成对/成组**、有没有"母机"对应（看 `own_boss_id` / `tin` 的一致性 ✓）；
+3. 它们的**存活期**（`le-probe: live=` 的波动 ✓）—— 决定要不要给它们做"被打死就不再建"的台账 ✓；
+4. 那场 boss 指纹里**哪一项与零售局不同** ✓（决定 `YK_LE_*` 常量 ✓）。
+
+★ **规矩**：本节只登记候选 ✓。**在 P113 探针的两局日志到手之前，不写任何接管代码** ✗
+（否则就是把推测包装成实现 ✗ —— 本仓明令禁止 ✓）。
+
 ## 6. 影响面（写清 ✓）
 
 - 只动**本卡自己的**文件 ✓（`youkai.c` / `youkai_core.*` / `tests/test_youkai_core.c` / 本文 ✓）；
