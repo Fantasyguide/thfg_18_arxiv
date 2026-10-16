@@ -6043,7 +6043,15 @@ static const unsigned char s_c3s_e[8]    = { 20,18,16,14,10, 9, 8, 7 };   /* $E 
 static const unsigned char s_c3s_f[8]    = { 10,10, 9, 9, 8, 8, 7, 7 };   /* %F ✓ */
 static const unsigned char s_c3s_wait[8] = { 15,15,13,13,12,11,10,10 };   /* $G ✓ */
 
-typedef struct { int live, age, life; float x, y; int32_t vm; } pofv_c3s_t;
+/* ★★★★★ 2026-10-16 **加三个字段**（owner：「必须核出来早苗 C3 的外观」✓ ⇒ 照一手 `script35` 补全 ✓）：
+ *   ★ 一手（`anm/bullet/bullet.anm.txt:872 script35` ✓）在**出生**时抽两件事 ✓：
+ *     · ★ `fsetMul(%F0, %RANDF2, 12.0f)` ＋ `fsetMul(%F1, %RANDF2, 12.0f); fsub(%F1, 24.0f)`
+ *       ⇒ ★ `%F0 ∈ [0,12]`、`%F1 ∈ [−24,−12]` ✓（★ 一个**随机偏移** ✓）；
+ *     · ★ `rotate(0.0f, 0.0f, %RANDRAD)` ⇒ ★ **随机自转** ✓；
+ *     · ★ `posTime(28, 0, %F0, %F1, 0.0f)` ⇒ ★ **28 帧内从出生点飘到（出生点＋偏移）** ✓。
+ *   ⇒ ★ 所以要有：★ `rx/ry`（偏移 ✓）、★ `rot`（自转基角 ✓），★ 以及一手那个 **28 帧寿命** ✓。
+ *   ⚠ ★ 字段先加上 ✓；★ **填值（spawn）与逐帧应用（tick）下一笔做** ✓（★ 本轮不构建不提交 ✗）。*/
+typedef struct { int live, age, life; float x, y; float rx, ry, rot; int32_t vm; } pofv_c3s_t;
 static pofv_c3s_t s_c3s[POFV_C3S_MAX];
 static struct { int active, wave, step, timer, level, side; float f0; } s_c3s_st;
 
@@ -6063,7 +6071,17 @@ static void pofv_c3s_spawn(float x, float y)
     int k;
     for (k = 0; k < POFV_C3S_MAX; ++k) if (!s_c3s[k].live) break;
     if (k >= POFV_C3S_MAX) return;
-    s_c3s[k].live = 1; s_c3s[k].age = 0; s_c3s[k].life = 120;
+    /* ★★★★★ 2026-10-16 **照一手 `script35` 补全"出生时抽的那两项"** ✓：
+     *   ★ 一手：★ `life = 28` ✓（`+14: delete()` 前的 `+14` 加上前面的 14 ✓ = 28 帧 ✓ —— 原来 **120** ✗）；
+     *   ★ `fsetMul(%F0, %RANDF2, 12.0f)` ⇒ ★ `rx ∈ [0, 12]` ✓；
+     *   ★ `fsetMul(%F1, %RANDF2, 12.0f); fsub(%F1, 24.0f)` ⇒ ★ `ry ∈ [−24, −12]` ✓；
+     *   ★ `rotate(0.0f, 0.0f, %RANDRAD)` ⇒ ★ 自转基角 = 随机整圈 ✓。
+     *   ⚠ ★ 逐帧**应用**（`posTime(28, 0, %F0, %F1, 0)` = 28 帧内线性飘到"出生点＋偏移" ✓）
+     *   ★ 在 tick 里做 ✓（下一笔 ✓ —— ★ 本笔先把值抽出来 ✓）。*/
+    s_c3s[k].live = 1; s_c3s[k].age = 0; s_c3s[k].life = 28;   /* ★ 一手 ✓ script35 共 28 帧 */
+    s_c3s[k].rx = (float)(ce_rand() % 13u);                        /* ★ 一手 ✓ [0,12] */
+    s_c3s[k].ry = (float)(ce_rand() % 13u) - 24.0f;                /* ★ 一手 ✓ [−24,−12] */
+    s_c3s[k].rot = ((float)(ce_rand() % 1024u) / 1024.0f) * 6.2831853f;   /* ★ 一手 ✓ 随机整圈 */
     s_c3s[k].x = x; s_c3s[k].y = y;
     s_c3s[k].vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
                          /* ★★★★★ 2026-10-16 **owner：「必须核出来早苗 C3 和 C4 的外观」✓ —— 核完了 ✓**：
@@ -6190,7 +6208,16 @@ static void pofv_c3s_tick(void)
             ce_anm_set_color((uint32_t)b->vm,
                              (b->age < 8) ? 0xffffff80u : 0xffffff14u);
         }
-        if (b->vm) ce_anm_set_pos((uint32_t)b->vm, b->x, b->y, 0.0f);
+        if (b->vm) {
+            /* ★ 2026-10-16 **一手 `posTime(28, 0, %F0, %F1, 0)` 的线性飘动** ✓：
+             *   28 帧内从出生点线性飘到（出生点＋(rx,ry)）✓ ⇒ ★ 之后保持 ✓（一手 28 帧就 delete ✓）。*/
+            const float t = (b->age < 28) ? ((float)b->age / 28.0f) : 1.0f;
+            ce_anm_set_pos((uint32_t)b->vm,
+                           b->x + b->rx * t,
+                           b->y + b->ry * t, 0.0f);
+            /* ★ 2026-10-16 **一手 `rotate(0,0,%RANDRAD)` 的随机自转** ✓（★ 这里按出生基角匀速转 ✓ ❓）*/
+            ce_anm_set_rotation((uint32_t)b->vm, 0.0f, 0.0f, b->rot + 0.05f * (float)b->age);
+        }
         pos[0] = b->x; pos[1] = b->y; pos[2] = 0.0f;
         (void)ce_damage_rect(pos, 0.0f, 2, 14.0f, 24.0f, 24.0f);   /* ❓④ */
     }
