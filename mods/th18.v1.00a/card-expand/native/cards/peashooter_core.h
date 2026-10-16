@@ -4,16 +4,23 @@
  * 两种形态，都由**我们自己的计数器**当 `Player__tick_shooters_for_ability_card` 的 short_timer
  * （引擎那个 `player+0x476d4` 松开射击键会跳，相位不可控）：
  *   平时  —— 每 PEA_INTERVAL 帧一颗大豌豆（PVZ 原版是 1.425 s 一颗；本卡取整 1 秒）
- *   开大  —— 每 PEA_GAT_INTERVAL 帧一排 PEA_GAT_ROWS 颗小豌豆，持续 PEA_GAT_FRAMES 帧
+ *   开大  —— ★ 2026-10-15 起：**每帧一颗**（`PEA_GAT_INTERVAL` = `PEA_GAT_ROWS` = 1 ✓，
+ *            方向由卡侧的 ±20° 随机表给 ✓），持续 `PEA_GAT_FRAMES` 帧 ⇒ 240 颗 / 2400 伤害 ✓
  * 计时只在**射击帧**推进（`+0x1c` 本来就只在按住射击键时广播），所以「开大」不会在不开火时白烧。 */
 #pragma once
 #include <stdint.h>
 
 #define PEA_INTERVAL      60    /* 帧：1 秒一颗（PVZ 原版是 1.425 s ≈ 85 帧，2026-09-08 用户改成整 1 秒）*/
 #define PEA_DMG           90    /* 一颗大豌豆（sht 里的 damage，此处只作对账）→ 90 DPS */
-#define PEA_GAT_INTERVAL   5    /* 帧：开大时每 5 帧一排 */
-#define PEA_GAT_ROWS       7    /* 一排 7 颗，横向铺开 ±48 px */
-#define PEA_GAT_DMG        7    /* 一颗小豌豆；一排同帧 49，稳在最低的每帧上限（Sakuya 60）之下 */
+/* ★★★ 2026-10-15（owner 同一批口径的后半句）：
+ *   「**一手的大招只有一种发弹：向前一个角度范围内的大量随机角度发弹**」✓
+ *   「**最好是一帧发一颗，而不是同时发几颗**」✓ ＋「**那就每颗 10**」✓（威力口径 ✓）
+ *   ⇒ 开大改成 **每帧一颗** ✓（原"每 5 帧一排 7 颗"✗；横向铺开 ±48 px 也取消 ✗ ——
+ *     方向改由卡侧的 ±20° 连续随机给 ✓），单颗伤害 7 → **10** ✓
+ *   ⇒ 一次爆发 = `PEA_GAT_FRAMES`(240) × 1 颗 × 10 = **2400** ✓（原 2352 ✓ ⇒ +2% ✓，总量基本不变 ✓）。*/
+#define PEA_GAT_INTERVAL   1    /* 帧：开大时**每帧一颗** ✓（owner：「一帧发一颗」✓）*/
+#define PEA_GAT_ROWS       1    /* ★ 一排 1 颗 ✓（横向铺开取消 ✗ ⇒ 见上）*/
+#define PEA_GAT_DMG       10    /* ★ owner：「**那就每颗 10**」✓（原 7 ✗）⇒ 每帧 10 伤害，远在最低上限 Sakuya 60 之下 ✓ */
 #define PEA_GAT_FRAMES   240    /* ★ P54（owner：「有无联动，爆发的时间均拉长一些」）100 → 240 ✓
                                  *   （= 48 排 × 7 = 336 颗；电弹模式下发射节奏另算 ✓）*/
 #define PEA_WAIT_MIN    1100    /* 帧：两次开大之间至少等这么久（射击帧计）*/
@@ -84,7 +91,7 @@ int  pea_bullet_is_ours(uint32_t packed_id, uint32_t set_normal, uint32_t set_ga
 #define PE_SPD_NORMAL    14.0f    /* = PEA_NORMAL.speed ✓ */
 #define PE_SPD_GATLING   18.0f    /* = PEA_GATLING.speed ✓ */
 #define PE_DMG_NORMAL     90      /* = PEA_NORMAL.damage ✓ */
-#define PE_DMG_GATLING     7      /* = PEA_GATLING.damage ✓ */
+#define PE_DMG_GATLING    10      /* = PEA_GATLING.damage ✓（★ 2026-10-15 owner：「那就每颗 10」✓）*/
 #define PE_HIT_W_NORMAL  16.0f    /* = PEA_NORMAL.hit_w/h ✓ */
 #define PE_HIT_W_GATLING 12.0f
 #define PE_ELEC_SLOW     4.0f     /* ★ P50（owner：弹速还是快了）2.0 → 4.0 ⇒ 14/4 = **3.5** px/帧、机枪 18/4 = 4.5 ✓ */     /* ★★ P47（owner 逐字：「电弹的弹速需要比普通豌豆慢一倍」✓）

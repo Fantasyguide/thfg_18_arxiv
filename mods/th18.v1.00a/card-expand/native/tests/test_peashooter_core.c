@@ -96,7 +96,7 @@ static void test_gatling_shape(void)
     CHECK(normal == n0, "开大期间还在打平时的豌豆");
     CHECK(gat == PEA_GAT_FRAMES / PEA_GAT_INTERVAL * PEA_GAT_ROWS,
           "开大该打 %d 颗，实际 %d", PEA_GAT_FRAMES / PEA_GAT_INTERVAL * PEA_GAT_ROWS, gat);
-    CHECK(gat * PEA_GAT_DMG == 2352, "开大总伤 = %d", gat * PEA_GAT_DMG);
+    CHECK(gat * PEA_GAT_DMG == 2400, "开大总伤 = %d（240 颗 × 10 ✓）", gat * PEA_GAT_DMG);
     CHECK(s.pending_wait, "开完大该要一个新的随机等待");
     CHECK(s.bursts == 1 && s.peas == (uint32_t)(normal + gat), "bursts=%u peas=%u", s.bursts, s.peas);
 
