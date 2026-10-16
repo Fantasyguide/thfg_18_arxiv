@@ -438,6 +438,12 @@ static void on_run_reset(ce_card_t *c)
  * 每漏一次就少一格（日志会是 `option allocated FAILED (pool full)`）。*/
 static void on_delete(ce_card_t *c)
 {
+    /* ★★★ 2026-10-17：**撤无敌声明** ✓ —— 声明层是**粘性**的 ✗（不显式撤就会留在层里 ✗），
+     *   别人的卡全都这么写 ✓：`elytra_mace.c:163`、`pofv.c:3051`（「撤无敌声明（声明层是**粘性**的…」）、
+     *   `signal.c:3141`、`senro.c:1684`、`bomb10.c:775` ✓。
+     *   ⚠ 撤卡的路（倒吊人 / 原版空白卡"弃掉整副卡组"）**发生在商店里** —— 那一刻 AbilityManager 冻着、
+     *   卡 tick 全停 ✗ ⇒ **只有 `on_delete` 跑得到** ✓ ⇒ 不在这里撤，那个 10 帧声明就永远留着 ✗。*/
+    ce_invuln_request(ce_card_id(c), 0);
     ps_elec_clear();
     ps_card_t *s = ce_state(c, ps_card_t);
     ce_option_drop(c, s ? &s->opt : 0);
@@ -493,8 +499,16 @@ static int on_tick_2(ce_card_t *c)
     if (pea_burst_frame(&s->st))                  /* 返回 1 = 开大在本帧结束 */
         ce_log("peashooter: gatling #%u done, %u peas fired in total", s->st.bursts, s->st.peas);
     /* ★ P54（owner：「爆发期间（包括原始）……需要本体无敌」✓，按 PvZ2 一手）：
-     *   开大期间每帧**声明** PS_BURST_INVULN 帧无敌 ✓（SDK 声明层取最大值统一落笔 ✓）。*/
-    if (pea_burst_left(&s->st) > 0) ce_invuln_request(ce_card_id(c), PS_BURST_INVULN);
+     *   开大期间**声明** PS_BURST_INVULN 帧无敌 ✓（SDK 声明层取最大值统一落笔 ✓）。
+     * ★★★ 2026-10-17（owner 报「**无敌依旧存在**」✗ ＋ 指出「读一下其他卡是怎么声明无敌的，这事犯了好多次了」✓）：
+     *   本卡**违反声明层契约** ✗ —— `sdk.h` 的原文是「各卡**每帧声明**自己想要的帧数」✓（卡只**声明** ✓，
+     *   落笔由 SDK 在 `ce_item_frame` 里统一做 ✓）；而这里原来是 `if (burst > 0) request(...)` ✗
+     *   ⇒ **不在爆发时一个字都不声明** ✗ ⇒ 声明层（**粘性** ✓）里留着上一次那个 `PS_BURST_INVULN`(10) 不散 ✗。
+     *   标准写法照抄别的卡 ✓（`cards/elytra_mace.c:233`「不在演出里：只保证声明退干净」✓ —— `EM_IDLE` 也每帧调
+     *   `ce_invuln_request(id, 0)` ✓；`bomb10.c` / `signal.c` / `pofv.c` / `senro.c` 同样每帧声明 + 显式撤 ✓）
+     *   ⇒ 这里改成**每帧无条件声明** ✓：爆发中给 10 ✓，空闲给 **0** ✓。*/
+    ce_invuln_request(ce_card_id(c),
+                      (pea_burst_left(&s->st) > 0) ? PS_BURST_INVULN : 0);
     if (!ce_option_claim(c, &s->opt)) {           /* 关卡中途买到这张卡：广播可能还没来，自己补一个 */
         ce_option_retry(c, &s->opt, PS_OPTION_OFFSET, CE_ANM_ABILITY_SCRIPT_PEASHOOTER_OPT,
                         PS_RETRY_FRAMES, "peashooter");
