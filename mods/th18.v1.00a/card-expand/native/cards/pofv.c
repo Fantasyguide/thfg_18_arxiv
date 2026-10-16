@@ -6170,6 +6170,26 @@ static void pofv_c3s_tick(void)
             if (b->vm) { ce_anm_delete((uint32_t)b->vm); b->vm = 0; }
             b->live = 0; continue;
         }
+        /* ★★★★★ 2026-10-16 **照一手 `script35` 补上"28 帧曲线"** ✓（owner：「必须核出来早苗 C3/C4 的外观」✓）：
+         *   ★ 一手（`anm/bullet/bullet.anm.txt:872 script35` ✓）：★ `alpha(128)` 起 ✓、
+         *   ★ `scaleTime(14, 4, 1.9f, 1.9f)`（★ 0→14 帧长到 **1.9 倍** ✓）、★ `+8: alpha(20)` ✓、
+         *   ★ `+14: scaleTime(14, 1, 0.8f, 0.8f)`（★ 14→28 帧缩到 **0.8** ✓）、★ `+14: delete()`（★ **共 28 帧** ✓）。
+         *   ⇒ ★ 本处按 `age` **逐帧**算 scale/alpha ✓（★ 卡侧驱动 ✓，与一手曲线同形 ✓）。
+         *   ⚠ ★ 一手的"随机 ±12 偏移 ＋ 随机自转"是**出生时抽一次** ✓ ⇒ ★ 那半属**出生点**（`pofv_c3s_spawn` ✓）
+         *   ★ 仍**待做** ✗（本笔只做 α/scale 这两条曲线 ✓）。
+         *   ⚠ ★ 一手寿命 **28 帧** ✓；★ 卡里 `life = 120` ✗ ⇒ ★ 本处曲线在 28 帧后**保持** ✓（★ 不擅自改寿命 ✗，
+         *   ★ 那属另一处、且要与窗口逻辑一起看 ✓ —— 已登记 ✓）。*/
+        if (b->vm) {
+            const float ag = (float)b->age;
+            float sc;
+            if (ag < 14.0f)      sc = 1.0f + (1.9f - 1.0f) * (ag / 14.0f);             /* ★ 一手 ✓ 0→14 帧 ⇒ ×1.9 */
+            else if (ag < 28.0f) sc = 1.9f + (0.8f - 1.9f) * ((ag - 14.0f) / 14.0f);  /* ★ 一手 ✓ 14→28 帧 ⇒ ×0.8 */
+            else                 sc = 0.8f;
+            ce_anm_set_scale((uint32_t)b->vm, sc, sc);
+            /* ★ 一手 `alpha(128)` ⇒ 第 8 帧起 `alpha(20)` ✓（写 ARGB 的 AA 位 ✓）*/
+            ce_anm_set_color((uint32_t)b->vm,
+                             (b->age < 8) ? 0xffffff80u : 0xffffff14u);
+        }
         if (b->vm) ce_anm_set_pos((uint32_t)b->vm, b->x, b->y, 0.0f);
         pos[0] = b->x; pos[1] = b->y; pos[2] = 0.0f;
         (void)ce_damage_rect(pos, 0.0f, 2, 14.0f, 24.0f, 24.0f);   /* ❓④ */
