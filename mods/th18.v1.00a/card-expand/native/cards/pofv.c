@@ -4914,7 +4914,19 @@ static void pofv_c4s_emit(float ang, float spd)
     }
     s_c4_b[k].live = 1; s_c4_b[k].age = 0; s_c4_b[k].bounced = 0;
     s_c4_b[k].ang = ang; s_c4_b[k].spd = spd;
-    s_c4_b[k].vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), POFV_C_RING_SCRIPT, POFV_C4_VM_LAYER);
+    /* ★★★★★ 2026-10-16 **owner：「必须核出来早苗 C3 和 C4 的外观」✓ —— 她 C4 的外观在这里收口 ✓**：
+     *   ★ 一手：`_ext/ecl/pl02.txt:178 Boss00BossCard1_at()` 的 `ins_602($A, $B, $C)` ✓
+     *   ★ ⇒ 按"**全局 sprite 序号**"读法（★ 已由 `sprite38`／`sprite351` 两次互证 ✓）：
+     *     ★ `sprite16` = `bullet.anm.txt:33` `{ x: 0, y: 192, w: 8, h: 8 }` ✓（8×8 点 ✓）
+     *     ⇒ ★ 素材 `assets/ability/POFV109_C4S_BULLET.png` ✓ ＋ 脚本 **467** ✓（已生成宏 ✓）。
+     *   ★ 本行 = ★ **这台 VM 是"早苗 C4 专用"** ✓（★ `s_c4_b[]` 全卡只有 `pofv_c4s_fire()` 在用 ✓，
+     *   即紧随本块之后的那个函数 ✓）⇒ ★ 所以**直接换掉**即可、**不需要按角色分岔** ✓。
+     *   ⚠ ★ 未改的（如实标 ✗）：★ 出生点/方向的"翻正"（本块上面那段注释的 ❓ 项 ✓）——
+     *   那属于**另一个口径**（旧口述"从版底往上"✗ vs 现口述"从天下雨"✓），★ **本笔不动** ✗，
+     *   ★ 留待与 owner 对口径后单独一笔 ✓（一次一样 ✓）。*/
+    s_c4_b[k].vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
+                                         CE_ANM_ABILITY_SCRIPT_POFV109_C4S_BULLET,
+                                         POFV_C4_VM_LAYER);
     if (s_c4_b[k].vm) {
         ce_anm_set_color((uint32_t)s_c4_b[k].vm, 0xffffffffu);
         ce_anm_set_scale((uint32_t)s_c4_b[k].vm, 0.5f, 0.5f);
