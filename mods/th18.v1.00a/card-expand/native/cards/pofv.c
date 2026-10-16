@@ -5543,6 +5543,22 @@ static void pofv_c3m_beam(float x)
     if (s_c3m[k].vm) {
         ce_anm_set_pos((uint32_t)s_c3m[k].vm, x, POFV_C3M_Y, 0.0f);
         ce_anm_set_scale((uint32_t)s_c3m[k].vm, 0.5f, 1.0f);
+        /* ★ 2026-10-16 **只读对比诊断**（★ 定案"灵力道具看不见" ✓ —— 日志已证道具 VM 的
+         *   `vm_draw(+0x30 绘制点) = (0,0)` ✗ 而 `vm_ent(0x5f0) = 写进去的值` ✓ ⇒ ★ 疑似绘制点没被维护 ✓）：
+         *   ★ 这里对**能正常看见**的 C3 激光 VM 打同一组字段 ✓ ⇒ ★ 两者一比即分家 ✓：
+         *   · ★ 若本行 `vm_draw == vm_ent`（正常 ✓）而道具那行 `vm_draw = (0,0)` ✗
+         *     ⇒ ★ 差异在"**道具那台 VM 自身**"（类型/创建时机/列表 ✓）⇒ 按此修 ✓；
+         *   · ★ 若两者**都**是 (0,0) ⇒ ★ 那就是**我们读错了字段** ✗（`+0x30` 不是绘制点 ✓）⇒ 换字段 ✓。*/
+        {
+            uint8_t *v6 = ce_anm_get_vm((uint32_t)s_c3m[k].vm);
+            if (v6) {
+                const float *e6 = (const float *)(v6 + CE_ANM_VM_POS);
+                const float *d6 = (const float *)(v6 + 0x30);
+                ce_log("pofv: [C3MVM] set=(%.0f,%.0f) vm_ent=(%.0f,%.0f) vm_draw=(%.0f,%.0f)",
+                       (double)x, (double)POFV_C3M_Y,
+                       (double)e6[0], (double)e6[1], (double)d6[0], (double)d6[1]);
+            }
+        }
     }
 }
 
