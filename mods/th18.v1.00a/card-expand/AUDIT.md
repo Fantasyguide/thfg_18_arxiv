@@ -32472,3 +32472,31 @@ owner 2026-10-15 实跑逐字：
 `thdat` 全新构建后仍报 `th08_read: incorrect entry magic` ✗ ⇒ 只有 owner 手上有正版样本 ✓）
 ⇒ `make anm` 的 `build_player_anm.py` 一步做不了 ⇒ `anm-verify` 连带红 ✓；`check-docs` 另有 4 处
 指向已丢失的 `local/_scratch/*.md` ✗。**样本一到位即重跑整树闸再并 main** ✓（纪律：不许红状态提交 ✓）。
+
+### §BE-108-LE-GATE-2026-10-17（2026-10-17，DSH agent）：108 × leveledit 的判别判据**实测钉死**（老 goal 收口）
+
+- **判据** = boss 那台 ECL VM 的 **`subroutine_index ≥ 24`** ✓（常量 `YK_LE_SUB_INDEX_MIN` ✓）。
+- **一手证据**（2026-10-17 ✓，两份 dump 逐条对过 ✓）：
+  · 零售 `local/th18.v1.00a/dat/st02bs.ecl` 经 `thecl -m local/vendor/eclmap/eclmap/th18.eclm -d 18`
+    解出 **24 个函数**（末尾 `BossEscape` ⇒ 最大索引 **23** ✓）⇒ 零售**不可能**出现 ≥ 24 的索引 ✓；
+  · leveledit 的 `stage02-mystia/files/st02bs.ecl`（91872 B ✓；用正版 `th08.dat`（`9d7edf43…` ✓）
+    ＋ 桌面原版 `th18.eclm`（`c81b3976…` ✓）＋ 他们钉的 thtk 补丁源码（`892114a` + `thmsg06.c` ✓）编出 ✓）
+    解出 **62 个**，第 24 个之后全是米斯蒂娅专用段（`MystiaMaskAnimate` / `MystiaSongStart` / `MystiaStars` … ✓）。
+- **链路**（全在 th18 的 vendor `type-structs-own.json` ✓）：`zEnemy+0x0 = struct zEclVm`（内嵌 ✓）
+  → `+0xc = zEclRunContextHolder`（内嵌 ✓）→ `+0x0 = current_context`（指针 ✓）→ `+0x4 = cur_location`（内嵌 ✓）
+  → `+0x0 = subroutine_index`（int32 ✓）；起点 `zEnemy = zEnemyData − CE_ENEMY_DATA(0x122c)` ✓（`engine.h:191` ✓）。
+- **动了哪几处**（**全是 108 自己的文件** ✓ ⇒ 本不必登记 ✗，此处是 goal 点名要求 ✓）：
+  `cards/youkai_core.h`（`YK_LE_TRUSTED` **0→1** ✓ ＋ 新常量 ✓）、`cards/youkai_core.c`（判据改用新常量 ✓）、
+  `cards/youkai.c`（新增 `yk_le_boss_sub_index()` 读那条链 ✓）、`tests/test_youkai_core.c`（`#if 0` 换成实值断言 ✓）。
+- ✗ **仍在的缺口（诚实标注 ✓）**：`yk_le_is_their_familiar()` **仍返回 0** ✓ —— 「他们的使魔」在 TH18 里是
+  **普通敌机** ✓，但**拿哪个字段把它与别的敌机区分开**目前**没有任何一手依据** ✗（旧口径 `+0x274` /
+  「敌机 id 区间」**已被实测否定** ✗）⇒ **接管那半（1/2 转伤 / 人妖切换）尚未接线** ✓；
+  本门目前只影响**建不建自建使魔壳**这一条 ✓（= 老 goal 最核心的那半 ✓）。
+- **② 同开摆位清单**（⚠ **没碰 modkit 的 git** ✓）：他们的构建产物放进
+  `<modkit>/thcrap/repos/leveledit/stage02-mystia/` ✓ —— `st02bs.ecl` · `st02enm.anm` · `front.anm` ·
+  `st02a.msg` · `st02b.msg` · `st02c.msg` · `st02d.msg`（＋ `thcrap.json` ✓）；owner 在启动器里勾上
+  `th18_leveledit_stage02_mystia` 即为同开 ✓。
+- **验证**：`make dll` / `make quick` / 整树 `make check` 全 **rc=0** ✓（`youkai_core: 12791 checks, 0 failed` ✓）；
+  PR **#111** 已合并 ⇒ `origin/main` = `upstream/Nipporita_dev` = `e2017b8b` ✓。
+- **`YK_LE_PROBE` 暂留** ✓：等 owner 那局同开实跑读出该场真实的 `subroutine_index`（应 ≥ 24 ✓）
+  与他们的使魔形态后再关 ✓ / 再接线 ✓。
