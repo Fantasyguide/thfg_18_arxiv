@@ -1,0 +1,19 @@
+script script465 {
+    // 109 · **魔理沙激光碰壁后从碰壁点放出的"星星"**（★ owner 口述 ✓）
+    //   ★ owner 原话：「★ **魔理沙激光碰壁之后，从碰壁点放出来的那些星星就是 `bullet.png` 里面
+    //     应该是第十一行的星星**」✓
+    //   ★ 一手素材（只读核出 ✓）：`local/th19.v1.10c/anm/bullet/bullet.anm.txt:273`
+    //     ⇒ ★ 第 11 行 = `sprite256: { x: 1, y: 177, w: 14, h: 14 }` … `sprite269`（★ 共 14 颗、
+    //     同排不同色 ✓），★ 所在图集 = `bullet/bullet1.png`（256×256 主弹图集 ✓）。
+    //   ★ 本卡切图（可复现 ✓）：从 TH19 的 `ANM/bullet/bullet1.png` 切 `(1,177,14,14)` ✓
+    //     ⇒ `assets/ability/POFV109_C4M_STAR.png`（14×14 ✓）。
+    //   ★ 本脚本只负责"这一颗星"的外观 ✓；★ 数量/速度/角度/寿命由**卡侧**给（照一手或 owner 口径，
+    //     并在 `TUNING` 记明 ❓ ✓）。
+    layer(6);
+    sprite(@POFV109_C4M_STAR);
+    type(1);
+    scale(1.0f, 1.0f);
+    alpha(255);
+    blendMode(1);      /* ★ 加算：与一手弹幕观感一致 ✓（可回退 ✓）*/
+    stop();
+}
