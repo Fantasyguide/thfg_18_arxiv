@@ -32372,3 +32372,34 @@ DLL 未重发 ⇒ 本轮的 5 处改动**尚未进入游戏** ✓（下次发版
   108 的「子机台数按机体固定」…）—— 它们都**改变玩家预期**，所以留了；owner 认为该删就说一声 ✓。
   ② **源不一致**：当时 modkit 里部署的 `cards.js` 是**旧版**（没有 512 那段）✗ ⇒ 本批之后必须**重新 deploy**
   才能让游戏显示新卡面 ✓。
+
+### §BE-COEXIST-GUARD（2026-10-15，DSH agent）：与第三方 `leveledit` **同开**的护栏
+
+- **背景（owner 2026-10-15 三条口径 ✓）**：同一个 TH18 上要**同时开**本 mod 与第三方 **leveledit** 补丁 ✓；
+  两边都允许**小改**以求兼容 ✓；但**必须保持两个各自独立的 thcrap 补丁** ✗不能合并。
+  ★ 这**不是**仓库合并问题 ✓，而是 **thcrap 运行期"同名相对路径、后加载者赢"** ✗ ——
+  [`assets/mystia/build_st02.py:5-11`](assets/mystia/build_st02.py) 早已记下 owner 的口径
+  「**都开强强联合，只开一个也能用**」✓ 与结论「**方案 B（我们 patch 出整文件产物）作废**」✗：
+  我方**不许**把 `th18/st02enm.anm` 之类的关卡产物装进自己的 patch ✓（那会与 leveledit 同名 ✓）。
+- **新增** `native/tools/check_modkit_packages.py` + `native/tools/modkit_packages_allow.txt`：
+  · **C1（硬，rc=1）**：读 `enabled.json`（或 `--packages`）给的**同开组合** ⇒ 两个包提供
+    **同一相对路径**即报错 ✓（`patch.js` / `files.js` 是每包必有元数据 ✓ 不参与 ✓）；**有意的依赖覆盖**
+    在 `modkit_packages_allow.txt` 里逐条登记（现有唯一一条：`_255 × _test` 的 `th18.v1.00a.js` ✓，
+    因为 `_test` 的 `patch.js` 已声明 `dependencies:["th18_card_expand_255"]` ✓）。
+  · **C2（报告，不失败）**：某包目录里的文件**没进它自己的 `files.js`** ✓ —— `mkfiles.py` 会
+    **有意摘掉** gitignored 资产（`ability.anm` / `pl0X.sht` / 语音 wav 等 ✓）⇒ 一刀切会假阳性 ✓；
+    但"漏了一整个新目录"是真故障 ✓，所以仍打印 ✓。
+  · `--all-pairs` 是**体检**模式（不是红灯 ✓）：实测现有包里 `th18.v1.00a.js` 是**多个补丁共有**的同名文件 ✓
+    （`base_tsa` / `mouse_control` / `disable_controller_polling` 都带 ✓）⇒ 只有**实际启用组合**才是判据 ✓。
+  · 接进 `make check` ✓：装了 modkit ⇒ **硬拦** ✓；没装 ⇒ 打印提示后跳过 ✓（rc=2 视为"没装" ✓）。
+- **`native/release.py` 加 `_gate_package_scope()`** ✓（§2C）：发布目标必须落在
+  `thcrap/repos/Renko_1055/<PATCH_DIRS 之一>/…` 之下 ✓，否则**拒绝发布** ✗ ⇒ 我的发布链
+  **不可能**写进 leveledit 的包 ✓（对方包名不写死 ✓）。
+- **怎么验证**：真 modkit 的启用组合 ⇒ **rc=0** ✓（白名单那条按预期放行 ✓、C2 报告 28 个 gitignored 资产 ✓）；
+  人造"两包同路径"的假 modkit ⇒ **rc=1** ✓；`--all-pairs` 能列出 9 处同名（全为 `th18.v1.00a.js` ✓ 属已知 ✓）。
+- **影响面**：**只加检查 + 一条发布断言** ⇒ 不改任何卡行为、不改产物 ✓；`Makefile` 属共享件 ⇒ 本条即协作须知 ✓。
+- **待办（阻塞在别人那边 ✓）**：**leveledit 正本不在本机** ✗（modkit 的 `thcrap/repos/` 只有
+  `Renko_1055` 与 `nmlgc` ✓；文档指它的家是 `thcrap/repos/leveledit/th18_leveledit_stage02_mystia/` 一类 ✓）
+  ⇒ 一旦到位，第一件事就是跑本闸的**真实两包组合** ✓，并确认 §1.4 的疑点：**它是否也 patch `default.ecl`** ✗
+  —— 若是 ⇒ 需按"一文件一主人"定归属（倾向 `default.ecl` 归我方 ✓，关卡改动由 leveledit 用**自己的**
+  `st0X.ecl` 表达 ✓），并登记到本 §BE ✓。

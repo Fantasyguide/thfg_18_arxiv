@@ -36,6 +36,7 @@ check: quick cards-check anm-verify sht-verify snd-check dllx87 dllverify
 	python3 tools/engine_abi_check.py
 	python3 tools/anm_hud_alpha_check.py
 	python3 ../assets/check_anm_rules.py   # ★ 2026-10-15：anm「看不见」类 linter（弧类缺 iset($I1) / rotate(0) 零弧）
+	python3 tools/check_modkit_packages.py --modkit "$${MODKIT_DIR:-/mnt/d/项目/幻想指南/18/th18_modkit}"; rc=$$?; if [ $$rc -eq 2 ]; then echo "  ⚠ 本机没装那个 modkit ⇒ 同开护栏跳过（装了就是硬拦）"; else exit $$rc; fi
 	python3 ../../../../tooling/check-docs.py
 
 ## package —— 生成可安装的完整发布包。

@@ -66,6 +66,26 @@ MAP_DIRS = {
 PATCH_DIRS = ("th18_card_expand_255", "th18_card_expand_test", "th18_card_expand_devstage")
 
 
+def _gate_package_scope():
+    """★ 2026-10-15 **同开护栏**：本脚本只许写**自己这三个包**（见 `PATCH_DIRS`）✓。
+
+    起因（owner「同开」口径 ✓）：同一份 TH18 上要同时启用 `card-expand` 与第三方 **leveledit**
+    补丁 ✓，而 thcrap 的替换规则是**按相对路径覆盖、后加载者赢** ✗ ⇒ 只要我的发布链把文件写进
+    别人的包、或写到与对方同名的路径上，就会静默改坏对方 ✗（`assets/mystia/build_st02.py:6` 记的
+    就是这个坑 ✓：「一方坏掉，『只开一个也能用』就不成立」✗）。
+    ⇒ 每个发布目标必须落在 `thcrap/repos/Renko_1055/<PATCH_DIRS 之一>/…` 之下 ✓；越界**拒绝发布** ✗。
+    ⚠ 对方的**包名/仓库名不写死** ✓：本闸只要求"在我自己这三个包之内" ✓。"""
+    dests = list(MAP.values()) + [v[0] for v in MAP_DIRS.values()]
+    bad = []
+    for dst in dests:
+        p = dst.replace("\\", "/").split("/")
+        if len(p) < 4 or p[0] != "thcrap" or p[1] != "repos" \
+           or p[2] != "Renko_1055" or p[3] not in PATCH_DIRS:
+            bad.append(dst)
+    if bad:
+        raise SystemExit("✗ release.py 的发布目标越界（同开护栏）：\n  " + "\n  ".join(bad))
+
+
 def blob_bytes(data):
     """files.js 的 crc 必须等于 **thcrap 实际下载到的字节** = git blob。
 
@@ -154,6 +174,7 @@ def _gate_contract():
 
 def main():
     _gate_contract()
+    _gate_package_scope()
     push = os.environ.get("PUSH") == "1"
     if not NO_GIT and not os.path.isdir(os.path.join(MODKIT, ".git")):
         raise SystemExit("找不到发布仓库：%s\n先 git clone https://github.com/Renko6626/th18_modkit.git 到 local/vendor/" % MODKIT)
