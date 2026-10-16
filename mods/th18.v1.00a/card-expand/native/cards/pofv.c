@@ -3213,12 +3213,21 @@ static void power_flash_fire(int slot, float x, float y)
  *   ⚠ 道具脚本（423）也**不自己 `delete()`**（一手 script123 是 `static()` 常驻）⇒ 收/出界一律由我们删；
  *     闪光脚本（424）则**自己 delete**（一手如此）⇒ 它的句柄只探活、不在这里删。*/
 static int32_t s_item_spawn_ok, s_item_spawn_fail;   /* ★ 自证计数（诊断用 ✓）*/
+/* ★★★★ 2026-10-16 **只读诊断**（owner：「灵力道具一颗都看不见」✓；已证 `spawn_ok` 在涨、VM 活着 ✗）：
+ *   ⇒ ★ 把**每颗道具的 VM 自己眼里的字段**曝光一次 ✓ —— 每个槽只打一次（建 VM 之后**第 2 帧**打 ✓，
+ *     那时脚本首批指令（`scale` 动画 / `sprite` / `alpha`）已经跑过 ✓）。
+ *   读法（★ 决定修法的那一条）：
+ *     · `flags & 0x400`（`CE_ANM_VM_FLAGS_LO` 的 bit10 ✓）= **绘制点走 `__pos_2`(0x4e4)** ✓
+ *       ⇒ 若该位**置起**而 `pos2=(0,0)` ✗ ⇒ ★ 要写的是 **`+0x4e4`** ✓；
+ *     · 该位**没置** ⇒ 绘制点走 **`+0x30`** ✓ ⇒ 若 `draw=(0,0)` ✗ ⇒ ★ 要写的是 **`+0x30`** ✓。*/
+static uint8_t s_item_vm_dbg[POFV_POWER_MAX];
+
 static void power_vm_sync(void)
 {
     int i;
     for (i = 0; i < POFV_POWER_MAX; ++i) {
         pofv_power_t *it = &s_power.s[i];
-        if (!it->active) { power_vm_drop(it); continue; }
+        if (!it->active) { power_vm_drop(it); s_item_vm_dbg[i] = 0; continue; }
         if (!it->vm && it->delay <= 0) {
             uint32_t id = ce_anm_spawn(CE_ABILITY_ANM(), POFV_POWER_VM_SCRIPT, POFV_POWER_VM_LAYER);
             if (!id) { ++s_item_spawn_fail; continue; }   /* ★ 自证计数 ✓ */
@@ -3236,6 +3245,26 @@ static void power_vm_sync(void)
             power_flash_fire(i, it->x, it->y);   /* ★ 同一刻点一台几何闪光（一手 effect.anm script94）*/
         }
         if (it->vm) ce_anm_set_pos((uint32_t)it->vm, it->x, it->y, 0.0f);
+        /* ★★★★ 2026-10-16 只读诊断（**只加日志，不改行为** ✓）：每颗道具的 VM 只曝光一次 ✓
+         *   —— 建 VM 之后第 2 帧打（那时脚本首批指令已跑过 ✓）。判据见 `s_item_vm_dbg` 上方注释 ✓。*/
+        if (it->vm && s_item_vm_dbg[i] < 2) {
+            if (++s_item_vm_dbg[i] == 2) {
+                uint8_t *v = ce_anm_get_vm((uint32_t)it->vm);
+                if (v) {
+                    const float *ent = (const float *)(v + CE_ANM_VM_POS);
+                    const float *drw = (const float *)(v + 0x30);
+                    const float *po2 = (const float *)(v + CE_ANM_VM_POS_2);
+                    ce_log("pofv: [ITEMVM1] set=(%.0f,%.0f) age=%d delay=%d | ent=(%.0f,%.0f) draw=(%.0f,%.0f) pos2=(%.0f,%.0f) scale=%.3f c1=%08x spr=%d flags=%08x",
+                           (double)it->x, (double)it->y, (int)it->age, (int)it->delay,
+                           (double)ent[0], (double)ent[1], (double)drw[0], (double)drw[1],
+                           (double)po2[0], (double)po2[1],
+                           (double)*(const float *)(v + CE_ANM_VM_SCALE),
+                           *(const uint32_t *)(v + CE_ANM_VM_COLOR1),
+                           *(const int32_t *)(v + CE_ANM_VM_SPRITE_ID),
+                           (unsigned)*(const int32_t *)(v + CE_ANM_VM_FLAGS_LO));
+                }
+            }
+        }
     }
     /* ★★★ 2026-10-11 自证日志（owner：「灵力道具全没了，一个没掉」✗，而日志显示**逻辑在跑**
      *   —— `[REI] got=1..3` ✓ + `power +N (N items …)` ✓ ⇒ ★ 那就是**看不见** ✗）：
@@ -5711,7 +5740,17 @@ static void pofv_c4m_emit(float ang)
      *   ★ 归属 ★ **❓自定（owner 定）** ✓，★ 一手那边靠"★ boss 不动"自然一致 ✓（★ 见结构声明处的注释 ✓）。*/
     s_c4m[k].x = s_c4m_st.ox;
     s_c4m[k].y = s_c4m_st.oy;
-    s_c4m[k].vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), POFV_C_RING_SCRIPT, POFV_C4_VM_LAYER);
+    s_c4m[k].vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
+                         /* ★★★★★ 2026-10-16 **owner 实跑反馈修正**：「★ **C4 符卡端我就看见一些红色环在那发射**」✗
+                          *   ⇒ ★ 原来这里用的是 `POFV_C_RING_SCRIPT`（= **红色环** ✗ ✓）⇒ ★ 换成 **★ 星星** ✓。
+                          *   ★ 一手素材（owner 口述 ＋ 只读核出 ✓）：★「魔理沙激光碰壁之后，从碰壁点放出来的
+                          *   那些星星就是 `bullet.png` 里面应该是**第十一行**的星星」✓
+                          *   ⇒ ★ `bullet/bullet1.png` 第 11 行 = ★ `sprite256..269`（`bullet.anm.txt:273` ✓，
+                          *   `(1,177,14,14)` … 共 14 颗同排不同色 ✓）⇒ ★ 已切为
+                          *   `assets/ability/POFV109_C4M_STAR.png`（14×14 ✓）＋ 脚本 **465** ✓。
+                          *   ⚠ ★ 待补（未完成 ✗）：★ **"碰壁点撒一小簇星"**（反弹那一帧 ✓）—— 本笔只换**弹的外观** ✓。*/
+                         CE_ANM_ABILITY_SCRIPT_POFV109_C4M_STAR,
+                         POFV_C4_VM_LAYER);
     if (s_c4m[k].vm) {
         ce_anm_set_color((uint32_t)s_c4m[k].vm, 0xffffffffu);
         ce_anm_set_scale((uint32_t)s_c4m[k].vm, 0.4f, 0.4f);
