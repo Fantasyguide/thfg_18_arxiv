@@ -182,8 +182,8 @@ def main():
     #   「大招还是 360° / 还会甩主机弹 / 无敌还是无限」✗（`AUDIT.md` §BE-DEPLOY-RACE-2026-10-17 ✓）。
     #   ⚠ `release.py` 是**第二条发布通道** ✓（它还会在 modkit 里**自动提交** ✓ ⇒ 落后树更容易把旧件推出去 ✗）
     #   ⇒ 这道闸必须也有 ✓。判据 = `origin/main` 是 HEAD 的祖先 ✓ ⇒ 落后即**拒绝** ✗（见 `deploy.py` ✓）。
-    sys.path.insert(0, HERE)
-    import deploy as _dg                                     # noqa: E402  （同目录脚本 ✓）
+    sys.path.insert(0, os.path.join(HERE, "tools"))          # ⚠ `deploy.py` 在 `native/tools/` ✓（不是 `native/` ✗ ——
+    import deploy as _dg                                     #    第一版写成 `HERE` 直接报 ModuleNotFoundError ✓）
     _ok_src, _head_c, _main_c = _dg.guard_source(dry=False)
     if not _ok_src:
         raise SystemExit("❌ 来源校验不过（见上）⇒ 拒绝发布 ✗")
