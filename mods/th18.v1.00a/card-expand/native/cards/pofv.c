@@ -5827,12 +5827,38 @@ static void pofv_c4m_tick(void)
          *   ★ 次数用 `bounced` 当**计数器** ✓（结构里它本来就是 `int` ✓）⇒ ★ 到 **4** 次即不再反弹，
          *   之后撞墙由下面的出界判据收掉 ✓（= 一手"第 5 次收"✓，与本卡 C3 的 `BOUNCE_MAX 4` 同款 ✓）。*/
         if (b->bounced < 4) {
-            if (b->y < 0.0f) {                                  /* ★ 上墙 ✓ */
+            /* ★★★★★ 2026-10-16 **owner 口述（一级证据 ✓）**：「★ **魔理沙激光碰壁之后，从碰壁点放出来的
+             *   那些星星就是 `bullet.png` 里面应该是第十一行的星星**」✓
+             *   ⇒ ★ 每次撞墙时，从**碰壁点**再放出**一小簇星**（★ = 一手 `bullet1.png` 第 11 行
+             *   `sprite256..269`（`(1,177,14,14)` ✓，已切为 `POFV109_C4M_STAR.png` + 脚本 465 ✓））✓。
+             *   ★ 做法（不改任何函数签名 ✓）：★ 临时把"原点锁"（`s_c4m_st.ox/oy` ✓）指向**碰壁点** ✓
+             *   ⇒ ★ 连调 `POFV_C4M_SPARK_N` 次 `pofv_c4m_emit()`（★ 出射角 = **朝场内**的方向 ＋ 小扇形 ✓）
+             *   ⇒ ★ 再**还原原点**（★ 保证"三束同源"不被破坏 ✓）。
+             *   ⚠ ★ 数量 3 与扇形 ±20° 是 ★ **按 owner 口述的观感取的 ❓ 自定值** ✗（一手里没直接读到
+             *   "碰壁撒星"的确切参数 ✓）⇒ ★ 已登记 `TUNING` ✓，**不写成"一手"** ✗。*/
+            float inward = 0.0f;
+            const int hit_top   = (b->y <= 0.0f);
+            const int hit_left  = (b->x <= -POFV_FIELD_HALF_W);
+            float sx = b->x, sy = b->y;
+            if (hit_top) {
                 b->y = 0.0f; b->ang = -b->ang; ++b->bounced;
-            } else if (b->x < -POFV_FIELD_HALF_W) {             /* ★ 左墙 ✓ */
+                inward = 1.5707964f;                 /* ★ 版顶被弹回 ⇒ 朝下（场内）✓ */
+            } else if (hit_left) {
                 b->x = -POFV_FIELD_HALF_W; b->ang = 3.1415927f - b->ang; ++b->bounced;
-            } else if (b->x > POFV_FIELD_HALF_W) {              /* ★ 右墙 ✓ */
+                inward = 0.0f;                       /* ★ 左墙 ⇒ 朝右（场内）✓ */
+            } else if (b->x >= POFV_FIELD_HALF_W) {
                 b->x = POFV_FIELD_HALF_W; b->ang = 3.1415927f - b->ang; ++b->bounced;
+                inward = 3.1415927f;                 /* ★ 右墙 ⇒ 朝左（场内）✓ */
+            }
+            if (b->bounced > 0 && b->bounced <= 4) {
+                const float ox0 = s_c4m_st.ox, oy0 = s_c4m_st.oy;   /* ★ 保存原点 ✓ */
+                int s9;
+                s_c4m_st.ox = sx; s_c4m_st.oy = sy;                 /* ★ 原点 = 碰壁点 ✓ */
+                for (s9 = 0; s9 < 3; ++s9) {                        /* ★ 一小簇 = 3 颗 ✓ */
+                    const float off = ((float)s9 - 1.0f) * 0.3490659f;   /* ±20° ✓ */
+                    pofv_c4m_emit(inward + off);
+                }
+                s_c4m_st.ox = ox0; s_c4m_st.oy = oy0;               /* ★ 还原原点 ✓ */
             }
         }
         if (b->x < -(POFV_FIELD_HALF_W + POFV_C1_OFF_MARGIN) ||
