@@ -4,6 +4,15 @@
 # 只保留 local/README.md 说明"什么放哪、怎么重建"。
 local/*
 !local/README.md
+# ★★★ 2026-10-17：**`local` 这个路径本身也必须忽略** ✗ —— 上面那两条只匹配 `local/` **里面**的东西 ✓。
+#   历史事故（两次，一手证据见 `mods/th18.v1.00a/card-expand/AUDIT.md` 的 §BE-DEPLOY-RACE-2026-10-17）：
+#   `local` 曾被作为**符号链接**入库（git 条目模式 `120000`，内容还是它自己的路径 ⇒ 自指 ✗），
+#   而本机 `core.symlinks=false` ⇒ git 把它**当普通文件写** ⇒ 任何 `git checkout / switch / restore /
+#   stash` 都会**先删掉真的 `local/` 目录**✗、再写一个 30 字节的文本文件 ✓
+#   ⇒ 2026-10-16 22:55 与 2026-10-17 02:58 两次把整棵 `local/`（样本 / vendor / Ghidra 工程 / `_scratch` 笔记）清空。
+#   ⇒ 修法：`git rm --cached local`（已做 ✓）＋ 这里忽略 `local` 本身 ✓ ⇒ 以后 `git add -A` **不可能**再把它加回索引 ✓。
+#   ⚠ 在**旧提交/旧分支** checkout 出来的树里那个坏条目仍在 ⇒ 别在带真 `local/` 的树里跑 checkout 系命令 ✗。
+local
 
 # ─── 工具产物 ───────────────────────────────────────────────────
 __pycache__/
