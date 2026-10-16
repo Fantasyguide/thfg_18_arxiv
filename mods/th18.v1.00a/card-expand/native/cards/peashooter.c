@@ -86,25 +86,58 @@ static int       s_log_fan = 1;  /* P44：第一扇打一行日志（省得每�
 static int       s_gate_log = -1;   /* P46：门状态变化时打一行（-1 = 还没打过 ✓）*/
 static uint32_t  s_spawn_n, s_respawn_n, s_fan_n;   /* P46：诊断计数（起弹 / 补 VM / 大招扇数 ✓）*/
 static unsigned  g_frames_ps_diag;                  /* P46：诊断限频 ✓ */
-/* ★ P54：**16 个方向的常量表** ✓（随机方向发弹用它 ✓ —— 现场不调 libm ✓、replay 确定 ✓）。
- *   vx/vy = 单位方向（屏幕坐标 ✓）、ang = 贴图该转多少（贴图朝上 ⇒ 减 π/2 ✓）。*/
-static const struct { float vx, vy, spread, abs; } s_rand16[16] = {
-    {    0.0000f,   -1.0000f,    0.0000f,   -1.5708f },
-    {    0.3827f,   -0.9239f,    0.3927f,   -1.1781f },
-    {    0.7071f,   -0.7071f,    0.7854f,   -0.7854f },
-    {    0.9239f,   -0.3827f,    1.1781f,   -0.3927f },
-    {    1.0000f,   -0.0000f,    1.5708f,   -0.0000f },
-    {    0.9239f,    0.3827f,    1.9635f,    0.3927f },
-    {    0.7071f,    0.7071f,    2.3562f,    0.7854f },
-    {    0.3827f,    0.9239f,    2.7489f,    1.1781f },
-    {    0.0000f,    1.0000f,    3.1416f,    1.5708f },
-    {   -0.3827f,    0.9239f,    3.5343f,    1.9635f },
-    {   -0.7071f,    0.7071f,    3.9270f,    2.3562f },
-    {   -0.9239f,    0.3827f,    4.3197f,    2.7489f },
-    {   -1.0000f,    0.0000f,    4.7124f,    3.1416f },
-    {   -0.9239f,   -0.3827f,    5.1051f,    3.5343f },
-    {   -0.7071f,   -0.7071f,    5.4978f,    3.9270f },
-    {   -0.3827f,   -0.9239f,    5.8905f,    4.3197f },
+/* ★★★ 2026-10-15（owner 两条口径 ✓，**改掉 P54 的整圈表** ✗）：
+ *   · owner：「**植物大战僵尸里面的电大哥是向前方一个角度范围内随机散射子弹，你目前做成了全向散射**」✓
+ *   · owner：「**±20° 之间完全随机**」✓
+ *   ⇒ 这张表 = **前方扇面 ±20°、1° 步长共 41 项** ✓（基准 = **正上方** ✓，与 77 的普攻同向 ✓）；
+ *     出膛时在表内**均匀抽一项**（`ce_rand() % PS_SPREAD_N` ✓ ⇒ 完全随机、且 replay 确定 ✓）。
+ *   ⚠ 卡侧**禁 libm** ✗（本仓不变式）⇒ 常量**离线算好** ✓：生成脚本
+ *     `native/tools/gen_pea_spread_table.py` ✓（同 `yk_orbit_sin/cos` 那张 120 项表的先例 ✓）。
+ *   字段含义（沿用旧表 ✓）：`vx/vy` = 单位方向（屏幕坐标 ✓，y 向上为负 ✓）；
+ *     `spread` = 贴图该转多少（贴图朝上 ⇒ 就是 θ 本身 ✓）；`abs` = 弹的朝向角（θ − π/2 ✓）。*/
+#define PS_SPREAD_N       41           /* ★ 2026-10-15：±20° / 1° 步长 ✓（原 16 项整圈表已删 ✗）*/
+static const struct { float vx, vy, spread, abs; } s_rand_spread[PS_SPREAD_N] = {
+    {    -0.3420f,    -0.9397f,    -0.3491f,    -1.9199f },   /* -20° */
+    {    -0.3256f,    -0.9455f,    -0.3316f,    -1.9024f },   /* -19° */
+    {    -0.3090f,    -0.9511f,    -0.3142f,    -1.8850f },   /* -18° */
+    {    -0.2924f,    -0.9563f,    -0.2967f,    -1.8675f },   /* -17° */
+    {    -0.2756f,    -0.9613f,    -0.2793f,    -1.8500f },   /* -16° */
+    {    -0.2588f,    -0.9659f,    -0.2618f,    -1.8326f },   /* -15° */
+    {    -0.2419f,    -0.9703f,    -0.2443f,    -1.8151f },   /* -14° */
+    {    -0.2250f,    -0.9744f,    -0.2269f,    -1.7977f },   /* -13° */
+    {    -0.2079f,    -0.9781f,    -0.2094f,    -1.7802f },   /* -12° */
+    {    -0.1908f,    -0.9816f,    -0.1920f,    -1.7628f },   /* -11° */
+    {    -0.1736f,    -0.9848f,    -0.1745f,    -1.7453f },   /* -10° */
+    {    -0.1564f,    -0.9877f,    -0.1571f,    -1.7279f },   /*  -9° */
+    {    -0.1392f,    -0.9903f,    -0.1396f,    -1.7104f },   /*  -8° */
+    {    -0.1219f,    -0.9925f,    -0.1222f,    -1.6930f },   /*  -7° */
+    {    -0.1045f,    -0.9945f,    -0.1047f,    -1.6755f },   /*  -6° */
+    {    -0.0872f,    -0.9962f,    -0.0873f,    -1.6581f },   /*  -5° */
+    {    -0.0698f,    -0.9976f,    -0.0698f,    -1.6406f },   /*  -4° */
+    {    -0.0523f,    -0.9986f,    -0.0524f,    -1.6232f },   /*  -3° */
+    {    -0.0349f,    -0.9994f,    -0.0349f,    -1.6057f },   /*  -2° */
+    {    -0.0175f,    -0.9998f,    -0.0175f,    -1.5882f },   /*  -1° */
+    {     0.0000f,    -1.0000f,     0.0000f,    -1.5708f },   /*  +0° */
+    {     0.0175f,    -0.9998f,     0.0175f,    -1.5533f },   /*  +1° */
+    {     0.0349f,    -0.9994f,     0.0349f,    -1.5359f },   /*  +2° */
+    {     0.0523f,    -0.9986f,     0.0524f,    -1.5184f },   /*  +3° */
+    {     0.0698f,    -0.9976f,     0.0698f,    -1.5010f },   /*  +4° */
+    {     0.0872f,    -0.9962f,     0.0873f,    -1.4835f },   /*  +5° */
+    {     0.1045f,    -0.9945f,     0.1047f,    -1.4661f },   /*  +6° */
+    {     0.1219f,    -0.9925f,     0.1222f,    -1.4486f },   /*  +7° */
+    {     0.1392f,    -0.9903f,     0.1396f,    -1.4312f },   /*  +8° */
+    {     0.1564f,    -0.9877f,     0.1571f,    -1.4137f },   /*  +9° */
+    {     0.1736f,    -0.9848f,     0.1745f,    -1.3963f },   /* +10° */
+    {     0.1908f,    -0.9816f,     0.1920f,    -1.3788f },   /* +11° */
+    {     0.2079f,    -0.9781f,     0.2094f,    -1.3614f },   /* +12° */
+    {     0.2250f,    -0.9744f,     0.2269f,    -1.3439f },   /* +13° */
+    {     0.2419f,    -0.9703f,     0.2443f,    -1.3265f },   /* +14° */
+    {     0.2588f,    -0.9659f,     0.2618f,    -1.3090f },   /* +15° */
+    {     0.2756f,    -0.9613f,     0.2793f,    -1.2915f },   /* +16° */
+    {     0.2924f,    -0.9563f,     0.2967f,    -1.2741f },   /* +17° */
+    {     0.3090f,    -0.9511f,     0.3142f,    -1.2566f },   /* +18° */
+    {     0.3256f,    -0.9455f,     0.3316f,    -1.2392f },   /* +19° */
+    {     0.3420f,    -0.9397f,     0.3491f,    -1.2217f },   /* +20° */
 };
 
 static int       s_log_arc = 1;   /* P50：首条电弧打一行诊断 ✓ */
@@ -234,10 +267,10 @@ static void ps_proj_fire(void *o, int set)
     float spd = (gat ? PE_SPD_GATLING : PE_SPD_NORMAL) / PE_ELEC_SLOW;   /* ★ P47/P50：电弹半速再半速 = 1/4 ✓ */
     for (i = 0; i < n; ++i) {
         float dx = (n == 1) ? 0.0f : (-48.0f + 16.0f * (float)i);
-        int rd = gat ? (int)(ce_rand() % 16u) : 0;      /* ★ P54：**开大**才随机方向 ✓（普攻仍朝正上方 ✓）*/
+        int rd = gat ? (int)(ce_rand() % PS_SPREAD_N) : 0;      /* ★ P54：**开大**才随机方向 ✓（普攻仍朝正上方 ✓）*/
         int k;
         uint8_t *vm;
-        k = gat ? pe_proj_spawn(s_proj, PE_MAX, ox + dx, oy, s_rand16[rd].vx * spd, s_rand16[rd].vy * spd,
+        k = gat ? pe_proj_spawn(s_proj, PE_MAX, ox + dx, oy, s_rand_spread[rd].vx * spd, s_rand_spread[rd].vy * spd,
                                 PE_SET_GATLING, PE_DMG_GATLING)
                 : pe_proj_new(s_proj, PE_MAX, ox + dx, oy, PE_SET_NORMAL);
         if (k < 0) return;                          /* 满了 ⇒ 少几颗（不炸 ✓）*/
@@ -248,7 +281,7 @@ static void ps_proj_fire(void *o, int set)
         if (vm) {
             ce_anm_set_pos(s_proj_vm[k], s_proj[k].x, s_proj[k].y, pz);
             ce_anm_set_scale(s_proj_vm[k], PS_BALL_SCALE, PS_BALL_SCALE);
-            if (gat) ce_anm_set_rotation(s_proj_vm[k], 0.0f, 0.0f, s_rand16[rd].spread);
+            if (gat) ce_anm_set_rotation(s_proj_vm[k], 0.0f, 0.0f, s_rand_spread[rd].spread);
             *(volatile uint32_t *)(vm + CE_ANM_VM_COLOR1) = PS_ELEC_RGBA;
             *(volatile uint32_t *)(vm + CE_ANM_VM_COLOR2) = PS_ELEC_RGBA;
         }
@@ -469,13 +502,28 @@ static int on_load(ce_card_t *c)
  *   （`engine/sht/th18/02-shooter-record.md` + `append_shooterset.py` 的注 ✓）。
  *   ⚠ 只在本卡**开大期间**动手 ✗ —— 平时的普通豌豆方向一字不改 ✓。*/
 #define PS_BULLET_ANGLE   0x64
+/* ★★ 2026-10-15 新增（owner 报：「**电大哥的弹幕怎么把我主机的弹幕也弄成全方向随机的了**」✗）：
+ *   本钩子（`on_bullet_created` ✓）= **每颗弹出生都广播** ✓ ⇒ 原来只判"本卡在开大"、
+ *   **没判这颗弹是谁的** ✗ ⇒ 开大期间**玩家主机打出的每一颗弹**朝向都被改写 ✗。
+ *   ⇒ 先**认弹**：`bullet+0xac` = `(set << 8) | 组内行号` ✓（一手：`Player__shoot_one_bullet` 收的
+ *     packed id 一路存进 `bullet+0xac` ✓ —— `engine/sht/th18/02-shooter-record.md:68-70` ✓）
+ *     ⇒ **`>> 8` 即 shooterset 组号** ✓，只有 ∈ {`CE_SHT_SET_PEA_NORMAL`(**0x17**),
+ *     `CE_SHT_SET_PEA_GATLING`(**0x18**)} 才是本卡的弹 ✓（生成物 `native/sht_ids.h:4-5` ✓；
+ *     ⚠ **别**拿卡侧 `PE_SET_NORMAL/GATLING` 的 0/1 来比 ✗ —— 那是卡侧**自建弹**的块内序号 ✓）。
+ *   另一条现成判据是 `bullet+0xe4` = **子机指针** ✓（`0x45e3ae` 写 ✓；SDK 的 `ce_option_kill_bullets`
+ *   用的就是它 ✓）—— 这里不用：组号已足够精确 ✓，也免去跟踪 option 指针的生命周期 ✓。*/
+#define PS_BULLET_SETID   0xac
 static int on_bullet_created(ce_card_t *c, void *bullet)
 {
     ps_card_t *s = ce_state(c, ps_card_t);
     uint8_t *b = (uint8_t *)bullet;
+    uint32_t set;
     if (!b || !s) return 0;
     if (pea_burst_left(&s->st) <= 0) return 0;          /* 不在开大 ⇒ 什么都不做 ✓ */
-    *(float *)(b + PS_BULLET_ANGLE) = s_rand16[(int)(ce_rand() % 16u)].abs;
+    set = *(const uint32_t *)(b + PS_BULLET_SETID) >> 8;    /* ★ 认弹：shooterset 组号 ✓ */
+    if (set != (uint32_t)CE_SHT_SET_PEA_NORMAL && set != (uint32_t)CE_SHT_SET_PEA_GATLING)
+        return 0;                                        /* ★ 不是本卡的弹 ⇒ 一颗都不许碰 ✗ */
+    *(float *)(b + PS_BULLET_ANGLE) = s_rand_spread[(int)(ce_rand() % PS_SPREAD_N)].abs;
     return 0;
 }
 
@@ -484,6 +532,12 @@ static int on_tick_2(ce_card_t *c)
     ps_proj_tick();
     ps_card_t *s = ce_state(c, ps_card_t);
     if (!s || !CE_PLAYER()) return 0;
+    /* ★★★ 2026-10-15（owner 报「电大哥的**无敌一直存在**」✗ 的修）：**先按帧推进爆发** ✓。
+     *   原来爆发倒计时只在 `pea_shoot_frame()` 里减 ✗，而那只在 `on_tick_shooters`（**按住射击键才广播** ✗）
+     *   里被调 ⇒ 松手 ⇒ 爆发冻结 ⇒ 下面那句无敌声明**一直挂着** ✗。
+     *   现在：每帧 `pea_burst_frame()` ✓ ⇒ 松手也照减 ✓ ⇒ 无敌与爆发**同生同灭** ✓。*/
+    if (pea_burst_frame(&s->st))                  /* 返回 1 = 开大在本帧结束 */
+        ce_log("peashooter: gatling #%u done, %u peas fired in total", s->st.bursts, s->st.peas);
     /* ★ P54（owner：「爆发期间（包括原始）……需要本体无敌」✓，按 PvZ2 一手）：
      *   开大期间每帧**声明** PS_BURST_INVULN 帧无敌 ✓（SDK 声明层取最大值统一落笔 ✓）。*/
     if (pea_burst_left(&s->st) > 0) ce_invuln_request(ce_card_id(c), PS_BURST_INVULN);
@@ -544,8 +598,9 @@ static int on_tick_shooters(ce_card_t *c, uint32_t short_timer, uint32_t long_ti
                s->st.bursts, ox, oy, PEA_GAT_FRAMES / PEA_GAT_INTERVAL, PEA_GAT_ROWS,
                PEA_GAT_INTERVAL, PEA_GAT_FRAMES / PEA_GAT_INTERVAL * PEA_GAT_ROWS);
     }
-    if (out.burst_end)
-        ce_log("peashooter: gatling #%u done, %u peas fired in total", s->st.bursts, s->st.peas);
+    /* ★ 2026-10-15：原来这里 `if (out.burst_end) ce_log("… gatling #%u done …")` ✓ ——
+     *   现在爆发的结束**按帧**判定（可能在**不射击**的帧结束 ✗），所以那行日志搬到了
+     *   `on_tick_2` 的 `pea_burst_frame()` 返回处 ✓（`pea_out_t.burst_end` 不再被设置 ✓）。*/
     return 0;
 }
 

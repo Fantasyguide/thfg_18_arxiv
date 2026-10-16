@@ -20,7 +20,10 @@ static void run(pea_state_t *s, int n, uint32_t rnd, int *normal, int *gat, int 
         CHECK(o.rows == (o.fires ? (o.set == PEA_SET_GATLING ? PEA_GAT_ROWS : 1) : 0),
               "帧 %d：fires=%d rows=%d set=%d", i, o.fires, o.rows, o.set);
         *starts += o.burst_start;
-        *ends += o.burst_end;
+        /* ★★ 2026-10-15：爆发的**结束**现在由 `pea_burst_frame()`（**每帧** ✓）报 ⇒ 这里照卡侧
+         *   的真实顺序同步驱动（`on_tick_2`：`pea_burst_frame` → 无敌声明 → 射击回调 ✓）。
+         *   旧写法读 `o.burst_end` ✗ —— 那个字段已不再被设置（见 `peashooter_core.c` 的注释 ✓）。*/
+        *ends += pea_burst_frame(s);
         pea_frame(s);
     }
 }
@@ -114,6 +117,33 @@ static void test_two_cycles(void)
     CHECK(starts == 2 && ends == 2, "两个周期该开大 2 次，得到 start=%d end=%d", starts, ends);
     CHECK(gat == 2 * PEA_GAT_FRAMES / PEA_GAT_INTERVAL * PEA_GAT_ROWS, "开大颗数 %d", gat);
     CHECK(s.bursts == 2, "bursts=%u", s.bursts);
+}
+
+/* ★★★ 2026-10-15（owner 报「电大哥的**无敌一直存在**」✗ 的回归测试 ✓）：
+ *   症状 = **松手**（此后不再有射击帧 ✗）之后爆发还挂着 ⇒ 卡侧 `on_tick_2` 里那句
+ *   `ce_invuln_request(id, PS_BURST_INVULN)` 每帧照发 ⇒ 无敌一直存在 ✗。
+ *   病根 = 爆发倒计时原来只在 `pea_shoot_frame()` 里减 ✗，而它只在按住射击键时被调。
+ *   本测试**一枪都不打**、只按帧跑 ⇒ 爆发必须在 PEA_GAT_FRAMES 帧内走完 ✓。*/
+static void test_burst_ends_without_firing(void)
+{
+    pea_state_t s;
+    pea_out_t o;
+    int ends = 0;
+    pea_clear(&s);
+    pea_set_wait(&s, 0);
+    s.wait = 0;                                  /* 攒够了 ⇒ 下一帧开大 */
+    pea_shoot_frame(&s, &o);                     /* 这一帧开大 */
+    CHECK(o.burst_start == 1 && pea_burst_left(&s) > 0, "没开大");
+    CHECK(s.gat_left == (uint32_t)PEA_GAT_FRAMES, "开大那一帧不该顺手倒计时：gat_left=%u", s.gat_left);
+    /* 之后**只按帧**（不调 `pea_shoot_frame` ✗ = 松手 ✓）*/
+    for (int i = 0; i < PEA_GAT_FRAMES; ++i) {
+        ends += pea_burst_frame(&s);
+        if (i < PEA_GAT_FRAMES - 1)
+            CHECK(pea_burst_left(&s) > 0, "第 %d 帧就提前结束了", i + 1);
+    }
+    CHECK(ends == 1, "松手后爆发该正好结束 1 次，实际 %d", ends);
+    CHECK(pea_burst_left(&s) == 0, "松手后爆发还没结束 ⇒ 无敌会一直挂着 ✗");
+    CHECK(s.pending_wait, "爆发结束后该要一个新的随机等待");
 }
 
 static void test_inflight_and_cap(void)
@@ -261,6 +291,7 @@ int main(void)
     test_normal_cadence();
     test_gatling_shape();
     test_two_cycles();
+    test_burst_ends_without_firing();                /* ★ 2026-10-15：松手后爆发/无敌必须自己走完 ✓ */
     test_inflight_and_cap();
     test_clear();
     test_chain_pick();

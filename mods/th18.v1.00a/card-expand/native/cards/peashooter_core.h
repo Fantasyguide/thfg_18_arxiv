@@ -47,6 +47,12 @@ void pea_clear(pea_state_t *s);                        /* 局末 / 关店收子�
 void pea_set_wait(pea_state_t *s, uint32_t rnd);       /* 调用方在 pending_wait 时用游戏 RNG 喂进来 */
 void pea_shoot_frame(pea_state_t *s, pea_out_t *o);    /* 每个射击帧一次（要求 pending_wait == 0）*/
 void pea_frame(pea_state_t *s);                        /* 每帧一次（含不射击的帧）：inflight 倒数 */
+int  pea_burst_frame(pea_state_t *s);                  /* ★★ 2026-10-15：**每帧一次**推进开大倒计时 ✓
+                                                        *   返回 1 = 开大在本帧结束（卡侧据此打日志 ✓）。
+                                                        *   病因：原来只在 `pea_shoot_frame()` 里 `--` ✗，
+                                                        *   而那只在按住射击键时被调 ⇒ 松手就冻结
+                                                        *   ⇒ `ce_invuln_request(id,10)` 一直挂着 ✗
+                                                        *   （owner 实跑「电大哥无敌一直存在」✓）。*/
 int  pea_needs_cap(const pea_state_t *s);              /* 1 = 本帧要抬每敌每帧伤害上限 */
 int  pea_burst_left(const pea_state_t *s);             /* ★ P54：开大还剩几帧（0 = 没在开大）✓ —— 爆发无敌用它 ✓ */
 /* ★★ 2026-10-14（P40，owner 需求「电大哥」协同）：**电弹连锁**的选目标（纯函数 ✓，主机可测 ✓）。
