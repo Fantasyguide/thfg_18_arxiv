@@ -1,0 +1,24 @@
+script script464 {
+    // 109 · **魔理沙 C3 的激光贴图/粗细**（owner：「魔理沙 C3 的激光很细，贴图不对」✓）
+    //   ★ 一手出处：`local/th19.v1.10c/_ext/ecl/pl01.txt:427` 的 `ExtraAttack()`（= C3 ✓）：
+    //     `ins_600($A); ins_602($A, 38, 6);` ⇒ ★ 贴图 = `bullet.anm` 的 **sprite38** ✓
+    //       （`local/th19.v1.10c/anm/bullet/bullet.anm.txt:55` ⇒ `{ x:48, y:240, w:8, h:8 }` ✓）
+    //     `ins_604($A, -1.5707964f, -1.5707964f);` ⇒ 竖直 ✓
+    //     `ins_605($A, 8.0f, 8.0f);` ⇒ 速度 8 ✓
+    //     `ins_700($A, 512.0f, 512.0f, 0.0f, 14.0f);` ⇒ ★ 尺寸/持续 ✓
+    //   ★ 「512」的口径照本卡 C1 光束那支（`442_pofv109_c1m_beam.anm.txt` 的注释 ✓）：
+    //     一手 = `shot+0xb0` 每帧 +12 **伸到 512** ⇒ ★ **长度由卡侧给** ✓，本脚本只管朝向/贴图/层/透明度 ✓。
+    //   ★ 贴图切法（可复现 ✓）：`thanm -x 19 _ext/bullet.anm bullet/bullet1.png`
+    //     ⇒ 从 `bullet1.png` 切 `(48,240,8,8)` ⇒ `assets/ability/POFV109_C3M_LASER.png` ✓（8×8 ✓）。
+    //   ⚠ ❓ **待坐实**：8×8 切图拉成激光时的**横向宽度**（一手 `ins_700` 前两个参数量纲未坐实 ✗）
+    //     ⇒ 当前先用"同族同宽"的观感值（卡侧 scale.x ✓），★ 不写死成"一手" ✗。
+    layer(6);
+    sprite(@POFV109_C3M_LASER);
+    type(1);
+    anchor(1, 0);
+    scale(1.0f, 0.0f);
+    scaleTime(4, 1, 1.0f, 1.0f);
+    alpha(220);
+    blendMode(1);
+    stop();
+}

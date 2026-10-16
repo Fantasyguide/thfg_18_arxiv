@@ -5527,7 +5527,18 @@ static void pofv_c3m_beam(float x)
     s_c3m[k].live = 1; s_c3m[k].age = 0;
     s_c3m[k].life = 90;                     /* ❓②：出屏/寿命上限 */
     s_c3m[k].x = x; s_c3m[k].y = POFV_C3M_Y;
-    s_c3m[k].vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_POFV109_AURA_MARISA,
+    s_c3m[k].vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
+                         /* ★★★★★ 2026-10-16 **owner 报告修正**：「★ **魔理沙 C3 的激光很细，贴图不对**」✓
+                          *   ★ 原来这里借的是 ★ `POFV109_AURA_MARISA`（= **结界的竖带** ✗，本来就是细带 ✓）
+                          *   ⇒ ★ 与"很细 + 图不对"**完全吻合** ✓。
+                          *   ★ 一手（`local/th19.v1.10c/_ext/ecl/pl01.txt:427 ExtraAttack()` ✓）用
+                          *   ★ `ins_602($A, 38, 6)` = ★ **`bullet.anm` 的 `sprite38`**（`bullet.anm.txt:55`
+                          *   = `(48,240,8,8)` ✓）⇒ ★ 已照此切图（`thanm` 解 `bullet/bullet1.png` 后切 ✓）
+                          *   为 `assets/ability/POFV109_C3M_LASER.png`（8×8 ✓）＋ 脚本 **464** ✓。
+                          *   ⚠ ★ **横向宽度仍标 ❓** ✗ —— 一手 `ins_700($A, 512,512,0,14)` 的**量纲未坐实**；
+                          *   ★ 其中 "512" 已由本卡 C1 光束那支注释确认为"**长度**" ✓（`442_…anm.txt` ✓）
+                          *   ⇒ ★ 宽度先按"同族同宽"的观感给 ✓，★ **不写成"一手"** ✗（已登记 `TUNING` ✓）。*/
+                         CE_ANM_ABILITY_SCRIPT_POFV109_C3M_LASER,
                                         POFV_C3M_VM_LAYER);
     if (s_c3m[k].vm) {
         ce_anm_set_pos((uint32_t)s_c3m[k].vm, x, POFV_C3M_Y, 0.0f);
