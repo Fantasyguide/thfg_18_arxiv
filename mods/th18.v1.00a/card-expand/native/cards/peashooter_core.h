@@ -4,16 +4,23 @@
  * 两种形态，都由**我们自己的计数器**当 `Player__tick_shooters_for_ability_card` 的 short_timer
  * （引擎那个 `player+0x476d4` 松开射击键会跳，相位不可控）：
  *   平时  —— 每 PEA_INTERVAL 帧一颗大豌豆（PVZ 原版是 1.425 s 一颗；本卡取整 1 秒）
- *   开大  —— 每 PEA_GAT_INTERVAL 帧一排 PEA_GAT_ROWS 颗小豌豆，持续 PEA_GAT_FRAMES 帧
+ *   开大  —— ★ 2026-10-15 起：**每帧一颗**（`PEA_GAT_INTERVAL` = `PEA_GAT_ROWS` = 1 ✓，
+ *            方向由卡侧的 ±20° 随机表给 ✓），持续 `PEA_GAT_FRAMES` 帧 ⇒ 240 颗 / 2400 伤害 ✓
  * 计时只在**射击帧**推进（`+0x1c` 本来就只在按住射击键时广播），所以「开大」不会在不开火时白烧。 */
 #pragma once
 #include <stdint.h>
 
 #define PEA_INTERVAL      60    /* 帧：1 秒一颗（PVZ 原版是 1.425 s ≈ 85 帧，2026-09-08 用户改成整 1 秒）*/
 #define PEA_DMG           90    /* 一颗大豌豆（sht 里的 damage，此处只作对账）→ 90 DPS */
-#define PEA_GAT_INTERVAL   5    /* 帧：开大时每 5 帧一排 */
-#define PEA_GAT_ROWS       7    /* 一排 7 颗，横向铺开 ±48 px */
-#define PEA_GAT_DMG        7    /* 一颗小豌豆；一排同帧 49，稳在最低的每帧上限（Sakuya 60）之下 */
+/* ★★★ 2026-10-15（owner 同一批口径的后半句）：
+ *   「**一手的大招只有一种发弹：向前一个角度范围内的大量随机角度发弹**」✓
+ *   「**最好是一帧发一颗，而不是同时发几颗**」✓ ＋「**那就每颗 10**」✓（威力口径 ✓）
+ *   ⇒ 开大改成 **每帧一颗** ✓（原"每 5 帧一排 7 颗"✗；横向铺开 ±48 px 也取消 ✗ ——
+ *     方向改由卡侧的 ±20° 连续随机给 ✓），单颗伤害 7 → **10** ✓
+ *   ⇒ 一次爆发 = `PEA_GAT_FRAMES`(240) × 1 颗 × 10 = **2400** ✓（原 2352 ✓ ⇒ +2% ✓，总量基本不变 ✓）。*/
+#define PEA_GAT_INTERVAL   1    /* 帧：开大时**每帧一颗** ✓（owner：「一帧发一颗」✓）*/
+#define PEA_GAT_ROWS       1    /* ★ 一排 1 颗 ✓（横向铺开取消 ✗ ⇒ 见上）*/
+#define PEA_GAT_DMG       10    /* ★ owner：「**那就每颗 10**」✓（原 7 ✗）⇒ 每帧 10 伤害，远在最低上限 Sakuya 60 之下 ✓ */
 #define PEA_GAT_FRAMES   240    /* ★ P54（owner：「有无联动，爆发的时间均拉长一些」）100 → 240 ✓
                                  *   （= 48 排 × 7 = 336 颗；电弹模式下发射节奏另算 ✓）*/
 #define PEA_WAIT_MIN    1100    /* 帧：两次开大之间至少等这么久（射击帧计）*/
@@ -47,8 +54,23 @@ void pea_clear(pea_state_t *s);                        /* 局末 / 关店收子�
 void pea_set_wait(pea_state_t *s, uint32_t rnd);       /* 调用方在 pending_wait 时用游戏 RNG 喂进来 */
 void pea_shoot_frame(pea_state_t *s, pea_out_t *o);    /* 每个射击帧一次（要求 pending_wait == 0）*/
 void pea_frame(pea_state_t *s);                        /* 每帧一次（含不射击的帧）：inflight 倒数 */
+int  pea_burst_frame(pea_state_t *s);                  /* ★★ 2026-10-15：**每帧一次**推进开大倒计时 ✓
+                                                        *   返回 1 = 开大在本帧结束（卡侧据此打日志 ✓）。
+                                                        *   病因：原来只在 `pea_shoot_frame()` 里 `--` ✗，
+                                                        *   而那只在按住射击键时被调 ⇒ 松手就冻结
+                                                        *   ⇒ `ce_invuln_request(id,10)` 一直挂着 ✗
+                                                        *   （owner 实跑「电大哥无敌一直存在」✓）。*/
 int  pea_needs_cap(const pea_state_t *s);              /* 1 = 本帧要抬每敌每帧伤害上限 */
 int  pea_burst_left(const pea_state_t *s);             /* ★ P54：开大还剩几帧（0 = 没在开大）✓ —— 爆发无敌用它 ✓ */
+/* ★★ 2026-10-15（owner 报「**电大哥的弹幕把我主机的弹幕也弄成全方向随机的了**」✗ ⇒ 判据抽纯 ✓）：
+ *   `on_bullet_created` 是**每颗弹出生都广播** ✓ 的钩子 ⇒ 必须能判"这颗弹是不是 77 的" ✓。
+ *   判据 = 弹上的 **packed id**（`bullet+0xac` ✓）的**高 8 位就是 shooterset 组号** ✓
+ *   —— 一手：`Player__shoot_one_bullet(player, (set << 8) | 组内行号, timer, &pos, option)` ✓
+ *   而该 packed id 一路存进 `bullet+0xac` ✓（`engine/sht/th18/02-shooter-record.md:68-70` ✓）。
+ *   两个组号由**调用方**传进来 ✓（卡侧传 `sht_ids.h` 生成物里的 `CE_SHT_SET_PEA_NORMAL/_GATLING`
+ *   = **0x17 / 0x18** ✓）⇒ 本函数保持**纯整数** ✓、不依赖引擎也不写死字面量 ✓、主机可测 ✓。
+ *   ⚠ 卡片侧那两个 `PE_SET_NORMAL/GATLING`（0/1 ✗）**不是**组号 ✓ —— 它们是卡侧自建弹的块内序号 ✓。*/
+int  pea_bullet_is_ours(uint32_t packed_id, uint32_t set_normal, uint32_t set_gatling);
 /* ★★ 2026-10-14（P40，owner 需求「电大哥」协同）：**电弹连锁**的选目标（纯函数 ✓，主机可测 ✓）。
  *   从 (cx, cy) 出发，在 n 个候敌里挑一个：**在半径 r 内**、**id 不在 visited 里**（去过的不再连 ✓）、
  *   且**离 (cx, cy) 最近**的那个 ⇒ 返回下标；没有合格的就返回 -1 ✓。
@@ -69,7 +91,7 @@ int  pea_burst_left(const pea_state_t *s);             /* ★ P54：开大还剩
 #define PE_SPD_NORMAL    14.0f    /* = PEA_NORMAL.speed ✓ */
 #define PE_SPD_GATLING   18.0f    /* = PEA_GATLING.speed ✓ */
 #define PE_DMG_NORMAL     90      /* = PEA_NORMAL.damage ✓ */
-#define PE_DMG_GATLING     7      /* = PEA_GATLING.damage ✓ */
+#define PE_DMG_GATLING    10      /* = PEA_GATLING.damage ✓（★ 2026-10-15 owner：「那就每颗 10」✓）*/
 #define PE_HIT_W_NORMAL  16.0f    /* = PEA_NORMAL.hit_w/h ✓ */
 #define PE_HIT_W_GATLING 12.0f
 #define PE_ELEC_SLOW     4.0f     /* ★ P50（owner：弹速还是快了）2.0 → 4.0 ⇒ 14/4 = **3.5** px/帧、机枪 18/4 = 4.5 ✓ */     /* ★★ P47（owner 逐字：「电弹的弹速需要比普通豌豆慢一倍」✓）

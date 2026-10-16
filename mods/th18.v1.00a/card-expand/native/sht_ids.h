@@ -2,7 +2,7 @@
 #pragma once
 
 #define CE_SHT_SET_PEA_NORMAL               0x17   /* 追加，1 shooter */
-#define CE_SHT_SET_PEA_GATLING              0x18   /* 追加，7 shooter */
+#define CE_SHT_SET_PEA_GATLING              0x18   /* 追加，1 shooter */
 #define CE_SHT_SET_SEASON_SPRING            0x19   /* 追加，1 shooter */
 #define CE_SHT_SET_SEASON_SUMMER            0x1a   /* 追加，1 shooter */
 #define CE_SHT_SET_SEASON_FALL              0x1b   /* 追加，1 shooter */

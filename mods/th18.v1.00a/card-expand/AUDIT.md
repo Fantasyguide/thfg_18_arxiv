@@ -32422,3 +32422,53 @@ DLL 未重发 ⇒ 本轮的 5 处改动**尚未进入游戏** ✓（下次发版
     ⇒ 该脚本头注释应改成 504 ✓（**只在规格里 ✓，不动任何产物 ✓**）。
 - **待办**：已按 owner 裁定收敛 ✓ —— 唯一保留项：**leveledit 侧要发布/更新时，本闸的 C1 必须对新组合再跑一次**
   ✓（命令：`python3 tools/check_modkit_packages.py --modkit <modkit>` ✓；它带 DLL 或带 `default.ecl` 的那天就会响 ✓）。
+
+### §BE-PEA-ELEC-2026-10-15（2026-10-15，DSH agent）：77（**别人的卡**）电大哥三处缺陷 + 共享件 `sdk.c` 的货架判据
+
+owner 2026-10-15 实跑逐字：
+  ·「**电大哥的弹幕怎么把我主机的弹幕也弄成全方向随机的了**」✗
+  ·「**植物大战僵尸里面的电大哥是向前方一个角度范围内随机散射子弹，你目前做成了全向散射**」✗
+  ·「**±20° 之间完全随机**」✓
+  ·「**电大哥的无敌似乎一直存在**」✗
+  ·「（108 + 豌豆射手 + 破损核心同装时）**（货架）最下角留出来了主动卡的位置**」✗
+
+> ⚠ 按协作纪律 1：**77 是别的作者的卡** ✓ ⇒ 逐条登记在案 ✓（作者查本清单即可 ✓）。改动只碰
+> 77 自己的文件（`cards/peashooter.c` / `cards/peashooter_core.{c,h}` / `tests/test_peashooter_core.c`）
+> ＋ 一个**共享件** `sdk.c`（下面第 ③ 条 ✓，对既有卡的影响面写在条目里 ✓）。
+
+| # | 文件 → 改了什么 | 为什么（短版）| 怎么验证的 |
+| --- | --- | --- | --- |
+| ① | `cards/peashooter.c`：`on_bullet_created` 加**认弹闸** ✓ | 该钩子**每颗弹都广播** ✗、原来没判"是不是我的弹" ✗ | `make dll` rc=0；63 套单测 ✓ |
+| ② | `cards/peashooter.c`：整圈 16 向表 ⇒ **±20° / 41 项** ✓ ＋ 生成脚本 ✓ | owner：「前方…随机散射」✓「±20° 完全随机」✓；卡侧禁 libm ✗ | 生成器产物 41 项**逐字一致** ✓ |
+| ③ | `peashooter_core.{c,h}`：新增 `pea_burst_frame()`（**每帧** ✓）| 倒计时原来只在射击帧减 ✗ ⇒ 松手冻结 ⇒ 无敌永挂 ✗ | ★ 新回归 `test_burst_ends_without_firing()` ✓ |
+| ④ | **共享件** `sdk.c`：帧初**每帧重采**"当前主动卡 UI 在不在" ✓ | 该标志只在认领时采一次 ✗ ⇒ 陈旧 1 ⇒ 货架空位 ✗ | `make dll` rc=0；`test_sdk_core.c` 全绿 ✓ |
+| ④′ | `cards/youkai.c`：`yk_hud_claim()` 加**只读诊断**一行 ✓ | 分开"陈旧"与"判据语义"两种可能 ✓ | 待 owner 实跑一局读日志 ✓ |
+| ⑤ | `tests/test_peashooter_core.c`：驱动按新契约同步 ✓ | ③ 改了契约 ⇒ 测试必须同步 ✓ | `make quick` rc=0 ✓ |
+| ⑥ | **共享件** `tools/gen_drift.py`：加 `check_pea_spread()` ✓ | 那张表是生成物 ✓ ⇒ 手改数字没人发现 ✗ | ★ **正负双向**验过 ✓ |
+| ⑦ | `tests/test_peashooter_core.c`：新增 `test_bullet_is_ours()` ✓ | ① 的判据抽纯 ⇒ 可主机回归 ✓ | `make quick` rc=0 ✓ |
+| ⑧ | `cards/peashooter.c`：**整组删除 P44 扇形** ✗ | owner：「用 (a) 替换 (b)」✓「一手只有一种发弹」✓ | 残留 `grep`=0 ✓；`dll`/`quick`/`dllx87`/`cards-check` ✓ |
+| ⑨ | `peashooter_core.h` ＋ **共享资产** `assets/sht/append_shooterset.py` ＋ 测试：**一帧一颗 + 每颗 10** ✓ | owner：「一帧发一颗」✓「那就每颗 10」✓ | `make sht` rc=0 ✓（`sht_ids.h` 变「1 shooter」✓）|
+| ⏳ | 卡面文案待 owner 定 ✗（"一百多颗" ⇒ 240 颗）| 文案必须与实现一致 ✓ | — |
+
+**细节（长句放表外 ✓ —— `check-docs` 的 `[tables]` 闸要求单元格 ≤200 字符 ✓）**
+
+- ① 判据：`bullet+0xac` = `(set<<8)|行号` ✓（一手 `engine/sht/th18/02-shooter-record.md:68-70` ✓）⇒ `>>8` 组号 ∈ {`CE_SHT_SET_PEA_NORMAL`=**0x17**, `CE_SHT_SET_PEA_GATLING`=**0x18**}（生成物 `native/sht_ids.h:4-5` ✓）；⚠ 不是卡侧 `PE_SET_*` 的 0/1 ✗。
+- ③ 病根：`gat_left` 只在 `pea_shoot_frame()` 里减 ✓（`peashooter_core.c:43`），而它**只在 `on_tick_shooters`（按住射击键才广播 ✗）**里被调 ⇒ 松手 ⇒ 爆发冻结 ⇒ `pea_burst_left()>0` 永远成立 ⇒ 卡侧每帧的无敌声明一直挂着 ✗。
+- ④ 病根：该标志原来**只在认领 HUD 槽那一刻采样一次** ✗ ⇒ 之后牌组/当前卡变了没人再刷 ⇒ 陈旧 1 ⇒ 货架永远让出 `68..124` ⇒ owner 看到**空位** ✓（引擎判据 `mgr+0x38` ✓，`engine/card/th18/15-selected-card-hud.md:70` ✓）。
+- ④′ 的两种可能：`+0x38 == NULL` 而宽 700 ⇒ **陈旧**（已被 ④ 修掉 ✓）；`+0x38 != NULL` ⇒ **判据语义**问题（非主动卡也留了对象 ✗）⇒ 那就要读当前卡 `category == 0` ✓（`cards_def.c:93` 表行 `+0x0c` ✓、卡对象 `+0x4c` 指向表行 ✓）。
+- ⑥ 负向验证：把第 0 项 `-0.3420f` 手改成 `-0.3421f` ⇒ rc=**1** ✓ 且指名「第一处不同在第 0 项」+ 两侧原值 ✓；改回后 rc=0 ✓、工作区无残留 ✓。
+- ⑧ 删的范围：`PS_FAN_*` 四常量 ＋ `s_fan[]` 13 项表 ＋ `ps_proj_fan()` ＋ `s_ball_last`/`s_log_fan`/`s_fan_n` ＋ `on_tick_shooters()` 两处调用 ＋ `clear` 复位 ＋ 诊断行的 `大招扇=%u` ✓。
+- ⑨ 三处一致性：`PEA_GAT_INTERVAL` **5→1**、`PEA_GAT_ROWS` **7→1**、`PEA_GAT_DMG` **7→10**、`PE_DMG_GATLING` **7→10** ＋ 0x18 组 `fire_rate=1`/1 条/`damage=10` ✓ ⇒ 一次爆发 240 颗 × 10 = **2400** ✓（原 2352 ✓，+2% ✓）；每帧 10 仍远低于最低每帧上限（咲夜 60）✓。
+
+**对既有卡的影响面（共享件 ④ ✓）**：`sdk.c` 这一句只**读**引擎的 `mgr+0x38`（与 `sdk.h` 里四个认领入口
+同一读法 ✓）⇒ **不写引擎** ✗、不改任何卡的声明数据 ✓；唯一行为变化 = 货架让位判据**不再陈旧** ✓
+⇒ 影响面 = **所有**认领左下角 HUD 的卡（107/109/110/111/112/113/115/116/117 与原生卡面让位 ✓）
+**都只会更准** ✓（此前"牌组换掉后仍让位"的陈旧现象对所有卡都存在 ✓）。
+
+**回归跑了什么**：`make dll` rc=0 ✓（无新警告 ✓）、`make quick` rc=0 ✓（63 套主机单测全绿 ✓，
+含 `peashooter_core: OK` ✓ 与 `youkai_core: 12785 checks / 0 failed` ✓）、`make sht` rc=0 ✓。
+⚠ **`make check` 的 `anm-verify` 与 `check-docs` 在本机仍红 ✗，但与本批无关** ✗：2026-10-16 22:55
+`local/` 被并发会话毁成 30 字节文件，本机 **TH08（v1.00d，日文版）样本已无** ✗（D 盘那份是**汉化版**，
+`thdat` 全新构建后仍报 `th08_read: incorrect entry magic` ✗ ⇒ 只有 owner 手上有正版样本 ✓）
+⇒ `make anm` 的 `build_player_anm.py` 一步做不了 ⇒ `anm-verify` 连带红 ✓；`check-docs` 另有 4 处
+指向已丢失的 `local/_scratch/*.md` ✗。**样本一到位即重跑整树闸再并 main** ✓（纪律：不许红状态提交 ✓）。
