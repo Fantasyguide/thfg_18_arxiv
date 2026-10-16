@@ -2943,6 +2943,20 @@ int __cdecl BP_ce_item_frame(x86_reg_t *regs, void *bp_info)
      * 只在比当前计时器更长时才写 ⇒ 不截短别人给的无敌、也不动引擎自己的）。
      * 卡只需要 `ce_invuln_request(id, frames)` 声明，落笔由 SDK 统一做（单一落笔，EVENTS-CONTRACT §1）。*/
     ce_invuln_apply();
+    /* ★★★ 2026-10-15（修 owner 报的「108 + 77 + 71 同装时，左下角**留出了主动卡的位置**」✗）：
+     *   「左下角那块原生『当前（选中）主动卡』UI 在不在」这个标志（`s_hud_card_present` ✓，
+     *   见 `sdk_core.h` 的 `ce_hud_card_set()`）原来**只在认领 HUD 槽那一刻采样一次** ✗ ——
+     *   认领之后牌组 / 当前卡变了**没人再刷** ⇒ 陈旧值 1 ⇒ 货架永远让出 `68..124` 那一段 ⇒
+     *   owner 看到的正是那道**空位** ✓（引擎侧判据 = `ABILITY_MANAGER->+0x38` ✓，为 0 时
+     *   `0x408c30` 对整棵树 `and [vm+0x534],~2` ⇒ 那块 UI **一个像素都不画** ✓
+     *   —— 一手 `engine/card/th18/15-selected-card-hud.md:70` ✓）。
+     *   ⇒ 改在**每帧帧初**重采一次 ✓（同位置先例：`ce_invuln_apply()` / `ce_poc_apply()` ✓）：
+     *     块的**位置仍在认领时算** ✗（HUD-LAYOUT §4.4「认领之外不重排」不动 ✓），
+     *     但**判据不再陈旧** ✓ —— 新一关的认领（`ce_hud_stage_begin` 的纪元 ✓）与卡侧
+     *     "先算宽度"的查询（`ce_hud_row_remaining_w()` ✓）都读到当前真实状态 ✓。
+     *   ⚠ 只**读** `mgr+0x38`（与上方各认领入口同一读法 ✓），不写引擎 ✗；
+     *     `CE_PLAYER()` 为 0（非游玩态）时不动 ✓ —— 与 `ce_invuln_apply()` 的守卫同款 ✓。*/
+    if (CE_PLAYER()) ce_hud_card_refresh();
     /* ★ 2026-09-15：把「PoC 高度层」（收点线 `player+0x47998`）的聚合值落到字段上（每帧一次）。
      *   有声明 ⇒ 写 + 置 `Gui+0x194` bit `0x2000`（开那条开局指示线）；声明全撤 ⇒ 写回基准；都没有 ⇒ 一个字不写。
      *   ★ 本帧点**在道具池 body 之前**（见 `sites.py` 的 `ce_item_frame`）⇒ 引擎自己那四条

@@ -7039,6 +7039,7 @@ static int on_ctor(ce_card_t *c)
  *   本卡原来只在 `on_load`（每关一次）认领；而**纪元清表**（十二合一中盘发卡那批 / 换关竞争）
  *   之后表里就没有我们了 ⇒ 原来会整关停在兜底常量、不进系统（117 的实跑日志
  *   `wba_wc: hud geom … path=fallback` 就是同一现象）。*/
+static int s_hud_sel_seen = -1;   /* ★ 2026-10-15：货架诊断限频（结论变化才打一行 ✓）*/
 static void yk_hud_claim(ce_card_t *c, yk_card_t *s)
 {
     ce_hud_block_t blk;
@@ -7049,6 +7050,27 @@ static void yk_hud_claim(ce_card_t *c, yk_card_t *s)
     blk.side = CE_HUD_SIDE_PINNED;                 /* 非 pinned 会被 pinned 入口拒掉 */
     s->hud_ready = (uint8_t)(ce_hud_slot_claim_pinned_card(
         ce_card_id(c), &blk, YK_HUD_PIN_X, YK_HUD_PIN_Y, &s->hud) ? 1 : 0);
+    /* ★ 2026-10-15（owner 报「108 + 77 + 71 同装 ⇒ 左下角**留出了主动卡的位置**」✗ 的**只读**诊断 ✓）：
+     *   打一行「引擎判据 `mgr+0x38` vs 货架剩余宽」——有卡面 ⇒ 起点 124 ⇒ 宽 **700** ✓；
+     *   没有 ⇒ 起点 68 ⇒ 宽 **756** ✓（底边右端 `CE_HUD_X_MAX` = 824 ✓，算式见 `sdk_core.h` 的让位段 ✓）。
+     *   A/B 一眼分清：
+     *     · `+0x38 == NULL` 而宽是 700 ⇒ **陈旧** ✓（已由 `sdk.c` 帧初的每帧 `ce_hud_card_refresh()` 修掉 ✓）；
+     *     · `+0x38 != NULL` ⇒ **判据语义**问题（引擎对"非主动卡"也留了对象 ✗）⇒ 那就要换成
+     *       读当前卡的 `category == 0` ✓（`cards_def.c:93` 把 category 写在表行 `+0x0c` ✓，
+     *       卡对象 `+0x4c` 指向表行 ✓ —— 一手 `engine/card/th18/15-selected-card-hud.md:74` ✓）。
+     *   ⚠ 本段只读 ✗、不写引擎 ✓；定位完成后可整段删掉 ✗（它不进卡面文案 ✓）。*/
+    {
+        void *sel = CE_PLAYER()
+            ? *(void *const *)(CE_ABILITY_MGR() + CE_MGR_SELECTED_ACTIVE) : 0;
+        float rw = 0.0f;
+        int present = hud_card_present(sel) ? 1 : 0;
+        ce_hud_row_remaining_w(&rw);
+        if (present != s_hud_sel_seen) {
+            s_hud_sel_seen = present;
+            ce_log("youkai: 货架诊断 · mgr+0x38=%p present=%d 剩余宽=%.0f（700=让位 / 756=不让位）",
+                   sel, present, rw);
+        }
+    }
 }
 
 /* ============ ★★★ 2026-09-22（owner #26 · **风味选项**）决死窗口里全屏**敌弹**变红 =============

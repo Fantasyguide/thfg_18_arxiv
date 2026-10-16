@@ -32422,3 +32422,38 @@ DLL 未重发 ⇒ 本轮的 5 处改动**尚未进入游戏** ✓（下次发版
     ⇒ 该脚本头注释应改成 504 ✓（**只在规格里 ✓，不动任何产物 ✓**）。
 - **待办**：已按 owner 裁定收敛 ✓ —— 唯一保留项：**leveledit 侧要发布/更新时，本闸的 C1 必须对新组合再跑一次**
   ✓（命令：`python3 tools/check_modkit_packages.py --modkit <modkit>` ✓；它带 DLL 或带 `default.ecl` 的那天就会响 ✓）。
+
+### §BE-PEA-ELEC-2026-10-15（2026-10-15，DSH agent）：77（**别人的卡**）电大哥三处缺陷 + 共享件 `sdk.c` 的货架判据
+
+owner 2026-10-15 实跑逐字：
+  ·「**电大哥的弹幕怎么把我主机的弹幕也弄成全方向随机的了**」✗
+  ·「**植物大战僵尸里面的电大哥是向前方一个角度范围内随机散射子弹，你目前做成了全向散射**」✗
+  ·「**±20° 之间完全随机**」✓
+  ·「**电大哥的无敌似乎一直存在**」✗
+  ·「（108 + 豌豆射手 + 破损核心同装时）**（货架）最下角留出来了主动卡的位置**」✗
+
+> ⚠ 按协作纪律 1：**77 是别的作者的卡** ✓ ⇒ 逐条登记在案 ✓（作者查本清单即可 ✓）。改动只碰
+> 77 自己的文件（`cards/peashooter.c` / `cards/peashooter_core.{c,h}` / `tests/test_peashooter_core.c`）
+> ＋ 一个**共享件** `sdk.c`（下面第 ③ 条 ✓，对既有卡的影响面写在条目里 ✓）。
+
+| # | 文件 → 改了什么 | 为什么 | 怎么验证的 |
+| --- | --- | --- | --- |
+| ① | `cards/peashooter.c` → `on_bullet_created` 里加**认弹闸**：读 `bullet+0xac`（= `(set<<8)\|行号` ✓ 一手 `engine/sht/th18/02-shooter-record.md:68-70` ✓）取 `>>8` 组号，只有 ∈ {`CE_SHT_SET_PEA_NORMAL`(**0x17**), `CE_SHT_SET_PEA_GATLING`(**0x18**)}（生成物 `native/sht_ids.h:4-5` ✓）才动 | 该钩子是**每颗弹出生都广播** ✓，原来只判"本卡在开大"、**没判这颗弹是谁的** ✗ ⇒ 开大期间**玩家主机每一颗弹**的朝向都被改写 ✗ | `make dll` rc=0；主机单测全绿（63 套 ✓）|
+| ② | `cards/peashooter.c` → 删掉 P54 的 `s_rand16[16]`（**整圈 16 向** ✗），换 `s_rand_spread[PS_SPREAD_N=41]`（**±20° / 1° 步长** ✓ 均匀抽 ✓）；新增生成脚本 `native/tools/gen_pea_spread_table.py` ✓ | owner 口径「前方一个角度范围内随机散射」✓「±20° 完全随机」✓；卡侧禁 libm ✗（`make dllx87`）⇒ 离线常量表 ✓ | 生成器产物与文件里 41 项 **diff 逐字一致** ✓ |
+| ③ | `cards/peashooter_core.{c,h}` → 新增 `pea_burst_frame()`（**每帧** ✓），把爆发的 `--gat_left` 从 `pea_shoot_frame()` **搬走** ✗；卡侧 `on_tick_2` 每帧调 ✓，结束日志随之搬 ✓（`pea_out_t.burst_end` 不再被设置 ✓）| 病根：`gat_left` **只在 `pea_shoot_frame()` 里减** ✓（`peashooter_core.c:43`），而那只在 `on_tick_shooters`（**只在按住射击键时广播** ✗）里被调 ⇒ **松手 ⇒ 爆发冻结 ⇒ `pea_burst_left()>0` 永远成立 ⇒ 卡侧每帧的 `ce_invuln_request(id,10)` 一直挂着** ✗ = owner 的"无敌一直存在" ✓ | ★ 新增回归 `test_burst_ends_without_firing()`：**一枪不打**、只按帧跑 ⇒ 爆发在 `PEA_GAT_FRAMES` 内走完 ✓、`pea_burst_left()==0` ✓ |
+| ④ | **共享件** `sdk.c` → 帧初钩子里（`ce_invuln_apply()` 旁 ✓）加一句 `if (CE_PLAYER()) ce_hud_card_refresh();` ✓ —— 即"**每帧重采**左下角原生'当前主动卡'UI 在不在"的标志 | 该标志（`s_hud_card_present` ✓）原来**只在认领 HUD 槽那一刻采样一次** ✗ ⇒ 之后牌组/当前卡变了**没人再刷** ⇒ 陈旧 1 ⇒ 货架永远让出 `68..124` ⇒ owner 看到一道**空位** ✓（引擎侧判据 = `ABILITY_MANAGER->+0x38` ✓，为 0 时 `0x408c30` 对整棵树清 visible ⇒ 一像素不画 ✓ 一手 `engine/card/th18/15-selected-card-hud.md:70` ✓）| `make dll` rc=0；既有的 `test_sdk_core.c` HUD 让位用例（`ce_hud_card_set()` 系列 ✓）全绿 ✓ |
+| ④′ | `cards/youkai.c`（**本卡自己的** ✓，不需 §BE）→ `yk_hud_claim()` 里加一段**只读诊断**：状态变化时打一行 `mgr+0x38` 指针 + `present` + `ce_hud_row_remaining_w()`（**700 = 让位 / 756 = 不让位** ✓）| 把 ④ 的两种可能分开：`+0x38 == NULL` 而宽 700 ⇒ **陈旧**（已被 ④ 修掉 ✓）；`+0x38 != NULL` ⇒ **判据语义**问题（引擎对非主动卡也留了对象 ✗）⇒ 那就要改判据（读当前卡 `category == 0` ✓：`cards_def.c:93` 写在表行 `+0x0c` ✓，卡对象 `+0x4c` 指向表行 ✓ 一手 `15-selected-card-hud.md:74` ✓）| 待 owner 实跑一局（108+77+71 ✓）读日志一行即可判定 ✓；定位后本段删掉 ✗ |
+| ⑤ | `tests/test_peashooter_core.c` → 驱动函数按新契约同步（每帧 `pea_burst_frame()` ✓）+ 新回归 ✓ | ③ 改了契约 ⇒ 必须同步测试 ✓（旧断言读 `o.burst_end` ✗ 会红 ✓）| `make quick` rc=0 ✓ |
+
+**对既有卡的影响面（共享件 ④ ✓）**：`sdk.c` 这一句只**读**引擎的 `mgr+0x38`（与 `sdk.h` 里四个认领入口
+同一读法 ✓）⇒ **不写引擎** ✗、不改任何卡的声明数据 ✓；唯一行为变化 = 货架让位判据**不再陈旧** ✓
+⇒ 影响面 = **所有**认领左下角 HUD 的卡（107/109/110/111/112/113/115/116/117 与原生卡面让位 ✓）
+**都只会更准** ✓（此前"牌组换掉后仍让位"的陈旧现象对所有卡都存在 ✓）。
+
+**回归跑了什么**：`make dll` rc=0 ✓（无新警告 ✓）、`make quick` rc=0 ✓（63 套主机单测全绿 ✓，
+含 `peashooter_core: OK` ✓ 与 `youkai_core: 12785 checks / 0 failed` ✓）、`make sht` rc=0 ✓。
+⚠ **`make check` 的 `anm-verify` 与 `check-docs` 在本机仍红 ✗，但与本批无关** ✗：2026-10-16 22:55
+`local/` 被并发会话毁成 30 字节文件，本机 **TH08（v1.00d，日文版）样本已无** ✗（D 盘那份是**汉化版**，
+`thdat` 全新构建后仍报 `th08_read: incorrect entry magic` ✗ ⇒ 只有 owner 手上有正版样本 ✓）
+⇒ `make anm` 的 `build_player_anm.py` 一步做不了 ⇒ `anm-verify` 连带红 ✓；`check-docs` 另有 4 处
+指向已丢失的 `local/_scratch/*.md` ✗。**样本一到位即重跑整树闸再并 main** ✓（纪律：不许红状态提交 ✓）。
