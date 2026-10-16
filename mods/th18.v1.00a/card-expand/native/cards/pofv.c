@@ -5488,7 +5488,14 @@ static void pofv_c2m_tick(void)
 #define POFV_C3M_MAX_BEAMS   40
 #define POFV_C3M_VM_LAYER     6
 #define POFV_C3M_X0       140.0f          /* ★ 一手 ✓ 起始 `%G = 140` */
-#define POFV_C3M_Y        448.0f          /* ★ 一手 ✓ 横扫所在行 */
+#define POFV_C3M_Y          0.0f          /* ★★ 2026-10-16 **镜像**（owner 口径 ✓）：
+                                          *   ★ 一手 = `pl01.txt:419` `ExtraAttack()` 里 `ins_400(%G, 448.0f)`
+                                          *   ⇒ ★ **放在 y = 448（版底那一行）** ✓（原来这里就是 448 ✓，一字不差 ✓）；
+                                          *   ★ 而 owner：「★ 一手 boss 是**从版底**爆菊的激光 ⇒ **咱们得从版顶往下**」✓
+                                          *   ⇒ ★ 本卡（自机侧）取**版顶那一行** = `y = 0` ✓
+                                          *   （全场 384×448 ✓ ⇒ 上边 = 0 ✓、下边 = 448 ✓）。
+                                          *   ⚠ 其余**一个字不动** ✗：`%G = 140` ✓、`125 / ($C−1)` 收窄 ✓、
+                                          *   左右镜像 `±%G` ✓、`$C/$D/$E/%F` 四张表 ✓ 全部照一手 ✓。*/
 #define POFV_C3M_XSPAN    125.0f          /* ★ 一手 ✓ 每波收窄 125 */
 
 static const unsigned char s_c3m_steps[8] = { 3, 3, 5, 4, 3, 3, 4, 5 };   /* $C ✓ */
