@@ -19,7 +19,11 @@
      `scaleTime(20,0,0,0)`、`alpha = 48 + rand(64)`、`color = 128 + rand(64)`×3、`+20: delete()`；
      `layer(7)/type(0)` 写在**子**脚本里（照原生 `enemy.anm` script89/91 的先例）。
   ③ **触发**：使魔本体那两支循环（本份 = script28/29）里，每个 `+4:` ⇒
-     `+2: scriptNewPos(新脚本, 0, 0); +2: scriptNewPos(新脚本, 0, 0)` —— 理由见下。
+     `+2: scriptNewRoot(新脚本, 0, 0); +2: scriptNewRoot(新脚本, 0, 0)` —— 理由见下。
+
+★★ 2026-10-15 订正（leveledit 侧一手 ✓）：上面 ③ 原稿写的是 **`scriptNewPos`(505)** ✗ ——
+   上游 `Fantasyguide/th18-leveledit` 的 commit `fc67cee` 明写「**505 会把火花画到世界原点**」✗
+   ⇒ 正确 opcode 是 **`scriptNewRoot`(504)** ✓（本文件只做**规格留痕** ✓；产物由 leveledit 那条线自己出 ✓）。
 
 ── 一手依据（TH08 侧；地址族见 `engine/enemy/th08/04-mystia-boss-familiars-leveledit-port.md` §9/§10）──
   TH08 的使魔拖尾 = 引擎**每 2 帧**在使魔位置撒 `SpawnEffect(0x26)`（`th08:0x42c4b1` 的常数 2 +
