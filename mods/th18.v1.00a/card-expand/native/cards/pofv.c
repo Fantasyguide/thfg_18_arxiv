@@ -3283,6 +3283,27 @@ static void power_vm_sync(void)
                    (int)POFV_POWER_VM_SPRITE,
                    (double)ce_poc_height_semantic(),
                    (double)(pp9 ? pp9[1] : 0.0f));
+            /* ★ 2026-10-16 **只读诊断**（定案"看不见"= 画在哪/画成什么样 ✓；13:26 日志已排除
+             *   生成/VM/存活/贴图/寿命/坐标/POC ✓）：★ 打 **VM 自己**的 `0x5f0` 实体坐标（`ce_anm_set_pos`
+             *   写进去的 ✓）、`+0x30` ExpHP 前缀坐标（**绘制点** ✓）、`scale`、`color1`（含 α ✓）、`sprite` ✓。
+             *   ★ 判读：★ 绘制点 ≠ 实体坐标 ⇒ **写错字段/空间** ✗（画到 (0,0) 角落 ✓）；★ 都对但 `scale≈0`
+             *   或 α≈0 ⇒ **脚本 423 参数** ✗；★ 都对却看不见 ⇒ **层/列表** ✗（13 ⇄ 6 ✓）。*/
+            if (first_vm) {
+                uint8_t *v5 = ce_anm_get_vm((uint32_t)first_vm);
+                if (v5) {
+                    const float *vent  = (const float *)(v5 + CE_ANM_VM_POS);
+                    const float *vdraw = (const float *)(v5 + 0x30);
+                    const float  sc5   = *(const float *)(v5 + CE_ANM_VM_SCALE);
+                    const uint32_t c15 = *(const uint32_t *)(v5 + CE_ANM_VM_COLOR1);
+                    const int32_t sp5  = *(const int32_t *)(v5 + CE_ANM_VM_SPRITE_ID);
+                    ce_log("pofv: [ITEMVM] set=(%.0f,%.0f) vm_ent=(%.0f,%.0f) vm_draw=(%.0f,%.0f)"
+                           " scale=%.3f c1=%08x spr=%d",
+                           (double)ix, (double)iy,
+                           (double)vent[0], (double)vent[1],
+                           (double)vdraw[0], (double)vdraw[1],
+                           (double)sc5, (unsigned)c15, (int)sp5);
+                }
+            }
             /* ★ 2026-10-16（owner：「就是被瞬间吃了！」✓，并明确排除"12 px / POC 线"✗）：
              *   ★ 排除 12 px 是对的 ✓（那支只吃 12 px 内 ✓，够不到结界边缘 ✗）；
              *   ★ 而 **POC 那一支没有半径** ✗（`pofv_core.c`：`if (player[1] < poc_y)` ⇒ 全屏收 ✓）
