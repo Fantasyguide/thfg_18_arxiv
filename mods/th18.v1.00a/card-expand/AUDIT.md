@@ -32500,3 +32500,59 @@ owner 2026-10-15 实跑逐字：
   PR **#111** 已合并 ⇒ `origin/main` = `upstream/Nipporita_dev` = `e2017b8b` ✓。
 - **`YK_LE_PROBE` 暂留** ✓：等 owner 那局同开实跑读出该场真实的 `subroutine_index`（应 ≥ 24 ✓）
   与他们的使魔形态后再关 ✓ / 再接线 ✓。
+
+### §BE-DEPLOY-RACE-2026-10-17（2026-10-17，DSH agent）：**多路 agent 并行的三起单点事故** + 发布并发安全三件套
+
+> owner 2026-10-17 批准（「我觉得可以，开一个小goal」✓）。结论先说 ✓：**PR + worktree 只护"源码线"** ✓
+> （多路 agent 改同一份源码 ⇒ 分支隔离、合并显式 ✓，今天这部分**没出过错** ✓）；今天**三起事故全部**发生在
+> **共享可写单点**上 ✗ —— 那些东西**不进 git** ⇒ PR 根本看不见 ✗。
+
+**(a) `local/` 被毁成 30 字节文件**（2026-10-16 22:55 ✓）
+- 现象：`local/` 这个**机器侧单点**（gitignored ✓）被并发会话写成一个**普通文件**（内容就是它自己的路径 ✓）
+  ⇒ 丢失 `local/th18.v1.00a/th18.exe`、`local/vendor/th-re-data`、**Ghidra 工程**、`_scratch/research-*.md` 等 ✓。
+- 一手证据：`ls -la $WT/local` 当时显示 `-rw-r--r-- … 30 Oct 16 22:04 local` ✓；`make anm` 报
+  「找不到 thanm」「找不到 anmmap」「缺 th17 样本」系列 ✓（工具与解包产物全在 `local/` 下 ✓）。
+- 已恢复：`vendor/{th-re-data,thpages,thtk}` ✓（thtk **重编** ✓；顺带发现本机 `cmake` 也没了 ⇒ 用 `~/.local/bin/cmake` ✓）、
+  `th18/th13/th16/th17` 样本并解包 ✓；`local/th08.v1.00d` 用 owner 给的**正版日文版 rar**（`9d7edf43…` ✓）恢复 ✓。
+  ✗ 未能恢复：Ghidra 工程（需重跑 bootstrap ✓）、`_scratch/research-*.md` 原件（现为**据引用重建**的版本 ✓）。
+- 对策：`local/` 这类单点要**声明归属**（建议 `local/STATUS.md` ✓）⇒ 与 (b)(c) 同属"单点纪律" ✓。
+
+**(b) modkit 的 DLL 被从落后树构建的产物覆盖**（2026-10-17 00:58 → 01:04 ✓）
+- 现象：本 agent 从**已合并的共享线**（`1d7e0d75`）构建并发布 `600b6d30…`（00:58 ✓）；**01:04** 被换成
+  `f502eaae…` ⇒ owner 实测「豌豆大招还是 360° / 还会甩主机弹 / 无敌还是无限」✗ 并说「感觉像是你的修改没部署」✓。
+- 一手证据：`md5sum` 三处（`mods/`、`thcrap/bin/mod_*`、`repos/…/255/`）当时 `f502eaae…` @ **01:04** ✓
+  而 `repos/…/255/th18_card_expand.dll` 仍是 `600b6d30…` @ 00:58 ✓；日志里 `le-probe` **1270 行**（有探针 ✓）
+  但 `货架诊断` **0 行** ✓ ⇒ 跑的是"**有探针、无当天修复**"的旧件 ✓（= 从落后 12 条的主检出构建 ✓）。
+- 处置：01:17 用 `deploy.py` **重新发回四处**（`600b6d30…` ✓，`货架诊断`=1 ✓）。
+- 对策：**① 来源校验** + **② 发布锁** ✓（见下 ✓）。
+
+**(c) 156 条 109 早苗直接提交在**主检出的 `main`** 上**（至 2026-10-16 ✓）
+- 现象：主检出 `/home/nipporita/renkolab` 的 `main` **领先 `origin/main` 156 条、落后 240 条** ✗
+  （全部作者 `Nipporita` ✓、日期 2026-10-16 ✓、内容是「109 素材/早苗 C3·C4」✓）⇒ 从这棵树构建的产物
+  **缺共享线内容**（最典型：P40–P53 的"电大哥" ⇒ 曾整段消失 ✓）。
+- 一手证据：`git rev-list --count origin/main..HEAD` = 156 / `HEAD..origin/main` = 240 ✓；
+  `git branch -r --contains b16ffffe` = **空** ✓（**任何远端都没有** ✗，只在本地 ✓）。
+- 处置：备份到 `origin/wip/109-sanae-c34` ✓ ⇒ PR #109 合并（`5ae68224` ✓）⇒ 两条线合一 ✓。
+- 对策：**③ 台账** ✓ + 本 §BE 的教训（构建源必须可追 ✓）。
+
+**三件套（都在 `mods/th18.v1.00a/card-expand/native/tools/deploy.py` ✓，挂钩在**任何写动作之前** ✓）**
+1. `guard_source()` ✓：`origin/main` 必须是 HEAD 的祖先（`git merge-base --is-ancestor origin/main HEAD` ✓）
+   ⇒ **落后即拒绝发布** ✗；HEAD ≠ `origin/main` 但**不落后** ⇒ 只**警告** ✓（允许测试发布 ✓）并记入台账 ✓；
+   拿不到 git 信息 ⇒ **警告但不拦** ✓（不制造假红 ✗）。只读 ⇒ **dry-run 也跑** ✓。
+2. `lock_acquire()/lock_release()` ✓：`<modkit>/.deploy.lock`（pid/who/head/main/time ✓）存在且
+   **新鲜（< `LOCK_FRESH_SEC` = 30 分钟 ✓ ❓自定，见 `TUNING.md` ✓）** ⇒ **拒绝**第二个发布者 ✗；
+   `--force` 可抢占 ✓（台账里 `forced: true` ✓）。中途失败退出时锁留到窗口过期（**自愈** ✓）或 `--force` ✓。
+3. **台账** `<modkit>/deploy-manifest.json` ✓（追加式 ✓，只留最近 50 条 ✓）：`time` / `who` / `head` /
+   `origin_main` / `on_origin_main` / `forced` / `targets` / `src_dll_md5` / `deployed`（四处目标各自 md5 ✓）；
+   收尾还**回读三处 DLL 必须同 md5** ✗ ⇒ 不同即判「被并发写花」并 `rc=1` ✓。
+
+**验证（正负双向 ✓ —— 说明：`8cb62d14` 的提交信息里那句"从主检出 dry-run ⇒ rc=1"当时**不成立** ✗：
+第一次负例被我自己写的 dry-run 早退跳过 ✗（已改成"只读检查 dry-run 也跑" ✓）；第二次**跑错了文件** ✗
+（主检出里还是旧 `deploy.py` ✓）。**真正**的负例见下 ✓ —— 本条目即订正 ✓。）**
+- ① 正例：工作区（HEAD == `origin/main` == `1d7e0d75`）⇒ 打印「✓ 来源校验通过」✓；
+- ① 负例（**用一次性工作区**：`git worktree add --detach /tmp/rl-stale 5ae68224`（落后 12 条 ✓），
+  把**新** `deploy.py` 拷进去再跑 ✓）：**rc=1** ✓「来源校验不过：本树**落后** origin/main ⇒ 拒绝发布」
+  ＋点出 01:04 的先例 ✓ ⇒ **即今天那起事故会被当场拦住** ✓；
+- ② 负例：造一个新鲜 `.deploy.lock` ⇒ **rc=1** ✓「发布锁被占（0.0 分钟前）⇒ 拒绝发布」✓（测试锁已清 ✓）；
+- ③ 正例：真发布一次 ⇒ 台账写入第 1 条（`head=origin_main=1d7e0d75`、`on_origin_main=true`、
+  `src_dll_md5=600b6d30…`、`targets=24` ✓）＋ 三处 DLL 回读同 md5 ✓ ＋ 锁自动释放 ✓。
