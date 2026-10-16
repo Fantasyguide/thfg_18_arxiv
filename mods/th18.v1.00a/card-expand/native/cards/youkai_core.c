@@ -2419,3 +2419,29 @@ int yk_orbit_offset(unsigned step, float radius, float *dx, float *dy)
     *dy = yk_orbit_sin[step] * radius;
     return 1;
 }
+
+/* ── leveledit 同开时的使魔归属（纯判据；口径见 HANDOFF-108-LEVELEDIT-FAMILIARS.md ✓）────────────
+ * ★ 在 `YK_LE_TRUSTED` 置 1 之前，本组**一律返回 0 = 不命中 / 不抑制** ✓
+ *   ⇒ 行为与今天**完全一致** ✗（判别常量必须由 P113 探针的实跑日志钉死 ✓，不许猜 ✓）。
+ * 常量一填好，就把 `YK_LE_TRUSTED` 改 1 ✓（并把 `youkai.c` 的探针 `YK_LE_PROBE` 关掉 ✓）。*/
+int yk_le_is_levelledit_fight(int boss_sub274, int boss_anm_main, int iv0)
+{
+    if (!YK_LE_TRUSTED) return 0;                    /* ❓常量未实测 ⇒ 保守回退 ✓ */
+    (void)boss_anm_main; (void)iv0;                  /* 实测后按日志里真正有区分度的那几项启用 ✓ */
+    if (YK_LE_BOSS_SUB274_MIN == YK_LE_BOSS_SUB274_MAX) return 0;   /* 未填 ⇒ 不命中 ✓ */
+    return boss_sub274 >= YK_LE_BOSS_SUB274_MIN && boss_sub274 <= YK_LE_BOSS_SUB274_MAX;
+}
+
+int yk_le_is_their_familiar(int enemy_id, int anm_main, int anm_slot0)
+{
+    if (!YK_LE_TRUSTED) return 0;                    /* ❓同上 ✓ */
+    (void)anm_main; (void)anm_slot0;
+    if (YK_LE_FAM_ID_FIRST == YK_LE_FAM_ID_LAST) return 0;
+    return enemy_id >= YK_LE_FAM_ID_FIRST && enemy_id <= YK_LE_FAM_ID_LAST;
+}
+
+int yk_le_mode(int has_108, int boss_sub274, int boss_anm_main, int iv0)
+{
+    if (!has_108) return 0;                          /* ★ owner 口径 ③：没 108 ⇒ 什么都不做 ✗ */
+    return yk_le_is_levelledit_fight(boss_sub274, boss_anm_main, iv0);
+}

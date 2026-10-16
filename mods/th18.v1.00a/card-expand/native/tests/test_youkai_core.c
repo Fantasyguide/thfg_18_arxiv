@@ -3136,6 +3136,22 @@ int main(void)
     check_beam_spec_files();
     check_orbit_gift_ledger();              /* ★ 2026-09-30：绕转使魔「一只敌人只补一次」的判定 */
 
+    /* ── leveledit（第三方米斯蒂亚补丁）同开时的使魔归属 ────────────────────────────────
+     * 口径见 `HANDOFF-108-LEVELEDIT-FAMILIARS.md` §1 ✓；本段钉的是**两条不变式** ✓：
+     *   ① **没装 108 ⇒ 恒不动作** ✓（owner 口径 ③：此时"只有人侧、没有妖侧"✓）；
+     *   ② **判别常量未实测（`YK_LE_TRUSTED == 0`）⇒ 恒不命中** ✓（保守回退：行为与今天完全一致 ✗）。
+     * ⚠ 常量钉死（P113 探针日志）之后，把下面 `#if 0` 那段打开并填真实值 ✓。*/
+    CHECK(yk_le_mode(0, 0, 0, 0) == 0);            /* 没 108 ⇒ 永不动作 ✓ */
+    CHECK(yk_le_mode(0, 12345, 678, 9) == 0);      /* 同上：**输入再"像"也不动作** ✓ */
+    CHECK(yk_le_mode(1, 0, 0, 0) == 0);            /* 常量未钉死 ⇒ 保守不命中 ✓ */
+    CHECK(yk_le_is_levelledit_fight(0, 0, 0) == 0);
+    CHECK(yk_le_is_their_familiar(0, 0, 0) == 0);
+#if 0   /* ❓实测后打开：把 REAL_* 换成日志里读到的真实值（见交接单 §4）✓ */
+    CHECK(yk_le_mode(1, REAL_SUB274, REAL_ANMMAIN, REAL_IV0) == 1);   /* 那场 ✓ */
+    CHECK(yk_le_mode(0, REAL_SUB274, REAL_ANMMAIN, REAL_IV0) == 0);   /* 没 108 ⇒ 不动作 ✓ */
+    CHECK(yk_le_is_their_familiar(REAL_FAM_ID, REAL_ANMMAIN, REAL_SLOT0) == 1);
+#endif
+
     printf("youkai_core: %d checks, %d failed\n", s_pass + s_fail, s_fail);
     return s_fail ? 1 : 0;
 }
