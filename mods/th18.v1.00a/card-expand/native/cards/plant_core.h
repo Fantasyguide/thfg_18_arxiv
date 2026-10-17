@@ -8,7 +8,7 @@
 #define PLANT_ITEM_SPEED   2.2f           /* 原生 main-drop 的速率 */
 #define PLANT_ITEM_UP      (-1.5707964f)  /* −π/2：原生撒落的上抛角 */
 #define PLANT_ITEM_SPREAD  0.9f           /* 扇形半角（弧度）：一次撒 25 个也不会叠成一坨 */
-#define PLANT_BAR_DY       46.0f          /* 血条中心相对植株中心的 y（植株下缘约 +36）*/
+#define PLANT_BAR_DY       36.0f          /* 血条中心相对植株中心的 y（场上缩到 0.7 后植株下缘约 +26～28；9b623ff1：46 → 36）*/
 #define PLANT_BAR_W        40.0f
 #define PLANT_BAR_H        4.0f
 
