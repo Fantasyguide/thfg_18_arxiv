@@ -1363,6 +1363,44 @@
 #define CE_ANM_ABILITY_SPRITE_ATLAS_BOSS_AURA_RED_5  809   /* = RED_AURA_5 */
 #define CE_ANM_ABILITY_SPRITE_ATLAS_BOSS_AURA_RED_6  810   /* = RED_AURA_6 */
 #define CE_ANM_ABILITY_SPRITE_ATLAS_BOSS_AURA_RED_7  811   /* = RED_AURA_7 */
+#define CE_ANM_ABILITY_ATLAS_ATLAS_SUNFLOWER        185   /* 画布 1152x128，9 个 sprite */
+#define CE_ANM_ABILITY_SPRITE_SF_1                  812   /* entry185 ATLAS_SUNFLOWER[0] */
+#define CE_ANM_ABILITY_SPRITE_SF_2                  813   /* entry185 ATLAS_SUNFLOWER[1] */
+#define CE_ANM_ABILITY_SPRITE_SF_3                  814   /* entry185 ATLAS_SUNFLOWER[2] */
+#define CE_ANM_ABILITY_SPRITE_SF_4                  815   /* entry185 ATLAS_SUNFLOWER[3] */
+#define CE_ANM_ABILITY_SPRITE_SF_5                  816   /* entry185 ATLAS_SUNFLOWER[4] */
+#define CE_ANM_ABILITY_SPRITE_SF_6                  817   /* entry185 ATLAS_SUNFLOWER[5] */
+#define CE_ANM_ABILITY_SPRITE_SF_7                  818   /* entry185 ATLAS_SUNFLOWER[6] */
+#define CE_ANM_ABILITY_SPRITE_SF_8                  819   /* entry185 ATLAS_SUNFLOWER[7] */
+#define CE_ANM_ABILITY_SPRITE_SF_9                  820   /* entry185 ATLAS_SUNFLOWER[8] */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_SUNFLOWER_0     812   /* = SF_1 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_SUNFLOWER_1     813   /* = SF_2 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_SUNFLOWER_2     814   /* = SF_3 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_SUNFLOWER_3     815   /* = SF_4 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_SUNFLOWER_4     816   /* = SF_5 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_SUNFLOWER_5     817   /* = SF_6 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_SUNFLOWER_6     818   /* = SF_7 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_SUNFLOWER_7     819   /* = SF_8 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_SUNFLOWER_8     820   /* = SF_9 */
+#define CE_ANM_ABILITY_ATLAS_ATLAS_MARIGOLD         186   /* 画布 1152x128，9 个 sprite */
+#define CE_ANM_ABILITY_SPRITE_MG_1                  821   /* entry186 ATLAS_MARIGOLD[0] */
+#define CE_ANM_ABILITY_SPRITE_MG_2                  822   /* entry186 ATLAS_MARIGOLD[1] */
+#define CE_ANM_ABILITY_SPRITE_MG_3                  823   /* entry186 ATLAS_MARIGOLD[2] */
+#define CE_ANM_ABILITY_SPRITE_MG_4                  824   /* entry186 ATLAS_MARIGOLD[3] */
+#define CE_ANM_ABILITY_SPRITE_MG_5                  825   /* entry186 ATLAS_MARIGOLD[4] */
+#define CE_ANM_ABILITY_SPRITE_MG_6                  826   /* entry186 ATLAS_MARIGOLD[5] */
+#define CE_ANM_ABILITY_SPRITE_MG_7                  827   /* entry186 ATLAS_MARIGOLD[6] */
+#define CE_ANM_ABILITY_SPRITE_MG_8                  828   /* entry186 ATLAS_MARIGOLD[7] */
+#define CE_ANM_ABILITY_SPRITE_MG_9                  829   /* entry186 ATLAS_MARIGOLD[8] */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_MARIGOLD_0      821   /* = MG_1 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_MARIGOLD_1      822   /* = MG_2 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_MARIGOLD_2      823   /* = MG_3 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_MARIGOLD_3      824   /* = MG_4 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_MARIGOLD_4      825   /* = MG_5 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_MARIGOLD_5      826   /* = MG_6 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_MARIGOLD_6      827   /* = MG_7 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_MARIGOLD_7      828   /* = MG_8 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_MARIGOLD_8      829   /* = MG_9 */
 #define CE_ANM_ABILITY_SPRITE_YOUKAI_ALICE_S11      415   /* 退役名 → RETIRED_BLANK（美术暂不进图集，见 ORDER.txt 退役段）*/
 #define CE_ANM_ABILITY_SPRITE_YOUKAI_ALICE_S12      415   /* 退役名 → RETIRED_BLANK（美术暂不进图集，见 ORDER.txt 退役段）*/
 #define CE_ANM_ABILITY_SPRITE_YOUKAI_ALICE_S13      415   /* 退役名 → RETIRED_BLANK（美术暂不进图集，见 ORDER.txt 退役段）*/
@@ -1818,3 +1856,5 @@
 #define CE_ANM_ABILITY_SCRIPT_POFV109_C4M_STAR      465
 #define CE_ANM_ABILITY_SCRIPT_POFV109_C3S_ORB       466
 #define CE_ANM_ABILITY_SCRIPT_POFV109_C4S_BULLET    467
+#define CE_ANM_ABILITY_SCRIPT_SUNFLOWER             468
+#define CE_ANM_ABILITY_SCRIPT_MARIGOLD              469
