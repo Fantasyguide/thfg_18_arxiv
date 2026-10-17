@@ -4,7 +4,7 @@
 
 #include "../cards/plant_core.h"
 
-#define SF_HP     150     /* 向日葵 / 金盏花当前的血量与周期，改卡里的数值时这里跟着改 */
+#define SF_HP     75      /* 向日葵 / 金盏花当前的血量与周期，改卡里的数值时这里跟着改（9b623ff1：150 → 75） */
 #define SF_PERIOD 300
 #define SF_ITEMS  25
 
