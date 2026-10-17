@@ -78,6 +78,10 @@ def guard_source(dry):
     · HEAD ≠ origin/main 但**不落后**（未合并分支做测试发布 ✓）⇒ 只**警告** ✓（并记进台账 ✓）；
     · 拿不到 git 信息 ⇒ **警告但不拦** ✓（不制造假红 ✗）。
     返回 `(ok, head, main_commit)` ✓。"""
+    # ★★ 2026-10-17（owner 批准 ✓）：**最前面**先过 `local` 陷阱闸 ✓（定义见 `guard_no_local()` ✓）
+    #   ⇒ 索引里还带着 `local` 条目就直接拒 ✗（哪怕这棵树在"来源"上是合法的 ✓）。
+    if not guard_no_local():
+        return False, "?", "?"
     # ★ 2026-10-17 订正：**dry-run 也要跑** ✓（只读 git ✓）—— 第一版给它留了"dry 直接放行"的早退 ✗，
      #   结果拿"落后 12 条的主检出"做负例时**没被拦住**、白测一次 ✗（dry-run 只打印、不写文件 ✓，
      #   本来就没有理由跳过这道只读检查 ✓）。
@@ -103,6 +107,33 @@ def guard_source(dry):
 
 def _lock_path(modkit):
     return os.path.join(modkit, ".deploy.lock")
+
+
+def guard_no_local():
+    """★★★ 2026-10-17（owner 批准 ✓）：**索引里还有 `local` 条目 ⇒ 直接拒绝发布/构建** ✗。
+
+    这是「checkout 会把整棵 `local/` 删成 30 字节文本」那个陷阱的**源头**：
+    `local` 曾被当符号链接入库（git 条目 `120000`，内容 = 它自己的路径 ⇒ 自指 ✗），
+    本机 `core.symlinks=false` ⇒ git 把它当普通文件写 ⇒ 任何
+    `checkout / switch / restore / stash` 都会**先删掉真的 `local/` 目录**、再写 30 字节文本 ✓
+    （2026-10-16 22:55 与 2026-10-17 02:58 两次事故 ✓，见 `AUDIT.md` §BE-DEPLOY-RACE-2026-10-17）。
+    共享线**已退跟踪**（`git rm --cached local` ✓），但**旧分支的尖端仍带着它** ✗
+    （本机 62 个、`origin` 62 个）⇒ 这道闸保证：**哪怕有人在旧分支上操作，也发不出去** ✓。
+    ★ 两条发布通道都覆盖：`tools/deploy.py` 与 `release.py`（后者 import 本模块 ✓）。
+    返回 True = 干净（可发布 ✓）。"""
+    # ⚠ 2026-10-17 订正：在**子目录**里 `git ls-files <path>` 会把 path 当"相对当前目录" ✗
+    #   （`--full-name` 只影响**输出**、不影响**匹配** ✗）⇒ 它去找 `native/local`、永远匹配不到 ⇒ 闸形同虚设 ✗。
+    #   ⇒ 先取仓库顶层，再 `git -C <顶层> ls-files ...` ✓（本函数的调用者就在 `native/` 下 ✓）。
+    _top = (_git("rev-parse", "--show-toplevel").stdout or "").strip()
+    _ls = (_git("-C", _top, "ls-files", "--error-unmatch", "local") if _top
+           else _git("ls-files", "--error-unmatch", "local"))
+    if _ls.returncode == 0:
+        print("❌ 索引里还有 `local` 条目 ⇒ **拒绝发布/构建** ✗")
+        print("   这是「checkout 会把整棵 local/ 删成 30 字节文本」陷阱的源头 ✓")
+        print("   修法：`git rm --cached local` 并提交 ✓（共享线自 3c5c2585 起已无此条目 ✓）")
+        print("   先例：2026-10-16 22:55 / 2026-10-17 02:58 两次整棵 local/ 被清空 ✓")
+        return False
+    return True
 
 
 def lock_acquire(modkit, force, dry):
