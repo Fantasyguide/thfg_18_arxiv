@@ -57,8 +57,32 @@ def prose_lines(text):
 
 
 # ── 检查项 ──────────────────────────────────────────────────────────────
+def gitignored(paths):
+    """返回其中被 .gitignore 覆盖的路径集合。
+
+    `local/` 这类**本机专属**目录是 gitignored 的（`.gitignore: local/*`），干净 clone 里根本
+    不存在 ⇒ 文档里指向它们的链接**不该由本检查器判死**（否则每台新机器一 clone 就红）。
+    ★ 规则：`make check` 不检查指向 gitignored 路径的链接。
+    ★ 2026-10-17（摘回 main 的 3ae53b6a，本分支此前没带过来）：原样搬这条规则 ——
+      `make check` 在干净 worktree 里红在 12 条 local/ 链接上，与本次改动无关。
+    """
+    rel = []
+    for p in paths:
+        try:
+            rel.append(p.resolve().relative_to(REPO).as_posix())
+        except ValueError:
+            continue                                  # 仓库外，不判
+    if not rel:
+        return set()
+    out = subprocess.run(
+        ["git", "-C", str(REPO), "check-ignore", "-z", "--stdin", "--no-index"],
+        input="\0".join(sorted(set(rel))), capture_output=True, text=True,
+    ).stdout
+    return {REPO / p for p in out.split("\0") if p}
+
+
 def check_links(files):
-    bad = []
+    missing = []                                       # (f, raw, 解析后的绝对路径)
     for f in files:
         text = f.read_text(encoding="utf-8", errors="replace")
         stripped = "\n".join(p for _, p, _ in prose_lines(text))
@@ -67,8 +91,14 @@ def check_links(files):
             if LINK_SKIP.match(raw) or not PATHISH.search(raw):
                 continue
             target = unquote(raw.split("#", 1)[0])
-            if target and not (f.parent / target).resolve().exists():
-                bad.append((f, None, f"链接指向不存在的文件: {raw}"))
+            if not target:
+                continue
+            tgt = (f.parent / target).resolve()
+            if not tgt.exists():
+                missing.append((f, raw, tgt))
+    ignored = gitignored({t for _, _, t in missing})
+    bad = [(f, None, f"链接指向不存在的文件: {raw}")
+           for f, raw, tgt in missing if tgt not in ignored]
     return bad
 
 
