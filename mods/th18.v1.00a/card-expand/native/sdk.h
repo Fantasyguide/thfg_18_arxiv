@@ -518,6 +518,31 @@ static inline float ce_player_x(void)
     return pp ? pp[0] : 0.0f;
 }
 
+/* —— 加火力（黑莲花 81 / 阳光戒指 82；`ce_spend_power` 的对称件）——
+ * 照零售**加火力卡的原型** `CardRingo__constructor` `0x40a0b0`（DANGO，+0x32 = +0.50）逐步搬：
+ *   changed = gain_power(&GlobalsInner, amount);              // 0x4573f0，见 engine.h
+ *   if (changed && PLAYER_PTR) { repopulate_options(); popup(玩家坐标, -1, 0xffffff40); play_sound(0xd); }
+ * 三个动作**只在档数真变了时**做，这是零售自己的条件（火力道具那条路 `0x446870` 一模一样）。
+ * 引擎自己钳 `MAX_POWER`、满了直接拒绝（返回 0、一点不加），所以**调用方不用先判满**；
+ * 满火力的 HUD 横幅（anm script 0x33）也由引擎在钳的那一路自己起。
+ * 返回**真正加进去的点数**（0..amount）—— 溢出的那部分由调用方决定怎么处理（黑莲花折算成金钱）。*/
+typedef int (__attribute__((thiscall)) *ce_fn_gain_power_t)(void *globals, int amount);
+typedef void (__attribute__((stdcall)) *ce_fn_popup_add_t)(const float *pos, int value, uint32_t argb);
+#define CE_POPUP_POWERUP_COLOR 0xffffff40u   /* CardRingo / 火力道具传的那个颜色，照抄 */
+static inline int ce_grant_power(int amount)
+{
+    int before = CE_CURRENT_POWER();
+    int changed = ((ce_fn_gain_power_t)CE_FN_GAIN_POWER)((void *)CE_ADDR_GLOBALS_INNER, amount) & 0xff;
+    int gained = CE_CURRENT_POWER() - before;
+    const float *pos = ce_player_pos();
+    if (changed && pos) {                                  /* 零售的 `changed && PLAYER_PTR` 门，一字不改 */
+        ce_repopulate_options();
+        ((ce_fn_popup_add_t)CE_FN_POPUP_ADD)(pos, -1, CE_POPUP_POWERUP_COLOR);
+        ce_play_sound(CE_SE_POWERUP, pos[0]);
+    }
+    return gained;
+}
+
 /* ==================== ★ PoC 高度层（收点线 / 「回收线」；2026-09-15 抽）====================
  * 为什么有这一层（用户 2026-09-15 口径，逐字）：「有一张**原生卡直接是降低 PoC 高度**，并且 **th14 卡也得追这个高度，
  * 包括信号系统**……**PoC 高度有一个指示线，在开局显示，如果开局 PoC 高度变了，显示也得变**」。
