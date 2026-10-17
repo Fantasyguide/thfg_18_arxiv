@@ -11,20 +11,21 @@
  * `0x446b00`）—— 于是黑桃 10（58，金钱道具 +10％）、辉针城（127，收点批结算）这些吃道具的卡都能叠上，
  * 直接写 `MONEY` 就全断了。一轮 25 个 = 25 金钱（一张便宜卡的一半）。
  *
- * 美术：PvZ1 原版 `Marigold.reanim` 逐帧渲染 9 帧（`ability.anm` script138 / `@MG_1..@MG_9`），
+ * 美术：PvZ1 原版 `Marigold.reanim` 逐帧渲染 24 帧（`ability.anm` script469（上游 138）/ `@MG_1..@MG_24`，
+ * 每帧停 4 game frame；9b623ff1 的「加密提速」把 9 帧 × 18 改成 24 帧 × 4），
  * 花头与花瓣的白底按原版的做法着成金黄；出处见 `assets/ability/marigold/_src/README.md`。 */
 #include "plant.h"
 
 static const plant_def_t MARIGOLD = {
     .tag        = "marigold",
     .script     = CE_ANM_ABILITY_SCRIPT_MARIGOLD,
-    .hp         = 150,          /* 与向日葵同：血量不多 */
+    .hp         = 75,           /* 与向日葵同：血量不多（9b623ff1 平衡：150 → 75）*/
     .period     = 300,          /* 每存活 5 s 产一轮 */
     .items      = 25,
     .item_type  = 2,            /* 金钱道具 */
     .power_cost = 100,          /* 1.00 火力 */
     .power_gate = 200,          /* 成本 + 一档 */
-    .radius     = 32.0f,        /* 植株 59×79，与向日葵同一档 */
+    .radius     = 22.0f,        /* 场上缩到 0.7（script469）→ 植株约 41×55，与向日葵同一档（9b623ff1：32 → 22）*/
 };
 
 static int  on_activate(ce_card_t *c)                   { return plant_activate(c, &MARIGOLD); }
