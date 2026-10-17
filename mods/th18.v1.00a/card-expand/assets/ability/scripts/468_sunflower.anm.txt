@@ -1,0 +1,44 @@
+script script468 {
+    // 向日葵（id 84，致敬植物大战僵尸）的场上本体：PvZ1 原版待机动画，9 帧循环。
+    // ★ 摘回 1d41bcdb（上游 = scripts/137_sunflower.anm.txt）：本仓脚本号已排到 467，
+    //   所以落成 468；正文只把 `script137` 改成 `script468`，其余一字未动。
+    // 骨架照炎魔 script91 / 青眼 script78：出场放大到 1.0（贴图 128×128 里居中放着 74×73 的原帧，
+    // 所以场上就是 PvZ 的原始像素大小），之后原地循环；坐标由 C 每帧写（不跟随自机，钉在召唤时的位置）。
+    // 挡到弹那帧的染色由 C 写 color1（青眼 / 炎魔同款做法），脚本不碰 color。
+    // 每帧停 18 game frame，9 × 18 = 162 帧 ≈ 2.7 s —— 与原动画（54 帧 × 50 ms）同速。
+    // interruptLabel(1) = 枯萎：缩小 + 淡出后 delete。
+    layer(13);
+    blendMode(0);
+    type(1);
+    alpha(255);
+    zWriteDisable(1);
+    sprite(@SF_1);
+    scale(0.0f, 0.0f);
+    scaleTime(10, 4, 1.0f, 1.0f);
+idle:
+    sprite(@SF_1);
++18: // 18
+    sprite(@SF_2);
++18: // 36
+    sprite(@SF_3);
++18: // 54
+    sprite(@SF_4);
++18: // 72
+    sprite(@SF_5);
++18: // 90
+    sprite(@SF_6);
++18: // 108
+    sprite(@SF_7);
++18: // 126
+    sprite(@SF_8);
++18: // 144
+    sprite(@SF_9);
++18: // 162
+    jmp(idle, 0);
+    stop();
+    interruptLabel(1);
+    scaleTime(16, 4, 0.2f, 0.2f);
+    alphaTime(16, 0, 0);
++16: // 178
+    delete();
+}

@@ -1,0 +1,45 @@
+script script469 {
+    // 金盏花（id 85，致敬植物大战僵尸）的场上本体：PvZ1 原版 Marigold.reanim 渲出来的待机动画，9 帧循环。
+    // ★ 摘回 1d41bcdb（上游 = scripts/138_marigold.anm.txt）：本仓脚本号已排到 467，
+    //   所以落成 469；正文只把 `script138` 改成 `script469`，其余一字未动。
+    // 骨架照炎魔 script91 / 青眼 script78：出场放大到 1.0（贴图 128×128 里居中放着 59×79 的植株，
+    // 所以场上就是原版的大小），之后原地循环；坐标由 C 每帧写（不跟随自机，钉在种下时的位置）。
+    // 挡到弹那帧的染色由 C 写 color1（青眼 / 炎魔同款做法），脚本不碰 color。
+    // 每帧停 18 game frame，9 × 18 = 162 帧；原版 idle 段是 25 帧 @ 33 fps ≈ 0.76 s，这里放慢到 2.7 s
+    // 与向日葵同速（两株并排时节拍一致好看）。
+    // interruptLabel(1) = 枯萎：缩小 + 淡出后 delete。
+    layer(13);
+    blendMode(0);
+    type(1);
+    alpha(255);
+    zWriteDisable(1);
+    sprite(@MG_1);
+    scale(0.0f, 0.0f);
+    scaleTime(10, 4, 1.0f, 1.0f);
+idle:
+    sprite(@MG_1);
++18: // 18
+    sprite(@MG_2);
++18: // 36
+    sprite(@MG_3);
++18: // 54
+    sprite(@MG_4);
++18: // 72
+    sprite(@MG_5);
++18: // 90
+    sprite(@MG_6);
++18: // 108
+    sprite(@MG_7);
++18: // 126
+    sprite(@MG_8);
++18: // 144
+    sprite(@MG_9);
++18: // 162
+    jmp(idle, 0);
+    stop();
+    interruptLabel(1);
+    scaleTime(16, 4, 0.2f, 0.2f);
+    alphaTime(16, 0, 0);
++16: // 178
+    delete();
+}
