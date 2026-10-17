@@ -4,7 +4,7 @@
 #pragma once
 #include <stdint.h>
 
-#define FL_HP             800
+#define FL_HP             400      /* 9b623ff1 平衡：800 → 400（爆炸仍是 12 × 100 = 1200，与火球术共用）*/
 #define FL_POWER_COST     200      /* 2.00 火力 */
 #define FL_POWER_GATE     300      /* 门槛 3.00：引擎 spend_power 永远保留 1.00，成本 + 一档才扣得实（原生 Tsukasa 同款：成本 1 档、门槛 2 档）*/
 #define FL_RECHARGE       600      /* 10 s，与青眼同 */
