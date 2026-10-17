@@ -40,6 +40,15 @@
 #define CE_FN_SPEND_POWER          0x457480   /* GlobalsInner__spend_power：thiscall(GlobalsInner*; amount) ret 4。CURRENT_POWER <= 一档时拒绝（返回 0、不扣）；
                                                  * 否则扣 amount 并钳到一档（永远保留 1.00），返回「档数是否变了」（0/1）。原生调用点：
                                                  * CardTsukasa__c_press 0x410f1c（push [0x4ccd40]; ecx = 0x4cccdc; call）、商店 0x418477、死亡 0x45c154。AUDIT §V */
+#define CE_FN_GAIN_POWER           0x4573f0   /* GlobalsInner__gain_power：thiscall(GlobalsInner*; amount) ret 4 —— spend_power 的对称件（2026-09-12 一手，
+                                                 * engine/card/th18/06-resource-economy.md §4b）。CURRENT_POWER >= MAX_POWER 时**拒绝、一点都不加**（返回 0，
+                                                 * 零售由此把火力道具转成分数）；否则 CURRENT_POWER += amount 并钳到 MAX_POWER，钳到那一路顺手删 GUI 的
+                                                 * `[0x4cf2e0]+0xbc` VM、在那里起 anm script 0x33（满火力横幅）。返回「档数是否变了」= (新−amount)/档 != 新/档。
+                                                 * 零售调用点：CardRingo__constructor 0x40a0c9（DANGO +0x32 = +0.50，加火力卡的原型）、火力道具 0x446a87、
+                                                 * ItemManager__on_tick__body 0x446343 / 0x44628a、CardMegumu__c_press 0x410c1b、CardMamizou__destructor 0x40d3a9 */
+#define CE_FN_POPUP_ADD            0x4645f0   /* PopupManager__sub_4645f0：**stdcall**(const float3 *pos, int value, u32 argb) ret 0xc —— 管理器是全局 [0x4cf420]，
+                                                 * 第一参是**世界坐标**（道具路径传 ItemManager+0xc2c，CardRingo 传 PLAYER+0x620）。value < 0 → 只写裸字形 0x0a
+                                                 * （火力上升箭头）而不是数字串。槽布局见本文件「弹字 ring」一节 */
 #define CE_FN_PLAYER_REPOPULATE_OPTIONS 0x45d5e0 /* Player__repopulate_options_and_notify_cards：thiscall(this = PLAYER+0x620; 一个从不读取的栈参) ret 4
                                                  * （尾 0x45dd0b `ret 4`；Tsukasa 0x410f27 `push ecx; lea ecx,[player+0x620]; call`）。按火力档重建自机子机、
                                                  * 尾部广播 on_power_level_change。扣火力后必须调（Tsukasa / 商店都这么做）。AUDIT §V */
@@ -357,6 +366,7 @@
 #define CE_CURRENT_LIVES()  (*(int32_t *)CE_ADDR_CURRENT_LIVES)
 #define CE_LIVES_MAX()      (*(int32_t *)CE_ADDR_LIVES_MAX)
 #define CE_CURRENT_POWER()  (*(int32_t *)CE_ADDR_CURRENT_POWER)
+#define CE_MAX_POWER()      (*(int32_t *)CE_ADDR_MAX_POWER)
 #define CE_POWER_PER_LEVEL() (*(int32_t *)CE_ADDR_POWER_PER_LEVEL)
 #define CE_CURRENT_BOMBS()  (*(int32_t *)CE_ADDR_CURRENT_BOMBS)
 #define CE_MAX_BOMBS()      (*(int32_t *)CE_ADDR_MAX_BOMBS)
@@ -538,6 +548,8 @@ typedef struct { int32_t prev; int32_t cur; float cur_f; } ce_timer_t;   /* zTim
 #define CE_SE_RELEASE    0x4d   /* Tenshi 发动 */
 #define CE_SE_CHANGEITEM 0x4e   /* 切主动卡 */
 #define CE_SE_TROPHY     0x4f
+#define CE_SE_POWERUP    0x0d   /* se_powerup.wav（th18-sound-table.md 一手表）：火力**跨档**时零售自己放的那一声
+                                 * —— CardRingo__constructor `0x40a0b0` 与 ItemManager__collect_power_item `0x446870` 都只在档数真变了时放 */
 #define CE_FN_PLAY_SOUND           0x476c70   /* stdcall(id) + xmm2 = 世界 x（声像）；ret 4 */
 #define CE_FN_ADD_LIFE             0x4575f0   /* thiscall(GlobalsInner*)，无栈参，裸 ret：CURRENT_LIVES+1 钳 LIVES_MAX、清碎片、音效 0x11、起特效、extend 计数 +1。CardLife/Mokou dtor 调它。AUDIT O26 */
 #define CE_FN_GUI_UPDATE_BOMBS     0x4420e0   /* thiscall(gui; bombs, fragments, max) ret 0xc：刷 HUD 炸弹行。
