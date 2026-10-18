@@ -187,9 +187,8 @@ def build_site_accounting(text, text_va):
     formal = []
     test = []
     for n in ours:
-        # 测试归档的断点（patch-test 里声明的那条）单独算：不想要观察者时可以关掉，等于免费腾位
-        # ★ 2026-10-19：`ce_test_deck` 已从发布版拆线（见 emit_test_patch 头注）⇒ 这里只剩追踪那一条。
-        (test if n == "ce_trace_alloc" else formal).append(n)
+        # 测试归档的断点（patch-test 里声明的那两个）单独算：不想要观察者时可以关掉，等于免费腾位
+        (test if n in ("ce_test_deck", "ce_trace_alloc") else formal).append(n)
     ext = external_sites()
     total = len(formal) + len(test) + sum(n for _, n, _ in ext)
     rows = [("正式 patch（我们）", len(formal), "patch/th18.v1.00a.js"),
@@ -1525,26 +1524,21 @@ def emit_shop_breakpoints(text, text_va):
 
 
 def emit_test_patch():
-    """patch-test：只在验证战线 B 时进栈。现在 **只剩一个**钩子：
+    """patch-test：只在验证战线 B 时进栈。两个钩子：
 
-    ★ 2026-10-19（发布纯净包）：`ce_test_deck`（`0x407ee3` 初始卡组）**已从发布版移出** ✗ ——
-      发布告警「`ce_test_deck` 有导出、没有已选 patch 声明」的成因就是我们导出它而
-      `th18_card_expand_255` 不声明。它是**开发用**起手卡组钩子（`start_deck` + 钩子追踪），
-      发布版不需要 ⇒ 站点与 `.def` 导出都不再声明 ✓。
-      代价：`th18_card_expand_test` 这个**开发包**会因此失效 —— **预期** ✓（发布版不需要它 ✓）。
-      源码函数 `BP_ce_test_deck` 仍留在 `bp_trace.c`（只是不再导出 ✓）；要复现开发态就把它
-      加回本函数 + 重跑 `tools/gen_def.py`。
-
-    ① ~~0x407ee3 `movzx eax, byte [eax+esi+0x5f608]`（8 字节，reset_cards 读初始卡组的一格）
-       挂断点 → BP_ce_test_deck：空槽(56) 依次换成 cards_dev.js `start_deck` 里的 id（默认 58）。~~
-       **2026-10-19 拆线（见上）** —— 原始说明留档。
+    ① 0x407ee3 `movzx eax, byte [eax+esi+0x5f608]`（8 字节，reset_cards 读初始卡组的一格）
+       挂断点 → BP_ce_test_deck：空槽(56) 依次换成 cards_dev.js `start_deck` 里的 id（默认 58）。
+       不写存档、不改任何文件；卡组编成里把前几格清空，开局就会分配这些卡。
     ② 0x411469 `cmp [edi+0x28], 0x100`（7 字节）挂 thcrap 断点 → BP_ce_trace_alloc
        把每次 allocate_new_card(id, mode) 记进日志。定论用它，不靠肉眼。
     """
-    # 初始卡组钩子（ce_test_deck）已拆线：原来它执行原 movzx 的语义、读到空槽(56) 且
-    # cards_dev.js 的 start_deck 还有 id 就换成下一个（esi = 槽序号、eax = 存档偏移基）。
+    # 初始卡组钩子改为断点（无手写机器码）：BP_ce_test_deck 执行原 movzx 的语义，读到空槽(56) 且
+    # cards_dev.js 的 start_deck 还有 id 就换成下一个；返回 0 跳过原指令。esi = 槽序号（0 起）、eax = 存档偏移基。
     out = {
-        "breakpoints": {
+        "breakpoints": {"ce_test_deck": {
+            "addr": "0x%06x" % TEST_MOVZX, "cavesize": 8,
+            "expected": "0fb6843008f60500",
+            "title": "测试：reset_cards 读初始卡组，空槽 → cards_dev.js start_deck 里的下一个 id"},
         "ce_trace_alloc": {
             "addr": "0x%06x" % TEST_TRACE, "cavesize": 7,
             "expected": "817f2800010000",
@@ -1933,8 +1927,7 @@ def emitted_breakpoint_names(text, text_va):
     `GetProcAddress` 那一步拿不到处理函数，**游戏里静默不生效**（不报错）。
     2026-09-12 真踩过一次：`ce_enemy_death` 加了站点与 handler、忘了 `th18_card_expand.def` 的导出。
     """
-    # ★ 2026-10-19：种子里的 `ce_test_deck` 已删（发布版不导出/不声明，见 emit_test_patch 头注）。
-    doc = {"breakpoints": {"ce_gate": {}}}
+    doc = {"breakpoints": {"ce_gate": {}, "ce_test_deck": {}}}
     # `patch-test/th18.v1.00a.js`（emit_test_patch）里还有几个断点，也要有导出（否则 `_test` 里静默失效）
     doc["breakpoints"].update(emit_test_patch().get("breakpoints") or {})
     doc["breakpoints"].update(emit_unlock_breakpoints(text, text_va))

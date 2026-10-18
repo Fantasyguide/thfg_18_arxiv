@@ -4871,7 +4871,6 @@ UI 列表尾插、组内后生成者后画（§2b.4）。
 | 2026-09-13 | **117 鬼形兽**（咆哮） | 见下方「§BE 详录 #10」 |
 | 2026-09-13 | **所有卡（共享件，追加式）** | 见下方「§BE 详录 #11」 |
 | 2026-09-13 | **所有卡（共享件，追加式）** | 见下方「§BE 详录 #12」 |
-| 2026-10-19 | **所有卡（共享件：`native/sites.py` / `native/th18_card_expand.def`）** | 见下方「§BE-RELEASE-CLEAN-2026-10-19」：发布版**不再导出/不再声明** `ce_test_deck`（开发用起手卡组钩子）|
 #### §BE-109 两格（2026-10-12，owner 口径「给 109 两格。你可以自己改，写 audit 即可」）
 
 - **动了哪些共享件**：
@@ -32901,39 +32900,3 @@ youkai: practice auto-equip 108 (ce_owned=1, r=4, spell=8)
   · `all_delta>0 而 hp_delta=0` ⇒ 命中了但被闸吃掉（`inv0>0` / flags bit0/bit5）—— 这说明 `yk_target_damageable()`
     的判据还漏了一条，把那一格补上即可；
   · `hp_delta>0` ⇒ 转嫁真的落地 ✓（`all_delta` 与 `hp_delta` 应同量级）。
-
-### §BE-RELEASE-CLEAN-2026-10-19（2026-10-19，DSH agent）：发布版**不再导出 `ce_test_deck`**（共享件 `sites.py` / `.def`）
-
-- **对象**：**所有卡（共享件）** + 发布流程；不碰任何一张卡的行为代码 ✓。
-- **改了什么**（3 处源码/生成物，最小改动）：
-  1. `native/sites.py` `emit_test_patch()`：从 `breakpoints` 里删掉 `ce_test_deck`（`0x407ee3`，
-     `cavesize 8`，`expected 0fb6843008f60500`），**只留** `ce_trace_alloc`（`0x411469`）；
-     原说明留档在同一个 docstring 里（带「2026-10-19 拆线」注）。
-  2. `native/sites.py` `emitted_breakpoint_names()`：种子 dict 里删掉 `ce_test_deck`
-     （否则 patch 不声明、`.def` 仍导出 ⇒ 启动器报「导出了但没有已选 patch 声明」）；
-     站点预算分类那行同步收窄成只认 `ce_trace_alloc`（测试归档从 2 条变 1 条）。
-  3. `native/th18_card_expand.def`：删掉 `BP_ce_test_deck @28`，按本仓惯例留一行 `;` 注释说明拆线；
-     `patch-test/th18.v1.00a.js` 由 `make gen` 重新生成（同步删掉那条声明）。
-- **为什么**：发布配置只选 `th18_card_expand_255`，它**不声明** `ce_test_deck`
-  （声明方是另一个包 `Renko_1055/th18_card_expand_test`）⇒ 我们的 DLL 导出它 = 发布告警
-  「dll 导出了 … 但没有已选 patch 声明断点」。发布版不需要起手卡组/钩子追踪，
-  ⇒ 直接不导出 = 最干净的修法（比在站点表里加开关少一条运行时分支 ✓）。
-- **代价（预期 ✓）**：`th18_card_expand_test` 这个**开发包**会因此失效（它的 `th18.v1.00a.js`
-  仍声明 `ce_test_deck`，但 DLL 不再导出 ⇒ thcrap 在 `GetProcAddress` 那步拿不到 handler ⇒
-  开发态起手卡组 + 该钩子的追踪行没了）。要复现开发态：把 `ce_test_deck` 加回
-  `emit_test_patch()` + 重跑 `tools/gen_def.py`。
-- **源码保留**：`native/bp_trace.c` 的 `BP_ce_test_deck` 函数**一行没删**（只是不再导出 ✓），
-  `start_deck.c` / `card_expand.h` 里对它的注释也照旧（历史说明）。
-- **对既有卡的影响面**：**零** ✓ —— 站点表里唯一删除的是开发钩子；正式 patch
-  `patch/th18.v1.00a.js` 的 213 条 binhack / 11 个 codecave **逐字节未变**（`make gen` 后
-  `git diff -- patch/` 为空 ✓），`sites_gen.h` 也未变（它本来就不含测试站点 ✓）。
-- **怎么验证的**：
-  · `make dll` **rc=0**；`make test-host` **rc=0**（`OK: 63 checks passed, 0 failed`）；
-  · `objdump -p th18_card_expand.dll | grep -i ce_test_deck` ⇒ **空** ✓（导出总数 34 → **33**：
-    32 个 `BP_*` + `thcrap_plugin_init`）；
-  · `strings -a th18_card_expand.dll | grep ce_test_deck` ⇒ **空** ✓（`ce_trace_alloc` 仍在 = 1 ✓）；
-  · `python3 tools/gen_def.py --check` ⇒ rc=0（`33 个导出 = 1 + 32 断点`，双向一致 ✓）；
-  · `python3 sites.py check` ⇒ rc=0（`断点导出对账 ✅ 32 个 BP_* 双向一致`；预算告警
-    「进程级 52 > 42」是**既有**的外部 `base_tsa` 20 条 + 我们 32 条，不是本次新增 ✗）。
-- **发布**：`tools/deploy.py --skip-build --force` 发 _255（patch js + DLL 三处 + 数据 + 资产），
-  四处 DLL 同 md5 + 台账见下一行（`deploy-manifest.json`）。
