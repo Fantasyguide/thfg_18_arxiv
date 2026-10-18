@@ -1,7 +1,10 @@
 # HANDOFF-108 · leveledit（第三方米斯蒂亚补丁）**同开**时的使魔归属
 
+> **版本**：TH18 v1.00a（`th18.exe`）；本文裸地址默认属该版本，跨版本处已带前缀。
 > **本文是什么**：owner 2026-10-15 定的口径 + 到本文为止**已核到什么程度** + 还缺什么 + 怎么补。
 > **硬约束**：**不改 leveledit 任何文件** ✗；只在**我方 108**（[`native/cards/youkai.c`](native/cards/youkai.c)）里加门/接线 ✓。
+> ⚠ 2026-10-18 唯一例外（owner 明确要求）：使魔血量写在**他们仓**的
+> `mods/stage02-mystia/translate.py`（ECL 的 `enmCreate` life 实参）—— 见 §7.4。
 > **不合并两个 mod** ✗（它们是两个各自独立的 thcrap 补丁 ✓；同开兼容的护栏见 [§BE-COEXIST-GUARD](AUDIT.md) 与
 > [`native/tools/check_modkit_packages.py`](native/tools/check_modkit_packages.py) ✓）。
 
@@ -111,3 +114,44 @@ le-probe: live=<n>
 - **没装 leveledit 的玩家**：判据不命中 ⇒ **行为与今天完全一致** ✓（108 照旧建自己的使魔 ✓）；
 - 探针对**性能**的影响：只有 boss 在场时每 30 帧一次读几个字段 + 一行 `ce_log` ✓（可忽略 ✓），
   且**完结即关** ✓。
+
+## 7. 2026-10-18（owner 口径第二、三轮）：接管使魔的**妖侧外观 / 切换音 / 转伤日志 / 血量**
+
+owner 逐字：「妖侧外观得切换，但是 1/2 转伤搞不清楚，你得上 log」＋「使魔切换还得有音效，
+总之就是**除了人侧外观，其他都得跟我们的使魔一致**，装了 108 的话」＋「目前使魔的血量有点低了」。
+
+**已落地（`youkai.c` §3.7b + §3.7 tail）**：
+
+1. **妖侧外观**（`yk_xfam_vm_tick()`，每帧，从 `yk_transfer_tick()` 最前面调）：
+   外观表 `s_xfam_vm[YK_XFAM_MAX]` 键 = `fam_id`；本体 VM = `zEnemyData.anm_vm_ids[0]`
+   = **`zEnemy + CE_ENEMY_ANM_VM0(0x1350)`**（= `0x122c + 0x124` ✓，读法同 117 `animal.c`）。
+   - 妖侧：**本体 alpha 置 0**（`ce_anm_set_color(vid, 0x00ffffff)`，与 `yk_fam_vm_follow()` 逐字同款）
+     ＋一支**常驻环**（脚本 `CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_RING` = **309**、
+     layer `YK_FAM_ANM_LAYER` = **7**、`interrupt 2` = 妖侧蓝）；
+   - 人侧：把**切换前存下的原色**写回一次（`body_hidden` 门，不每帧钉色，免得压掉他们的受击闪白）
+     ＋环发 `interrupt 3` 淡出（脚本自删）；
+   - **兜底**：`anm_vm_ids[0]` 解不出 VM ⇒ **什么都不做**（只按节流打 WARN），`body_saved/body_hidden`
+     一并作废，下一帧重试 ⇒ 绝不留半状态。VM 句柄变了（引擎重建）⇒ 重新存原色。
+   - **收尾**：`yk_drop_all()`（删卡 / 换关 / 局末 / 自机没了 / 世界没了）与 `on_ctor` 复位都调
+     `yk_xfam_vm_kill_all()` ⇒ 本体原色还回去。台账条目消失时也走 `yk_xfam_vm_kill_id()`。
+2. **切换音**：`ce_play_voice(YOUKAI_FAM_SHIFT, ce_player_x())` —— `YOUKAI_FAM_SHIFT` = 扩表
+   **0x5d**（资源 `assets/voice/YOUKAI_FAM_SHIFT.wav`；自建使魔那条路 `youkai.c` 的 `se_fam_press`
+   用的就是同一枚）。只在**全局侧的边沿**且场上真有接管的使魔时响**一次**；两个方向都响
+   （owner 2026-10-18 口径），自建那条路一字未改。
+3. **日志**（`ce_log`，全部带 `youkai/leveledit: ` 前缀）：
+   - `TAKEOVER familiar id=<id> ($I3=997, iv3@+0x14c4) -> external-familiar ledger (1/2 transfer to boss id=<id>)`
+   - `xfam hit id=<fam> dmg=<实际掉血> -> boss id=<boss> transfer=<真正加进 pending 的量> (1/2)`
+   - `transfer applied boss=<id> hp_before=<x> hp_after=<y> (hp_delta=…; amount=…, ext=…, 1/2; skipped …)`
+     —— 源建立那一帧记 (目标 id, HP)，**下一个 tick** 再读 HP（`ce_damage_rect` 的伤害在敌人侧
+     `0x45f0f0` 下一次结算；同帧读不到）。目标没了 ⇒ `hp_after=?`。
+   - `side -> YOUKAI / HUMAN (fam id=<id>)`
+   - 节流：**每只使魔每 30 帧最多一条**（`YK_XFAM_LOG_EVERY`）+ 每只 hit 日志上限 64 条
+     （`YK_XFAM_LOG_MAX`）+ 切侧日志上限 32 条；`transfer applied` 也按 30 帧一条并把被吞的条数
+     记进 `skipped`。
+4. **使魔血量**：改在 leveledit 仓 `mods/stage02-mystia/translate.py`（创建它的 boss 阶段
+   `lifeSet()` / 3，封顶 999 —— ≥1000 会置 `flags_lo 0x40000000`，ECL 没有自建使魔那条
+   「出生后回写三格 life」的后门）。逐值见该仓 `notes.md` 的 2026-10-18 节。
+
+未做 / 不改：**碰撞盒与免伤位一字未动**（他们那批仍是普通敌人：人侧撞到会 MISS、妖侧也没有
+我们那种「穿过去」的语义）—— 那是玩法改动，等 owner 另拍；**机体血量倍率**静态 ECL 表达不了，
+统一按灵梦基准。
