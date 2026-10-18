@@ -407,8 +407,12 @@ int ce_key_down(int vk)
     unsigned char st[256];
     if (vk < 0 || vk > 255) return 0;
 #if !CE_DEBUG_KEYS
+    /* ★ 2026-10-20 追加（owner：「**A 和 S 不是原版用键，拆掉**」）⇒ A/S 一并失效（它们只被
+     *   调试卡/调试动作用过：debug_del 选目标、season、pofv 的组合键）。原版用键只有
+     *   Z / X / 方向 / Shift / Ctrl(+B/C 等本体键) —— 这里过滤的全是**非原版调试键** ✓。*/
     if (vk == CE_VK_SPACE || vk == 0x49 /* 'I' */ ||
         (vk >= '0' && vk <= '9') ||
+        vk == CE_VK_A || vk == CE_VK_S ||
         vk == CE_VK_CONTROL || vk == CE_VK_SHIFT)
         return 0;
 #endif
