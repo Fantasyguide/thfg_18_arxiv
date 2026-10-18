@@ -2714,10 +2714,33 @@ int yk_orbit_offset(unsigned step, float radius, float *dx, float *dy);
 #define YK_LE_BOSS_SUB274_MIN    0
 #define YK_LE_BOSS_SUB274_MAX    0
 
+/* ★★★ 2026-10-18（**B2 接管判据**，一手 ✓）：leveledit 的使魔标记。
+ *
+ * 对方在 ECL 里给**每一只**生成的使魔打了 `$I3 = 997`：
+ *   `/home/nipporita/th18-leveledit/mods/stage02-mystia/translate.py:207-217` ——
+ *   ```c
+ *   void MystiaChild<n>() {
+ *       $I3 = 997;          // ← 就是这个标记
+ *       ...
+ *   }
+ *   ```
+ *   同段注释逐字：「`$I3 = 997` marks every generated familiar so the 108 card can recognise it
+ *   from `zEnemyData+ecl_int_vars[3]` (+0x14c4, i.e. EnemyData+0x298)」✓；
+ *   并说明 TH18 敌人只有 `$I0–$I3`、且没有任何可达 sub 读写 `$I3` ⇒ 标记活到敌人死亡 ✓。
+ *   ⇒ 运行时读法（一手偏移链）：`zEnemy*` 的 `+CE_ENEMY_DATA(0x122c) + 0x298`
+ *     = `zEnemy+0x14c4` = `ecl_int_vars[3]` ✓（`engine.h` 的 `CE_ENEMY_ECL_I0 0x14b8` 是 `[0]`，
+ *     `+12` 就是 `[3]` ✓）；`youkai.c` 的 `yk_le_iv3()` 是唯一读点 ✓。
+ * ⚠ 必须与「那场」判据**同时**成立才接管（见 `yk_le_is_their_familiar()` 的注 ✓）。*/
+#define YK_LE_FAM_MARK           997
+
 /* 那场是不是 leveledit 版？（判据 = 上面那组常量；未钉死 ⇒ 恒 0 ✓）*/
 int yk_le_is_levelledit_fight(int boss_sub274, int boss_anm_main, int iv0);
-/* 这只敌机是不是"他们的使魔"？（未钉死 ⇒ 恒 0 ✓）*/
-int yk_le_is_their_familiar(int enemy_id, int anm_main, int anm_slot0);
+/* 这只敌机是不是"他们的使魔"？—— 输入 = 它的 `$I3`（`ecl_int_vars[3]`，见上面 `YK_LE_FAM_MARK` ✓）。
+ * ★ 调用侧**必须**同时满足两个条件才接管（`youkai.c` 的 `yk_le_iv3()` + `yk_le_here()` ✓）：
+ *   ① `mark == YK_LE_FAM_MARK`（本函数 ✓）；② `yk_le_here()`（= 那场 ✓）。
+ *   ⇒ 零售局（没有 997）与零售敌机（`$I3` 是 ECL 自己用的变量，几乎不为 997）都不会命中 ✓；
+ *     没装 108 时本卡的 tick 根本不跑 ⇒ 也不会命中 ✓（owner 口径 ③）。*/
+int yk_le_is_their_familiar(int mark);
 /* 给 `youkai.c` 的一条总口 ✓：
  *   `has_108` = 本卡在不在（本卡自己的代码里恒 1 ✓；留参数是为了让单测能喂 0 ✓）
  *   返回 0 = 照旧（建自建壳 ✓）；1 = 那场（不建自建壳 ✓，并把匹配到的敌机当使魔 ✓）。

@@ -2435,16 +2435,16 @@ int yk_le_is_levelledit_fight(int boss_sub274, int boss_anm_main, int iv0)
     return boss_sub274 >= YK_LE_SUB_INDEX_MIN && boss_sub274 <= YK_LE_SUB_INDEX_MAX;
 }
 
-int yk_le_is_their_familiar(int enemy_id, int anm_main, int anm_slot0)
+int yk_le_is_their_familiar(int mark)
 {
     if (!YK_LE_TRUSTED) return 0;
-    (void)enemy_id; (void)anm_main; (void)anm_slot0;
-    /* ✗ **仍未钉死**：他们的使魔在 TH18 里是"普通敌机"（README:127 ✓），
-     *   但**拿什么字段把它与别的敌机区分开**目前**没有任何一手依据** ✗ ——
-     *   旧口径（`YK_LE_FAM_ID_*` 的 id 区间）**已被实测否定** ✗ ⇒ 一律返回 0 ✓（不猜 ✓）。
-     *   ⇒ 接管那半（1/2 转伤 / 人妖切换）**尚未接线** ✗，待有依据再做 ✓；
-     *     `yk_le_mode()` 目前只影响**建不建自建使魔壳**那一条 ✓（= 老 goal 卡住的那半 ✓）。*/
-    return 0;
+    /* ★★ 2026-10-18（B2）：判据 = 那只敌机的 `$I3`（`ecl_int_vars[3]`）**恰等于** `YK_LE_FAM_MARK`。
+     *   一手：leveledit 的 `translate.py:207-217` —— 每个 `MystiaChild<n>()` 第一行 `$I3 = 997;`，
+     *   注释明写这是给 108 的识别标记 ✓（详见头文件那段）。
+     *   ⚠ 只认这一个值（不做区间/模糊匹配 ✗）：他们 ECL 里没有别的 sub 写 `$I3` ✓ ⇒
+     *     「997」在**他们那场**之外没有语义；而零售局连 `yk_le_here()` 都过不了 ✓。
+     *   ⚠ 调用侧**必须**再与 `yk_le_here()`（= 那场）取与 —— 本函数只看标记，不看场地 ✓。*/
+    return mark == YK_LE_FAM_MARK;
 }
 
 int yk_le_mode(int has_108, int boss_sub274, int boss_anm_main, int iv0)
