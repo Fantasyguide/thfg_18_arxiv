@@ -430,16 +430,42 @@ static int yk_roar_active(void)  { return ce_card_flag_any(CE_CARD_FLAG_ROAR); }
  *
  * 偏移出处 = `local/vendor/th-re-data/data/th18.v1.00a/type-structs-own.json` 的 `zEnemyData` ✓
  * （`anm_slot_0_script` +0x26c / `anm_main` +0x270 / `__probably_cur_subscript_for_anm_main` +0x274 /
- *  `ecl_int_vars` +0x28c / `ecl_float_vars` +0x29c / `time_in_ecl` +0x2bc（`zTimer`：cur = +4）/ `own_boss_id` +0x5140 ✓）。*/
+ *  `ecl_int_vars` +0x28c / `ecl_float_vars` +0x29c / `time_in_ecl` +0x2bc（`zTimer`：cur = +4）/ `own_boss_id` +0x5140 ✓）。
+ *
+ * ★★★ 2026-10-18（**基址订正** ✗→✓，一手）：上面这些偏移都是 **`zEnemyData` 相对**的，而本探针与
+ *   下面 `yk_le_boss_sub_index()` 手里的 `e` **是 `zEnemy*`** —— 证据（三条互相独立、都一手）：
+ *     ① `ce_enemy_by_id()` / `CE_ENEMY_FOREACH` 返回的是链表结点里的 `entry`（`sdk.h:667`），
+ *        而它们用 `*(int32_t *)(e + CE_ENEMY_ID 0x6830)` 认人，`CE_ENEMY_ID` = **`zEnemy.enemy_id`**
+ *        （`engine.h:195` / `engine.h:687`，一手 `Enemy__constructor` `0x42e3f0`）；
+ *     ② `CE_ENEMY_DATA 0x122c` = **`zEnemyData` 在 `zEnemy` 里的偏移**（`engine.h:200`，步进
+ *        `0x42ed40` 三处交叉核对）⇒ `zEnemyData = zEnemy + 0x122c`（vendor `zEnemy` 表：
+ *        `+0x0 = struct zEclVm`、`+0x122c = struct zEnemyData` ✓）；
+ *     ③ 同一族偏移在 `engine.h` 里早就有 zEnemy 绝对版：`CE_ENEMY_ECL_I0 = 0x14b8`
+ *        （= `0x122c + 0x28c`）、`CE_ENEMY_ANM_SCRIPT = 0x1498`（= `0x122c + 0x26c`）✓。
+ *   ⇒ 原先这些字段**少加了 0x122c** ⇒ 读到的是 `zEnemy` 头部（ECL VM 区）而不是 `zEnemyData`；
+ *     这既解释了旧日志里「anm 全是 0」（那两格在 VM 的栈区），也是下面 `+0x270` / `+0x28c`
+ *     「实测没有区分度」的**真实原因**（读错格了 ✗）。下面把偏移一律写成 `CE_ENEMY_DATA + …`。*/
+/* ★★ B1/B2（2026-10-18）：**leveledit 使魔标记** `$I3` = `ecl_int_vars[3]` ⇒ `zEnemyData + 0x298`
+ *   （= `zEnemy + 0x14c4` = `CE_ENEMY_ECL_I0 + 12`）。一手（对方仓库，这机器上就有）：
+ *   `/home/nipporita/th18-leveledit/mods/stage02-mystia/translate.py:207-217` —— 每个
+ *   `MystiaChild<n>()` 的第一行就是 `$I3 = 997;`，注释逐字写着
+ *   「marks every generated familiar so the 108 card can recognise it from
+ *    zEnemyData+ecl_int_vars[3] (+0x14c4, i.e. EnemyData+0x298)」✓；
+ *   同一段还说明 TH18 的敌人只有 `$I0–$I3`、且没有任何可达的 sub 读写 `$I3` ⇒ 标记活到敌人死亡 ✓。
+ *   ⇒ 探针打 `iv3=`（**正确基址**）与 `iv3z=`（老口径：直接把 0x298 加在 `zEnemy*` 上）两格，
+ *     实跑一看两个数就能证明基址（997 只会出现在 `iv3` 上 ✓）。
+ *   ⚠ 这两条宏在 `#if YK_LE_PROBE` **外面**：`yk_le_iv3()` 在 B2 的接管线里也要用（探针关掉后照样要判 ✓）。*/
+#define YK_E_ECL_IVARS3       (CE_ENEMY_DATA + 0x298)  /* = ecl_int_vars[3] = `$I3` ✓ */
+#define YK_E_ECL_IVARS3_RAW   0x298                    /* 对照：直接加在 zEnemy* 上的老口径 ✗ */
 #define YK_LE_PROBE 1
 #if YK_LE_PROBE
-#define YK_E_ANM_SLOT0_SCRIPT 0x26c
-#define YK_E_ANM_MAIN        0x270
-#define YK_E_SUB274          0x274
-#define YK_E_TIN_ECL_CUR     0x2c0      /* zTimer @+0x2bc：prev(+0)/current(+4)/current_f(+8) ✓ */
-#define YK_E_ECL_IVARS       0x28c
-#define YK_E_ECL_FVARS       0x29c
-#define YK_E_OWN_BOSS        0x5140
+#define YK_E_ANM_SLOT0_SCRIPT (CE_ENEMY_DATA + 0x26c)
+#define YK_E_ANM_MAIN         (CE_ENEMY_DATA + 0x270)
+#define YK_E_SUB274           (CE_ENEMY_DATA + 0x274)
+#define YK_E_TIN_ECL_CUR      (CE_ENEMY_DATA + 0x2c0)  /* zTimer @+0x2bc：prev(+0)/current(+4)/current_f(+8) ✓ */
+#define YK_E_ECL_IVARS        (CE_ENEMY_DATA + 0x28c)
+#define YK_E_ECL_FVARS        (CE_ENEMY_DATA + 0x29c)
+#define YK_E_OWN_BOSS         (CE_ENEMY_DATA + 0x5140)
 static void __attribute__((noinline)) yk_le_probe(void)
 {
     static uint32_t s_probe_n;
@@ -470,12 +496,14 @@ static void __attribute__((noinline)) yk_le_probe(void)
     CE_ENEMY_FOREACH(em, e) {
         if (shown >= 8) break;
         if (!ce_enemy_lockable(e)) continue;
-        ce_log("le-probe(enemy): id=%d anmMain=%d slot0=%d sub274=%d tin=%d",
+        ce_log("le-probe(enemy): id=%d anmMain=%d slot0=%d sub274=%d tin=%d iv3=%d iv3z=%d",
                (int)*(const int32_t *)(e + CE_ENEMY_ID),
                (int)*(const int32_t *)(e + YK_E_ANM_MAIN),
                (int)*(const int32_t *)(e + YK_E_ANM_SLOT0_SCRIPT),
                (int)*(const int32_t *)(e + YK_E_SUB274),
-               (int)*(const int32_t *)(e + YK_E_TIN_ECL_CUR));
+               (int)*(const int32_t *)(e + YK_E_TIN_ECL_CUR),
+               (int)*(const int32_t *)(e + YK_E_ECL_IVARS3),
+               (int)*(const int32_t *)(e + YK_E_ECL_IVARS3_RAW));
         ++shown;
     }
     ce_log("le-probe: live=%d", (int)*(const int32_t *)(em + CE_EM_ENEMY_COUNT));
@@ -1266,16 +1294,25 @@ static int yk_boss_active(void)
  *   本门**不再恒惰性** ✗ —— 命中条件 = **boss ECL VM 的 `subroutine_index >= 24`** ✓
  *   （零售 `st02bs.ecl` 只有 **24 个 sub**、最大索引 23 ✓；leveledit 那份 **62 个** ✓ —— 详见头文件那段 ✓）。
  *   ⚠ `+0x270` / `+0x28c` 实测**没有区分度** ✗ ⇒ 仍读出来只为留探针旁证 ✓。
+ *     ★★ 2026-10-18 **订正**：那两个「没有区分度」的结论建立在**基址读错**之上 ✗ —— 它们是
+ *     `zEnemyData` 相对偏移，当时却直接加在 `zEnemy*` 上（少 0x122c，见上面探针那段的一手证据 ✓）。
+ *     现在改成 `CE_ENEMY_DATA + …` ⇒ 下一份实跑日志才是这两格的**真值**（仍**不作判据** ✓）。
  * 读的都是 boss 敌机上的**只读字段** ✓，偏移出处 = vendor `zEnemyData` / `zEnemy`（与探针同源 ✓）。*/
-#define YK_LE_B_SUB274        0x274   /* __probably_cur_subscript_for_anm_main（★ **已不作判据** ✗）*/
-#define YK_LE_B_ANM_MAIN      0x270
-#define YK_LE_B_IV0           0x28c   /* ecl_int_vars[0] ✓ */
+#define YK_LE_B_SUB274        (CE_ENEMY_DATA + 0x274)   /* __probably_cur_subscript_for_anm_main（★ 不作判据 ✗）*/
+#define YK_LE_B_ANM_MAIN      (CE_ENEMY_DATA + 0x270)
+#define YK_LE_B_IV0           (CE_ENEMY_DATA + 0x28c)   /* ecl_int_vars[0] ✓ */
 /* ★ ECL VM 链（**全在 th18 的 vendor 里有一手** ✓）：
  *   `zEnemy+0x0 = struct zEclVm`（内嵌 ✓）→ `+0xc = zEclRunContextHolder`（内嵌 ✓）
  *   → `holder+0x0 = current_context`（`zEclRunContext*` ✓）→ `+0x4 = cur_location`（内嵌 `zEclLocation` ✓）
  *   → `+0x0 = subroutine_index`（int32 ✓）
- *   ⚠ 起点：`zEnemy` = `zEnemyData - CE_ENEMY_DATA(0x122c)` ✓（`engine.h:191` ✓）。*/
-#define YK_LE_ENEMY_DATA_OFF  0x122c  /* = CE_ENEMY_DATA ✓ */
+ *   ⚠ 起点订正（2026-10-18）：vendor 的 `zEnemy` 表写着 `+0x0 = struct zEclVm`、`+0x122c = struct
+ *     zEnemyData` ⇒ **`zEnemyData = zEnemy + CE_ENEMY_DATA(0x122c)`**。本函数的实参 `b` 来自
+ *     `yk_boss()` = `ce_enemy_by_id()` ⇒ **是 `zEnemy*`** ⇒ `zEclVm` 就在 `b` 上，
+ *     **不要再减 0x122c**（旧代码 `vm = b - 0x122c` 是反的 ✗：它把 `b` 当成 `zEnemyData*`，
+ *     结果读到堆上 `zEnemy` 之前 0x122c 字节的随机内存 —— 那正是「判据看似有值、实为噪声」的来源）。
+ *     这条与上面探针段的一手证据同一套（`CE_ENEMY_ID` = `zEnemy.enemy_id` / `CE_ENEMY_DATA` =
+ *     `zEnemyData` 在 `zEnemy` 里的偏移 / `CE_ENEMY_ECL_I0 0x14b8 = 0x122c+0x28c` 的三重旁证 ✓）。*/
+#define YK_LE_ENEMY_DATA_OFF  0x122c  /* = CE_ENEMY_DATA ✓（只用于想要 zEnemyData 时**加**它 ✓）*/
 #define YK_LE_VM_CTX_HOLDER   0x0c    /* zEclVm.context ✓ */
 #define YK_LE_HOLDER_CUR      0x00    /* zEclRunContextHolder.current_context ✓ */
 #define YK_LE_CTX_CURLOC      0x04    /* zEclRunContext.cur_location ✓ */
@@ -1285,7 +1322,7 @@ static int yk_le_boss_sub_index(const uint8_t *b)
     const uint8_t *vm, *holder;
     const uint8_t *ctx;
     if (!b) return -1;
-    vm     = b - YK_LE_ENEMY_DATA_OFF;                     /* zEnemy ✓ */
+    vm     = b;                                            /* `b` 已是 zEnemy*（zEclVm 内嵌在 +0x0）✓ */
     holder = vm + YK_LE_VM_CTX_HOLDER;                     /* zEclRunContextHolder（内嵌）✓ */
     ctx    = *(const uint8_t *const *)holder;              /* current_context ✓ */
     if (!ctx) return -1;                                   /* 没在跑 ⇒ 不命中 ✓ */
@@ -1300,6 +1337,15 @@ static int yk_le_here(void)
                       *(const int32_t *)(b + YK_LE_B_ANM_MAIN),
                       *(const int32_t *)(b + YK_LE_B_IV0));
 }
+
+/* ★★ B2（2026-10-18）：读一只敌机的 **`$I3`**（= `zEnemyData.ecl_int_vars[3]` = `zEnemy+0x14c4`）。
+ *   只读 ✓；偏移/一手出处见 `YK_E_ECL_IVARS3` 那段（leveledit `translate.py:207-217` ✓）。
+ *   唯一消费点 = `yk_transfer_tick()` 的接管判据（`yk_le_is_their_familiar(yk_le_iv3(e))` ✓）。*/
+static int32_t yk_le_iv3(const uint8_t *e)
+{
+    return e ? *(const int32_t *)(e + YK_E_ECL_IVARS3) : 0;
+}
+
 
 /* ★★★ 2026-09-22（P3 第二批）：「射击中」的判据（TH18 侧）。
  * TH08 是 `Player::shotActive`（一个 999 帧的射击周期标志，`th08:0x17d6ed4`）；TH18 没有同一个
@@ -4028,17 +4074,28 @@ static void __attribute__((noinline)) yk_transfer_tick(yk_card_t *s)
             yk_transfer_feed(&s->tr, d, YK_TRANSFER_PCT_MAP); }   /* ★ P59：映射（发弹口）使魔 ⇒ 1/2 ✓ */
     }
 
-    /* ===== ★ 第二遍：**绕转 + 外部子敌人**的同一套 1/2 转嫁（owner 2026-09-30 口径）=====
+    /* ===== ★ 第二遍：**绕转 + 外部子敌人 + leveledit 使魔**的同一套 1/2 转嫁 =====
+     * （owner 2026-09-30 口径；★ 2026-10-18 B2 加「他们的使魔」那一类 ✓）
      * 每 2 帧扫一次（代价减半；一手的转嫁本身就是每帧结算，2 帧的量化误差 ≤1 帧掉血）。*/
     {
         uint8_t *em = CE_ENEMY_MGR();
         uint8_t *e;
         unsigned i;
+        /* ★★ 2026-10-18（B2 接管）：**那场**判据只在扫描那一帧算一次 ✓（`yk_le_here()` = boss ECL
+         *   `subroutine_index ≥ 24`，见上面那段）。没装 108 ⇒ 本 tick 根本不跑 ⇒ 恒 0 ✓。
+         *   他们那批使魔（`MystiaChild*`）是 `enmCreate(..., 0, 0)` 建的 ⇒ `parent_enemy_id` = 0
+         *   ⇒ 原来那条「外部子敌人」判定**够不到它们** ✗；接管 = 让它们进**同一张**外部使魔台账
+         *   `s_xfam`（落点 = boss）⇒ 1/2 转伤走的就是现成那条 ext 支 ✓，不新建第二套台账 ✓。*/
+        int      le_here = 0;
+        uint8_t *le_boss = 0;
         if (em && (s_ledger_frame % 2u) == 0u) {
+            le_here = yk_le_here();
+            le_boss = le_here ? yk_boss() : 0;
             for (i = 0; i < YK_XFAM_MAX; ++i) s_xfam[i].seen = 0;
             CE_ENEMY_FOREACH(em, e) {
                 uint32_t id, parent;
                 int32_t life;
+                int le_fam = 0;
                 const float *cp;
                 uint8_t *pe;
                 yk_xfam_t *x;
@@ -4050,13 +4107,23 @@ static void __attribute__((noinline)) yk_transfer_tick(yk_card_t *s)
                  *   变量恰好等于某个 boss id 时才喂一次）⇒ 「外部子敌人」那条转嫁源实际是死的
                  *   （实跑台账 `xfer[... ext 0/0 ...]`）。修对之后 = 真的按「谁是 boss 的孩子」喂。*/
                 parent = (uint32_t)*(const int32_t *)(e + YK_ENEMY_PARENT_ID);
-                if (!parent) continue;                             /* 只看子敌人 */
+                /* ★★ B2：**他们的使魔** = `$I3 == 997`（`yk_le_is_their_familiar`）+ **那场**（`le_here`）。
+                 *   两个条件缺一不可（防误伤：零售局 `le_here` 恒 0 ✓；他们那场里别的敌机没有 997 ✓）；
+                 *   没有 parent 时把落点设成**当前 boss**（一手语义 = 「打使魔 ⇒ 转给它的主人」✓）。*/
+                if (!parent && le_here && le_boss &&
+                    yk_le_is_their_familiar((int)yk_le_iv3(e))) {
+                    parent = *(const uint32_t *)(le_boss + CE_ENEMY_ID);
+                    le_fam = 1;
+                }
+                if (!parent) continue;                             /* 只看子敌人 / 接管的使魔 */
                 if (yk_map_has_id(&s_map, id)) continue;            /* 已在映射层 ⇒ 那边已喂，别重复 */
                 if (yk_orbit_find_id(id)) continue;                 /* 绕转使魔走下面那条支 */
                 pe = ce_enemy_by_id(em, (int32_t)parent);
                 if (!pe) continue;
-                /* 判据：母机是 boss 系（`CE_EM_BOSS_IDS[4]` **或** 母机自己的 `own_boss_id != 0`）。*/
-                if (!yk_parent_is_boss(em, pe)) continue;
+                /* 判据：母机是 boss 系（`CE_EM_BOSS_IDS[4]` **或** 母机自己的 `own_boss_id != 0`）。
+                 * ★ 接管的使魔例外：落点就是 `yk_boss()` 本人 ⇒ 天然满足，不必再走这条（也不该
+                 *   因为它们没有 parent 而被它挡掉 ✓）。*/
+                if (!le_fam && !yk_parent_is_boss(em, pe)) continue;
                 life = *(const int32_t *)(e + YK_ED_LIFE_CUR);
                 cp = ce_enemy_pos(e);
                 x = yk_xfam_find(id);
@@ -4068,6 +4135,10 @@ static void __attribute__((noinline)) yk_transfer_tick(yk_card_t *s)
                     x = &s_xfam[k];
                     s_xfam[k].id = id;
                     ++s_xfam_used;
+                    if (le_fam)                                    /* ★ 一次一条：实跑里能数出接管了几只 */
+                        ce_log("youkai/leveledit: TAKEOVER familiar id=%u ($I3=%d, iv3@+0x14c4) -> "
+                               "external-familiar ledger (1/2 transfer to boss id=%u)",
+                               id, (int)yk_le_iv3(e), parent);
                 } else if (x->life > life) {
                     /* 掉血 ⇒ 转 1/2（`yk_transfer_feed` 内部按比例）；自激盒内只采样不喂。*/
                     if (!cp || !bp || !yk_in_transfer_zone(cp[0], cp[1], bp[0], bp[1],

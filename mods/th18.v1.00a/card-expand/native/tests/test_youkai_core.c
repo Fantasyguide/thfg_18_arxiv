@@ -3153,9 +3153,17 @@ int main(void)
     CHECK(yk_le_mode(1, 26, 0, 0) == 1);               /* ★ 那场（README：第一个 non 是 Sub26 ✓）*/
     CHECK(yk_le_mode(1, 62, 123, 7) == 1);             /* ★ 他们的 sub 量级 ⇒ 命中 ✓ */
     CHECK(yk_le_mode(1, 0x7fffffff, 0, 0) == 1);       /* 上界不过滤 ✓ */
-    /* ✗ 「他们的使魔」仍**没有**一手判据（`youkai_core.c` 那段已写明 ✗）⇒ 钉死"恒不命中" ✓ */
-    CHECK(yk_le_is_their_familiar(0, 0, 0) == 0);
-    CHECK(yk_le_is_their_familiar(999, 123, 4) == 0);  /* 输入再像也返回 0 ⇒ 接管那半未接线 ✓ */
+    /* ★★ 2026-10-18（B2 接管）：判据 = 敌机的 `$I3`（`ecl_int_vars[3]`）== `YK_LE_FAM_MARK`(997)。
+     *   一手：leveledit `mods/stage02-mystia/translate.py:207-217`（每个 `MystiaChild<n>()` 第一行
+     *   `$I3 = 997;`）；与「那场」判据（`yk_le_mode`）**同时**成立才接管（调用侧 `yk_le_here()` ✓）。*/
+    CHECK(YK_LE_FAM_MARK == 997);
+    CHECK(yk_le_is_their_familiar(997) == 1);          /* ★ 他们的使魔 ⇒ 命中 ✓ */
+    CHECK(yk_le_is_their_familiar(0) == 0);            /* 没标记 ⇒ 不命中 ✓ */
+    CHECK(yk_le_is_their_familiar(998) == 0);          /* 邻近值不误伤 ✓ */
+    CHECK(yk_le_is_their_familiar(-1) == 0);
+    /* ★ 没装 108 ⇒ 连「那场」都不成立 ⇒ 接管整条链死掉（调用侧 `le_here && is_their_familiar` ✓）*/
+    CHECK(yk_le_mode(0, YK_LE_SUB_INDEX_MIN, 0, 0) == 0);
+    CHECK(yk_le_mode(0, 62, 0, 0) == 0);
 
     printf("youkai_core: %d checks, %d failed\n", s_pass + s_fail, s_fail);
     return s_fail ? 1 : 0;
