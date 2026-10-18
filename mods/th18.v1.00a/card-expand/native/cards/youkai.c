@@ -3945,6 +3945,9 @@ static unsigned  s_xfam_fed;      /* 本局喂过多少次外部/绕转使魔（
 static unsigned s_xfer_mapped_feed, s_xfer_orbit_feed, s_xfer_ext_feed;
 static int32_t  s_xfer_mapped_delta, s_xfer_orbit_delta, s_xfer_ext_delta;
 static int32_t  s_xfer_ext_amount;   /* ★ 2026-10-18：本 tick **外部使魔**真正加进 pending 的量（日志用）*/
+static int32_t  s_xfer_ext_le_amount;/* ★ 同上，但只算**接管的 leveledit 使魔**那一部分
+                                      *   —— `transfer applied` 那行只用它做门，免得在普通关卡
+                                      *   （boss 的普通子敌人也走 ext 支）里刷出 `leveledit:` 日志 */
 static unsigned s_xfer_rect, s_xfer_rect_fail, s_xfer_noboss, s_xfer_noparent;
 /* ★★★ 2026-10-01（owner 实跑：`xfer[tick 5706 map 0/0 orb 538/11391 ext 0/0 rect 0 … noboss 275]`
  *   ⇒ **11391 点伤害全被 `noboss` 丢掉**）—— **落点改成「这只使魔自己的母机（parent）」**：
@@ -4199,7 +4202,8 @@ static void __attribute__((noinline)) yk_xfam_hit_log(uint32_t fam_id, int32_t d
  *     `youkai/leveledit: transfer applied boss=<id> hp_before=<x> hp_after=<y> …`
  *   `hp_after - hp_before` 里也含同一帧自机弹的伤害 ⇒ 它是「这段窗口里 boss 掉了多少」，
  *   不是「只有我们这一笔」；把 amount / ext 一起打出来就能对账。
- *   只有「本帧有**外部使魔**喂过料」才记（`s_xfer_ext_amount > 0`）⇒ 不把自建那条路刷爆。
+ *   只有「本帧有**接管的 leveledit 使魔**喂过料」才记（`s_xfer_ext_le_amount > 0`）
+ *   ⇒ 不把自建那条路刷爆，也不在普通关卡（boss 的普通子敌也走 ext 支）里刷 `leveledit:` 行。
  *   HP 拿不到（目标已死/查不到）⇒ `hp_after=?`，只打转伤值（照 owner 口径）。*/
 static uint32_t s_xfer_obs_id;
 static int32_t  s_xfer_obs_amount, s_xfer_obs_ext, s_xfer_obs_hp;
@@ -4300,6 +4304,7 @@ static void __attribute__((noinline)) yk_transfer_tick(yk_card_t *s)
     yk_xfer_applied_tick();
     yk_xfam_vm_tick();
     s_xfer_ext_amount = 0;
+    s_xfer_ext_le_amount = 0;
     unsigned i;
     uint8_t *boss = yk_boss();                      /* 每帧只解析一次（链表走 4 个 id）*/
     const float *bp = boss ? ce_enemy_pos(boss) : 0;
@@ -4435,6 +4440,7 @@ static void __attribute__((noinline)) yk_transfer_tick(yk_card_t *s)
                             fed = s->tr.pending - before;
                             if (fed < 0) fed = 0;                /* pending 上限钳回时可能变小 */
                             s_xfer_ext_amount += fed;            /* ★ 本 tick 外部使魔的贡献 */
+                            if (le_fam) s_xfer_ext_le_amount += fed;   /* 其中「接管的」那一部分 */
                             ++s_xfam_fed;
                         }
                         if (le_fam) yk_xfam_hit_log(id, d, parent, fed, in_box);
@@ -4526,12 +4532,14 @@ static void __attribute__((noinline)) yk_transfer_tick(yk_card_t *s)
         return;
     }
     /* ★ 2026-10-18（owner：转伤要可观测）：建源**之前**读一次目标 HP，下一个 tick 再读一次
-     *   ⇒ `transfer applied boss=… hp_before=… hp_after=…` 那行（只在有外部使魔喂料时记）。*/
-    if (s_xfer_ext_amount > 0 && tgt) {
+     *   ⇒ `transfer applied boss=… hp_before=… hp_after=…` 那行。
+     *   门 = 本 tick 有**接管的 leveledit 使魔**喂过料（`s_xfer_ext_le_amount`）—— 别用更宽的
+     *   `s_xfer_ext_amount`：普通关卡 boss 的普通子敌人也走 ext 支，那会在零售局里刷 `leveledit:` 日志。*/
+    if (s_xfer_ext_le_amount > 0 && tgt) {
         s_xfer_obs_id     = *(const uint32_t *)(tgt + CE_ENEMY_ID);
         s_xfer_obs_hp     = *(const int32_t *)(tgt + YK_ED_LIFE_CUR);
         s_xfer_obs_amount = amount;
-        s_xfer_obs_ext    = s_xfer_ext_amount;
+        s_xfer_obs_ext    = s_xfer_ext_le_amount;
         s_xfer_obs_wait   = 1;
     }
     ++s_xfer_rect;                                           /* ★ 诊断：真的调了几次伤害源 */
