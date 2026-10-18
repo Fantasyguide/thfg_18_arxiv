@@ -8334,49 +8334,15 @@ static void __attribute__((noinline)) yk_le_transfer_standalone(void)
 
 void yk_practice_equip_once(void)
 {
-    int32_t t, sid = -1;
-    int r;
-
-    /* 菜单 / 结算 / 未开局：没有自机或没有 AbilityManager ⇒ 什么都不做（也不算失败）*/
-    if (!CE_PLAYER() || !CE_ABILITY_MGR()) {
-        s_practice_added = 0;
-        s_practice_failed = 0;
-        return;
-    }
-    /* ★ 2026-10-19f：**没 108 时的 leveledit 使魔转伤**（与卡组无关；108 在手上时它整段 no-op）*/
+    /* ★★★ 2026-10-20（owner：「**你把自动发 108 删掉吧**」）—— 自动装卡**已删除** ✗。
+     *   两条原因（owner 一手实跑）：
+     *     ① 符卡练习 **retry 之后 108 就没了**（`reset_cards` 那条时序，本版补发闸没兜住）；
+     *     ② 它让「**仅 DLL**」那条接管/转伤路径在符卡练习里永远进不去（一发到手 `ce_owned(108)=1`
+     *        ⇒ `yk_le_transfer_standalone()` 整段 no-op）⇒ owner 没法验 DLL-only 那条。
+     *   ⇒ 本函数现在只剩**与卡无关**的那一件：无 108 时的 leveledit 使魔接管（转伤 / 血量）。
+     *   ⚠ 名字保留：`sdk.c` 的 `BP_ce_item_frame` 还在调它（那是**与卡组无关**的帧点，别删）。*/
+    if (!CE_PLAYER() || !CE_ABILITY_MGR()) return;
     yk_le_transfer_standalone();
-    yk_practice_probe(CE_SPELL_PRACTICE_ID());
-    if (!yk_in_spell_practice(&sid)) {  /* 主游玩 / 关卡练习 / 回放 ⇒ 逐字 no-op */
-        s_practice_added = 0;
-        s_practice_failed = 0;
-        return;
-    }
-    t = CE_TIME_IN_STAGE();
-    if (t < s_practice_last_t) {       /* 计时倒退 = 重开 / 重选关 ⇒ 新的一局 */
-        s_practice_added = 0;
-        s_practice_failed = 0;
-    }
-    s_practice_last_t = t;
-    if (ce_owned(108u)) {              /* 已在手上 ⇒ 不重复发 ✓（只记一次日志）*/
-        if (!s_practice_added) {
-            s_practice_added = 1;
-            ce_log("youkai: practice auto-equip 108 skipped (already owned, spell=%d)", (int)sid);
-        }
-        return;
-    }
-    if (s_practice_failed || s_practice_added >= 2) return;   /* 失败不重试 / 补发过不再追 */
-    {
-        const int regive = (s_practice_added == 1);   /* 成功发过、现在又没了 = reset_cards 抹的 */
-        if (regive) {
-            s_practice_added = 0;
-            ce_log("youkai: practice auto-equip 108 was rebuilt away by reset_cards - re-giving once");
-        }
-        r = ce_give_card(108u, CE_MODE_SHOP, 0);
-        if (r) s_practice_added = regive ? 2 : 1;
-        else   s_practice_failed = 1;
-        ce_log("youkai: practice auto-equip 108 (ce_owned=%d, r=%d, spell=%d)",
-               (int)ce_owned(108u), r, (int)sid);
-    }
 }
 
 static int on_load(ce_card_t *c)
