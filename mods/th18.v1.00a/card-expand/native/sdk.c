@@ -399,8 +399,8 @@ void ce_hud_text(float x, float y, uint32_t bgra, const char *fmt, ...)
 /* ★★★ 2026-10-20（owner：「**拆掉所有卡的「空格」「I」「数字键」等调试键**，主要就是系统卡」）——
  *   统一在这里关：所有卡的调试键历史上都走 `ce_key_down()`（见 `sdk.h` 那段 P27 的注），
  *   所以在**唯一入口**上过滤，比逐个卡改干净、也不会漏。
- *   `CE_DEBUG_KEYS = 0` ⇒ 空格 / `I`(0x49) / 数字 0–9 / Ctrl / Shift **一律当作没按** ✓
- *   （A/S/C/D 是玩法键，**不在**过滤范围 ✓；代码全保留，置 1 就全回来 ✓）。*/
+ *   `CE_DEBUG_KEYS = 0` ⇒ 空格 / `I`(0x49) / 数字 0–9 / **A / S** / Ctrl **一律当作没按** ✓
+ *   （Z/X/C/D/Shift/P/方向 是原版键，**不在**过滤范围 ✓；代码全保留，置 1 就全回来 ✓）。*/
 #define CE_DEBUG_KEYS 0
 int ce_key_down(int vk)
 {
@@ -409,11 +409,14 @@ int ce_key_down(int vk)
 #if !CE_DEBUG_KEYS
     /* ★ 2026-10-20 追加（owner：「**A 和 S 不是原版用键，拆掉**」）⇒ A/S 一并失效（它们只被
      *   调试卡/调试动作用过：debug_del 选目标、season、pofv 的组合键）。原版用键只有
-     *   Z / X / 方向 / Shift / Ctrl(+B/C 等本体键) —— 这里过滤的全是**非原版调试键** ✓。*/
+     *   Z / X / C / D / Shift / P(截图) / 方向（owner 2026-10-20 逐字）。
+     *   ⇒ **Shift 是原版键，本轮已从过滤表移除**（它的 ce_key_down 用途只是 Shift+空格的调试组合，
+     *     而空格已经死了 ⇒ 组合自然死）；**C/D 从来没过滤过**；**P 没有任何卡在用**
+     *     （`0x50` 的命中全是结构体偏移 `+0x50` 的误报）。*/
     if (vk == CE_VK_SPACE || vk == 0x49 /* 'I' */ ||
         (vk >= '0' && vk <= '9') ||
         vk == CE_VK_A || vk == CE_VK_S ||
-        vk == CE_VK_CONTROL || vk == CE_VK_SHIFT)
+        vk == CE_VK_CONTROL)
         return 0;
 #endif
     if (!GetKeyboardState(st)) return 0;
