@@ -3996,6 +3996,7 @@ static unsigned s_xfer_tick_calls;   /* ★ `yk_transfer_tick` 本局被调了�
 static uint32_t s_le_mark_id[16];
 static uint32_t s_le_mark_frame[16];
 static unsigned  s_xfam_used;     /* 本帧表用了几格（日志用）*/
+static unsigned  s_xfam_gone_logged;   /* ★ 2026-10-19k：消失原因探针打了几行（cap 12）*/
 
 /* 这个 id 是否已在映射层（`s_map`）—— 那边已经在喂转嫁，别重复计。*/
 static int yk_map_has_id(const yk_map_t *m, uint32_t id)
@@ -4733,6 +4734,18 @@ static void __attribute__((noinline)) yk_transfer_tick(yk_card_t *s)
             }
             for (i = 0; i < YK_XFAM_MAX; ++i) {                    /* 查不到 ⇒ 删（不因血量没变删）*/
                 if (s_xfam[i].id && !s_xfam[i].seen) {
+                    /* ★ 2026-10-19k（owner：「一碰就碎」而日志里**一条 `xfam hit` 都没有**）——
+                     *   **消失原因探针**：条目消失时打出「最后看到的 life / 进过几次 hit / 帧号」⇒ 分清
+                     *   「被打死（life 掉到 0 而我们 2 帧采样没抓到）」/「他们 child 的 `wait(600); delete();`
+                     *   自己到期」/「换阶段 `enmKillAll`」。整局最多 12 行（一波 4~10 只，够看完整一轮）。*/
+                    if (s_xfam[i].le && s_xfam_gone_logged < 12u) {
+                        ++s_xfam_gone_logged;
+                        ce_log("youkai/leveledit: xfam gone id=%u last_life=%d hits=%u frame=%u "
+                               "(last_life>0 => vanished WITHOUT a sampled damage drop "
+                               "= ECL delete/killall, not shot dead)",
+                               s_xfam[i].id, (int)s_xfam[i].life, (unsigned)s_xfam[i].log_hits,
+                               (unsigned)s_ledger_frame);
+                    }
                     if (s_xfam[i].le) yk_xfam_vm_kill_id(s_xfam[i].id);   /* 妖侧外观先还回去 */
                     __builtin_memset(&s_xfam[i], 0, sizeof s_xfam[i]);
                     --s_xfam_used;
