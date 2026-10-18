@@ -32810,3 +32810,14 @@ youkai: practice auto-equip 108 (ce_owned=1, r=4, spell=8)
 - 验证（本轮）：`make dll` rc=0、`make test-host` rc=0（63 checks）、`strings` 命中 `HP raised`；
   四处 DLL md5 见发布行。实跑判据：接管日志之后出现 `HP raised id=… 20 -> <母机HP/3×千分比>`，
   且使魔挨打明显变厚、`transfer applied` 的 amount 同比变大。
+
+#### 2026-10-19h 追加（owner：「TH08 不可能是这种一碰就碎的血量吧」）
+
+- **先把事实摆清（一手）**：他们 ECL 的 `familiarCreate(..., life, ...)` 实参来自 TH08 `ecldata2`，
+  他们自己的 `notes.md` 记着原值就是 **600/100/50/20** 四档；实跑 `MARK` 也看到同一波里有
+  `life=20` 与 `life=999999` 两种（不是我们读错）。⇒ TH08 原版这些子机里**确实有一批是 20**。
+- **但「一碰就碎」是真的**：TH18 自机弹的伤害量级比 TH08 高一个数量级 ⇒ 把 20 直接搬进 TH18 = 秒杀。
+  ⇒ 结论不是「照抄 TH08」，而是「**按 TH18 的伤害尺度重定**」。
+- **定案**：接管时写 `yk_map_fam_hp(母机最大HP, 机体) × YK_LE_FAM_HP_SCALE/1000`
+  （默认 **1.0×** = 本卡自建使魔的同一规则；BossCard2 的 boss `lifeSet(2000)` ⇒ **666**，比 20 厚 33 倍）；
+  旋钮登记 `TUNING.md` §2.0zz #2 —— owner 报一个倍数就改一行。

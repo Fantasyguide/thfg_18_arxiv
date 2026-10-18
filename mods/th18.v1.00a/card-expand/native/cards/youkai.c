@@ -4113,6 +4113,13 @@ static void yk_xfam_vm_kill_all(void)
  *     写后调用方重读 `life.current` 再进台账 ✓。
  *   ⚠ 母机 HP 读不到（≤0）⇒ `yk_map_fam_hp()` 自己会落到 100 档，仍比 20 厚 ✓。*/
 static unsigned s_le_hp_logged;
+/* ★ 2026-10-19h（owner：「TH08 不可能是这种一碰就碎的血量吧」）—— **倍数旋钮**（🟡 owner 给数就一行改）：
+ *   1000 = 1.0×（= 本卡自建使魔的规则：母机最大 HP/3 × 机体千分比）；
+ *   ⚠ 这不是「复刻 TH08 的数字」而是「按 TH18 的伤害尺度重定」：TH08 的 `familiarCreate` 实参里
+ *     本来就有 600/100/50/20 四档（他们 `notes.md` 记着），20 在 TH08 的伤害尺度下不是秒杀，
+ *     但 TH18 自机弹伤害高一个量级 ⇒ 同一个 20 到 TH18 就是一碰就碎 ⇒ 必须重定，不能照抄。
+ *   登记 `TUNING.md` §2.0zz。*/
+#define YK_LE_FAM_HP_SCALE 1000
 
 static void yk_le_fam_raise_hp(uint8_t *f, const uint8_t *boss)
 {
@@ -4121,6 +4128,8 @@ static void yk_le_fam_raise_hp(uint8_t *f, const uint8_t *boss)
     boss_hp = *(const int32_t *)(boss + CE_ENEMY_HP_MAX);
     want = (int32_t)yk_map_fam_hp((int)boss_hp, yk_current_character());
     if (want <= 0) want = (int32_t)YK_FAM_LIFE;
+    want = want * YK_LE_FAM_HP_SCALE / 1000;            /* ★ 旋钮（默认 1.0×）*/
+    if (want < 1) want = 1;
     cur_max = *(const int32_t *)(f + YK_ED_LIFE_CUR + 4);
     if (cur_max >= want) return;                    /* 已经够厚 ⇒ 一个字节都不写 ✓ */
     *(int32_t *)(f + YK_ED_LIFE_CUR)     = want;    /* current   */
