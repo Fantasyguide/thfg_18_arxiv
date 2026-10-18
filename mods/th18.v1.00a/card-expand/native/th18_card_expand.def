@@ -1,18 +1,17 @@
 LIBRARY th18_card_expand.dll
 EXPORTS
-	BP_ce_bomb_gate	@1
-	BP_ce_bomb_spent	@2
-	BP_ce_bullet_damage_final	@3
-	BP_ce_bullet_hit	@4
-	BP_ce_card_bind	@5
-	BP_ce_enemy_damage	@6
-	BP_ce_enemy_death	@7
-	BP_ce_enemy_drop	@8
-	BP_ce_enemy_shot_slot	@9
-	BP_ce_gate	@10
-	BP_ce_graze	@11
-; ★ 2026-09-13 已拆线（owner：「那个无敌脚本空格的都拆掉，代码保留」）：
-; BP_ce_input_synth	@12	; 调试件「逐帧合成方向输入」的站点 handler（代码保留在 sdk.c 的 #if 0 里）
+	thcrap_plugin_init	@1
+	BP_ce_bomb_gate	@2
+	BP_ce_bomb_spent	@3
+	BP_ce_bullet_damage_final	@4
+	BP_ce_bullet_hit	@5
+	BP_ce_card_bind	@6
+	BP_ce_enemy_damage	@7
+	BP_ce_enemy_death	@8
+	BP_ce_enemy_drop	@9
+	BP_ce_enemy_shot_slot	@10
+	BP_ce_gate	@11
+	BP_ce_graze	@12
 	BP_ce_item_collect	@13
 	BP_ce_item_commit	@14
 	BP_ce_item_frame	@15
@@ -28,13 +27,8 @@ EXPORTS
 	BP_ce_shot_damage	@25
 	BP_ce_shot_set_index	@26
 	BP_ce_snd_gate	@27
-; ★ 2026-10-19 已拆线（发布纯净包）：`ce_test_deck` 是开发用起手卡组钩子，
-;   发布版不导出（`th18_card_expand_255` 不声明它 ⇒ 启动器报「导出了但没有 patch 声明」）✓
-; BP_ce_test_deck	@28	; 代码保留在 bp_trace.c，只是不再导出
-	BP_ce_text_desc	@29
-	BP_ce_text_name	@30
-	BP_ce_text_notify	@31
-	BP_ce_trace_alloc	@32
-	BP_ce_unlock_all	@33
-	BP_ce_unlock_write	@34
-	thcrap_plugin_init	@35
+	BP_ce_text_desc	@28
+	BP_ce_text_name	@29
+	BP_ce_text_notify	@30
+	BP_ce_unlock_all	@31
+	BP_ce_unlock_write	@32

@@ -1543,13 +1543,13 @@ def emit_test_patch():
     """
     # 初始卡组钩子（ce_test_deck）已拆线：原来它执行原 movzx 的语义、读到空槽(56) 且
     # cards_dev.js 的 start_deck 还有 id 就换成下一个（esi = 槽序号、eax = 存档偏移基）。
-    out = {
-        "breakpoints": {
-        "ce_trace_alloc": {
-            "addr": "0x%06x" % TEST_TRACE, "cavesize": 7,
-            "expected": "817f2800010000",
-            "title": "测试：记录每次 allocate_new_card(id, mode)"}},
-    }
+    # ★ 2026-10-20（owner：发布版不许有告警）：`ce_trace_alloc` **也从发布版移出** ✗ ——
+    #   告警「dll 导出了 BP_ce_trace_alloc，但没有已选 patch 声明」的成因同上（我们导出、
+    #   发布 patch 不声明）。它同样是**开发用**分配追踪钩子（只有 `th18_card_expand_test` 声明）
+    #   ⇒ 站点与 `.def` 导出都不再声明 ✓；源码 `BP_ce_trace_alloc` 留在 `bp_trace.c`（不导出）。
+    #   要复现开发态：把这一项加回来 + `make gen` + `make dll`。
+    out = {"breakpoints": {}}
+
     # ★★★ 一次性复现闸（`CE_CANARY_POC_GATE=1`，见 AUDIT.md §BE-DW 的验证配方）：
     #   把「窗口 = 一条 `ja rel32`」的两条站点按**原样**声明进**测试归档**，配 `BP_ce_canary_a/b`
     #   （恒回放 ⇒ thcrap 让 cave 原样回放那条 ja ⇒ 跳到「本格 + 0x3aa」= 池页零尾巴）。
