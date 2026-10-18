@@ -4370,7 +4370,13 @@ static void __attribute__((noinline)) yk_transfer_tick(yk_card_t *s)
         uint8_t *le_boss = 0;
         if (em && (s_ledger_frame % 2u) == 0u) {
             le_here = yk_le_here();
-            le_boss = le_here ? yk_boss() : 0;
+            /* ★★★ 2026-10-19 实跑订正（owner 上机日志）：`iv3 == 997` 本身就是**不会误伤的一手判据** ✓
+             *   实跑证据：他们的使魔 id=338/339/340/341… 全是 `iv3=997` ✓（111 行），
+             *   boss 297 与其它敌机全是 `iv3=0` ✓ ⇒ 标记可靠 ✓。
+             *   而 `subroutine_index ≥ 24` **只在他们后半段阶段成立** ✗ —— 第一管 Boss1 从 sub 0 起，
+             *   整场 `youkai/leveledit:` 一行都没有 ✗ ⇒ 接管一次都没触发 ✓。
+             *   ⇒ boss 指针**无条件**取（`yk_boss()` 很便宜 ✓），"那场"判据只留给「不建自建壳」那半 ✓。*/
+            le_boss = yk_boss();
             for (i = 0; i < YK_XFAM_MAX; ++i) s_xfam[i].seen = 0;
             CE_ENEMY_FOREACH(em, e) {
                 uint32_t id, parent;
@@ -4387,10 +4393,11 @@ static void __attribute__((noinline)) yk_transfer_tick(yk_card_t *s)
                  *   变量恰好等于某个 boss id 时才喂一次）⇒ 「外部子敌人」那条转嫁源实际是死的
                  *   （实跑台账 `xfer[... ext 0/0 ...]`）。修对之后 = 真的按「谁是 boss 的孩子」喂。*/
                 parent = (uint32_t)*(const int32_t *)(e + YK_ENEMY_PARENT_ID);
-                /* ★★ B2：**他们的使魔** = `$I3 == 997`（`yk_le_is_their_familiar`）+ **那场**（`le_here`）。
-                 *   两个条件缺一不可（防误伤：零售局 `le_here` 恒 0 ✓；他们那场里别的敌机没有 997 ✓）；
+                /* ★★ B2：**他们的使魔** = `$I3 == 997`（`yk_le_is_their_familiar`）✓
+                 *   ★ 2026-10-19 实跑：`le_here`（sub ≥ 24）只覆盖后半段 ⇒ 已从本门移除 ✗（见上面那段）；
+                 *   误伤防护仍成立：零售局与其它敌机的 `iv3` 恒 0 ✓（实跑日志 111 行 997 全落在 338+ 那批 ✓）。
                  *   没有 parent 时把落点设成**当前 boss**（一手语义 = 「打使魔 ⇒ 转给它的主人」✓）。*/
-                if (!parent && le_here && le_boss &&
+                if (!parent && le_boss &&
                     yk_le_is_their_familiar((int)yk_le_iv3(e))) {
                     parent = *(const uint32_t *)(le_boss + CE_ENEMY_ID);
                     le_fam = 1;
