@@ -4526,7 +4526,10 @@ static void __attribute__((noinline)) yk_transfer_tick(yk_card_t *s)
          *   `s_xfam`（落点 = boss）⇒ 1/2 转伤走的就是现成那条 ext 支 ✓，不新建第二套台账 ✓。*/
         int      le_here = 0;
         uint8_t *le_boss = 0;
-        if (em && (s_ledger_frame % 2u) == 0u) {
+        /* ★ 2026-10-19r（owner：「不可能」= 他们确实打了使魔，但 0 条 `xfam hit`）——
+         *   他们那批血量是**原值 20** ⇒ 一枪就死；原来**每 2 帧**扫一次 ⇒ 两次采样之间就没了
+         *   ⇒ 我们永远观察不到掉血 ⇒ 转伤永不触发。⇒ 改成**每帧扫**。*/
+        if (em) {
             le_here = yk_le_here();
             /* ★★★ 2026-10-19 实跑订正（owner 上机日志）：`iv3 == 997` 本身就是**不会误伤的一手判据** ✓
              *   实跑证据：他们的使魔 id=338/339/340/341… 全是 `iv3=997` ✓（111 行），
@@ -4747,6 +4750,11 @@ static void __attribute__((noinline)) yk_transfer_tick(yk_card_t *s)
                      *   **消失原因探针**：条目消失时打出「最后看到的 life / 进过几次 hit / 帧号」⇒ 分清
                      *   「被打死（life 掉到 0 而我们 2 帧采样没抓到）」/「他们 child 的 `wait(600); delete();`
                      *   自己到期」/「换阶段 `enmKillAll`」。整局最多 12 行（一波 4~10 只，够看完整一轮）。*/
+                    /* ★ 2026-10-19r：**一枪打死**时两次采样之间就没了 ⇒ 把「最后一次看到的血」
+                     *   当作这一击的伤害喂进转嫁（否则 20 血永远转不出东西）。*/
+                    if (s_xfam[i].le && s_xfam[i].life > 0) {
+                        yk_transfer_feed(&s->tr, s_xfam[i].life, YK_TRANSFER_PCT_MAP);
+                    }
                     if (s_xfam[i].le && s_xfam_gone_logged < 12u) {
                         ++s_xfam_gone_logged;
                         ce_log("youkai/leveledit: xfam gone id=%u last_life=%d hits=%u frame=%u "
