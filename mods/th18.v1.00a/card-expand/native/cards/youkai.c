@@ -7685,13 +7685,18 @@ static unsigned yk_deathbomb_tint(void) { return 0; }
  *   它们不存在（这正是本条要绕开的循环）⇒ 必须由帧点从外面叫进来。
  *
  * 幂等 / 只试一次（owner 口径「失败不重试」✓）：
- *   · `s_practice_tried` = 本局已经试过；
- *   · **离开练习**（`CE_PRACTICE_STAGE() < 0`）⇒ 复位，下次进来可以再试；
+ *   · `s_practice_added` = 本局已经成功发到手上（首发 / 被 `reset_cards` 抹掉后的**一次**补发）；
+ *   · `s_practice_failed` = 发过一次且失败 ⇒ 本局**不再试** ✓（日志里 `r=0` 即判据）；
+ *   · **离开练习**（`CE_PRACTICE_STAGE() < 0`）⇒ 全部复位，下次进来可以再试；
  *   · 练习里**重开同一关 / 重选关**：`CE_TIME_IN_STAGE()` 会倒退（`th18:0x44442f` 那个清零点，
  *     与 `cards/mof.c` 的练习重开判据同一出处）⇒ 倒退就复位 ⇒ 第二局照样装得上 ✓；
- *   · `ce_owned(108)` 已经是 1（练习槽本来就带了 108）⇒ 不重复发 ✓。
- *   ⚠ 失败（`ce_give_card` 返回 0）**不重试**：本局就此不再试，日志里 `r=0` 即判据。 */
-static int      s_practice_tried;      /* 本局试过没（见上：离开练习 / stage 计时倒退复位）*/
+ *   · `ce_owned(108)` 已经是 1（练习槽本来就带了 108）⇒ 不重复发 ✓；
+ *   · ⚠ **补发一次的理由**：卡组是在关卡开场由 `reset_cards` 建的；若那一帧的时序是「我们先发、
+ *     reset 后跑」，108 会被它整副删掉（它清 `owned[]` 再从存档重建）⇒ 只在「我们**成功**发过、
+ *     现在 `owned[108]` 又变回 0」时补发 **一次**（`2` = 已补过，之后不再追）。这是同一局里唯一
+ *     会把 108 弄丢的路径（练习里商店 30 帧自动退、没有成交 ⇒ 没有删卡路径）。 */
+static int      s_practice_added;      /* 0=没发过 / 1=首发成功 / 2=被 reset 抹掉后已补发 */
+static int      s_practice_failed;     /* 本局发过一次但失败 ⇒ 不再试 */
 static int32_t  s_practice_last_t;     /* 上一次看到的 stage 帧号（倒退 = 新一局 / 重选关）*/
 
 void yk_practice_equip_once(void)
@@ -7700,23 +7705,38 @@ void yk_practice_equip_once(void)
     int r;
 
     if (CE_PRACTICE_STAGE() < 0) {     /* 只在练习模式 ✓（主游玩 / replay 逐字 no-op）*/
-        s_practice_tried = 0;
+        s_practice_added = 0;
+        s_practice_failed = 0;
         return;
     }
     /* `PRACTICE_STAGE` 在**练习菜单选关那一刻**就被写好了（`th18:0x46769d`）⇒ 还要等真的进关卡：
      * 自机对象出现（菜单 / 结算里 `CE_PLAYER() == 0`）且 AbilityManager 已建（`ce_owned` 要读它）。*/
     if (!CE_PLAYER() || !CE_ABILITY_MGR()) return;
     t = CE_TIME_IN_STAGE();
-    if (t < s_practice_last_t) s_practice_tried = 0;    /* 计时倒退 = 重开 / 重选关 ⇒ 允许再试一次 */
+    if (t < s_practice_last_t) {       /* 计时倒退 = 重开 / 重选关 ⇒ 新的一局 */
+        s_practice_added = 0;
+        s_practice_failed = 0;
+    }
     s_practice_last_t = t;
-    if (s_practice_tried) return;
-    s_practice_tried = 1;              /* 只试一次 ✓（失败也不重试 ✓）*/
-    if (ce_owned(108u)) {              /* 已在手上 ⇒ 不重复发 ✓ */
-        ce_log("youkai: practice auto-equip 108 skipped (already owned)");
+    if (ce_owned(108u)) {              /* 已在手上 ⇒ 不重复发 ✓（只记一次日志）*/
+        if (!s_practice_added) {
+            s_practice_added = 1;
+            ce_log("youkai: practice auto-equip 108 skipped (already owned)");
+        }
         return;
     }
-    r = ce_give_card(108u, CE_MODE_SHOP, 0);
-    ce_log("youkai: practice auto-equip 108 (ce_owned=%d, r=%d)", (int)ce_owned(108u), r);
+    if (s_practice_failed || s_practice_added >= 2) return;   /* 失败不重试 / 补发过不再追 */
+    {
+        const int regive = (s_practice_added == 1);   /* 成功发过、现在又没了 = reset_cards 抹的 */
+        if (regive) {
+            s_practice_added = 0;
+            ce_log("youkai: practice auto-equip 108 was rebuilt away by reset_cards - re-giving once");
+        }
+        r = ce_give_card(108u, CE_MODE_SHOP, 0);
+        if (r) s_practice_added = regive ? 2 : 1;
+        else   s_practice_failed = 1;
+        ce_log("youkai: practice auto-equip 108 (ce_owned=%d, r=%d)", (int)ce_owned(108u), r);
+    }
 }
 
 static int on_load(ce_card_t *c)
