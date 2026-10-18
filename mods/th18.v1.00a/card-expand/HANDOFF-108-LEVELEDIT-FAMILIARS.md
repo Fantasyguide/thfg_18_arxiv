@@ -1,7 +1,10 @@
 # HANDOFF-108 · leveledit（第三方米斯蒂亚补丁）**同开**时的使魔归属
 
+> **版本**：TH18 v1.00a（`th18.exe`）；本文裸地址默认属该版本，跨版本处已带前缀。
 > **本文是什么**：owner 2026-10-15 定的口径 + 到本文为止**已核到什么程度** + 还缺什么 + 怎么补。
 > **硬约束**：**不改 leveledit 任何文件** ✗；只在**我方 108**（[`native/cards/youkai.c`](native/cards/youkai.c)）里加门/接线 ✓。
+> ⚠ 2026-10-18 唯一例外（owner 明确要求）：使魔血量写在**他们仓**的
+> `mods/stage02-mystia/translate.py`（ECL 的 `enmCreate` life 实参）—— 见 §7.4。
 > **不合并两个 mod** ✗（它们是两个各自独立的 thcrap 补丁 ✓；同开兼容的护栏见 [§BE-COEXIST-GUARD](AUDIT.md) 与
 > [`native/tools/check_modkit_packages.py`](native/tools/check_modkit_packages.py) ✓）。
 
