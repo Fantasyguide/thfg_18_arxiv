@@ -4102,6 +4102,37 @@ static void yk_xfam_vm_kill_all(void)
     for (i = 0; i < YK_XFAM_MAX; ++i) if (s_xfam_vm[i].fam_id) yk_xfam_vm_kill(&s_xfam_vm[i]);
 }
 
+/* ★★★ 2026-10-19g（owner：「他使魔血量太低了，得修改到我们 108 的水平」）：
+ *   他们 ECL `enmCreate(..., life, 0, 0)` 给的 life 是 **TH08 原值**（实跑 `CENSUS-DET` 实测 = **20**），
+ *   而本卡自建使魔的规则 = `yk_map_fam_hp(母机最大 HP, 机体)`（母机 HP/3 × 机体千分比；见 `youkai_core.h` §2.1ccc-30）。
+ *   他们**自己改不上去**：ECL 的 life 实参 ≥ 1000 会被 `EnemyManager__allocate_new_enemy` 置
+ *   「大怪」位 `0x40000000`（不可撤销）—— 他们 2026-10-18 就是因此被卡在 999（他们的 notes.md 记着）。
+ *   ⇒ 反过来由**我们**在接管那一刻**回写三格 life**（`enemy+0x6220/6224/6228`）：这条路**不置位** ✓
+ *     （本卡自建使魔正是这么做的，见 `yk_spawn_familiar_parent()` 的「999 出生 + 事后回写」）。
+ *   ⚠ 只在「**上限还不够**」时写一次（`max < want`）：否则每次掉血都重写会把伤害差分吞掉；
+ *     写后调用方重读 `life.current` 再进台账 ✓。
+ *   ⚠ 母机 HP 读不到（≤0）⇒ `yk_map_fam_hp()` 自己会落到 100 档，仍比 20 厚 ✓。*/
+static unsigned s_le_hp_logged;
+
+static void yk_le_fam_raise_hp(uint8_t *f, const uint8_t *boss)
+{
+    int32_t boss_hp, want, cur_max;
+    if (!f || !boss) return;
+    boss_hp = *(const int32_t *)(boss + CE_ENEMY_HP_MAX);
+    want = (int32_t)yk_map_fam_hp((int)boss_hp, yk_current_character());
+    if (want <= 0) want = (int32_t)YK_FAM_LIFE;
+    cur_max = *(const int32_t *)(f + YK_ED_LIFE_CUR + 4);
+    if (cur_max >= want) return;                    /* 已经够厚 ⇒ 一个字节都不写 ✓ */
+    *(int32_t *)(f + YK_ED_LIFE_CUR)     = want;    /* current   */
+    *(int32_t *)(f + YK_ED_LIFE_CUR + 4) = want;    /* maximum   */
+    *(int32_t *)(f + YK_ED_LIFE_CUR + 8) = want;    /* remaining */
+    if (s_le_hp_logged < 8u) {
+        ++s_le_hp_logged;
+        ce_log("youkai/leveledit: HP raised id=%u %d -> %d (our rule: boss_hp %d / 3 x char permille)",
+               (unsigned)*(const uint32_t *)(f + CE_ENEMY_ID), (int)cur_max, (int)want, (int)boss_hp);
+    }
+}
+
 /* ★★★ 2026-10-19e（owner 一眼定位：「我知道了，是**拖尾光**没关掉」）：
  *   他们的使魔**本体脚本**每 2 tick 用 `scriptNewRoot(script30)` 撒一颗拖尾火花
  *   （一手 `assets.py:132-142`：`script script28/29 { layer(7); loop: sprite(...); +2: scriptNewRoot(script30); … jmp(loop,0); }`；
@@ -4624,6 +4655,8 @@ static void __attribute__((noinline)) yk_transfer_tick(yk_card_t *s)
                  * ★ 接管的使魔例外：落点就是 `yk_boss()` 本人 ⇒ 天然满足，不必再走这条（也不该
                  *   因为它们没有 parent 而被它挡掉 ✓）。*/
                 if (!le_fam && !yk_parent_is_boss(em, pe)) continue;
+                /* ★ 2026-10-19g：接管的使魔血量提到**我们自建使魔的规则**（写三格，不置位）*/
+                if (le_fam && le_boss) yk_le_fam_raise_hp(e, le_boss);
                 life = *(const int32_t *)(e + YK_ED_LIFE_CUR);
                 cp = ce_enemy_pos(e);
                 x = yk_xfam_find(id);
@@ -7949,6 +7982,7 @@ static void __attribute__((noinline)) yk_le_transfer_standalone(void)
             if (!boss) continue;
             parent = *(const uint32_t *)(boss + CE_ENEMY_ID);
         }
+        if (boss) yk_le_fam_raise_hp(e, boss);   /* ★ 2026-10-19g：血量提到我们 108 的规则 */
         life = *(const int32_t *)(e + YK_ED_LIFE_CUR);
         x = yk_xfam_find(id);
         if (!x) {                                 /* 新条目 ⇒ 只登记，不喂（第一帧没有差分）*/

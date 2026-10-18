@@ -32795,3 +32795,18 @@ youkai: practice auto-equip 108 (ce_owned=1, r=4, spell=8)
   `TAKEOVER (no-108 path)` / `transfer applied (no-108 path)`；四处 DLL md5 见发布行。
   实跑判据：**不带 108** 进他们那场 ⇒ 日志出现 `TAKEOVER (no-108 path) familiar id=…` 与
   `transfer applied (no-108 path) boss id=… amount=…`，且使魔掉血时 boss 掉 1/2。
+
+#### 2026-10-19g 追加（owner：「他使魔血量太低了，得修改到我们 108 的水平」）
+
+- **现状（一手实跑）**：`CENSUS-DET` 实测他们的使魔 `life=20` —— 那是 **TH08 原值**（他们 ECL 的
+  `enmCreate(..., life, 0, 0)` 实参）。他们**自己改不上去**：ECL 的 life ≥ 1000 会被
+  `EnemyManager__allocate_new_enemy` 置「大怪」位 `0x40000000`（不可撤销）⇒ 他们 2026-10-18 只能封顶 999
+  （见他们 `notes.md` 的那条）。
+- **改法**：由**我们**在接管那一刻**回写三格 life**（`enemy+0x6220/6224/6228` = current/maximum/remaining），
+  取本卡自建使魔的同一条规则 `yk_map_fam_hp(母机最大HP, 机体)` = 母机 HP/3 × 机体千分比
+  （`youkai_core.h` §2.1ccc-30）；回写这条路**不置位**（本卡自建使魔本来就是「低值出生 + 事后回写」）。
+  · **只在 `max < want` 时写一次**（否则每次掉血都重写会吞掉伤害差分）；写后调用方重读 `life.current` 再进台账；
+  · 卡内路径用 `le_boss`、无 108 路径用 `yk_boss()`；日志 `HP raised id=… 20 -> …`（整局最多 8 行）。
+- 验证（本轮）：`make dll` rc=0、`make test-host` rc=0（63 checks）、`strings` 命中 `HP raised`；
+  四处 DLL md5 见发布行。实跑判据：接管日志之后出现 `HP raised id=… 20 -> <母机HP/3×千分比>`，
+  且使魔挨打明显变厚、`transfer applied` 的 amount 同比变大。
