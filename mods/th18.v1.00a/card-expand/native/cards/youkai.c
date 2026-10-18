@@ -4375,10 +4375,12 @@ static void __attribute__((noinline)) yk_xfer_applied_tick(void)
     (void)s_xfer_wait_invuln;
     if (hp_after >= 0)
         ce_log("youkai/leveledit: transfer applied boss=%u hp_before=%d hp_after=%d (hp_delta=%d; "
-               "amount=%d, ext=%d from their familiars, 1/2; skipped %u under %u-frame throttle; "
+               "amount=%d, ext=%d; fed map/orb/ext=%u/%u/%u; skipped %u under %u-frame throttle; "
                "boss_flags=0x%x inv=%d)",
                s_xfer_obs_id, (int)s_xfer_obs_hp, (int)hp_after, (int)(s_xfer_obs_hp - hp_after),
-               (int)s_xfer_obs_amount, (int)s_xfer_obs_ext, s_xfer_obs_skipped, YK_XFAM_LOG_EVERY,
+               (int)s_xfer_obs_amount, (int)s_xfer_obs_ext,
+               s_xfer_mapped_feed, s_xfer_orbit_feed, s_xfer_ext_feed,
+               s_xfer_obs_skipped, YK_XFAM_LOG_EVERY,
                (unsigned)*(const uint32_t *)(te + CE_ENEMY_FLAGS),
                (int)*(const int32_t *)(te + 0x6320));
     else
@@ -4836,7 +4838,12 @@ static void __attribute__((noinline)) yk_transfer_tick(yk_card_t *s)
      *   ⇒ `transfer applied boss=… hp_before=… hp_after=…` 那行。
      *   门 = 本 tick 有**接管的 leveledit 使魔**喂过料（`s_xfer_ext_le_amount`）—— 别用更宽的
      *   `s_xfer_ext_amount`：普通关卡 boss 的普通子敌人也走 ext 支，那会在零售局里刷 `leveledit:` 日志。*/
-    if (s_xfer_ext_le_amount > 0 && tgt) {
+    /* ★★★ 2026-10-19o（owner：「那 108 的转伤正常吗」）—— 原来这条观测**只对「他们的使魔」**开
+     *   （门 = `s_xfer_ext_le_amount > 0`）⇒ 108 **自己的**使魔（映射/绕转那两支）一直没有任何落地证据。
+     *   现在改成**只要有量就记**（`amount > 0`），并在行尾带上本局三条支的喂料计数 ⇒ 下一次
+     *   零售局打自己的使魔就能直接看 `hp_delta` 判「108 的 1/2 转伤到底落不落地」。
+     *   （`ext` 那一支的语义不变，只是不再独占这条日志。）*/
+    if (tgt) {
         s_xfer_obs_id     = *(const uint32_t *)(tgt + CE_ENEMY_ID);
         s_xfer_obs_hp     = *(const int32_t *)(tgt + YK_ED_LIFE_CUR);
         s_xfer_obs_amount = amount;
