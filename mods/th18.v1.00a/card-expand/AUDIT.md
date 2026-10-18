@@ -32609,3 +32609,31 @@ owner 2026-10-15 实跑逐字：
   （若不再闪退 ⇒ 归他们 ✓；若仍闪退 ⇒ 才可能是我们 ✓）。
 - **对同开测试的影响** ✓：coexistence 的验收应在**普通流程**（非符 → 符卡 → …）里做 ✓，
   **不要**用符卡练习当同开验收场景 ✗（那里本来就有他们的已知问题 ✓，会把归因搅浑 ✗）。
+
+### §BE-108-PRACTICE-EQUIP-2026-10-19（2026-10-19，DSH agent，卡 108）：**符卡练习里自动把 108 发到手上**（owner 拍板 B）
+
+- **要解决的**：练习模式开局同样走 `AbilityManager__reset_cards 0x407DA0`，而它从**存档的另一个卡组槽**
+  重建牌组（`engine/card/th18/02-lifecycle.md` §6：`SCOREFILE+0x5f678+slot*4` / `+0x5f608+slot*0x10+i`）
+  ⇒ owner 的练习槽只有 113/118 ⇒ 108 **不在卡链表里** ⇒ 它的 `ctor` / `on_tick_2` **一次都不会被调到** ✗
+  ⇒ 使魔接管没法测。
+- **改法**（只发**本局**，不碰存档卡组 / 卡组槽 / 主游玩路径）：
+  · `cards/youkai.c`：新增 `yk_practice_equip_once()`。判据 = `CE_PRACTICE_STAGE() >= 0`（`0x4c5f8c`，
+    `engine.h` 的宏）+ `CE_PLAYER()` + `CE_ABILITY_MGR()` 都在；走**商店同一条路**
+    `ce_give_card(108u, CE_MODE_SHOP, 0)`（先例 `cards/pot.c` / `cards/give12.c`）；
+    `ce_owned(108)` 已是 1 ⇒ 跳过；每局只试一次（失败不重试），`CE_TIME_IN_STAGE()` 倒退
+    （= 重开 / 重选关，与 `cards/mof.c` 同一判据出处）或离开练习时复位。
+  · ⚠ **不能挂在 108 自己的 `on_ctor` / `on_tick_2`**：那两个回调本身就属于这张卡 —— 它不在练习卡组里时
+    根本不存在（循环依赖）⇒ 必须由**与卡组无关**的帧点从外面叫进去。
+  · `sdk.c`（**共享件**）：`BP_ce_item_frame`（`0x446ee3`，每个正常游玩帧一次、卡链遍历之后）尾部加
+    一个 extern 声明 + 一次 `yk_practice_equip_once()` 调用。非练习模式 = 一次全局 int 读 + return，
+    零写、零分配；练习里发卡会改卡链 / 重建 HUD 列表 ⇒ 刻意放在遍历**之后**。
+- **对既有卡的影响面**（共享件登记的必填项）：只有 `BP_ce_item_frame` 尾部一次函数调用。
+  该函数在非练习模式第一行就返回；练习模式里也只动 `owned[108]` 与 108 的对象。**没有改任何既有卡的
+  回调 / 语义 / 数据表**；不新增站点（跳板池零增量）。回归 = `make dll` / `make test-host` / `make check` 全绿。
+- **验证**：`make dll` rc=0 ✓；`make test-host` rc=0 ✓；`strings th18_card_expand.dll` 命中
+  `youkai: practice auto-equip 108 (ce_owned=%d, r=%d)` 与 `... skipped (already owned)` ✓；
+  `nm cards/youkai.o` = `T yk_practice_equip_once`、`nm sdk.o` = `U yk_practice_equip_once`、
+  `objdump -dr sdk.o` 的调用点落在 `BP_ce_item_frame` 内 ✓；`make check` / deploy 见当次发布台账。
+- **没有主机单测**（诚实标注）：判据与副作用全是引擎侧（练习全局 / `owned[]` / `ce_give_card`）⇒
+  纯逻辑无法脱离 exe 测；实跑判据 = 日志里那一行 `youkai: practice auto-equip 108 (ce_owned=1, r=…)`
+  （`ce_owned=1` 即「已经在手上了」；跳过时是 `... skipped (already owned)`）。

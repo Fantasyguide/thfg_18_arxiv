@@ -7668,6 +7668,57 @@ static unsigned yk_deathbomb_tint(void) { return 0; }
  *   实跑日志里搜 `youkai: build` 就能确认版本。判据见 `HANDOFF-108.md`。*/
 #define YK_BUILD_STAMP __DATE__ " " __TIME__
 
+/* ★ 2026-10-19（owner 拍板 B）：**符卡练习里自动装上 108** ✓
+ *
+ * 为什么需要它（一手机制，见 `engine/card/th18/02-lifecycle.md` §6）：
+ *   练习模式开局同样走 `AbilityManager__reset_cards 0x407DA0`，而它从**存档里那个槽**重建卡组
+ *   （`SCOREFILE+0x5f678+slot*4` / `SCOREFILE+0x5f608+slot*0x10+i`）——owner 的**练习槽只有 113/118**
+ *   ⇒ 108 根本不在卡链表里 ⇒ 本卡的 `ctor/on_tick_2` **一次都不会被引擎调到** ✗ ⇒ 使魔接管没法测。
+ *   ⇒ 只能在「**与卡组无关**」的帧点上把 108 发到手上（调用点 = `sdk.c` 的 `BP_ce_item_frame`）。
+ *
+ * 走的是**商店同一条路**：`ce_give_card(id, CE_MODE_SHOP, 0)` = `AbilityManager__allocate_new_card`
+ *   `0x411460` 的 mode 2（`cards/pot.c` / `cards/give12.c` 已有先例 ✓）⇒ 只往**本局**的
+ *   AbilityManager 加一张卡，**不写存档卡组** ✓、不动卡组槽 ✓、不碰主游玩路径 ✓
+ *   （判据只有 `CE_PRACTICE_STAGE() >= 0` + 关卡里有自机 ✓）。
+ *
+ * 为什么不在 `on_ctor` / `on_tick_2` 里调：那两个回调**本身就属于这张卡** —— 108 不在练习卡组里时
+ *   它们不存在（这正是本条要绕开的循环）⇒ 必须由帧点从外面叫进来。
+ *
+ * 幂等 / 只试一次（owner 口径「失败不重试」✓）：
+ *   · `s_practice_tried` = 本局已经试过；
+ *   · **离开练习**（`CE_PRACTICE_STAGE() < 0`）⇒ 复位，下次进来可以再试；
+ *   · 练习里**重开同一关 / 重选关**：`CE_TIME_IN_STAGE()` 会倒退（`th18:0x44442f` 那个清零点，
+ *     与 `cards/mof.c` 的练习重开判据同一出处）⇒ 倒退就复位 ⇒ 第二局照样装得上 ✓；
+ *   · `ce_owned(108)` 已经是 1（练习槽本来就带了 108）⇒ 不重复发 ✓。
+ *   ⚠ 失败（`ce_give_card` 返回 0）**不重试**：本局就此不再试，日志里 `r=0` 即判据。 */
+static int      s_practice_tried;      /* 本局试过没（见上：离开练习 / stage 计时倒退复位）*/
+static int32_t  s_practice_last_t;     /* 上一次看到的 stage 帧号（倒退 = 新一局 / 重选关）*/
+
+void yk_practice_equip_once(void)
+{
+    int32_t t;
+    int r;
+
+    if (CE_PRACTICE_STAGE() < 0) {     /* 只在练习模式 ✓（主游玩 / replay 逐字 no-op）*/
+        s_practice_tried = 0;
+        return;
+    }
+    /* `PRACTICE_STAGE` 在**练习菜单选关那一刻**就被写好了（`th18:0x46769d`）⇒ 还要等真的进关卡：
+     * 自机对象出现（菜单 / 结算里 `CE_PLAYER() == 0`）且 AbilityManager 已建（`ce_owned` 要读它）。*/
+    if (!CE_PLAYER() || !CE_ABILITY_MGR()) return;
+    t = CE_TIME_IN_STAGE();
+    if (t < s_practice_last_t) s_practice_tried = 0;    /* 计时倒退 = 重开 / 重选关 ⇒ 允许再试一次 */
+    s_practice_last_t = t;
+    if (s_practice_tried) return;
+    s_practice_tried = 1;              /* 只试一次 ✓（失败也不重试 ✓）*/
+    if (ce_owned(108u)) {              /* 已在手上 ⇒ 不重复发 ✓ */
+        ce_log("youkai: practice auto-equip 108 skipped (already owned)");
+        return;
+    }
+    r = ce_give_card(108u, CE_MODE_SHOP, 0);
+    ce_log("youkai: practice auto-equip 108 (ce_owned=%d, r=%d)", (int)ce_owned(108u), r);
+}
+
 static int on_load(ce_card_t *c)
 {
     if (!YK_ENABLE_CARD || !YK_ENABLE_CB_LIFECYCLE) return 0;   /* ★ 总开关 + 回调族 ⑨ */
