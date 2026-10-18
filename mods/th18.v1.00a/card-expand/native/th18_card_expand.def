@@ -28,7 +28,9 @@ EXPORTS
 	BP_ce_shot_damage	@25
 	BP_ce_shot_set_index	@26
 	BP_ce_snd_gate	@27
-	BP_ce_test_deck	@28
+; ★ 2026-10-19 已拆线（发布纯净包）：`ce_test_deck` 是开发用起手卡组钩子，
+;   发布版不导出（`th18_card_expand_255` 不声明它 ⇒ 启动器报「导出了但没有 patch 声明」）✓
+; BP_ce_test_deck	@28	; 代码保留在 bp_trace.c，只是不再导出
 	BP_ce_text_desc	@29
 	BP_ce_text_name	@30
 	BP_ce_text_notify	@31
