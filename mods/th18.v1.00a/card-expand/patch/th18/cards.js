@@ -567,11 +567,10 @@
       "编成：把哪些系统机制叠在一起打。"
     ],
     "internal_name": "GIVE12",
-    "deck_visible": 0,
     "category": 0,
     "initial_unlocked": 1,
     "price_tier": 10,
-    "weight": 0,
+    "weight": 1,
     "sprite_large": 186,
     "sprite_small": 187
   },
