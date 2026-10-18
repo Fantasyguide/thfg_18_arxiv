@@ -4377,6 +4377,19 @@ static void __attribute__((noinline)) yk_transfer_tick(yk_card_t *s)
              *   整场 `youkai/leveledit:` 一行都没有 ✗ ⇒ 接管一次都没触发 ✓。
              *   ⇒ boss 指针**无条件**取（`yk_boss()` 很便宜 ✓），"那场"判据只留给「不建自建壳」那半 ✓。*/
             le_boss = yk_boss();
+            /* ★★★ 2026-10-19 兜底（owner：「符卡练习有使魔啊！使魔是符卡创建的」✓）：
+             *   `yk_boss()` 要求 boss `ce_enemy_lockable` ✗ —— **符卡练习**里这个条件可能不成立
+             *   ⇒ `le_boss` 取不到 ⇒ 接管门 `le_boss &&` 直接失败 ✗（表现就是 0 行 `youkai/leveledit:`）。
+             *   ⇒ 兜底：直接按 `CE_EM_BOSS_IDS` 的槽位找**非零 boss id** ✓（不要求 lockable ✓）*/
+            if (!le_boss && em) {
+                unsigned bi;
+                for (bi = 0; bi < CE_EM_BOSS_SLOTS; ++bi) {
+                    int32_t bid_fb = *(const int32_t *)(em + CE_EM_BOSS_IDS + bi * 4);
+                    if (!bid_fb) continue;
+                    le_boss = ce_enemy_by_id(em, (uint32_t)bid_fb);
+                    if (le_boss) break;
+                }
+            }
             for (i = 0; i < YK_XFAM_MAX; ++i) s_xfam[i].seen = 0;
             CE_ENEMY_FOREACH(em, e) {
                 uint32_t id, parent;
