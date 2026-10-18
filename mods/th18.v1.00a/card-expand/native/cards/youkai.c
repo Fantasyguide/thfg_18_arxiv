@@ -7684,7 +7684,21 @@ static unsigned yk_deathbomb_tint(void) { return 0; }
  * 走的是**商店同一条路**：`ce_give_card(id, CE_MODE_SHOP, 0)` = `AbilityManager__allocate_new_card`
  *   `0x411460` 的 mode 2（`cards/pot.c` / `cards/give12.c` 已有先例 ✓）⇒ 只往**本局**的
  *   AbilityManager 加一张卡，**不写存档卡组** ✓、不动卡组槽 ✓、不碰主游玩路径 ✓
- *   （判据只有 `CE_PRACTICE_STAGE() >= 0` + 关卡里有自机 ✓）。
+ *   （判据 = 符卡练习 + 关卡里有自机 ✓，见下方 2026-10-19b 订正）。
+ *
+ * ★★★ 2026-10-19b 判据订正（一手；owner 实跑 01:57 那局**一行 `practice auto-equip` 都没有** ⇒ 旧判据错）：
+ *   ❌ 旧判据 `CE_PRACTICE_STAGE() >= 0`（`0x4c5f8c`）**不是**练习判据 —— 那个全局是 **Extra 单关局标记**
+ *      （唯一正写点 `th18:0x46d9cb` 写 1，全二进制只有 4 处清 -1，其中一处正是**关卡练习开局** `0x46769f`；
+ *       ECL 侧只有 `st07`/`st07bs` 读系统变量 -9899 = 本地址）⇒ 符卡练习里它恒为 -1 ⇒ 永不触发。
+ *   ✅ 真判据（两条都要）：
+ *      ① `0x4cf438 == 5` —— 本局启动方式 = 符卡练习（唯一写点 `th18:0x46cfce`；4 = 关卡练习 `0x4676ac`，
+ *         2 = 回放 `0x46803f`，6 = Extra `0x46d9a6`）；
+ *      ② `0x4ccd14 >= 0` —— 本局要练的**符卡 id**（唯一非负写点 `th18:0x46cffe`；普通/回放/Extra 都写 -1）。
+ *         这是 ECL 自己用的量：`st01bs…st07bs.ecl` 逐关读系统变量 **-9907** = 本地址，用来跳到要练的那张符。
+ *      🟡 兜底一条（只为防「启动方式被改写 ⇒ 功能静默失效」重演）：`(GAME_FLAGS 0x4cccc8 & 0x30) == 0x20`
+ *         且 `0x4ccd14 >= 0` 且不在回放中（`GT+0xd0 == 0`）。`0x20` 是引擎自己的练习位
+ *         （`ReplayManager__initialize th18:0x461a0d..0x461a2f` 按 ② 置/清；商店 `0x417cf5`、MSG `0x43e423` 都读它）。
+ *   📋 每次启动方式变化打一行只读探针 `youkai: practiceprobe cand0=…`，下一局日志即可核对三个候选值。
  *
  * 为什么不在 `on_ctor` / `on_tick_2` 里调：那两个回调**本身就属于这张卡** —— 108 不在练习卡组里时
  *   它们不存在（这正是本条要绕开的循环）⇒ 必须由帧点从外面叫进来。
@@ -7692,7 +7706,7 @@ static unsigned yk_deathbomb_tint(void) { return 0; }
  * 幂等 / 只试一次（owner 口径「失败不重试」✓）：
  *   · `s_practice_added` = 本局已经成功发到手上（首发 / 被 `reset_cards` 抹掉后的**一次**补发）；
  *   · `s_practice_failed` = 发过一次且失败 ⇒ 本局**不再试** ✓（日志里 `r=0` 即判据）；
- *   · **离开练习**（`CE_PRACTICE_STAGE() < 0`）⇒ 全部复位，下次进来可以再试；
+ *   · **离开符卡练习**（判据不再成立）⇒ 全部复位，下次进来可以再试；
  *   · 练习里**重开同一关 / 重选关**：`CE_TIME_IN_STAGE()` 会倒退（`th18:0x44442f` 那个清零点，
  *     与 `cards/mof.c` 的练习重开判据同一出处）⇒ 倒退就复位 ⇒ 第二局照样装得上 ✓；
  *   · `ce_owned(108)` 已经是 1（练习槽本来就带了 108）⇒ 不重复发 ✓；
@@ -7704,19 +7718,60 @@ static int      s_practice_added;      /* 0=没发过 / 1=首发成功 / 2=被 r
 static int      s_practice_failed;     /* 本局发过一次但失败 ⇒ 不再试 */
 static int32_t  s_practice_last_t;     /* 上一次看到的 stage 帧号（倒退 = 新一局 / 重选关）*/
 
+/* ---- 只读探针：启动方式一变就打一行，把三个候选值一起落日志（一手候选表见函数上方的订正段）----
+ * 为什么需要它：上一版判据错得很安静 —— 符卡练习里它恒为 -1 ⇒ `yk_practice_equip_once` 逐字 no-op、
+ * **一行日志都没有** ⇒ 实跑日志无法区分「没进练习」和「判据错」。这行探针就是那条缺失的证据。*/
+static void yk_practice_probe(int32_t sid)
+{
+    static int32_t s_cand0_prev = 0x7fffffff;   /* 上一帧的 `0x4cf438`（启动方式）*/
+    static int     s_is_practice_prev;
+    const int32_t  cand0 = CE_START_KIND();               /* 0x4cf438：5 = 符卡练习 */
+    const uint32_t cand1 = CE_PRACTICE_MODE();            /* 0x4cccc8 & 0x30：0x20 = 符卡练习 */
+    const int32_t  cand2 = sid;                           /* 0x4ccd14：本局练的符卡 id，-1 = 不是 */
+    const int32_t  cand3 = CE_EXTRA_RUN();                /* 0x4c5f8c：1 = Extra 单关局（旧判据用的就是它）*/
+    const int is_practice = (cand0 == CE_START_KIND_SPELL_PRACTICE) && (cand2 >= 0);
+
+    if (cand0 == s_cand0_prev && is_practice == s_is_practice_prev) return;
+    s_cand0_prev = cand0;
+    s_is_practice_prev = is_practice;
+    ce_log("youkai: practiceprobe cand0=0x4cf438=%d cand1=0x4cccc8&0x30=0x%x cand2=0x4ccd14=%d "
+           "cand3=0x4c5f8c=%d stage=%d practice=%d",
+           (int)cand0, (unsigned)cand1, (int)cand2, (int)cand3,
+           (int)CE_CURRENT_STAGE(), is_practice);
+}
+
+/* ✅ 符卡练习判据（一手见上方订正段）：
+ *   ① `0x4cf438 == 5`（本局由符卡练习菜单启动）且 ② `0x4ccd14 >= 0`（真有选中的符）+ 关卡里有自机；
+ *   🟡 兜底：`GAME_FLAGS & 0x30 == 0x20` 且 `0x4ccd14 >= 0` 且不在回放中 —— 只在 ① 被改写时救急用。*/
+static int yk_in_spell_practice(int32_t *sid_out)
+{
+    const int32_t sid = CE_SPELL_PRACTICE_ID();
+    uint8_t *gt;
+    *sid_out = sid;
+    if (sid < 0) return 0;                              /* 没选符 ⇒ 一定不是符卡练习（② 是必要条件）*/
+    if (CE_START_KIND() == CE_START_KIND_SPELL_PRACTICE) return 1;   /* ① 主判据 */
+    gt = CE_GAME_THREAD();
+    if (gt && *(int32_t *)(gt + CE_GT_REPLAY_PLAYING) != 0) return 0; /* 回放里不发卡（会改回放轨迹）*/
+    return (CE_PRACTICE_MODE() == CE_PRACTICE_MODE_SPELL) ? 1 : 0;    /* 🟡 兜底 */
+}
+
 void yk_practice_equip_once(void)
 {
-    int32_t t;
+    int32_t t, sid = -1;
     int r;
 
-    if (CE_PRACTICE_STAGE() < 0) {     /* 只在练习模式 ✓（主游玩 / replay 逐字 no-op）*/
+    /* 菜单 / 结算 / 未开局：没有自机或没有 AbilityManager ⇒ 什么都不做（也不算失败）*/
+    if (!CE_PLAYER() || !CE_ABILITY_MGR()) {
         s_practice_added = 0;
         s_practice_failed = 0;
         return;
     }
-    /* `PRACTICE_STAGE` 在**练习菜单选关那一刻**就被写好了（`th18:0x46769d`）⇒ 还要等真的进关卡：
-     * 自机对象出现（菜单 / 结算里 `CE_PLAYER() == 0`）且 AbilityManager 已建（`ce_owned` 要读它）。*/
-    if (!CE_PLAYER() || !CE_ABILITY_MGR()) return;
+    yk_practice_probe(CE_SPELL_PRACTICE_ID());
+    if (!yk_in_spell_practice(&sid)) {  /* 主游玩 / 关卡练习 / 回放 ⇒ 逐字 no-op */
+        s_practice_added = 0;
+        s_practice_failed = 0;
+        return;
+    }
     t = CE_TIME_IN_STAGE();
     if (t < s_practice_last_t) {       /* 计时倒退 = 重开 / 重选关 ⇒ 新的一局 */
         s_practice_added = 0;
@@ -7726,7 +7781,7 @@ void yk_practice_equip_once(void)
     if (ce_owned(108u)) {              /* 已在手上 ⇒ 不重复发 ✓（只记一次日志）*/
         if (!s_practice_added) {
             s_practice_added = 1;
-            ce_log("youkai: practice auto-equip 108 skipped (already owned)");
+            ce_log("youkai: practice auto-equip 108 skipped (already owned, spell=%d)", (int)sid);
         }
         return;
     }
@@ -7740,7 +7795,8 @@ void yk_practice_equip_once(void)
         r = ce_give_card(108u, CE_MODE_SHOP, 0);
         if (r) s_practice_added = regive ? 2 : 1;
         else   s_practice_failed = 1;
-        ce_log("youkai: practice auto-equip 108 (ce_owned=%d, r=%d)", (int)ce_owned(108u), r);
+        ce_log("youkai: practice auto-equip 108 (ce_owned=%d, r=%d, spell=%d)",
+               (int)ce_owned(108u), r, (int)sid);
     }
 }
 

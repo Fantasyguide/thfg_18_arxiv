@@ -32645,3 +32645,46 @@ owner 2026-10-15 实跑逐字：
   纯逻辑无法脱离 exe 测；实跑判据 = 日志里那一行 `youkai: practice auto-equip 108 (ce_owned=1, r=…)`
   （`ce_owned=1` 即「已经在手上了」；跳过时是 `... skipped (already owned)`；
   若出现 `... was rebuilt away ... re-giving once` 说明 reset_cards 时序确实存在、已自动补上）。
+
+### §BE-108-PRACTICE-EQUIP-2026-10-19b（2026-10-19，DSH agent，卡 108）：**上一版的练习判据是错的 —— 换成一手判据 + 加只读探针**
+
+- **现象（owner 实跑）**：符卡练习里**真的进了战斗**，日志（154 KB）里 `youkai: practice auto-equip 108` /
+  `MARK` / 任何关卡痕迹 **一行都没有** ⇒ 自动装卡从未执行。
+- **根因（一手，全二进制线性反汇编逐条核对读写点）**：旧判据 `0x4c5f8c >= 0`（`engine.h` 的
+  `CE_ADDR_PRACTICE_STAGE` / `CE_PRACTICE_STAGE()`）**不是练习判据**。`0x4c5f8c` 实际是
+  **「本局 = Extra（第 7 面单关局）」标记**：
+  · 唯一正写点 `0x46d9cb`（`MainMenu__tick_menu_17_achievement` = Extra 开局，写 **1**，同段还写
+    `CURRENT_STAGE=7`、关卡数据 `0x4cf428=0x4c99dc`、启动方式 `0x4cf438=6`）；
+  · 清 `-1` 四处：`0x464c10` / **`0x46769f`（关卡练习开局，就是这里把它清成 −1）** / `0x444baa` / `0x457b4c`；
+  · ECL 侧：系统变量 `-9899` = 本地址，**只有 `st07.ecl` / `st07bs.ecl` 各引用 1 次**（其余 15 个 0 次）。
+  ⇒ 符卡练习里它恒为 `-1` ⇒ 旧判据必然逐字 no-op，**而且一行日志都不打**（这次实验最难查的地方）。
+- **真判据（一手）**：
+  ① `0x4cf438 == 5` —— 本局启动方式 = 符卡练习（唯一写点 `0x46cfce`，`MainMenu__tick_menu_14_spell_prac_diff_select`；
+     `4` = 关卡练习 `0x4676ac`、`2` = 回放 `0x46803f`、`6` = Extra `0x46d9a6`、`1` = 普通）；
+  ② `0x4ccd14 >= 0` —— 本局要练的**符卡 id**（唯一非负写点 `0x46cffe`，值 = `menu+0x5d34[cursor]`；
+     普通 `0x466be0` / 回放 `0x468025` / Extra `0x46d9c1` 都写 −1；回放装载 `0x468016` / `0x461a35` 从 rpy 头恢复）。
+     **ECL 实证**：系统变量 `-9907` = 本地址，`st01bs…st07bs` 逐关引用（5/7/7/7/9/13/13 次）= boss 脚本「跳到要练的那张符」。
+  ③ 🟡 兜底（只为防「① 被某条路径改写 ⇒ 功能又静默失效」重演）：`GAME_FLAGS 0x4cccc8 & 0x30 == 0x20`
+     且 ② 成立且不在回放中（`GT+0xd0 == 0`）。注意 `0x20` 是**派生值**：
+     `ReplayManager__initialize 0x461a0d..0x461a2f` 按 ② `>= 0` 置 `0x20`、否则 `&= ~0x30`
+     （同一个位就是商店 `0x417cf5` / MSG `0x43e423` / trance 卡第 8 条读的那个「练习」位）。
+- **改法**：`cards/youkai.c` 的 `yk_practice_equip_once()` 换成 ①＋②（＋🟡兜底）；幂等 / 只进本局
+  AbilityManager / 不写存档 / `reset_cards` 抹掉后补发一次 / `CE_TIME_IN_STAGE()` 倒退复位 **全部原样保留**。
+  新增 `yk_practice_probe()`：**启动方式一变就打一行只读探针**（`youkai: practiceprobe cand0=0x4cf438=… …`），
+  三个候选 + 旧判据的 `0x4c5f8c` 一起落日志 ⇒ 下一局日志本身就是证据（这条是补「旧判据静默 no-op」的教训）。
+  发卡日志追加 `spell=` 字段（`... (ce_owned=%d, r=%d, spell=%d)`），前缀不变 ⇒ 既有 grep 仍命中。
+- **共享件影响面**：`engine.h` 加/改宏（`CE_ADDR_EXTRA_RUN`、`CE_ADDR_PRACTICE_STAGE` 降为**兼容别名**、
+  新增 `CE_ADDR_START_KIND` / `CE_ADDR_SPELL_PRACTICE_ID` / `CE_ADDR_GAME_FLAGS` + 4 个 accessor）；
+  `shop.c` 把 `CE_PRACTICE_STAGE() >= 0` 改成 `CE_EXTRA_RUN() >= 0` —— **地址、比较、行为逐字不变**（纯改名，
+  注释里说明它挡的是 Extra 而不是练习）；`sdk.c` 只改注释。**没有改任何既有卡的回调 / 语义 / 数据表**，
+  站点零新增（跳板池零增量）。
+- **验证**：`make dll` rc=0 ✓（无新 warning）；`make test-host` rc=0（63 checks）✓；
+  `strings th18_card_expand.dll` 命中 `youkai: practiceprobe cand0=0x4cf438=%d …` 与新发卡行 ✓；
+  `objdump -dr cards/youkai.o` 实测读到 `0x4ccd14` / `cmpl $0x5,0x4cf438` / `movzbl 0x4cccc8` / `0x4c5f8c` ✓；
+  `deploy.py --skip-build --force` rc=0 ✓、**四处 DLL md5 全等** = `42b9e7a594f773b043f9893694b7657b`
+  （`<modkit>/mods/` / `<modkit>/thcrap/bin/mod_*` / `<modkit>/thcrap/repos/Renko_1055/.../` / `native/`）、
+  patch js md5 = `7eba2eb25452939a514290f8fec26d94`（未改）、`deploy-manifest.json` 最新一条 head =
+  本条所在提交（`git log -1`）。
+- **没有主机单测**（诚实标注）：判据全是引擎全局 ⇒ 实跑判据 = 下一局日志里出现
+  `youkai: practiceprobe cand0=0x4cf438=5 cand1=0x4cccc8&0x30=0x20 cand2=0x4ccd14=<>=0> cand3=0x4c5f8c=-1 stage=N practice=1`
+  以及 `youkai: practice auto-equip 108 (ce_owned=…, r=…, spell=…)`（`r=1` 才算发成功）。

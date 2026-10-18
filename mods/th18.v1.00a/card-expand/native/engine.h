@@ -132,7 +132,42 @@
 #define CE_ADDR_SHOP_PTR           0x4cf2a4   /* zAbilityShop*：GameThread__on_tick 0x443bed 写、析构 0x417857 清零；敌人 / 弹幕 / GUI 非 0 即冻结（SM §3.5）*/
 #define CE_ADDR_TIME_IN_STAGE      0x4ccce8   /* int：GameThread__on_tick 尾 0x443d16 inc（ExpHP TIME_IN_STAGE）*/
 #define CE_ADDR_CURRENT_STAGE      0x4cccdc   /* int：= GlobalsInner 首字段（ExpHP CURRENT_STAGE_globalsinner_base）*/
-#define CE_ADDR_PRACTICE_STAGE     0x4c5f8c   /* int：练习模式选的关（stage select 0x46769d 写），-1 = 非练习；商店 0x417cc7 读它决定 30 帧自动退 */
+/* ★★★ 2026-10-19b 订正（一手，全二进制线性反汇编 + 逐条读写点）：`0x4c5f8c` **不是**练习判据。
+ *   它 = **「本局 = Extra（第 7 面单关局）」标记**：`1` = Extra、`-1` = 其它。
+ *     · 唯一正写点 `0x46d9cb`（Extra 开局：同一段还写 `CURRENT_STAGE=7` `0x4cccdc`、关卡数据 `0x4cf428=0x4c99dc`、
+ *       启动方式 `0x4cf438=6`）；
+ *     · 清 `-1` 的四处：`MainMenu__thread_start 0x464c10`、**关卡练习开局 `0x46769f`**、
+ *       `GameThread__end_stage 0x444baa`、`FUN_00457a60 0x457b4c`；
+ *     · 读点：`GameThread__thread_start 0x4429ff`（Extra 不重播随机种子）、`end_stage 0x444b97`（收尾走
+ *       gamemode 2/4）、`FUN_00457a60 0x457af1/0x457b25`、商店 `0x417cc7`（Extra 里 30 帧自动退）；
+ *     · **ECL 侧**（本机 `local/th18.v1.00a/dat/` 里的 17 个 `st??.ecl` 实测）：系统变量 `-9899` = 本地址，**只有
+ *       `st07.ecl` / `st07bs.ecl` 各引用 1 次**（第 7 面）；其余 15 个关卡脚本 0 次。
+ *   ⇒ 符卡练习里它**恒为 -1**（练习菜单开局自己写的），拿它当练习判据必然一次都不触发（2026-10-19 实跑即如此）。
+ *   ⚠ 旧名 `CE_ADDR_PRACTICE_STAGE` / `CE_PRACTICE_STAGE()` 保留为**兼容别名**（行为不变、只改名不改址）：
+ *     `shop.c` 那处的语义本来就是「Extra 里别开商店」，与练习无关。*/
+#define CE_ADDR_EXTRA_RUN          0x4c5f8c   /* int：1 = 本局是 Extra 单关局，-1 = 其它（见上方一手表）*/
+#define CE_ADDR_PRACTICE_STAGE     CE_ADDR_EXTRA_RUN   /* ❌ 旧名（语义是错的）：只作兼容，新代码别用 */
+/* ---- ★★★ 符卡练习（真正的判据）--------------------------------------------------------------
+ * ① `0x4cf438` = **本局启动方式**（枚举，唯一写点都在菜单里）：
+ *      `1` 普通（`0x465067` 等标题流程）、`2` 回放（`0x46803f`）、`3` 某状态机过渡（`0x455180`）、
+ *      `4` **关卡练习**（`MainMenu__tick_menu_08_stage_select` `0x4676ac`）、
+ *      `5` **符卡练习**（`MainMenu__tick_menu_14_spell_prac_diff_select` `0x46cfce`）、
+ *      `6` Extra（`MainMenu__tick_menu_17_achievement` `0x46d9a6`）。
+ * ② `0x4ccd14` = **本局要练的符卡 id**（int，`-1` = 不是符卡练习）：
+ *      唯一非负写点 `0x46cffe`（符卡练习难度菜单，值 = 该面符卡列表 `menu+0x5d34[cursor]`）；
+ *      `-1` 写点：普通开局 `0x466be0`、回放 `0x468025`、Extra `0x46d9c1`；回放装载时从 rpy 头恢复（`0x468016` / `0x461a35`）。
+ *      **ECL 侧实证**：系统变量 `-9907` = 本地址，`st01bs…st07bs.ecl` 逐关引用（5/7/7/7/9/13/13 次；`st01…st07.ecl` 各 1 次）—— 就是
+ *      boss 脚本「跳到要练的那张符」用的量（同一次 `.ecl` 实测）。
+ * ③ `0x4cccc8` = GAME_FLAGS（低字节）；bit4/5 是 2 bit 模式域，**`0x20` = 符卡练习**：
+ *      `ReplayManager__initialize 0x461a0d..0x461a2f` 每局开头按 ② `>= 0` 置 `0x20`、否则 `&= ~0x30`；
+ *      读点 = 商店 `0x417cf5`/`0x417d79`、MSG `0x43e423`（`GLOBALS+8 & 0x30 == 0x20`）、
+ *      trance 卡第 8 条 `(GAME_FLAGS & 0x30) != 0x20`（`cards/trance.c`）。⇒ 它是 ② 的**派生值**，不是独立信号。*/
+#define CE_ADDR_START_KIND          0x4cf438  /* int：本局启动方式（见上表；5 = 符卡练习）*/
+#define CE_START_KIND_SPELL_PRACTICE 5
+#define CE_ADDR_SPELL_PRACTICE_ID   0x4ccd14  /* int：本局练的符卡 id，-1 = 不是符卡练习（ECL 系统变量 -9907）*/
+#define CE_ADDR_GAME_FLAGS          0x4cccc8  /* uint32：GAME_FLAGS（doc 里的 DAT_004cccc8 / GLOBALS+8）*/
+#define CE_PRACTICE_MODE_MASK       0x30u     /* 模式域掩码 */
+#define CE_PRACTICE_MODE_SPELL      0x20u     /* 符卡练习（回放符卡练习时也是它）*/
 #define CE_GT_FLAGS                0xb0       /* zGameThread+0xb0：位 0x20000 = 请求开商店（MSG opcode 36 置 0x440d83；GameThread 0x443b05 测、0x443c17 清）*/
 #define CE_GT_REPLAY_PLAYING       0xd0       /* zGameThread+0xd0：非 0 = replay 回放中（商店 0x417cd8、sub_417880 都看它）*/
 #define CE_GT_FLAG_OPEN_SHOP       0x20000
@@ -375,7 +410,12 @@
 #define CE_SHOP_PTR()       (*(void **)CE_ADDR_SHOP_PTR)
 #define CE_TIME_IN_STAGE()  (*(int32_t *)CE_ADDR_TIME_IN_STAGE)
 #define CE_CURRENT_STAGE()  (*(int32_t *)CE_ADDR_CURRENT_STAGE)
-#define CE_PRACTICE_STAGE() (*(int32_t *)CE_ADDR_PRACTICE_STAGE)
+#define CE_EXTRA_RUN()      (*(int32_t *)CE_ADDR_EXTRA_RUN)          /* 1 = Extra 单关局，-1 = 其它 */
+#define CE_PRACTICE_STAGE() (*(int32_t *)CE_ADDR_PRACTICE_STAGE)      /* ❌ 旧名别名（= CE_EXTRA_RUN），新代码别用 */
+#define CE_START_KIND()     (*(int32_t *)CE_ADDR_START_KIND)          /* 本局启动方式；5 = 符卡练习 */
+#define CE_SPELL_PRACTICE_ID() (*(int32_t *)CE_ADDR_SPELL_PRACTICE_ID) /* 本局练的符卡 id，-1 = 不是符卡练习 */
+#define CE_GAME_FLAGS()     (*(uint32_t *)CE_ADDR_GAME_FLAGS)         /* GAME_FLAGS 全字 */
+#define CE_PRACTICE_MODE()  ((uint32_t)(*(uint8_t *)CE_ADDR_GAME_FLAGS) & CE_PRACTICE_MODE_MASK)
 #define CE_LIFE_FRAGMENTS() (*(int32_t *)CE_ADDR_LIFE_FRAGMENTS)
 #define CE_SPELLCARD()      (*(uint8_t **)CE_ADDR_SPELLCARD_PTR)
 #define CE_OWNED_ARRAY()    ((const int32_t *)(CE_ABILITY_MGR() + CE_MGR_OWNED))
