@@ -3956,6 +3956,17 @@ static unsigned s_xfer_rect, s_xfer_rect_fail, s_xfer_noboss, s_xfer_noparent;
  *   母机查不到时才退回原来的全局 boss，再不行才 `noboss` 丢。*/
 static uint32_t s_xfer_parent;
 static unsigned s_xfer_tick_calls;   /* ★ `yk_transfer_tick` 本局被调了几次（判断这一支有没有在跑）*/
+/* ★★★ 2026-10-19（owner 实跑：01:26 那局 `youkai/leveledit:` **仍然 0 行**，而 01:15 的
+ *   `le-probe(enemy)` 已经证明 `$I3 == 997` 读得到 ✓）—— **无条件 MARK 诊断**的节流表。
+ *   语义：`s_le_mark_id[k] != 0` ⇒ 这一格记的是哪个敌机 id；同一 id 每 60 帧最多打一条 ✓。
+ *   ⇒ 下一局一次分清三种失败（这正是本表存在的唯一理由，根因查清后整段删掉 ✓）：
+ *     ① 完全没有 MARK 行 ⇒ 扫描没跑到，或那局场上根本没有 997 敌机；
+ *     ② MARK 有、`le_boss=0` ⇒ boss 指针取不到（`yk_boss()` 的 lockable 门 + `CE_EM_BOSS_IDS`
+ *        兜底都没成 ⇒ 接管门 `le_boss &&` 直接短路，一行日志都不会有 —— **静默失败**）；
+ *     ③ MARK 有、`le_boss>0`、`parent=0` 却仍无 TAKEOVER ⇒ 是后面的门在挡
+ *        （`in_map` / `in_orbit` 在 TAKEOVER 日志**之前** `continue` ✓）。*/
+static uint32_t s_le_mark_id[16];
+static uint32_t s_le_mark_frame[16];
 static unsigned  s_xfam_used;     /* 本帧表用了几格（日志用）*/
 
 /* 这个 id 是否已在映射层（`s_map`）—— 那边已经在喂转嫁，别重复计。*/
@@ -4390,6 +4401,18 @@ static void __attribute__((noinline)) yk_transfer_tick(yk_card_t *s)
                     if (le_boss) break;
                 }
             }
+            /* ★★★ 2026-10-19：**`CE_EM_BOSS_IDS` 槽位只读体检**（任务 A 第 5 步）——
+             *   `le_boss` 是接管门的第一个合取项，它取不到就**一行日志都不会有**（静默 ✗）。
+             *   符卡练习里 boss 槽位到底是不是空的，用这一行钉死；每 600 帧一条（几乎零成本 ✓）。
+             *   读法 = 一手 `get_boss_enemy_full` `0x4237f0`：`em+0x48` 起 4 个 int32 boss id ✓。*/
+            if ((s_ledger_frame % 600u) == 0u)
+                ce_log("youkai/leveledit: CTX le_boss=%u le_here=%d boss_slots=%d,%d,%d,%d "
+                       "(boss slot dump; all zero => yk_boss() has nothing to resolve in this mode)",
+                       le_boss ? *(const uint32_t *)(le_boss + CE_ENEMY_ID) : 0u, le_here,
+                       (int)*(const int32_t *)(em + CE_EM_BOSS_IDS + 0),
+                       (int)*(const int32_t *)(em + CE_EM_BOSS_IDS + 4),
+                       (int)*(const int32_t *)(em + CE_EM_BOSS_IDS + 8),
+                       (int)*(const int32_t *)(em + CE_EM_BOSS_IDS + 12));
             for (i = 0; i < YK_XFAM_MAX; ++i) s_xfam[i].seen = 0;
             CE_ENEMY_FOREACH(em, e) {
                 uint32_t id, parent;
@@ -4406,6 +4429,40 @@ static void __attribute__((noinline)) yk_transfer_tick(yk_card_t *s)
                  *   变量恰好等于某个 boss id 时才喂一次）⇒ 「外部子敌人」那条转嫁源实际是死的
                  *   （实跑台账 `xfer[... ext 0/0 ...]`）。修对之后 = 真的按「谁是 boss 的孩子」喂。*/
                 parent = (uint32_t)*(const int32_t *)(e + YK_ENEMY_PARENT_ID);
+                /* ★★★ 2026-10-19（任务 A 第 4 步）：**无条件 MARK** —— 只要 `$I3 == 997` 就打一行，
+                 *   **不依赖 `le_boss` / `le_here` / `pending` / 任何门** ✓（放的位置在**所有**
+                 *   `continue` 之前 ⇒ 这一行是"我们到底看没看见这只敌机"的唯一凭据）。
+                 *   为什么必须有它：接管块现在挂在 `!parent && le_boss && …` 三个合取项上，任一不成立
+                 *   **都是静默** ✗ —— 01:26 那局 `le-probe` 明明读得到 997 ✓，`xfer[tick 1065 … ext 150/6169]`
+                 *   也说明扫描在跑 ✓，却 0 行 `youkai/leveledit:` ⇒ 只能靠这条 MARK 分辨是哪一项。
+                 *   三种读法（下一局看这一行就够）：
+                 *     · **完全没有 MARK 行** ⇒ 那局场上没有 997 敌机 / 扫描没跑到（先看 `xfer[tick …]`）；
+                 *     · `le_boss=0` ⇒ boss 取不到（看同帧 `CTX … boss_slots=`）⇒ 接管门第一项就短路 ✗；
+                 *     · `le_boss>0 且 parent=0` 却仍无 TAKEOVER ⇒ 后面的门在挡（`in_map=1` / `in_orbit=1`）。
+                 *   节流：同 id 每 60 帧最多一条（16 格表，满了就不打 —— 使魔种类很少 ✓）。*/
+                {   int32_t iv3m = yk_le_iv3(e);
+                    if (iv3m == YK_LE_FAM_MARK) {
+                        unsigned mi, slot = 16u;
+                        for (mi = 0; mi < 16u; ++mi) {
+                            if (s_le_mark_id[mi] == id) { slot = mi; break; }
+                            if (!s_le_mark_id[mi] && slot == 16u) slot = mi;
+                        }
+                        if (slot < 16u && (s_le_mark_id[slot] != id ||
+                                           (uint32_t)(s_ledger_frame - s_le_mark_frame[slot]) >= 60u)) {
+                            s_le_mark_id[slot] = id;
+                            s_le_mark_frame[slot] = s_ledger_frame;
+                            ce_log("youkai/leveledit: MARK id=%u iv3=%d le_boss=%u le_here=%d "
+                                   "parent=%u in_map=%d in_orbit=%d in_xfam=%d life=%d",
+                                   id, (int)iv3m,
+                                   le_boss ? *(const uint32_t *)(le_boss + CE_ENEMY_ID) : 0u,
+                                   le_here, parent,
+                                   yk_map_has_id(&s_map, id) ? 1 : 0,
+                                   yk_orbit_find_id(id) ? 1 : 0,
+                                   yk_xfam_find(id) ? 1 : 0,
+                                   (int)*(const int32_t *)(e + YK_ED_LIFE_CUR));
+                        }
+                    }
+                }
                 /* ★★ B2：**他们的使魔** = `$I3 == 997`（`yk_le_is_their_familiar`）✓
                  *   ★ 2026-10-19 实跑：`le_here`（sub ≥ 24）只覆盖后半段 ⇒ 已从本门移除 ✗（见上面那段）；
                  *   误伤防护仍成立：零售局与其它敌机的 `iv3` 恒 0 ✓（实跑日志 111 行 997 全落在 338+ 那批 ✓）。

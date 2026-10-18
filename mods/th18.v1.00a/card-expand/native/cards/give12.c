@@ -12,15 +12,24 @@
  * —— 与商店刷出来、强欲之壶发出来的是同一条路（`sdk/public.h:208` 声明）。
  *
  * 幂等：一局只发一次（`s_run` 记住本局的纪元；`on_run_reset` 清零 ⇒ 重开一局可以再发）。
+ * ★★★ 2026-10-19（owner 实跑：「**已经拥有的卡还会再发一张**」✗）：**逐张查游戏自己的 `owned[]`**，
+ *   已持有就**不发**，并打 `give12: skip card %u (already owned)` ✓。
+ *   一手理由（不是推测）：`ce_give_card` = `AbilityManager__allocate_new_card` `0x411460`，
+ *   那里**只有** `num_total >= 0x100` 与 `id > 0x38` 两道守卫，**没有任何 `owned[]` 检查** ✗
+ *   ⇒ 对已持有的卡再调一次 = 再 `operator new` 一个同 id 卡对象并挂进链表 ✓（`02-lifecycle.md` §2）。
+ *   判据 = `owned[card_id]`（`0x412D42` 置 1、删卡/收尾清零；SDK 现成读法 `ce_owned()`），
+ *   纯逻辑抽在 `cards/give12_core.{h,c}` + 主机单测 `tests/test_give12_core.c` ✓。
+ *
  * 收尾：本卡**不留跨帧资源**（没有自建池/VM/HUD 槽）⇒ `on_delete` 只需把本局标记清掉，
  * 满足 METHOD 的长持续效果铁律。
  *
  * 站点：**0 条新增**（主动卡走既有的 `on_activate` / `on_active_tick` 回调与 `ce_give_card` 函数调用）。
  */
 #include "sdk.h"
+#include "give12_core.h"
 
-#define GIVE12_FIRST 106u
-#define GIVE12_LAST  117u
+#define GIVE12_FIRST CE_GIVE12_FIRST
+#define GIVE12_LAST  CE_GIVE12_LAST
 
 static int s_given_run;      /* 本局是否已发过（幂等）；on_run_reset/on_delete 清零 */
 static int s_epoch = 1;      /* 简单纪元：run_reset 时 ++，用来区分"新的一局" */
@@ -35,7 +44,11 @@ static int ctor(ce_card_t *c)
 
 static int on_activate(ce_card_t *c)
 {
-    unsigned id, ok = 0, fail = 0;
+    unsigned id, ok = 0, fail = 0, skipped = 0;
+    /* 游戏自己的「已持有」数组（`zAbilityManager.owned[]`，`0x412D42` 置 1；`sdk.h` 的
+     * `ce_owned()` 读的就是它）。**只读**，不发卡也不改它。管理器不在时给 0 ⇒ 纯逻辑按
+     * 「拿不到 ⇒ 不挡」处理（见 `give12_core.h` 第 3 条）。*/
+    const int32_t *owned = CE_ABILITY_MGR() ? CE_OWNED_ARRAY() : (const int32_t *)0;
 
     if (!c) return 0;
     if (s_given_run == s_epoch) {
@@ -47,13 +60,25 @@ static int on_activate(ce_card_t *c)
         /* ★ 2026-10-18（owner 口径：「118 别摘掉，是只摘掉里面的 109」）：
          *   109（花映塚）本版整体摘除（cards.js 里 deck_visible=0 + weight=0），
          *   而本卡（118）的发放范围 106–117 含 109 ✗ ⇒ 这里显式跳过，避免"用 118 绕过摘除"✗。*/
-        if (id == 109u) continue;
+        if (id == CE_GIVE12_SKIP) {
+            ce_log("give12: skip card %u (removed from this build)", id);
+            ++skipped;
+            continue;
+        }
+        /* ★★★ 2026-10-19（owner：「已经拥有的卡还会再发一张」✗）：**先查再给** ——
+         *   `0x411460` 自己不查 `owned[]` ⇒ 不挡就会再建一个同 id 的卡对象（见本文件头注释）。*/
+        if (!ce_give12_should_give(owned, CE_GIVE12_OWNED_LEN, id)) {
+            ce_log("give12: skip card %u (already owned)", id);
+            ++skipped;
+            continue;
+        }
         int r = ce_give_card(id, CE_MODE_SHOP, 0);
         if (r) ++ok; else ++fail;
         ce_log("give12: gave card %u -> %d", id, r);
     }
-    ce_log("give12: 发动完成 —— %u 张成功 / %u 张失败（%u..%u）；拿到后请到编成里自行装上",
-           ok, fail, GIVE12_FIRST, GIVE12_LAST);
+    ce_log("give12: 发动完成 —— %u 张成功 / %u 张失败 / %u 张跳过（已持有或摘除）（%u..%u）；"
+           "拿到后请到编成里自行装上",
+           ok, fail, skipped, GIVE12_FIRST, GIVE12_LAST);
     return 0;
 }
 

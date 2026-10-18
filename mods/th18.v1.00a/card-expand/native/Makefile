@@ -270,6 +270,11 @@ test-host:
 	./tests/build/test_faith_core
 	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_mof_core tests/test_mof_core.c cards/mof_core.c cards/faith_core.c
 	./tests/build/test_mof_core
+## ★ 2026-10-19（owner 实跑：118「已经拥有的卡还会再发一张」）：发放计划纯逻辑 ——
+##   区间 106..117 / 109 恒不发 / `owned[id] != 0` ⇒ 不发 / 升序 / cap / NULL 不挡。
+##   一手理由 = `0x411460` 自己不查 `owned[]`（见 `cards/give12_core.h` 头注释）。
+	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_give12_core tests/test_give12_core.c cards/give12_core.c
+	./tests/build/test_give12_core
 ## test_mof_green_core —— ★★ 2026-09-18（110 变绿）：名单表的**不变式**（脚本差 ÷ 5 == 变体差、
 ##   sprite 差 == 变体差 × 12）+ 判据（只认「此刻真的改上了」的行、只认 enemy.anm）+ 关掩码与逐帧计划 +
 ##   内存原语（swap 备份 / apply 幂等 / restore 精确还原）+ 运行期同形体检。见 `cards/mof_green_core.h`。
