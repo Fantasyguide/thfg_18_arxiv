@@ -4466,8 +4466,13 @@ static void __attribute__((noinline)) yk_transfer_tick(yk_card_t *s)
                 /* ★★ B2：**他们的使魔** = `$I3 == 997`（`yk_le_is_their_familiar`）✓
                  *   ★ 2026-10-19 实跑：`le_here`（sub ≥ 24）只覆盖后半段 ⇒ 已从本门移除 ✗（见上面那段）；
                  *   误伤防护仍成立：零售局与其它敌机的 `iv3` 恒 0 ✓（实跑日志 111 行 997 全落在 338+ 那批 ✓）。
-                 *   没有 parent 时把落点设成**当前 boss**（一手语义 = 「打使魔 ⇒ 转给它的主人」✓）。*/
-                if (!parent && le_boss &&
+                 *   没有 parent 时把落点设成**当前 boss**（一手语义 = 「打使魔 ⇒ 转给它的主人」✓）。
+                 *   ★★★ 2026-10-19 实跑终审（MARK 46 条）：`parent_enemy_id` 非 0 且 = boss(320)
+                 *   ⇒ 一手语义「谁跑的 ECL 把我建出来的」⇒ 使魔的 parent 恒 = boss ⇒ 原来的
+                 *   `!parent` 把全部使魔挡掉 ✗
+                 *   ⇒ 去掉 `!parent`；误伤防护由 `le_boss && iv3==997` 承担 ✓（997 只在他们的
+                 *   8 种使魔上出现，零售局/其它敌机恒 0）*/
+                if (le_boss &&
                     yk_le_is_their_familiar((int)yk_le_iv3(e))) {
                     parent = *(const uint32_t *)(le_boss + CE_ENEMY_ID);
                     le_fam = 1;
