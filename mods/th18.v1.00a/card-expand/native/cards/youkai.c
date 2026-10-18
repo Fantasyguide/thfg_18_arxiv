@@ -4129,12 +4129,16 @@ static unsigned s_le_hp_logged;
  *   ⇒ 不再按「母机 HP/3」推（那会随 boss 阶段漂：BossCard2 的 boss 只有 2000 ⇒ 666，Boss1 16250 ⇒ 5416），
  *     改成 owner 要的**定值 600**；比原先实跑的 20 厚 30 倍。
  *   ⚠ 只往上提（`max < want` 才写）：他们已经给了 999999 的那批（实跑见过）原样保留 ✓。*/
-#define YK_LE_FAM_HP_FIXED 600
+/* ★ 2026-10-19p（owner 改主意，逐字：「对于米斯蒂亚的使魔，**108 接管的血量也跟没接管一样**，
+ *   不然太难了」）⇒ **默认不写血**（`0` = 关）。接管只做：转伤 / 妖侧外观 / 掐弹 / 关体术，
+ *   **血量保持他们 ECL 给的原值**（实跑 = 20）。要再提血把这里改成正数即可（旋钮保留）。*/
+#define YK_LE_FAM_HP_FIXED 0
 
 static void yk_le_fam_raise_hp(uint8_t *f, const uint8_t *boss)
 {
     int32_t want, cur_max;
     (void)boss;                                         /* 定值口径，不再读母机 HP */
+    if (!f || YK_LE_FAM_HP_FIXED <= 0) return;          /* ★ 0 = 关 ⇒ 血量原样不动（owner 2026-10-19p）*/
     if (!f) return;
     want = YK_LE_FAM_HP_FIXED * YK_LE_FAM_HP_SCALE / 1000;   /* ★ owner：按 600 来 */
     if (want < 1) want = 1;
