@@ -6070,6 +6070,42 @@ UI 列表尾插、组内后生成者后画（§2b.4）。
 - **回归**：`make sht` rc=0、`make sht-verify` rc=0、`make check` rc=0（含 `capcheck` 三方对账、
   `check_player_anm_bounds.py`）、`python3 tooling/check-docs.py` 269 文件全过。
 
+#### BE-4 ★ 2026-10-17 摘回 main 的 1d41bcdb（新卡 81–85）+ 9b623ff1（平衡数值）—— 动了共享件
+
+**背景**：把 `Fantasyguide/renkolab` 的 `main` 上 Renko 那批内容摘回本线（分支
+`feat/pullback-main-content`）。81–85 五张卡（黑莲花 / 阳光戒指 / 火球术 / 向日葵 / 金盏花）
+的**代码与美术**此前已并入；这次补的是**声明 / 数据 / 生成物**，以及 9b623ff1 的**平衡数字**。
+
+| 文件 | 改了什么 | 为什么 | 验证 |
+| --- | --- | --- | --- |
+| `native/Makefile` | `test-host` 加 fireball_core / plant_core 两对「编译 + 运行」 | 两个单测源文件 29d8f2c7 就并入了，但 Makefile 没跑它们 ⇒ 从未被验证过 | `make test-host` rc=0、两条单测 OK |
+| `native/engine.h` | 新增 `CE_FN_GAIN_POWER`（`0x4573f0`）/ `CE_FN_POPUP_ADD`（`0x4645f0`）/ `CE_MAX_POWER()` / `CE_SE_POWERUP` | `cards/lotus.c` 已经在调，缺声明时整棵 DLL 编不过（`-Werror`）| 单头 `-fsyntax-only` rc=0；无重定义 |
+| `native/sdk.h` | 新增 `ce_grant_power()` + 两个调用约定 typedef + `CE_POPUP_POWERUP_COLOR` | 同上；四步照零售 `CardRingo__constructor`（一手）| 交叉编译 lotus.c / fireball.c rc=0 |
+| `native/anm_ids.h` | **生成物**：`SF_*` / `MG_*` / `SCRIPT_SUNFLOWER` / `SCRIPT_MARIGOLD` | 上游那 +20 行在本仓的落地（号码按本仓现状，见下）| `make anm` rc=0；bounds 检查 rc=0 |
+| `assets/ability/entries/ORDER.txt` | 追加 `ATLAS_SUNFLOWER`（27 帧）/ `ATLAS_MARIGOLD`（24 帧）| 只 append；图集合并规矩 ⇒ 2 个 entry 而不是 51 个 | 逐像素自检全过 |
+| `assets/ability/scripts/468/469` | 两株植物的场上动画（上游 137/138；本仓号接在 467 之后）| 脚本号必须连续 | `thanm -l 18` 里首帧 sprite 对得上 |
+| `assets/ability/scripts/79–84` | 青眼光束保持段 45 → 30 帧 | 9b623ff1 的平衡 | `make anm` + `make check` |
+| `patch/th18/cards.js` | 67 / 72 两行 desc 的数字 | 与 `BE_HP` / `FL_HP` 的新值一致 | `mkfiles.py --check` rc=0 |
+| `patch/files.js` | 重算 `th18/cards.js` 的 crc32 | 内容字节变了 | 幂等 |
+| `CAPACITY.md` | 附录 A 重新生成 | 新图集 entry 必须登记 | `capcheck` 全绿 |
+| `tooling/check-docs.py` + `DOCSTYLE.md` | 摘回 main 的 3ae53b6a（指向 gitignored 的链接不判死）| 干净 worktree 的 `make check` 前置 | `check-docs.py` rc=0 |
+
+**对既有卡的影响面**：
+- 声明都是**纯新增**（`engine.h` / `sdk.h` 里没有改任何既有宏 / 函数 / 调用约定）⇒ 既有卡零影响。
+- **脚本号 / sprite 号只在末尾追加**：468/469 是新脚本；`SF_*` = 812.. 起、`MG_*` 因向日葵图集
+  变大而整体后移（两处宏都是生成物，只有 84/85 引用）。
+- **67 青眼白龙**（别人的卡）：`BE_HP` / `BE_WAVE_FRAMES` / `BE_RADIUS` 按 9b623ff1 削；
+  这是**原作者自己的平衡提交**，我们只是照数值摘。**72 炎魔之王**同理（`FL_HP`）。
+- **84/85**（也是别人那批）：血 / 半径 / 待机帧数 / 血条偏移按 9b623ff1。
+
+**回归**：`make check` **rc=0**（`quick` / `cards-check` / `anm-verify` / `sht-verify` / `snd-check` /
+`dllx87` / `dllverify` / `sites` / `contract_check` / `gen_drift` / `sitecheck` / `capcheck` /
+`engine_abi_check` / `anm_hud_alpha_check` / `check_anm_rules` / modkit / `check-docs` 全过）；
+`make test-host` rc=0（含新旧全部单测）。
+
+**跳过**：9b623ff1 的 62 个美术文件（此前已并过，本次逐张 md5 核对过）；1d41bcdb 的
+`CARDS.md` / `NEXT.md` / `AUDIT` 正文等文档增量（不属于这四步的范围）。
+
 ## §BF. 112 的用户裁决实装（2026-09-12：金=蓝 / 两同一异 / HUD 第一版 / 五边形钩子）
 
 | # | 断言 | 可信度 | 证据 |

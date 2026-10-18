@@ -146,7 +146,7 @@
     "name": "青眼白龙",
     "desc": [
       "主动（C 键）：献祭 1 残机召唤青眼白龙。",
-      "龙跟随自机，替你挡下 1500 发子弹，",
+      "龙跟随自机，替你挡下 600 发子弹，",
       "每 5 秒向上喷射白光攻击敌人。",
       "致敬・游戏王。"
     ],
@@ -219,7 +219,7 @@
     "name": "炎魔之王拉格纳罗斯",
     "desc": [
       "主动（C 键）：消耗 2.00 火力召唤炎魔之王。",
-      "它替你挡下 800 发子弹，每 7 秒随机移动，",
+      "它替你挡下 400 发子弹，每 7 秒随机移动，",
       "并向随机一个敌人投掷火球（沿途消弹）。",
       "火力不足 3.00 时无法召唤。致敬・炉石传说。"
     ],
@@ -416,8 +416,9 @@
     "category": 0,
     "internal_name": "POFV_BLAST",
     "initial_unlocked": 1,
+    "deck_visible": 0,
     "price_tier": 10,
-    "weight": 2,
+    "weight": 0,
     "sprite_large": 212,
     "sprite_small": 213
   },
@@ -566,10 +567,11 @@
       "编成：把哪些系统机制叠在一起打。"
     ],
     "internal_name": "GIVE12",
+    "deck_visible": 0,
     "category": 0,
     "initial_unlocked": 1,
     "price_tier": 10,
-    "weight": 1,
+    "weight": 0,
     "sprite_large": 186,
     "sprite_small": 187
   },

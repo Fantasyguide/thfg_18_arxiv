@@ -1350,3 +1350,65 @@ RED_AURA_4             ability/boss_aura_red/RED_AURA_4.png        @192,0,48x48
 RED_AURA_5             ability/boss_aura_red/RED_AURA_5.png        @240,0,48x48
 RED_AURA_6             ability/boss_aura_red/RED_AURA_6.png        @288,0,48x48
 RED_AURA_7             ability/boss_aura_red/RED_AURA_7.png        @336,0,48x48
+# ★ 2026-10-17（摘回 1d41bcdb 的 84 向日葵 / 85 金盏花；帧数与缩放按 9b623ff1 的平衡）：
+#   PvZ1 原版待机动画 —— 向日葵 **27 帧**、金盏花 **24 帧**（9b623ff1：「待机动画加密提速」，
+#   每帧停 4 game frame ⇒ 108 / 96 帧 ≈ 1.8 / 1.6 s；此前是 9 帧 × 18 = 2.7 s）。
+#   上游（1d41bcdb）是单图 entry（他那边 entry101–118）；本仓 2026-09-13 起图集合并 ⇒
+#   按现行做法并成图集：向日葵 9×3 = 1152×384 / 金盏花 8×3 = 1024×384（每格 128×128），
+#   只占 2 个 entry（`ATLAS-MERGE-AUDIT.md`：256 上限，要给以后的新卡留余量）。
+#   规则①（矩形 = 原图自己的像素尺寸）成立：两张图都是 128×128 原帧，不补边 ⇒ 直贴。
+#   成员名 `SF_1..SF_27` / `MG_1..MG_24` 与脚本里的 `@SF_n` / `@MG_n` 一字不差
+#   （上游脚本 137/138 在本仓落成 468/469，见 scripts/）。
+ATLAS ATLAS_SUNFLOWER 1152x384@9x3
+SF_1                    ability/sunflower/SF_1.png                  128x128
+SF_2                    ability/sunflower/SF_2.png                  128x128
+SF_3                    ability/sunflower/SF_3.png                  128x128
+SF_4                    ability/sunflower/SF_4.png                  128x128
+SF_5                    ability/sunflower/SF_5.png                  128x128
+SF_6                    ability/sunflower/SF_6.png                  128x128
+SF_7                    ability/sunflower/SF_7.png                  128x128
+SF_8                    ability/sunflower/SF_8.png                  128x128
+SF_9                    ability/sunflower/SF_9.png                  128x128
+SF_10                   ability/sunflower/SF_10.png                 128x128
+SF_11                   ability/sunflower/SF_11.png                 128x128
+SF_12                   ability/sunflower/SF_12.png                 128x128
+SF_13                   ability/sunflower/SF_13.png                 128x128
+SF_14                   ability/sunflower/SF_14.png                 128x128
+SF_15                   ability/sunflower/SF_15.png                 128x128
+SF_16                   ability/sunflower/SF_16.png                 128x128
+SF_17                   ability/sunflower/SF_17.png                 128x128
+SF_18                   ability/sunflower/SF_18.png                 128x128
+SF_19                   ability/sunflower/SF_19.png                 128x128
+SF_20                   ability/sunflower/SF_20.png                 128x128
+SF_21                   ability/sunflower/SF_21.png                 128x128
+SF_22                   ability/sunflower/SF_22.png                 128x128
+SF_23                   ability/sunflower/SF_23.png                 128x128
+SF_24                   ability/sunflower/SF_24.png                 128x128
+SF_25                   ability/sunflower/SF_25.png                 128x128
+SF_26                   ability/sunflower/SF_26.png                 128x128
+SF_27                   ability/sunflower/SF_27.png                 128x128
+ATLAS ATLAS_MARIGOLD 1024x384@8x3
+MG_1                    ability/marigold/MG_1.png                   128x128
+MG_2                    ability/marigold/MG_2.png                   128x128
+MG_3                    ability/marigold/MG_3.png                   128x128
+MG_4                    ability/marigold/MG_4.png                   128x128
+MG_5                    ability/marigold/MG_5.png                   128x128
+MG_6                    ability/marigold/MG_6.png                   128x128
+MG_7                    ability/marigold/MG_7.png                   128x128
+MG_8                    ability/marigold/MG_8.png                   128x128
+MG_9                    ability/marigold/MG_9.png                   128x128
+MG_10                   ability/marigold/MG_10.png                  128x128
+MG_11                   ability/marigold/MG_11.png                  128x128
+MG_12                   ability/marigold/MG_12.png                  128x128
+MG_13                   ability/marigold/MG_13.png                  128x128
+MG_14                   ability/marigold/MG_14.png                  128x128
+MG_15                   ability/marigold/MG_15.png                  128x128
+MG_16                   ability/marigold/MG_16.png                  128x128
+MG_17                   ability/marigold/MG_17.png                  128x128
+MG_18                   ability/marigold/MG_18.png                  128x128
+MG_19                   ability/marigold/MG_19.png                  128x128
+MG_20                   ability/marigold/MG_20.png                  128x128
+MG_21                   ability/marigold/MG_21.png                  128x128
+MG_22                   ability/marigold/MG_22.png                  128x128
+MG_23                   ability/marigold/MG_23.png                  128x128
+MG_24                   ability/marigold/MG_24.png                  128x128
