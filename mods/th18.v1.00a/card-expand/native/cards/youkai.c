@@ -4059,6 +4059,7 @@ typedef struct {
     uint32_t fam_id;       /* 0 = 空槽 */
     uint32_t body_vm;      /* 本体 VM **id**（`anm_vm_ids[0]`）—— 0 = 还没拿到 */
     uint32_t body_color;   /* 本体 `color_1` 原值（只存一次；人侧 / 收尾还回去）*/
+    uint32_t body_flags;   /* 本体 `flags_lo`(+0x534) 原值（2026-10-19c：藏本体时清 visible bit1，还原时按原值还）*/
     uint32_t ring_vm;      /* 我们自己起的常驻环 VM（只在妖侧存在）*/
     uint32_t last_side_log;
     uint32_t last_warn;
@@ -4070,7 +4071,7 @@ typedef struct {
 } yk_xfam_vm_t;
 static yk_xfam_vm_t s_xfam_vm[YK_XFAM_MAX];
 static int8_t s_xfam_side = -1;      /* 上一帧的全局侧（切换音只在**边沿**响一次）*/
-static unsigned s_xfam_ring_fail;    /* 环 VM 建失败的累计次数（日志节流用）*/
+/* ★ 2026-10-19c：`s_xfam_ring_fail` 随「接管使魔不再画我们的环」一起删掉（owner 口径：只藏本体）*/
 static unsigned s_xfam_vm_full;      /* 外观表满的次数（= 台账满；日志只打第一次）*/
 
 static yk_xfam_vm_t *yk_xfam_vm_find(uint32_t fam_id)
@@ -4156,36 +4157,37 @@ static void __attribute__((noinline)) yk_xfam_vm_tick(void)
         if (vid != v->body_vm) {                           /* 第一次 / 引擎重建了本体 VM */
             v->body_vm = vid;
             v->body_color = *(const uint32_t *)(vm + CE_ANM_VM_COLOR1);
+            v->body_flags = *(const uint32_t *)(vm + CE_ANM_VM_FLAGS_LO);
             v->body_saved = 1;
             v->body_hidden = 0;                            /* 新 VM 还没被我们藏过 */
         }
 
         if (side) {
-            /* 妖侧：本体 alpha = 0（**照抄自建那条路径** `yk_fam_vm_follow()` 的写法 */
+            /* 妖侧：**只藏本体，不画我们的魔法阵** —— ★ owner 2026-10-19 口径逐字：
+             *   「那就只隐藏本体，不花（画）我们的魔法阵」。
+             *   一手（他们仓库 `familiar_visuals.py:overlay_ecl`）：他们的使魔在
+             *   `TSub<child>` 里挂了**两格**——`anmSetSprite(0, 28/29)` 本体 + `anmSetSprite(1, 31)`
+             *   魔法阵（script31 = TH08 etama script48 case2，tex `mystia/fam-circle.png` 62×62）⇒
+             *   **他们自带魔法阵**，我们再起环就是两层 ⇒ 这里**不再 spawn 环**（`ring_vm` 字段只为
+             *   兼容旧状态保留，恒 0）。
+             *   藏本体的两手（原来只有 ①，实跑「他的 VM 没消失」⇒ 补 ②，两只一起上）：
+             *     ① `color_1` 的 alpha 置 0（`ce_anm_set_color`，照抄自建那条路径的写法）；
+             *     ② 清 `flags_lo`（`+0x534`）**bit1 = visible**（绘制前 `0x481256` 读它）——
+             *        他们的本体脚本带 `colorTime/alphaTime`，只写颜色可能被脚本每帧写回。
+             *   ⚠ 两样都**只写本体的那格 VM**（`anm_vm_ids[0]`），**不碰** slot 1（他们的魔法阵）✓。*/
             ce_anm_set_color(vid, 0x00ffffffu);
+            *(uint32_t *)(vm + CE_ANM_VM_FLAGS_LO) &= ~2u;      /* visible = 0 */
             v->body_hidden = 1;
-            if (!v->ring_vm || !ce_anm_get_vm(v->ring_vm)) {
-                v->ring_vm = yk_vm_spawn(CE_ABILITY_ANM(),
-                                         CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_RING,
-                                         YK_FAM_ANM_LAYER);
-                if (v->ring_vm) {
-                    if (pp) ce_anm_set_pos(v->ring_vm, pp[0], pp[1], 0.0f);
-                    ce_anm_interrupt(v->ring_vm, 2);       /* 2 = 妖侧蓝（一手 `0x41b04e`）*/
-                } else if ((++s_xfam_ring_fail == 1u) || (s_xfam_ring_fail % 300u) == 0u) {
-                    ce_log("youkai/leveledit: ring VM spawn FAILED %u time(s) (familiar id=%u, script %d, "
-                           "layer %d) - body is hidden but the ring retries next frame",
-                           s_xfam_ring_fail, x->id,
-                           (int)CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_RING, (int)YK_FAM_ANM_LAYER);
-                }
-            } else if (pp && !ce_anm_set_pos(v->ring_vm, pp[0], pp[1], 0.0f)) {
-                v->ring_vm = 0;                            /* 句柄作废 ⇒ 下一帧自愈重起 */
-            }
+            (void)pp;
         } else {
-            /* 人侧：本体原样可见 + 环收掉（发 interrupt 3 淡出）。
+            /* 人侧：本体原样可见（颜色 + visible 位都还回去）。
              * ⚠ 原色**只在从妖侧切回来那一次**写回（`body_hidden` 门）—— 每帧写会把他们的
-             *   anm 脚本自己的受击闪白 / 淡入淡出钉死在这个快照色上。*/
+             *   anm 脚本自己的受击闪白 / 淡入淡出钉死在这个快照色上。
+             *   visible 位同理：只按**存下来的原值**恢复（原值 bit1=0 就别硬点亮）。*/
             if (v->body_saved && v->body_hidden) {
                 ce_anm_set_color(vid, v->body_color);
+                if (v->body_flags & 2u)
+                    *(uint32_t *)(vm + CE_ANM_VM_FLAGS_LO) |= 2u;
                 v->body_hidden = 0;
             }
             if (v->ring_vm) { ce_anm_interrupt(v->ring_vm, 3); v->ring_vm = 0; }
@@ -8416,10 +8418,45 @@ static int yk_emit_fire_ordinal(uint32_t enemy_id, int slot)
     return 0;
 }
 
+/* ★★★ 2026-10-19d（owner 逐字：「妖侧的使魔在自机附近不能发弹，这是基本机制」）：
+ *   接管的 leveledit 使魔在**妖侧**、且离自机 < `YK_LE_FAM_NOFIRE_DIST` 时，**掐掉它这一次 `etOn`**。
+ *   · 「妖侧」判据与外观切换同一源 = `yk_focused()`（一帧只读一次）；
+ *   · 只碰**接管的**那些：`yk_xfam_find(id)` 命中且 `x->le` ⇒ 零售敌机 / 自建壳 / 绕转使魔一律不动 ✓；
+ *   · 实现 = 复用**已在用**的站点 `th18:0x433ffa`（`on_enemy_shot_slot`，返回非 0 = 本帧这一槽不发射）
+ *     ⇒ **0 新站点**、不碰引擎弹幕路径；
+ *   · 半径 = `YK_LE_FAM_NOFIRE_DIST`：🟡 **owner 只给了机制没给数值**，先取 64 px（≈ 自机判定圈的十几倍），
+ *     登记 `TUNING.md`；日志里有实测距离，owner 说改就一行改。
+ *   · 日志：整局最多 8 行（`NOFIRE`），带实测距离 ⇒ 一眼看出这条闸有没有在动。*/
+#define YK_LE_FAM_NOFIRE_DIST 64.0f
+static unsigned s_le_nofire_logged;
+
 static int yk_on_shot_slot(ce_card_t *c, const ce_enemy_shot_t *ev)
 {
     if (!YK_ENABLE_CARD) return 0;                    /* ★ 总开关：整卡 no-op */
     if (!YK_ENABLE_MAP_LAYER) return 0;                  /* ★ ⑨：闸也停（不掐任何 etOn）*/
+    /* ★ 2026-10-19d：**妖侧近身掐弹**（owner 口径，见上面那段）。放在所有记账之前 ——
+     *   这一发**不会发生**，就不该进 latch / 序号 / FIRECOUNT 的任何一笔。*/
+    if (ev && ev->enemy && yk_focused()) {
+        yk_xfam_t *lx = yk_xfam_find(ev->enemy_id);
+        if (lx && lx->le) {
+            const float *pp0 = ce_player_pos();
+            const float *ep0 = ce_enemy_pos((uint8_t *)ev->enemy);
+            if (pp0 && ep0) {
+                const float dx = ep0[0] - pp0[0], dy = ep0[1] - pp0[1];
+                const float d2 = dx * dx + dy * dy;
+                if (d2 < YK_LE_FAM_NOFIRE_DIST * YK_LE_FAM_NOFIRE_DIST) {
+                    if (s_le_nofire_logged < 8u) {
+                        ++s_le_nofire_logged;
+                        ce_log("youkai/leveledit: NOFIRE familiar id=%u d=%.0f (< %.0f px, youkai side) "
+                               "- this etOn is suppressed (owner: 妖侧使魔近身不发弹)",
+                               ev->enemy_id, (double)(d2 > 0.0f ? __builtin_sqrtf(d2) : 0.0f),
+                               (double)YK_LE_FAM_NOFIRE_DIST);
+                    }
+                    return 1;                            /* ≠ 0 ⇒ 本帧这一槽不发射 */
+                }
+            }
+        }
+    }
     /* ★★★★★ 2026-10-11（**多原点 · 第 0 步**）：本帧这一条 `etOn` 是**该 `(敌人,槽)` 的第几次**
      *   —— 无条件、在任何否决/早退之前调一次（口径唯一，见 `yk_emit_fire_ordinal`）。
      *   `key` = 发射口键（`0..95`）= 本卡对「**这一个出点**」的身份；出点每波旋转也不影响它。

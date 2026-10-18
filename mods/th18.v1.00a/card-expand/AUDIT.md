@@ -32738,3 +32738,22 @@ youkai: practice auto-equip 108 (ce_owned=1, r=4, spell=8)
 - **验证**：`make dll` rc=0 ✓、`make test-host` rc=0（63 checks）✓、`strings` 命中三条新格式串 ✓、
   `deploy.py --skip-build --force` rc=0 ✓、**四处 DLL md5 全等 = `1dcba4a30fc607571e2be578855aaa88`**、
   台账第 26 条。**实跑待验**（预期：`TAKEOVER familiar … via=2`，随后 `shift SE 人→妖 played …`）。
+
+#### 2026-10-19d 追加（owner 实跑反馈两连）
+
+- **「他的 vm 没消失」**：他们的使魔挂了**两格** anm（`familiar_visuals.py:overlay_ecl`：
+  `anmSetSprite(0, 28/29)` = 本体、`anmSetSprite(1, 31)` = **他们自己的魔法阵** script31 = TH08
+  etama script48 case2 / tex `mystia/fam-circle.png` 62×62）⇒ 原来只藏 slot 0 的 body 时，
+  他们的魔法阵仍在（owner 看到的就是它）。
+- **owner 裁决**：「**那就只隐藏本体，不画我们的魔法阵**」⇒ 接管使魔**不再 spawn 我们的环**
+  （`s_xfam_ring_fail` / ring spawn 整段删除，`ring_vm` 字段只为兼容旧状态保留、恒 0）；
+  藏本体改成两手：① `color_1` alpha=0（原写法）+ ② 清 `flags_lo(+0x534)` bit1 = visible
+  （他们的本体脚本带 `colorTime/alphaTime`，只写颜色可能被脚本写回）—— 两者都**只写 slot 0**，
+  **不碰 slot 1（他们的魔法阵）** ✓；人侧还原时按存下的原值恢复（bit1 原值 0 就不点亮）。
+- **owner 追加口径**：「妖侧的使魔在自机附近不能发弹，这是基本机制」⇒ 新闸 **NOFIRE**：
+  接管的使魔在**妖侧**（`yk_focused()`）且离自机 `< YK_LE_FAM_NOFIRE_DIST`(64 px, 🟡 见 `TUNING.md` §2.0zz)
+  时，在**已在用**的站点 `th18:0x433ffa`（`on_enemy_shot_slot` 返回非 0 = 本帧这一槽不发射）里掐掉它的
+  `etOn` ⇒ **0 新站点**；只碰 `x->le` 条目，零售敌机 / 自建壳 / 绕转使魔一律不动；整局最多 8 行
+  `youkai/leveledit: NOFIRE familiar id=… d=…` 日志（带实测距离）。
+- 验证（本轮）：`make dll` rc=0、`make test-host` rc=0（63 checks）、`deploy --skip-build --force` rc=0；
+  四处 DLL md5 见「本次发布」行。**实跑待验**：妖侧靠近他们使魔 ⇒ 它不再发弹（`NOFIRE` 行）。
