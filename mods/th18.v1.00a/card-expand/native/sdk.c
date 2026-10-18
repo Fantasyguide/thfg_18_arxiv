@@ -396,10 +396,22 @@ void ce_hud_text(float x, float y, uint32_t bgra, const char *fmt, ...)
  * 每一项都**先存后改、画完还原**：引擎后面的绘制全靠这些环境值，改了不还等于给别人埋雷。*/
 /* 原始键盘状态。窗口没焦点 / 线程没泵消息时 GetKeyboardState 给的是旧状态 —— 游戏主线程两者都满足。
  * 256 字节栈缓冲，按虚拟键码索引，高位（0x80）置位 = 按下。*/
+/* ★★★ 2026-10-20（owner：「**拆掉所有卡的「空格」「I」「数字键」等调试键**，主要就是系统卡」）——
+ *   统一在这里关：所有卡的调试键历史上都走 `ce_key_down()`（见 `sdk.h` 那段 P27 的注），
+ *   所以在**唯一入口**上过滤，比逐个卡改干净、也不会漏。
+ *   `CE_DEBUG_KEYS = 0` ⇒ 空格 / `I`(0x49) / 数字 0–9 / Ctrl / Shift **一律当作没按** ✓
+ *   （A/S/C/D 是玩法键，**不在**过滤范围 ✓；代码全保留，置 1 就全回来 ✓）。*/
+#define CE_DEBUG_KEYS 0
 int ce_key_down(int vk)
 {
     unsigned char st[256];
     if (vk < 0 || vk > 255) return 0;
+#if !CE_DEBUG_KEYS
+    if (vk == CE_VK_SPACE || vk == 0x49 /* 'I' */ ||
+        (vk >= '0' && vk <= '9') ||
+        vk == CE_VK_CONTROL || vk == CE_VK_SHIFT)
+        return 0;
+#endif
     if (!GetKeyboardState(st)) return 0;
     return (st[vk] & 0x80) != 0;
 }
