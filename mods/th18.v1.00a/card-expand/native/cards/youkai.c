@@ -7895,6 +7895,126 @@ static int yk_in_spell_practice(int32_t *sid_out)
     return (CE_PRACTICE_MODE() == CE_PRACTICE_MODE_SPELL) ? 1 : 0;    /* 🟡 兜底 */
 }
 
+/* ★★★ 2026-10-19f（owner：「只要加载了我们的 DLL，使魔就开始转嫁血量，这个可能吗？」）——**可能**。
+ *
+ * 为什么可能：本 DLL 里有一个**与卡组无关**的每帧帧点 = `BP_ce_item_frame`（`sdk.c`），
+ *   它同时调 `yk_practice_equip_once()`（那一支在 108 不在卡组时也照跑，已实跑证过 ✓）
+ *   ⇒ 只要 **DLL 在场**，就能在没有 108 的情况下替他们那批使魔做 1/2 转伤。
+ *   （**没有 DLL** 当然做不到 —— 转伤是用 `ce_damage_rect` 建的伤害源，那是 DLL 侧的东西。）
+ *
+ * 口径：**只做转伤**。外观切换 / 藏本体 / 拖尾 / NOFIRE 仍归卡内（那些是「装上 108」才有的表现）。
+ *   判据 / 喂料 / 落点与卡内那条**逐条同源**：
+ *     · 他们那场 = boss 的 ECL `subroutine_index >= 24`（`yk_le_here()`，按面粘性）；
+ *     · 他们使魔 = 主 anm 脚本 ∈ {28,29}（`familiar_visuals.py:39` 的 CHILDREN 口径）或 `$I3 == 997`；
+ *     · 1/2 转给**母机**（`parent_enemy_id`），母机查不到退回全局 boss，都没有才丢；
+ *     · 时符 / 母机无敌期 ⇒ 整笔丢进 `dropped`（与卡内同一条硬约束）。
+ *   ⚠ **幂等**：`ce_owned(108)` 为真 ⇒ 整段 no-op（卡内那条已经在跑，绝不双计）。
+ *   ⚠ 台账复用 `s_xfam`（模块级，不是卡状态）⇒ 同一条使魔在两条路里是同一个条目。
+ *   ⚠ 节拍用 `ce_sdk_frame()`（卡不在时 `s_ledger_frame` 根本不涨）。
+ *   ⚠ 调用点必须在「自机 + AbilityManager 都在」之后（`ce_owned()` 不解空指针）。*/
+static yk_transfer_t s_le_tr;
+static unsigned s_le_dropped, s_le_rect_ok, s_le_noboss;
+static uint32_t s_le_parent;
+
+static void __attribute__((noinline)) yk_le_transfer_standalone(void)
+{
+    uint8_t *em = CE_ENEMY_MGR();
+    uint8_t *e, *boss;
+    int le_stage;
+    uint32_t fr, i;
+
+    if (!em) return;
+    if (ce_owned(108u)) return;                  /* 卡在手上 ⇒ 卡内那条在跑，绝不双计 ✓ */
+    fr = ce_sdk_frame();
+    if ((fr & 1u) != 0u) return;                 /* 与卡内同节拍：每 2 帧扫一次 */
+    boss = yk_boss();
+    if (boss && yk_le_here()) s_le_seen_stage = CE_CURRENT_STAGE();
+    le_stage = (yk_le_here() || (s_le_seen_stage == CE_CURRENT_STAGE())) ? 1 : 0;
+    if (!le_stage) return;                       /* 不是他们那场 ⇒ 一个字节都不碰 ✓ */
+
+    for (i = 0; i < YK_XFAM_MAX; ++i) s_xfam[i].seen = 0;
+    CE_ENEMY_FOREACH(em, e) {
+        uint32_t id, parent;
+        int32_t life, anm0, iv3;
+        yk_xfam_t *x;
+        if (!e) continue;
+        id = *(const uint32_t *)(e + CE_ENEMY_ID);
+        if (!id) continue;
+        anm0 = *(const int32_t *)(e + CE_ENEMY_DATA + 0x26c);
+        iv3  = yk_le_iv3(e);
+        if (!(anm0 == YK_LE_FAM_ANM_A || anm0 == YK_LE_FAM_ANM_B || iv3 == YK_LE_FAM_MARK))
+            continue;                            /* 只认他们的使魔（两根判据，与卡内同源）*/
+        parent = (uint32_t)*(const int32_t *)(e + YK_ENEMY_PARENT_ID);
+        if (!parent) {                            /* 没有母机 ⇒ 落点 = 当前 boss（一手语义）*/
+            if (!boss) continue;
+            parent = *(const uint32_t *)(boss + CE_ENEMY_ID);
+        }
+        life = *(const int32_t *)(e + YK_ED_LIFE_CUR);
+        x = yk_xfam_find(id);
+        if (!x) {                                 /* 新条目 ⇒ 只登记，不喂（第一帧没有差分）*/
+            unsigned k;
+            if (s_xfam_used >= YK_XFAM_MAX) continue;
+            for (k = 0; k < YK_XFAM_MAX; ++k) if (!s_xfam[k].id) break;
+            if (k >= YK_XFAM_MAX) continue;
+            x = &s_xfam[k];
+            __builtin_memset(x, 0, sizeof *x);
+            x->id = id;
+            x->le = 1;
+            x->last_log_frame = fr - YK_XFAM_LOG_EVERY;
+            ++s_xfam_used;
+            ce_log("youkai/leveledit: TAKEOVER (no-108 path) familiar id=%u anm0=%d iv3=%d -> "
+                   "boss id=%u (1/2 transfer; card 108 not owned)", id, (int)anm0, (int)iv3,
+                   (unsigned)parent);
+        } else if (x->life > life) {
+            int32_t d = x->life - life;
+            s_le_parent = parent;
+            yk_transfer_feed(&s_le_tr, d, YK_TRANSFER_PCT_MAP);    /* 1/2（与卡内同一条 ✓）*/
+        }
+        x->life = life;
+        x->seen = 1;
+    }
+    for (i = 0; i < YK_XFAM_MAX; ++i) {           /* 查不到 ⇒ 删条目（不因血量没变删）*/
+        if (s_xfam[i].id && !s_xfam[i].seen) {
+            __builtin_memset(&s_xfam[i], 0, sizeof s_xfam[i]);
+            --s_xfam_used;
+        }
+    }
+    if (s_le_tr.pending <= 0) return;
+    {   int why = yk_xfer_suppress_reason();      /* 时符 / 无敌期 ⇒ 整笔丢（与卡内同一条）*/
+        if (why) { s_le_dropped += (unsigned)s_le_tr.pending; s_le_tr.pending = 0; return; } }
+    {
+        uint8_t *pe = s_le_parent ? ce_enemy_by_id(em, (int32_t)s_le_parent) : 0;
+        const float *pp2 = pe ? ce_enemy_pos(pe) : 0;
+        uint8_t *tgt = pe;
+        const float *bp2 = pp2;
+        if (!bp2) {                                /* 母机查不到 ⇒ 退回全局 boss */
+            uint8_t *b2 = yk_boss();
+            bp2 = b2 ? ce_enemy_pos(b2) : 0;
+            tgt = b2;
+        }
+        if (!tgt || !bp2) {
+            ++s_le_noboss;
+            s_le_dropped += (unsigned)s_le_tr.pending;
+            s_le_tr.pending = 0;
+            return;
+        }
+        {
+            int amount = yk_transfer_clamp(s_le_tr.pending, YK_TRANSFER_CAP_PER_FRAME);
+            s_le_tr.pending = 0;
+            if (amount <= 0) return;
+            ce_raise_damage_cap(yk_base_damage_cap() + amount);
+            if (ce_damage_rect(bp2, 0.0f, YK_TRANSFER_SRC_LIFE, (int)amount,
+                               YK_TRANSFER_BOX_W, YK_TRANSFER_BOX_H) > 0) {
+                if (++s_le_rect_ok <= 12u)
+                    ce_log("youkai/leveledit: transfer applied (no-108 path) boss id=%u amount=%d "
+                           "(rects=%u dropped=%u noboss=%u)",
+                           (unsigned)*(const uint32_t *)(tgt + CE_ENEMY_ID), amount,
+                           s_le_rect_ok, s_le_dropped, s_le_noboss);
+            }
+        }
+    }
+}
+
 void yk_practice_equip_once(void)
 {
     int32_t t, sid = -1;
@@ -7906,6 +8026,8 @@ void yk_practice_equip_once(void)
         s_practice_failed = 0;
         return;
     }
+    /* ★ 2026-10-19f：**没 108 时的 leveledit 使魔转伤**（与卡组无关；108 在手上时它整段 no-op）*/
+    yk_le_transfer_standalone();
     yk_practice_probe(CE_SPELL_PRACTICE_ID());
     if (!yk_in_spell_practice(&sid)) {  /* 主游玩 / 关卡练习 / 回放 ⇒ 逐字 no-op */
         s_practice_added = 0;

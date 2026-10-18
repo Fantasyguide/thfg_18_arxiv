@@ -32773,3 +32773,25 @@ youkai: practice auto-equip 108 (ce_owned=1, r=4, spell=8)
 - **owner 追加裁决**：「抖动没关系」⇒ **不加**迟滞，`NOFIRE` 保持纯逐发否决（近 ⇒ 掐、远 ⇒ 继续）。
 - 验证（本轮）：`make dll` rc=0、`make test-host` rc=0、`strings` 命中 `trail VM deleted` / `NOFIRE`；
   四处 DLL md5 见发布行。实跑待验：妖侧他们使魔身后**不再有拖尾光**。
+
+#### 2026-10-19f 追加（owner：「只要加载了我们的 DLL，使魔就开始转嫁血量，这个可能吗？」）
+
+- **结论：可能**（且已实装）。判据不是「卡在手上」，而是「**DLL 在场**」：
+  · 载体 = `sdk.c` 的帧点 `BP_ce_item_frame` 里已经在调的 `yk_practice_equip_once()`（**与卡组无关**，
+    实跑已证它在 108 不在卡组时照跑）⇒ 在这一支最前面加 `yk_le_transfer_standalone()`；
+  · `yk_le_transfer_standalone()`（`cards/youkai.c`）：判据 / 喂料 / 落点与卡内那条**逐条同源**——
+    他们那场 = boss ECL `subroutine_index >= 24`（按面粘性）；他们使魔 = 主 anm 脚本 ∈ {28,29}
+    或 `$I3 == 997`；**1/2 转给母机**（`parent_enemy_id`），母机查不到退回全局 boss，都没有才 `noboss` 丢；
+    时符 / 无敌期整笔丢 —— 全部复用同一批纯逻辑（`yk_transfer_feed` / `yk_transfer_clamp` /
+    `yk_xfer_suppress_reason` / `ce_damage_rect`）；
+  · **只做转伤**：外观（藏本体 / 拖尾 / NOFIRE）仍归卡内 —— 那是「装上 108」才有的表现；
+  · **幂等**：`ce_owned(108)` 为真 ⇒ 整段 no-op（卡内那条在跑，绝不双计）；
+  · 台账复用模块级 `s_xfam`（不是卡状态）⇒ 两条路里同一条使魔是同一个条目；
+  · 节拍用 `ce_sdk_frame()`（卡不在时 `s_ledger_frame` 不涨）；调用点在「自机 + AbilityManager 都在」之后
+    （`ce_owned()` 不解空指针）。
+- **做不到的那半（诚实标注）**：**没装我们的 DLL** 时当然做不到 —— 转伤靠 `ce_damage_rect` 建伤害源，
+  那是 DLL 侧的东西（owner 自己也说「没有 dll 做不到」✓）。
+- 验证（本轮）：`make dll` rc=0、`make test-host` rc=0（63 checks）、`strings` 命中
+  `TAKEOVER (no-108 path)` / `transfer applied (no-108 path)`；四处 DLL md5 见发布行。
+  实跑判据：**不带 108** 进他们那场 ⇒ 日志出现 `TAKEOVER (no-108 path) familiar id=…` 与
+  `transfer applied (no-108 path) boss id=… amount=…`，且使魔掉血时 boss 掉 1/2。
