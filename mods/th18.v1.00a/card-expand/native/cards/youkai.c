@@ -185,7 +185,9 @@ static int yk_option_script(int character)
 #define YK_TRANSFER_BOX_W 16.0f     /* 转嫁源盒子。研究 §4 的建议值（放 boss 坐标的小盒，
                                      * 避免顺带打到部件 / 杂鱼）；🟡 待实跑微调。*/
 #define YK_TRANSFER_BOX_H 16.0f
-#define YK_TRANSFER_SRC_LIFE 2      /* 源寿命 2 帧 = 建源帧 + 下一帧各结算一次，之后引擎自己回收
+#define YK_TRANSFER_SRC_LIFE 2
+#define YK_XFER_PENDING_CAP 20000   /* ★ 2026-10-19m：无敌期攒转嫁量的上限（防涨爆）*/
+static unsigned s_xfer_wait_invuln;  /* ★ 2026-10-19m：因为 boss 无敌而**没落地**的次数（诊断）*/      /* 源寿命 2 帧 = 建源帧 + 下一帧各结算一次，之后引擎自己回收
                                      *（`0x45c402` 循环，research §1.3a）；先例 71/72/75 同款。*/
 
 /* ------------------------------------------------------------------ 卡状态
@@ -4815,6 +4817,16 @@ static void __attribute__((noinline)) yk_transfer_tick(yk_card_t *s)
             tgt = boss;
         }
     }
+    /* ★★★ 2026-10-19m（owner：「转伤有吗」+ 实跑一手）：4/4 条 `transfer applied` 都是 **hp_delta=0**，
+     *   而新加的探针打出 **`inv=41/55/25`** ⇒ boss 当时在**无敌计时器**里（`enemy+0x6320`，
+     *   引擎自己的闸 `0x42f2c2 cmp [ebx+0x50f4],0 / jg skip`，`ebx` = zEnemyData ⇒ 绝对 `+0x6320`）
+     *   ⇒ 我们的伤害源被引擎**整笔丢掉**，不是没建源。
+     *   ⇒ 修法：无敌期**不清 pending**（攒着），等无敌结束那一帧再落地；上限 `YK_XFER_PENDING_CAP` 防涨爆。*/
+    if (tgt && *(const int32_t *)(tgt + 0x6320) > 0) {
+        if (s->tr.pending > YK_XFER_PENDING_CAP) s->tr.pending = YK_XFER_PENDING_CAP;
+        ++s_xfer_wait_invuln;
+        return;
+    }
     amount = yk_transfer_clamp(s->tr.pending, YK_TRANSFER_CAP_PER_FRAME);
     s->tr.pending = 0;
     if (amount <= 0) return;
@@ -8071,6 +8083,11 @@ static void __attribute__((noinline)) yk_le_transfer_standalone(void)
             return;
         }
         {
+            /* ★ 2026-10-19m：无敌期不清 pending（同卡内那条，见 `yk_transfer_tick` 的注）*/
+            if (*(const int32_t *)(tgt + 0x6320) > 0) {
+                if (s_le_tr.pending > YK_XFER_PENDING_CAP) s_le_tr.pending = YK_XFER_PENDING_CAP;
+                return;
+            }
             int amount = yk_transfer_clamp(s_le_tr.pending, YK_TRANSFER_CAP_PER_FRAME);
             s_le_tr.pending = 0;
             if (amount <= 0) return;
