@@ -4120,15 +4120,20 @@ static unsigned s_le_hp_logged;
  *     但 TH18 自机弹伤害高一个量级 ⇒ 同一个 20 到 TH18 就是一碰就碎 ⇒ 必须重定，不能照抄。
  *   登记 `TUNING.md` §2.0zz。*/
 #define YK_LE_FAM_HP_SCALE 1000
+/* ★★ 2026-10-19i（owner 拍板：「**按照 600 来吧**」）—— 接管使魔的**定值血量**。
+ *   取值依据：TH08 原版这批 `MystiaChild37/43` 的 `familiarCreate` 实参就是 **600**
+ *   （他们 `notes.md` 的 TSub35/TSub40 行；同表还有 666/700/633/999 那几档）。
+ *   ⇒ 不再按「母机 HP/3」推（那会随 boss 阶段漂：BossCard2 的 boss 只有 2000 ⇒ 666，Boss1 16250 ⇒ 5416），
+ *     改成 owner 要的**定值 600**；比原先实跑的 20 厚 30 倍。
+ *   ⚠ 只往上提（`max < want` 才写）：他们已经给了 999999 的那批（实跑见过）原样保留 ✓。*/
+#define YK_LE_FAM_HP_FIXED 600
 
 static void yk_le_fam_raise_hp(uint8_t *f, const uint8_t *boss)
 {
-    int32_t boss_hp, want, cur_max;
-    if (!f || !boss) return;
-    boss_hp = *(const int32_t *)(boss + CE_ENEMY_HP_MAX);
-    want = (int32_t)yk_map_fam_hp((int)boss_hp, yk_current_character());
-    if (want <= 0) want = (int32_t)YK_FAM_LIFE;
-    want = want * YK_LE_FAM_HP_SCALE / 1000;            /* ★ 旋钮（默认 1.0×）*/
+    int32_t want, cur_max;
+    (void)boss;                                         /* 定值口径，不再读母机 HP */
+    if (!f) return;
+    want = YK_LE_FAM_HP_FIXED * YK_LE_FAM_HP_SCALE / 1000;   /* ★ owner：按 600 来 */
     if (want < 1) want = 1;
     cur_max = *(const int32_t *)(f + YK_ED_LIFE_CUR + 4);
     if (cur_max >= want) return;                    /* 已经够厚 ⇒ 一个字节都不写 ✓ */
@@ -4137,8 +4142,9 @@ static void yk_le_fam_raise_hp(uint8_t *f, const uint8_t *boss)
     *(int32_t *)(f + YK_ED_LIFE_CUR + 8) = want;    /* remaining */
     if (s_le_hp_logged < 8u) {
         ++s_le_hp_logged;
-        ce_log("youkai/leveledit: HP raised id=%u %d -> %d (our rule: boss_hp %d / 3 x char permille)",
-               (unsigned)*(const uint32_t *)(f + CE_ENEMY_ID), (int)cur_max, (int)want, (int)boss_hp);
+        ce_log("youkai/leveledit: HP raised id=%u %d -> %d (owner: fixed %d)",
+               (unsigned)*(const uint32_t *)(f + CE_ENEMY_ID), (int)cur_max, (int)want,
+               (int)YK_LE_FAM_HP_FIXED);
     }
 }
 

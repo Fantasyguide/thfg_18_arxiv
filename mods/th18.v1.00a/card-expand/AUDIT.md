@@ -32821,3 +32821,13 @@ youkai: practice auto-equip 108 (ce_owned=1, r=4, spell=8)
 - **定案**：接管时写 `yk_map_fam_hp(母机最大HP, 机体) × YK_LE_FAM_HP_SCALE/1000`
   （默认 **1.0×** = 本卡自建使魔的同一规则；BossCard2 的 boss `lifeSet(2000)` ⇒ **666**，比 20 厚 33 倍）；
   旋钮登记 `TUNING.md` §2.0zz #2 —— owner 报一个倍数就改一行。
+
+#### 2026-10-19i 追加（owner 拍板：「按照 600 来吧」）
+
+- 接管使魔的血量改成**定值 `YK_LE_FAM_HP_FIXED = 600`**（× `YK_LE_FAM_HP_SCALE/1000` 倍数旋钮，默认 1.0×）。
+  依据：TH08 原版这批 `MystiaChild37/43` 的 `familiarCreate` 实参本来就是 **600**（他们 `notes.md` 的
+  TSub35/TSub40 行；同表另有 666/700/633/999 几档）。
+- **不再**按「母机 HP/3」推 —— 那个值会随 boss 阶段漂（BossCard2 的 boss 只有 2000 ⇒ 666；Boss1 16250 ⇒ 5416），
+  owner 要的是一个稳定手感 ⇒ 定值更合适。
+- 只**往上提**（`max < want` 才写）：实跑见过他们有一批本来就是 `999999`，原样保留 ✓。
+- 日志：`youkai/leveledit: HP raised id=… 20 -> 600 (owner: fixed 600)`（整局最多 8 行）。

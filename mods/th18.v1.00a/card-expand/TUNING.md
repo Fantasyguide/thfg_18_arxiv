@@ -22831,7 +22831,7 @@ DOCSTYLE/METHOD ✓ = **别人的** ✓）⇒ ★ **禁止 `git commit -a`** ✗
 | 1 | `YK_LE_FAM_NOFIRE_DIST`（`cards/youkai.c`）| **64 px** | owner 口径「**妖侧的使魔在自机附近不能发弹，这是基本机制**」——机制是他给的，**半径没给** ⇒ 先取 64 px（≈ 自机判定圈十几倍），实跑日志 `youkai/leveledit: NOFIRE … d=..` 带实测距离，owner 说太近/太远就一行改。只作用于**接管的 leveledit 使魔**、只在**妖侧**、只掐 `etOn`（0 新站点）。|
 
 
-| 2 | `YK_LE_FAM_HP_SCALE`（`cards/youkai.c`）| **1000 = 1.0×** | 接管使魔血量 = `yk_map_fam_hp(母机最大HP, 机体)` × 本旋钮。理由/一手见下节。|
+| 2 | `YK_LE_FAM_HP_FIXED` / `YK_LE_FAM_HP_SCALE`（`cards/youkai.c`）| **600** × 1.0× | 接管使魔血量 = **定值 600**（owner 2026-10-19 拍板「按照 600 来吧」）× 本倍数旋钮。理由/一手见下节。|
 
 ### §2.0zz-1 `YK_LE_FAM_HP_SCALE` 为什么不是「照抄 TH08 的数字」
 
@@ -22843,3 +22843,7 @@ DOCSTYLE/METHOD ✓ = **别人的** ✓）⇒ ★ **禁止 `git commit -a`** ✗
   ⇒ 结论不是「照抄 TH08」，而是「**按 TH18 的伤害尺度重定**」。
 - 现取值：**1000 = 1.0×** = 本卡自建使魔的同一规则（BossCard2 的 boss `lifeSet(2000)` ⇒ 666，比 20 厚 33 倍）。
   owner 报一个倍数就改这一行。
+
+> **2026-10-19i 更新**：owner 拍板「**按照 600 来吧**」⇒ 血量改成**定值 `YK_LE_FAM_HP_FIXED = 600`**
+> （TH08 原版这批 `MystiaChild37/43` 的 `familiarCreate` 实参本来就是 600，见他们 `notes.md` 的
+> TSub35/TSub40 行），不再按「母机 HP/3」推（那会随 boss 阶段漂）。只往上提：他们已经给 999999 的那批保留。
