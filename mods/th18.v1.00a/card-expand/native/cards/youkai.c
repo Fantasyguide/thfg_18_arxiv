@@ -4854,6 +4854,22 @@ static void __attribute__((noinline)) yk_transfer_tick(yk_card_t *s)
         s_xfer_obs_ext    = s_xfer_ext_le_amount;
         s_xfer_obs_wait   = 1;
     }
+    /* ★★★ 2026-10-19q（owner：「转伤我跑了」；实跑 6/6 仍是 `hp_delta=0`，且源参数 16x16/2 与 48x48/4
+     *   都试过、`rect fail 0`）—— 结论：伤害源建得出来，但敌机侧 `0x45f0f0` **从不采纳**它。
+     *   ⇒ 改走**直接扣血**（`enemy+0x6220` = `life.current`，本卡自建使魔的 HP 就是这一格）：
+     *     语义 = 「使魔受的伤害 1/2 转给母机/boss」，只是不经引擎的伤害源结算。
+     *   ⚠ 代价：不产生受击特效/不参与引擎的每帧伤害上限（这是一条**自己记账**的路）。
+     *   `YK_XFER_DIRECT_HP = 0` 时退回老路（建 `ce_damage_rect` 源），两条互斥。*/
+#define YK_XFER_DIRECT_HP 1
+    if (YK_XFER_DIRECT_HP) {
+        int32_t *lc = (int32_t *)(tgt + YK_ED_LIFE_CUR);
+        int32_t nv = *lc - amount;
+        if (nv < 0) nv = 0;
+        *lc = nv;
+        s->transferred += (uint32_t)amount;
+        ++s_xfer_rect;
+        return;
+    }
     ++s_xfer_rect;                                           /* ★ 诊断：真的调了几次伤害源 */
     ce_raise_damage_cap(yk_base_damage_cap() + amount);
     {   int slot = ce_damage_rect(bp, 0.0f, YK_TRANSFER_SRC_LIFE, (int)amount,
@@ -8105,6 +8121,14 @@ static void __attribute__((noinline)) yk_le_transfer_standalone(void)
             int amount = yk_transfer_clamp(s_le_tr.pending, YK_TRANSFER_CAP_PER_FRAME);
             s_le_tr.pending = 0;
             if (amount <= 0) return;
+            if (YK_XFER_DIRECT_HP) {                 /* ★ 2026-10-19q：直接扣血（同卡内那条）*/
+                int32_t *lc = (int32_t *)(tgt + YK_ED_LIFE_CUR);
+                int32_t nv = *lc - amount;
+                if (nv < 0) nv = 0;
+                *lc = nv;
+                ++s_le_rect_ok;
+                return;
+            }
             ce_raise_damage_cap(yk_base_damage_cap() + amount);
             if (ce_damage_rect(bp2, 0.0f, YK_TRANSFER_SRC_LIFE, (int)amount,
                                YK_TRANSFER_BOX_W, YK_TRANSFER_BOX_H) > 0) {
