@@ -32706,3 +32706,35 @@ youkai: practice auto-equip 108 (ce_owned=1, r=4, spell=8)
   这一局它是 **4**，不是 1。早先「`r=1` 才算成功」的说法作废 —— 看日志请用 `r >= 0` + `ce_owned=1`。
   全程**没有**出现 `... skipped (already owned)` / `... re-giving once` ⇒ 本局没有 `reset_cards` 抹卡，
   补发那条闸空转（符合预期）。
+
+### §BE-108-LE-TAKEOVER-2026-10-19c（2026-10-19，DSH agent，卡 108）：**接管改按「他们那个包的口径」认**（图像脚本 28/29）＋ 敌机普查
+
+- **现象（owner 实跑 02:09 那局，逐字）**：「接管没有生效，人侧没有消失，切换没有音效」。
+- **日志定位（一手，先读日志再动手）**：
+  · `0 行 MARK` ⇒ 那一局场上**没有一只** `$I3 == 997` 的敌机（`yk_le_is_their_familiar()` 的判据没命中）；
+  · 同局 `le-probe(enemy): id=3/4/6/7 … slot0=29` ⇒ 他们的使魔**在场上**（`enemy.anm` 脚本 29 = 他们追加的
+    两种使魔图像之一），但 `iv3=0` ⇒ **`$I3` 这条标记在符卡练习里读不到**；
+  · `youkai: shift SE 人→妖 NOT played - no familiar live this frame` ⇒ 切换音是**下游**（门 = 场上有一只
+    已接管的使魔）；接管没发生 ⇒ 音效自然没有；
+  · 人侧外观切换（`yk_xfam_vm_tick`）只处理 `x->le` 条目 ⇒ 没接管 ⇒ 他们的本体不会消失 ✓ 三条现象同一根因。
+- **判据订正（他们仓库一手，本机就有 `/home/nipporita/th18-leveledit/mods/stage02-mystia/`）**：
+  · `familiar_visuals.py:39` `CHILDREN = {28:28, 30:28, 37:28, 43:28, 47:29, 49:29, 55:29, 59:28}`
+    ⇒ 8 个 `MystiaChild*` 的主 anm 脚本**只有 28 / 29**（README 同口径：追加 scripts 28/29 = 两种使魔图像）；
+  · 运行时读法 = `zEnemyData+0x26c`（`CE_ENEMY_ANM_SCRIPT` = `zEnemy+0x1498`，老板读出来 21 = 他们
+    `anmSetMain(0,21)` 写的值 ⇒ 这一格确实是**主脚本** ✓）。
+  ⇒ 接管判据 = **① `$I3 == 997`（保留，兜底）‖ ② 主脚本 ∈ {28,29} 且在「他们那场」**。
+- **「他们那场」判据加了粘性**（`s_le_seen_stage`，按 `CURRENT_STAGE` 记忆）：`le_here`（boss 的 ECL
+  `subroutine_index ≥ 24`）在他们的 `Boss()`/`BossDead()`（sub<24）时刻会掉回 0，而他们的使魔能活过那些时刻
+  ⇒ 同一面里确认过一次就成立，换面自动失效 ✓（**不动** `yk_le_is_levelledit_fight()` 本体与它的单测）。
+- **误伤防护**：② 只在 `le_stage` 里生效（脚本 28/29 是他们**追加**的，零售局同号脚本可能是别的用途）；
+  ① 本来就被 `le_boss` 门住。
+- **新增只读诊断**（owner 口径：不要再「静默失败」）：
+  · `MARK` 现在**两条判据任一中**都打，带 `via=1/2 iv3= anm0= le_here= le_stage= parent= life=`；
+  · `youkai/le: CENSUS`（每 120 帧一行汇总：`live/scanned/iv997/slot28_29/parent`）+ `CENSUS-DET`
+    （≤4 条明细，带该敌机的 ECL `subroutine_index` 与 `iv=$I0..$I4`、life）——
+    下一局若还不对，这一眼就能分清「他们的使魔不在场」/「标记格换了」/「sub 号段可作更强判据」。
+- **影响面**：只改 `cards/youkai.c`（108 自己的文件），无共享件、无新站点（跳板池零增量）；
+  不装 108 ⇒ 这些 tick 根本不跑 ✓；零售局 ⇒ `le_stage=0` ⇒ ②不走、①照旧靠 997 ✓。
+- **验证**：`make dll` rc=0 ✓、`make test-host` rc=0（63 checks）✓、`strings` 命中三条新格式串 ✓、
+  `deploy.py --skip-build --force` rc=0 ✓、**四处 DLL md5 全等 = `1dcba4a30fc607571e2be578855aaa88`**、
+  台账第 26 条。**实跑待验**（预期：`TAKEOVER familiar … via=2`，随后 `shift SE 人→妖 played …`）。

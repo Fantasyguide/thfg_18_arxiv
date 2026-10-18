@@ -1346,6 +1346,34 @@ static int32_t yk_le_iv3(const uint8_t *e)
     return e ? *(const int32_t *)(e + YK_E_ECL_IVARS3) : 0;
 }
 
+/* ★★★ 2026-10-19c（owner：「接管没有生效 / 人侧没有消失 / 切换没有音效」+「最简单的做法应当是
+ *   把我们这套使魔驱动放进那个包」）：**改成按他们那个包自己的口径认**，不再只靠 `$I3` 标记。
+ *
+ * 一手（他们仓库，本机就有 `/home/nipporita/th18-leveledit/mods/stage02-mystia/`）：
+ *   · `familiar_visuals.py:39` 的 `CHILDREN = {28:28, 30:28, 37:28, 43:28, 47:29, 49:29, 55:29, 59:28}`
+ *     ⇒ 他们那 8 个 `MystiaChild*` 的**主 anm 脚本只有两支**：**28 / 29**（两种使魔图像）；
+ *     `README` 也写「enemy.anm 追加 scripts 28/29 —— 移植两种使魔图像」✓。
+ *   · 运行时读法 = `zEnemyData + 0x26c`（`CE_ENEMY_ANM_SCRIPT` = `zEnemy+0x1498`）；这是**主脚本**
+ *     （老板用它读出来是 21，正是他们 `anmSetMain(0, 21)` 写的值 ✓）。
+ *   · **实跑 02:09 那局反证 `$I3` 那条不可靠**：`le-probe(enemy): id=3/4/6/7 … slot0=29`（= 他们的
+ *     使魔确实在场上）而 `iv3=0`，整局 **0 行 MARK** ⇒ 只看 `$I3` 永远接管不到 ✗。
+ *   ⇒ 判据改成 **`$I3 == 997`（他们 ECL 的标记，留作兜底）‖ 主脚本 ∈ {28,29}**，
+ *     并且**必须**在「他们那场」里（脚本 28/29 是他们**追加**的，零售局同号脚本可能是别的用途 ⇒
+ *     不做场地门会误伤零售敌机 ✗）。`le_here` 用**粘性**（同一面里确认过一次就算，见 `s_le_seen_stage`）：
+ *     他们的 boss 在 `Boss()`/`BossDead()` 那些 sub<24 的时刻 `le_here` 会掉回 0，
+ *     粘性保证「这一面是他们的」这件事不会因为一帧读不到 boss 就丢 ✓。*/
+#define YK_LE_FAM_ANM_A  28
+#define YK_LE_FAM_ANM_B  29
+static int32_t s_le_seen_stage = -1;   /* 哪一面确认过「这是 leveledit 那场」（-1 = 还没确认）*/
+
+static int yk_le_fam_by_anm(const uint8_t *e, int le_stage)
+{
+    int32_t sl0;
+    if (!e || !le_stage) return 0;
+    sl0 = *(const int32_t *)(e + CE_ENEMY_DATA + 0x26c);
+    return (sl0 == YK_LE_FAM_ANM_A || sl0 == YK_LE_FAM_ANM_B) ? 1 : 0;
+}
+
 
 /* ★★★ 2026-09-22（P3 第二批）：「射击中」的判据（TH18 侧）。
  * TH08 是 `Player::shotActive`（一个 999 帧的射击周期标志，`th08:0x17d6ed4`）；TH18 没有同一个
@@ -4413,11 +4441,62 @@ static void __attribute__((noinline)) yk_transfer_tick(yk_card_t *s)
                        (int)*(const int32_t *)(em + CE_EM_BOSS_IDS + 4),
                        (int)*(const int32_t *)(em + CE_EM_BOSS_IDS + 8),
                        (int)*(const int32_t *)(em + CE_EM_BOSS_IDS + 12));
+            /* ★ 2026-10-19c：「他们那场」用**粘性**判据（同一面确认过一次就成立）——
+             *   他们的 boss 在 `Boss()` / `BossDead()` 那种 sub<24 的时刻 `le_here` 会掉回 0，
+             *   而他们的使魔可以活过那些时刻 ⇒ 不能每帧只认当帧的 `le_here` ✓。
+             *   `s_le_seen_stage` 记「哪一面确认过」，换面/新局自动失效（`CURRENT_STAGE` 变了就不算）✓。*/
+            if (le_here) s_le_seen_stage = CE_CURRENT_STAGE();
+            {
+                const int le_stage = (le_here || (s_le_seen_stage == CE_CURRENT_STAGE())) ? 1 : 0;
+            /* ★★★ 2026-10-19c（owner：「接管没有生效 / 人侧没有消失 / 切换没有音效」；
+             *   02:09 那局日志里 **0 行 MARK** ⇒ 那一局场上一只 `$I3 == 997` 的敌机都没有）——
+             *   **只读普查**（每 120 帧：1 行汇总 + ≤4 行明细）。它一次分清两种可能，且**顺带把我们
+             *   真正该用的判据量出来**：
+             *     · `slot28_29 > 0`（README 的两种使魔图像脚本 28/29）却 `iv997 == 0`
+             *       ⇒ 使魔**在场上**、标记没落在我们读的那一格；
+             *     · `slot28_29 == 0` 且 `iv997 == 0` ⇒ 那一局**根本没有他们的使魔**（符卡捷径 / 这张符不建子机）。
+             *   ★ 明细里的 `sub=` = **该敌机当前 ECL `subroutine_index`**（读法同 `yk_le_boss_sub_index()`
+             *     —— 那一套已经用来判「leveledit 那场」，是**实测可读**的 ✓）。他们的使魔是
+             *     `MystiaChild<28|30|37|43|47|49|55|59>`（`translate.py:15-16` 的 `CHILDREN`），
+             *     在编译后的 `st02bs.ecl` 里占一段**固定下标** ⇒ 拿到这一段就能**不依赖任何标记**
+             *     认出他们的使魔（owner 口径：把驱动做成「认得他们那个包」的）。
+             *   `life` 顺带区分「他们的使魔（666/999）」与普通妖精。*/
+            if ((s_ledger_frame % 120u) == 0u) {
+                int live = (int)*(const int32_t *)(em + CE_EM_ENEMY_COUNT);
+                int scanned = 0, n997 = 0, n2829 = 0, npar = 0, det = 0;
+                CE_ENEMY_FOREACH(em, e) {
+                    const int32_t *iv;
+                    int32_t par, sl0;
+                    if (!e) continue;
+                    ++scanned;
+                    iv = (const int32_t *)(e + CE_ENEMY_DATA + 0x28c);
+                    par = *(const int32_t *)(e + YK_ENEMY_PARENT_ID);
+                    sl0 = *(const int32_t *)(e + CE_ENEMY_DATA + 0x26c);
+                    if (iv[3] == YK_LE_FAM_MARK) ++n997;
+                    if (sl0 == 28 || sl0 == 29) ++n2829;
+                    if (par) ++npar;
+                    if (det < 4 && (iv[3] == YK_LE_FAM_MARK || sl0 == 28 || sl0 == 29 || par)) {
+                        ++det;
+                        ce_log("youkai/le: CENSUS-DET id=%u sub=%d parent=%d life=%d slot0=%d "
+                               "iv=%d,%d,%d,%d,%d lockable=%d",
+                               (unsigned)*(const uint32_t *)(e + CE_ENEMY_ID),
+                               yk_le_boss_sub_index(e), (int)par,
+                               (int)*(const int32_t *)(e + YK_ED_LIFE_CUR), (int)sl0,
+                               (int)iv[0], (int)iv[1], (int)iv[2], (int)iv[3], (int)iv[4],
+                               ce_enemy_lockable(e) ? 1 : 0);
+                    }
+                }
+                ce_log("youkai/le: CENSUS frame=%u live=%d scanned=%d iv997=%d slot28_29=%d "
+                       "parent=%d (slot28_29>0 && iv997==0 => marker lost; both 0 => their "
+                       "familiars are not on the field / see CENSUS-DET sub=)",
+                       (unsigned)s_ledger_frame, live, scanned, n997, n2829, npar);
+            }
             for (i = 0; i < YK_XFAM_MAX; ++i) s_xfam[i].seen = 0;
             CE_ENEMY_FOREACH(em, e) {
                 uint32_t id, parent;
                 int32_t life;
                 int le_fam = 0;
+                int le_via = 0;          /* 0 = 不是；1 = `$I3==997`；2 = 图像脚本 28/29（2026-10-19c）*/
                 const float *cp;
                 uint8_t *pe;
                 yk_xfam_t *x;
@@ -4441,7 +4520,10 @@ static void __attribute__((noinline)) yk_transfer_tick(yk_card_t *s)
                  *     · `le_boss>0 且 parent=0` 却仍无 TAKEOVER ⇒ 后面的门在挡（`in_map=1` / `in_orbit=1`）。
                  *   节流：同 id 每 60 帧最多一条（16 格表，满了就不打 —— 使魔种类很少 ✓）。*/
                 {   int32_t iv3m = yk_le_iv3(e);
-                    if (iv3m == YK_LE_FAM_MARK) {
+                    /* ★ 2026-10-19c：`$I3` 那条在实跑里可能读不到（02:09 那局 0 行）⇒ **图像脚本**
+                     *   命中也打 MARK（`via=2`），否则下一局又会「一行日志都没有」地静默。*/
+                    const int via_anm = yk_le_fam_by_anm(e, le_stage);
+                    if (iv3m == YK_LE_FAM_MARK || via_anm) {
                         unsigned mi, slot = 16u;
                         for (mi = 0; mi < 16u; ++mi) {
                             if (s_le_mark_id[mi] == id) { slot = mi; break; }
@@ -4451,11 +4533,12 @@ static void __attribute__((noinline)) yk_transfer_tick(yk_card_t *s)
                                            (uint32_t)(s_ledger_frame - s_le_mark_frame[slot]) >= 60u)) {
                             s_le_mark_id[slot] = id;
                             s_le_mark_frame[slot] = s_ledger_frame;
-                            ce_log("youkai/leveledit: MARK id=%u iv3=%d le_boss=%u le_here=%d "
-                                   "parent=%u in_map=%d in_orbit=%d in_xfam=%d life=%d",
-                                   id, (int)iv3m,
+                            ce_log("youkai/leveledit: MARK id=%u via=%d iv3=%d anm0=%d le_boss=%u "
+                                   "le_here=%d le_stage=%d parent=%u in_map=%d in_orbit=%d in_xfam=%d life=%d",
+                                   id, (iv3m == YK_LE_FAM_MARK) ? 1 : 2, (int)iv3m,
+                                   (int)*(const int32_t *)(e + CE_ENEMY_DATA + 0x26c),
                                    le_boss ? *(const uint32_t *)(le_boss + CE_ENEMY_ID) : 0u,
-                                   le_here, parent,
+                                   le_here, le_stage, parent,
                                    yk_map_has_id(&s_map, id) ? 1 : 0,
                                    yk_orbit_find_id(id) ? 1 : 0,
                                    yk_xfam_find(id) ? 1 : 0,
@@ -4463,20 +4546,22 @@ static void __attribute__((noinline)) yk_transfer_tick(yk_card_t *s)
                         }
                     }
                 }
-                /* ★★ B2：**他们的使魔** = `$I3 == 997`（`yk_le_is_their_familiar`）✓
-                 *   ★ 2026-10-19 实跑：`le_here`（sub ≥ 24）只覆盖后半段 ⇒ 已从本门移除 ✗（见上面那段）；
-                 *   误伤防护仍成立：零售局与其它敌机的 `iv3` 恒 0 ✓（实跑日志 111 行 997 全落在 338+ 那批 ✓）。
-                 *   没有 parent 时把落点设成**当前 boss**（一手语义 = 「打使魔 ⇒ 转给它的主人」✓）。
-                 *   ★★★ 2026-10-19 实跑终审（MARK 46 条）：`parent_enemy_id` 非 0 且 = boss(320)
-                 *   ⇒ 一手语义「谁跑的 ECL 把我建出来的」⇒ 使魔的 parent 恒 = boss ⇒ 原来的
-                 *   `!parent` 把全部使魔挡掉 ✗
-                 *   ⇒ 去掉 `!parent`；误伤防护由 `le_boss && iv3==997` 承担 ✓（997 只在他们的
-                 *   8 种使魔上出现，零售局/其它敌机恒 0）*/
-                if (le_boss &&
-                    yk_le_is_their_familiar((int)yk_le_iv3(e))) {
-                    parent = *(const uint32_t *)(le_boss + CE_ENEMY_ID);
-                    le_fam = 1;
+                /* ★★ B2：**他们的使魔** —— 2026-10-19c 起是**两条判据取或**：
+                 *   ① `$I3 == 997`（他们 ECL 的标记，`yk_le_is_their_familiar`）；**或**
+                 *   ② 主 anm 脚本 ∈ {28,29} 且在这一面确认过「是他们的那场」（`yk_le_fam_by_anm`）。
+                 *   ⇒ 加 ② 的原因：02:09 那局 `slot0=29` 的使魔在场上、`$I3` 却是 0（0 行 MARK）
+                 *     ⇒ 只看 ① 永远接管不到 ✗（现象 = 人侧不消失 / 没切换音 ✓ 与 owner 报告一致）。
+                 *   没有 parent 时把落点设成**当前 boss**（一手语义 = 「打使魔 ⇒ 转给它的主人」✓）。*/
+                if (le_boss) {
+                    if (yk_le_is_their_familiar((int)yk_le_iv3(e))) {
+                        le_fam = 1;
+                        le_via = 1;                                /* ① ECL 标记 */
+                    } else if (yk_le_fam_by_anm(e, le_stage)) {
+                        le_fam = 1;
+                        le_via = 2;                                /* ② 使魔图像脚本 28/29 */
+                    }
                 }
+                if (le_fam) parent = *(const uint32_t *)(le_boss + CE_ENEMY_ID);
                 if (!parent) continue;                             /* 只看子敌人 / 接管的使魔 */
                 if (yk_map_has_id(&s_map, id)) continue;            /* 已在映射层 ⇒ 那边已喂，别重复 */
                 if (yk_orbit_find_id(id)) continue;                 /* 绕转使魔走下面那条支 */
@@ -4502,9 +4587,10 @@ static void __attribute__((noinline)) yk_transfer_tick(yk_card_t *s)
                     x->last_log_frame = s_ledger_frame - YK_XFAM_LOG_EVERY;
                     ++s_xfam_used;
                     if (le_fam)                                    /* ★ 一次一条：实跑里能数出接管了几只 */
-                        ce_log("youkai/leveledit: TAKEOVER familiar id=%u ($I3=%d, iv3@+0x14c4) -> "
-                               "external-familiar ledger (1/2 transfer to boss id=%u)",
-                               id, (int)yk_le_iv3(e), parent);
+                        ce_log("youkai/leveledit: TAKEOVER familiar id=%u via=%d ($I3=%d, "
+                               "anm0=%d) -> external-familiar ledger (1/2 transfer to boss id=%u)",
+                               id, le_via, (int)yk_le_iv3(e),
+                               (int)*(const int32_t *)(e + CE_ENEMY_DATA + 0x26c), parent);
                 } else if (x->life > life) {
                     /* 掉血 ⇒ 转 1/2（`yk_transfer_feed` 内部按比例）；自激盒内只采样不喂。
                      * ★ 2026-10-18：`fed` = **真正加进累加器**的量（半整数进位器 ⇒ 不是死板的 d/2），
@@ -4541,6 +4627,7 @@ static void __attribute__((noinline)) yk_transfer_tick(yk_card_t *s)
                     --s_xfam_used;
                 }
             }
+            }   /* ← `le_stage` 作用域结束（2026-10-19c）*/
         }
         /* ★ 绕转使魔（`s_orbit[]`）：它们不进 `s_map` 但也必须转（一手：1/2 对使魔成立）。
          * 采样与映射使魔同一形状（`life.current` 差分），直接喂同一个累加器。*/
