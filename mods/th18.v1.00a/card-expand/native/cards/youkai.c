@@ -193,6 +193,25 @@ static int yk_option_script(int character)
 #define YK_ENEMY_INVULN_CUR   0x6320    /* zEnemyData+0x50f4 = 无敌计时器 current（0x122c + 0x50f4）*/
 #define YK_ENEMY_HP_DMGALL    0x6234    /* zEnemyData+0x5008 = total_damage_including_ignored
                                          *   （**被闸吃掉的伤害也记这里** ⇒ 「源到底有没有命中」的判据）*/
+/* ★★★★ 2026-10-19u（**闸关 ⇒ 直接扣血**这条合成路要用）：`zEnemyLife` 的另外两格。
+ *   偏移推导与上面同一条：`zEnemyData = enemy + 0x122c` ⇒ `0x5000 + 0x122c = 0x622c`、
+ *   `0x500c + 0x122c = 0x6238`。字段名/顺序取 ExpHP
+ *   `local/vendor/th-re-data/data/th18.v1.00a/type-structs-own.json` 的 `zEnemyLife`：
+ *   `0x0 current / 0x4 maximum / 0x8 remaining_for_cur_attack / 0xc current_scaled_by_seven /
+ *    0x10 starting_value_for_next_attack / 0x14 total_damage_including_ignored / 0x18 is_spell`。
+ *   ★ 为什么直接扣血必须连带这两格（一手 `EnemyData__step_game_logic` `0x42ed40`）：
+ *     符卡期（`0x42f2d1 test byte [ebx+0x500c],1` 非 0）引擎**不是**直接减 `current`，而是
+ *       `0x42f2da sub [ebx+0x5000],esi`（scaled −= dmg）
+ *       → `0x42f2e6 mov esi,[ebx+0x5004]`（maximum）
+ *       → `0x42f2ec lea eax,[esi*8] / 0x42f2f3 sub eax,esi`（= 7×maximum）
+ *       → `0x42f2f5 sub ecx,eax`（scaled − 7×maximum）
+ *       → `0x42f2f7 mov eax,0x92492493 / imul ecx / add edx,ecx / sar edx,2 / (+符号位)` = **÷28**
+ *       → `0x42f30a add eax,esi / 0x42f30c mov [ebx+0x4ff4],eax`
+ *     即 `current = maximum + (scaled − 7×maximum) / 28` ⇒ **只改 `current` 会在引擎下一次真扣血时
+ *     被这条算式重算覆盖**（我们那一笔等于白扣）⇒ `yk_hp_direct_apply()` 里同一笔量按 **×28**
+ *     写回 scaled（÷28 的逆运算，整数倍数下截断可逆 ⇒ 引擎重算出来的 current 正好是我们写的值）。*/
+#define YK_ENEMY_LIFE_SCALED   0x622c   /* zEnemyData+0x5000 = current_scaled_by_seven */
+#define YK_ENEMY_LIFE_IS_SPELL 0x6238   /* zEnemyData+0x500c = is_spell（bit0；非 0 ⇒ 符卡 scaled 分支）*/
 #define YK_XFER_HOLD_CAP      600       /* 攒着的上限（帧数不另设：攒到它就封顶）。
                                          * 依据：TH18 的 boss 血量量级 1000~2000（leveledit 的 boss
                                          * `lifeSet(1000/2000)`）⇒ 600 ≈ 1/3 管血，窗口一开是**一笔大伤害**
@@ -4502,7 +4521,9 @@ static unsigned s_xfer_hold_ticks;      /* 因「目标扣不动血」而攒着�
 static unsigned s_xfer_hold_logged;     /* `SRC hold` 行数（节流用）*/
 static unsigned s_xfer_src_logs;        /* `SRC` 行数（节流用）*/
 
-/* 目标这一帧能不能扣血：1 = 能；0 = **暂时**不能（攒着等窗口）；-1 = 免伤位（永远扣不动 ⇒ 丢）。*/
+/* 目标这一帧能不能扣血：1 = 能（⇒ 建引擎伤害源）；0 = **暂时**不能（⇒ 本帧**直接扣血**）；
+ *   -1 = 免伤位（引擎永久不扣 ⇒ 记账丢掉，别硬扣）。
+ *   ★★★ 2026-10-19u：`0` 这一档的处置**变了**（19r 是「攒着等窗口」⇒ 闸一直关就永不落地 ✗）。*/
 static int yk_target_damageable(const uint8_t *e)
 {
     uint32_t fl;
@@ -4512,6 +4533,106 @@ static int yk_target_damageable(const uint8_t *e)
     if (fl & CE_ENEMY_FLAG_NO_LOCK) return 0;              /* ① bit0/bit5…：整段伤害结算跳过 */
     if (*(const int32_t *)(e + YK_ENEMY_INVULN_CUR) > 0) return 0;   /* ③ 无敌计时器未走完 */
     return 1;
+}
+
+/* ★★★★ 2026-10-19u（**合成 A+B**，owner 定案）：**闸关时的直接落地** —— 直接扣目标 `life.current`。
+ *
+ * 为什么要有它：19r 把「闸关」处理成**攒 `pending`**（上限 `YK_XFER_HOLD_CAP` = 600），实跑里
+ *   boss 的 `flags` bit0/bit5 或无敌计时器可以连着很久不放开 ⇒ 转嫁**永不落地**（现象 = 打使魔
+ *   boss 不掉血 ✗）。A 版（编译期 `YK_XFER_DIRECT_HP = 1`）的实跑证据证明「直接扣」能落地：
+ *     `transfer applied boss=2 hp_before=1000 hp_after=993 (hp_delta=7; amount=7 …)`
+ *     `transfer applied boss=2 hp_before=970  hp_after=960 (hp_delta=10; amount=10 …)`
+ *   ⇒ 合成：`yk_target_damageable() > 0` ⇒ 引擎伤害源（受击特效 / 每帧伤害上限 / 计分都是引擎的 ✓）；
+ *            `== 0` ⇒ 本函数直接扣（**保证落地** ✓；① 不建源 ⇒ 没有受击特效 ✓）；
+ *            `== -1`（bit4 永久免伤）⇒ 调用方照旧记账丢掉（引擎自己永不扣，硬扣会破坏 ECL 的
+ *            「这只打不掉」语义）。
+ *
+ * 一手（`EnemyData__step_game_logic` `0x42ed40`，`ebx` = zEnemyData = `enemy+0x122c`）：
+ *   · 非符卡支：`0x42f314 sub [ebx+0x4ff4],esi` —— 就是 `life.current -= dmg`（本函数照这个写）✓；
+ *   · 符卡支（`0x42f2d1 test byte [ebx+0x500c],1` 非 0）：先 `0x42f2da sub [ebx+0x5000],esi`，
+ *     再 `0x42f2e6..0x42f30c` 用 `current = maximum + (scaled − 7×maximum)/28` **重算** current
+ *     ⇒ 只写 current 会在引擎下一次真扣血时被覆盖 ⇒ **同一笔量按 ×28 写回 scaled**
+ *     （÷28 的逆运算；整数倍下截断可逆 ⇒ 引擎重算出来的 current 正好等于我们写进去的值 ✓）。
+ *     两格的偏移/推导见文件头 `YK_ENEMY_LIFE_SCALED / YK_ENEMY_LIFE_IS_SPELL` 的注。
+ *   · 死亡判定 `0x42f39d` + `0x430240` 只在那条伤害路径里跑 ⇒ 本函数**不会触发死亡**：
+ *     扣到 0 的 boss 要等引擎下一次真扣血才死。owner 口径是 `max(0, cur − amount)`，这里照办，
+ *     但**扣前已经 ≤ 0 就不动**（不把「0 血」再记成一笔落地）。
+ *
+ * 记账/日志（沿用 `transfer applied` 格式，只加 `via=hp` 与新探针）：
+ *   · `hp_delta` 是**真的读出来的**（扣前/扣后），不会再是 0；
+ *   · 节流与 `transfer applied … via=src` 同一格（30 帧一条）；被节流掉的笔数与量**累加进下一条**
+ *     （不静默吞），行尾 `applies=` 就是这一条覆盖了几笔；
+ *   · `spell=` / `scaled=a->b` 是符卡 scaled 那两格的现场（非符卡时恒 0->0）。
+ * 返回 = **真的扣掉了多少**（调用方拿它记 `transferred` / 台账）。*/
+typedef struct {
+    uint32_t last_frame;    /* 上一条日志的帧号（节流）*/
+    int32_t  first_before;  /* 窗口内第一笔的 hp_before */
+    int32_t  last_after;    /* 窗口内最后一笔的 hp_after */
+    int32_t  sum_amount;    /* 窗口内实际扣掉的合计 */
+    unsigned applies;       /* 窗口内的笔数 */
+    unsigned logged;        /* 打过的行数（诊断）*/
+} yk_hp_log_t;
+static yk_hp_log_t s_hp_log[2];    /* [0] = 卡内那条路；[1] = 无 108 那条路（各自节流）*/
+static unsigned s_xfer_hp_apply;   /* 卡内 via=hp 落地的总笔数（收尾汇总）*/
+static unsigned s_le_hp_apply;     /* 无 108 via=hp 落地的总笔数 */
+static int32_t  s_xfer_hp_amount;  /* 卡内 via=hp 累计扣掉的 HP（收尾汇总）*/
+static int32_t  s_le_hp_amount;    /* 无 108 via=hp 累计扣掉的 HP */
+
+static int32_t __attribute__((noinline))
+yk_hp_direct_apply(uint8_t *e, int32_t amount, int tag, uint32_t frame)
+{
+    yk_hp_log_t *L = &s_hp_log[tag ? 1 : 0];
+    int32_t *lc, before, after, got;
+    int32_t spell, scaled_before = 0, scaled_after = 0;
+    if (!e || amount <= 0) return 0;
+    lc = (int32_t *)(e + YK_ED_LIFE_CUR);
+    before = *lc;
+    if (before <= 0) return 0;                     /* 已经 0 血 / 死了 ⇒ 不扣、也不记落地 */
+    after = before - amount;
+    if (after < 0) after = 0;
+    got = before - after;
+    if (got <= 0) return 0;
+    *lc = after;
+    /* ★ 符卡期：引擎的 current 是从 scaled 算出来的 ⇒ 配套写 scaled，否则下一次真扣血会重算覆盖 */
+    spell = (int32_t)(*(const uint8_t *)(e + YK_ENEMY_LIFE_IS_SPELL) & 1u);
+    if (spell) {
+        int32_t *sc = (int32_t *)(e + YK_ENEMY_LIFE_SCALED);
+        scaled_before = *sc;
+        *sc = scaled_before - got * 28;
+        scaled_after = *sc;
+    }
+    ++L->applies;
+    L->sum_amount += got;
+    if (L->applies == 1u) L->first_before = before;
+    L->last_after = after;
+    if (tag) { ++s_le_hp_apply;   s_le_hp_amount   += got; }
+    else     { ++s_xfer_hp_apply; s_xfer_hp_amount += got; }
+    if (L->last_frame && frame - L->last_frame < YK_XFAM_LOG_EVERY)   /* 节流：攒到下一行 */
+        return got;
+    L->last_frame = frame;
+    ++L->logged;
+    if (tag)
+        ce_log("youkai/leveledit: transfer applied (no-108 path) boss id=%u hp_before=%d "
+               "hp_after=%d (hp_delta=%d; amount=%d, via=hp gate=closed; applies=%u; "
+               "spell=%d scaled=%d->%d; hpv total=%u amount=%d)",
+               (unsigned)*(const uint32_t *)(e + CE_ENEMY_ID),
+               (int)L->first_before, (int)L->last_after,
+               (int)(L->first_before - L->last_after), (int)L->sum_amount,
+               L->applies, (int)spell, (int)scaled_before, (int)scaled_after,
+               s_le_hp_apply, (int)s_le_hp_amount);
+    else
+        ce_log("youkai/leveledit: transfer applied boss=%u hp_before=%d hp_after=%d (hp_delta=%d; "
+               "amount=%d, ext=%d; fed map/orb/ext=%u/%u/%u; via=hp gate=closed; applies=%u; "
+               "spell=%d scaled=%d->%d; hpv total=%u amount=%d)",
+               (unsigned)*(const uint32_t *)(e + CE_ENEMY_ID),
+               (int)L->first_before, (int)L->last_after,
+               (int)(L->first_before - L->last_after), (int)L->sum_amount,
+               (int)s_xfer_ext_le_amount, s_xfer_mapped_feed, s_xfer_orbit_feed, s_xfer_ext_feed,
+               L->applies, (int)spell, (int)scaled_before, (int)scaled_after,
+               s_xfer_hp_apply, (int)s_xfer_hp_amount);
+    L->applies = 0;
+    L->sum_amount = 0;
+    return got;
 }
 
 /* ★ `SRC …` 行（owner 要的对比日志）：建源那一帧把**槽里真正写进去的东西**读回来打一条
@@ -4956,34 +5077,34 @@ static void __attribute__((noinline)) yk_transfer_tick(yk_card_t *s)
             tgt = boss;
         }
     }
-    /* ★★★ 2026-10-19r（**落地闸**，一手见 `yk_target_damageable()` 上面那段）：
-     *   目标这一帧三道闸没全开 ⇒ **不建源**（建了也只会进 `+0x5008` 而不扣血，实跑 6/6 就是这样），
-     *   把量**攒在 `pending` 里**，窗口一开那一帧一次性落地。
-     *   · 免伤位（flags bit4）⇒ 永远扣不动 ⇒ 记账丢掉，别攒（否则 pending 永远不清）；
-     *   · 攒的上限 `YK_XFER_HOLD_CAP`，超出部分同样进 `dropped` 账（不静默吞）。*/
+    /* ★★★ 2026-10-19u（**合成 A+B**，owner 口径）：**闸全开 ⇒ 引擎伤害源；闸关 ⇒ 直接扣血**。
+     *   判据 = `yk_target_damageable()`（一手 = `EnemyData__step_game_logic` `0x42ed40` 的三道闸：
+     *   `0x42f101` flags bit0/bit5、`0x42f2b9` bit4、`0x42f2c2` 无敌计时器；推导见上面那段长注）：
+     *   · `1`（三道全开）⇒ 走**现路径**：`ce_damage_rect` 建引擎伤害源（受击特效 / 每帧伤害上限 /
+     *     计分 / 符卡 scaled 记账全是引擎自己的 ✓），建源那一帧 `pending` 立刻归零 ✓；
+     *   · `0`（暂时扣不动：flags bit0/bit5 或 `inv > 0`）⇒ **不再攒**（19r 的 hold 已撤 —— 闸一直关
+     *     就永不落地 ✗）⇒ 本帧**直接扣**目标 `life.current`（`yk_hp_direct_apply()`，A 版的落地方式 ✓）；
+     *   · `-1`（flags bit4 = 引擎**永久**免伤）⇒ 仍然记账丢掉：引擎自己永不扣血，硬扣会破坏 ECL
+     *     的「这只打不掉」语义。
+     *   ★ 直接扣血**不建源** ⇒ **没有受击特效**（owner 口径：闸关时先保证落地）；
+     *   ★ 同一帧只扣一次：本函数每 tick 只走到这里一次，扣完 `pending = 0` ✓；
+     *   ★ 落点：母机查不到 ⇒ 上面已经退回 boss；连 boss 也没有 ⇒ `s_xfer_noboss` 记账（不变 ✓）。*/
     {
         int dmg_ok = yk_target_damageable(tgt);
-        if (dmg_ok <= 0) {
-            if (dmg_ok < 0) {
-                s->dropped += (uint32_t)s->tr.pending;
-                s->tr.pending = 0;
+        if (dmg_ok < 0) {                                  /* ④ 永久免伤 ⇒ 记账丢掉 */
+            s->dropped += (uint32_t)s->tr.pending;
+            s->tr.pending = 0;
+            return;
+        }
+        if (dmg_ok == 0) {                                 /* ③ 闸关 ⇒ 直接扣血（保证落地 ✓）*/
+            int32_t n = yk_transfer_clamp(s->tr.pending, YK_TRANSFER_CAP_PER_FRAME);
+            s->tr.pending = 0;
+            if (n <= 0) return;
+            if (!YK_ENABLE_TRANSFER) {                     /* ★ 二分开关 ⑥ 关 ⇒ 连直接扣也不做 */
+                s->dropped += (uint32_t)n;
                 return;
             }
-            ++s_xfer_hold_ticks;
-            if (s->tr.pending > YK_XFER_HOLD_CAP) {
-                s->dropped += (uint32_t)(s->tr.pending - YK_XFER_HOLD_CAP);
-                s->tr.pending = YK_XFER_HOLD_CAP;
-            }
-            if (tgt && s_xfer_hold_logged < 8u &&
-                (s_xfer_hold_logged == 0u || (s_ledger_frame % 60u) == 0u)) {
-                ++s_xfer_hold_logged;
-                ce_log("youkai/leveledit: SRC hold id=%u (flags=0x%x inv=%d; pending=%d held=%u) "
-                       "- engine would not deduct HP this frame",
-                       (unsigned)*(const uint32_t *)(tgt + CE_ENEMY_ID),
-                       (unsigned)*(const uint32_t *)(tgt + CE_ENEMY_FLAGS),
-                       (int)*(const int32_t *)(tgt + YK_ENEMY_INVULN_CUR),
-                       (int)s->tr.pending, s_xfer_hold_ticks);
-            }
+            s->transferred += (uint32_t)yk_hp_direct_apply(tgt, n, 0, s_ledger_frame);
             return;
         }
     }
