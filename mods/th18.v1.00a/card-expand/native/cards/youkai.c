@@ -4102,6 +4102,55 @@ static void yk_xfam_vm_kill_all(void)
     for (i = 0; i < YK_XFAM_MAX; ++i) if (s_xfam_vm[i].fam_id) yk_xfam_vm_kill(&s_xfam_vm[i]);
 }
 
+/* ★★★ 2026-10-19e（owner 一眼定位：「我知道了，是**拖尾光**没关掉」）：
+ *   他们的使魔**本体脚本**每 2 tick 用 `scriptNewRoot(script30)` 撒一颗拖尾火花
+ *   （一手 `assets.py:132-142`：`script script28/29 { layer(7); loop: sprite(...); +2: scriptNewRoot(script30); … jmp(loop,0); }`；
+ *     script30 = 加法 16×16、20 tick 自删、layer 7）。`scriptNewRoot` = **独立 root VM**
+ *   （一手 `AnmLoaded__instantiate_orphan_vm_to_world_list_back 0x488a40`，正是 `engine/anm/th18/01` §3 那条）
+ *   ⇒ **不在 `anm_vm_ids[]` 里** ⇒ 藏本体（slot 0）藏不到它，它照样每 2 tick 冒新的、20 tick 才自己消。
+ *   ⇒ 妖侧藏本体时，**顺手把这颗 VM 删掉**（它本来就是短命粒子，删它不影响任何人；他们的 ECL 也不引用它）。
+ *   定位靠 **VM 列表**（一手 `AnmManager__get_vm_with_id 0x488b40` 的走法：
+ *     `mgr+0x6f0` = world 表头 / `mgr+0x6f8` = ui 表头；结点 `{+0 = VM*, +4 = next}`；
+ *      VM 的 id 在 `+0x544`（`CE_ANM_VM_SUFFIX_ID`）✓）+ 两个过滤器：
+ *     · `VM+0x28`（当前脚本号，`CE_ANM_VM_SCRIPT_ID`）== **30** —— 就是他们那颗火花；
+ *     · 实体坐标（`VM+0x5f0`，`CE_ANM_VM_POS`）离这只使魔 < `YK_LE_TRAIL_R`(32 px)。
+ *   ⇒ 只删「贴在这只使魔身上 + script 30」的 VM，别的一律不碰 ✓；整局最多 8 行日志。*/
+#define YK_LE_TRAIL_SCRIPT 30
+#define YK_LE_TRAIL_R      32.0f
+static unsigned s_le_trail_killed;
+
+static void yk_xfam_kill_trails(const float *pp)
+{
+    uint8_t *mgr = CE_ANM_MANAGER();
+    int li;
+    if (!mgr || !pp) return;
+    for (li = 0; li < 2; ++li) {
+        uint8_t *node = *(uint8_t **)(mgr + (li ? 0x6f8u : 0x6f0u));
+        unsigned guard = 0;
+        while (node && guard++ < 4096u) {
+            uint8_t *vm = *(uint8_t **)node;
+            uint8_t *next = *(uint8_t **)(node + 4);   /* ★ 先取 next：删除会把本结点从链表摘掉 */
+            if (vm && *(const int32_t *)(vm + CE_ANM_VM_SCRIPT_ID) == YK_LE_TRAIL_SCRIPT) {
+                const float *vp = (const float *)(vm + CE_ANM_VM_POS);
+                const float dx = vp[0] - pp[0], dy = vp[1] - pp[1];
+                if (dx * dx + dy * dy < YK_LE_TRAIL_R * YK_LE_TRAIL_R) {
+                    const uint32_t vid = *(const uint32_t *)(vm + CE_ANM_VM_SUFFIX_ID);
+                    if (vid) {
+                        if (s_le_trail_killed < 8u) {
+                            ++s_le_trail_killed;
+                            ce_log("youkai/leveledit: trail VM deleted id=%u (script %d within %.0f px) "
+                                   "- owner: 拖尾光没关掉",
+                                   vid, YK_LE_TRAIL_SCRIPT, (double)YK_LE_TRAIL_R);
+                        }
+                        ce_anm_delete(vid);
+                    }
+                }
+            }
+            node = next;
+        }
+    }
+}
+
 /* 每帧：把**接管的 leveledit 使魔**按当前侧切外观（人：本体可见；妖：本体 alpha=0 + 环）。
  * 调用点 = `yk_transfer_tick()` 最前面（那一支每帧都跑，且不在任何 `return` 之后）。
  * `noinline` 的理由同 `yk_fam_vm_check()`：别把活值塞进内联着 `ce_damage_rect` 汇编的函数。*/
@@ -4178,7 +4227,9 @@ static void __attribute__((noinline)) yk_xfam_vm_tick(void)
             ce_anm_set_color(vid, 0x00ffffffu);
             *(uint32_t *)(vm + CE_ANM_VM_FLAGS_LO) &= ~2u;      /* visible = 0 */
             v->body_hidden = 1;
-            (void)pp;
+            /* ★ 2026-10-19e：他们的**拖尾火花**是独立 root VM（`scriptNewRoot(script30)`），
+             *   藏本体藏不到 ⇒ 这里把贴在这只使魔身上的那颗删掉（见 `yk_xfam_kill_trails()` 的一手）。*/
+            yk_xfam_kill_trails(pp);
         } else {
             /* 人侧：本体原样可见（颜色 + visible 位都还回去）。
              * ⚠ 原色**只在从妖侧切回来那一次**写回（`body_hidden` 门）—— 每帧写会把他们的

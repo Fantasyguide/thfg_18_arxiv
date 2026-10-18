@@ -32757,3 +32757,19 @@ youkai: practice auto-equip 108 (ce_owned=1, r=4, spell=8)
   `youkai/leveledit: NOFIRE familiar id=… d=…` 日志（带实测距离）。
 - 验证（本轮）：`make dll` rc=0、`make test-host` rc=0（63 checks）、`deploy --skip-build --force` rc=0；
   四处 DLL md5 见「本次发布」行。**实跑待验**：妖侧靠近他们使魔 ⇒ 它不再发弹（`NOFIRE` 行）。
+
+#### 2026-10-19e 追加（owner：「是**拖尾光**没关掉」）
+
+- **定位（一手，leveledit 仓库 `assets.py:132-142`）**：他们的使魔**本体脚本** `script28/29` 是
+  `loop: sprite(...); +2: scriptNewRoot(script30); +2: scriptNewRoot(script30); … jmp(loop,0);`
+  ⇒ 每 2 tick 撒一颗**拖尾火花**（`script30` = 加法 16×16、20 tick 自删、layer 7）。
+  `scriptNewRoot` = **独立 root VM**（一手 `AnmLoaded__instantiate_orphan_vm_to_world_list_back 0x488a40`）
+  ⇒ **不在 `anm_vm_ids[]`** ⇒ 藏本体（slot 0）藏不到它，它照旧每 2 tick 冒新的。
+- **改法**：妖侧藏本体时顺手**删掉贴在这只使魔身上的那颗 VM**（短命粒子、他们的 ECL 不引用它）：
+  · 遍历 VM 列表（一手 `AnmManager__get_vm_with_id 0x488b40` 的走法：`mgr+0x6f0` world / `mgr+0x6f8` ui，
+    结点 `{+0 VM*, +4 next}`，VM id 在 `+0x544`）；
+  · 过滤 = 当前脚本号（`VM+0x28`）== **30** 且实体坐标（`VM+0x5f0`）离该使魔 **< 32 px**；
+  · 先取 `next` 再删（删除会摘结点）；整局最多 8 行 `trail VM deleted id=…` 日志。
+- **owner 追加裁决**：「抖动没关系」⇒ **不加**迟滞，`NOFIRE` 保持纯逐发否决（近 ⇒ 掐、远 ⇒ 继续）。
+- 验证（本轮）：`make dll` rc=0、`make test-host` rc=0、`strings` 命中 `trail VM deleted` / `NOFIRE`；
+  四处 DLL md5 见发布行。实跑待验：妖侧他们使魔身后**不再有拖尾光**。
