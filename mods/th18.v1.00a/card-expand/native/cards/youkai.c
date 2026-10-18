@@ -4273,6 +4273,13 @@ static void __attribute__((noinline)) yk_xfam_vm_tick(void)
             ce_anm_set_color(vid, 0x00ffffffu);
             *(uint32_t *)(vm + CE_ANM_VM_FLAGS_LO) &= ~2u;      /* visible = 0 */
             v->body_hidden = 1;
+            /* ★ 2026-10-19j（owner：「**妖侧使魔得关闭体术**」）：走本仓**已实跑验过**的那条正解
+             *   `yk_no_body_attack()` = 引擎自己的闸 `zEnemyData+0x5108`（`no_hitbox_timer.current`，
+             *   绝对 `e+0x6334`）每帧写 **2** ⇒ 前置闸 `0x42f51c`（`>0`）跳过**接触致伤**；
+             *   **不碰 `flags_lo`/hitbox 几何**（那两样改不动体术，见 `yk_no_body_attack` 的注）。
+             *   ⇒ 只写**妖侧**：人侧不写，引擎的计时器自己衰减回 0 ⇒ 体术自动恢复 ✓。
+             *   （我们自建使魔是**两侧都不写体术**；他们的使魔在人侧仍是原版敌人 ⇒ 人侧保留体术。）*/
+            yk_no_body_attack(f);
             /* ★ 2026-10-19e：他们的**拖尾火花**是独立 root VM（`scriptNewRoot(script30)`），
              *   藏本体藏不到 ⇒ 这里把贴在这只使魔身上的那颗删掉（见 `yk_xfam_kill_trails()` 的一手）。*/
             yk_xfam_kill_trails(pp);
@@ -4364,9 +4371,12 @@ static void __attribute__((noinline)) yk_xfer_applied_tick(void)
     s_xfer_obs_log_frame = s_ledger_frame;
     if (hp_after >= 0)
         ce_log("youkai/leveledit: transfer applied boss=%u hp_before=%d hp_after=%d (hp_delta=%d; "
-               "amount=%d, ext=%d from their familiars, 1/2; skipped %u under %u-frame throttle)",
+               "amount=%d, ext=%d from their familiars, 1/2; skipped %u under %u-frame throttle; "
+               "boss_flags=0x%x inv=%d)",
                s_xfer_obs_id, (int)s_xfer_obs_hp, (int)hp_after, (int)(s_xfer_obs_hp - hp_after),
-               (int)s_xfer_obs_amount, (int)s_xfer_obs_ext, s_xfer_obs_skipped, YK_XFAM_LOG_EVERY);
+               (int)s_xfer_obs_amount, (int)s_xfer_obs_ext, s_xfer_obs_skipped, YK_XFAM_LOG_EVERY,
+               (unsigned)*(const uint32_t *)(te + CE_ENEMY_FLAGS),
+               (int)*(const int32_t *)(te + 0x6320));
     else
         ce_log("youkai/leveledit: transfer applied boss=%u hp_before=%d hp_after=? (target gone; "
                "amount=%d, ext=%d from their familiars, 1/2; skipped %u)",

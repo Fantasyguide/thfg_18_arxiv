@@ -32831,3 +32831,16 @@ youkai: practice auto-equip 108 (ce_owned=1, r=4, spell=8)
   owner 要的是一个稳定手感 ⇒ 定值更合适。
 - 只**往上提**（`max < want` 才写）：实跑见过他们有一批本来就是 `999999`，原样保留 ✓。
 - 日志：`youkai/leveledit: HP raised id=… 20 -> 600 (owner: fixed 600)`（整局最多 8 行）。
+
+#### 2026-10-19j 追加（owner：「妖侧使魔得关闭体术」＋「你看看 [log]」）
+
+- **体术**：走本仓**已实跑验过**的那条正解 —— `yk_no_body_attack()` 写引擎自己的闸
+  `zEnemyData + 0x5108`（`no_hitbox_timer.current`，绝对 `e+0x6334`）= **2** ⇒ 前置闸 `0x42f51c`（`>0`）
+  跳过**接触致伤**；**不碰 `flags_lo` / hitbox 几何**（那两样改不动体术，见 `yk_no_body_attack()` 的一手注）。
+  ⇒ 只写**妖侧**（`yk_xfam_vm_tick` 的 side 分支）：人侧不写，计时器自己衰减回 0 ⇒ 体术自动恢复
+  （他们那批在人侧仍是原版敌人，体术该留着）。
+- **日志复核（02:36 那局，一手）**：`HP raised` **没出现**（那局跑的是 600 之前的 DLL，符合预期）；
+  但发现**真问题**：6 条 `transfer applied` 全是 **`hp_delta=0`**
+  （例：`boss=2 hp_before=1000 hp_after=1000 … amount=44, ext=44`）⇒ **喂料/建源都在跑，boss 却没掉血**。
+  ⇒ 本轮给那条观测加了两格：`boss_flags=0x…`（`enemy+0x635c`，bit4 = 免伤位）与 `inv=`
+  （`enemy+0x6320` 无敌计时器）⇒ 下一局一眼分清「boss 当时免伤」还是「我们的源没落地」。
