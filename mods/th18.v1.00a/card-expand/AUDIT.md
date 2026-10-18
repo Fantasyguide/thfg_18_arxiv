@@ -32620,8 +32620,10 @@ owner 2026-10-15 实跑逐字：
   · `cards/youkai.c`：新增 `yk_practice_equip_once()`。判据 = `CE_PRACTICE_STAGE() >= 0`（`0x4c5f8c`，
     `engine.h` 的宏）+ `CE_PLAYER()` + `CE_ABILITY_MGR()` 都在；走**商店同一条路**
     `ce_give_card(108u, CE_MODE_SHOP, 0)`（先例 `cards/pot.c` / `cards/give12.c`）；
-    `ce_owned(108)` 已是 1 ⇒ 跳过；每局只试一次（失败不重试），`CE_TIME_IN_STAGE()` 倒退
-    （= 重开 / 重选关，与 `cards/mof.c` 同一判据出处）或离开练习时复位。
+    `ce_owned(108)` 已是 1 ⇒ 跳过；每局首发一次（失败不重试）；**成功发过之后若 `owned[108]`
+    又变回 0**（= 关卡开场 `reset_cards` 清 `owned[]` 再从存档重建，把刚发的 108 整副删掉）⇒
+    补发**一次**，之后不再追；`CE_TIME_IN_STAGE()` 倒退（= 重开 / 重选关，与 `cards/mof.c` 同一判据出处）
+    或离开练习时复位。
   · ⚠ **不能挂在 108 自己的 `on_ctor` / `on_tick_2`**：那两个回调本身就属于这张卡 —— 它不在练习卡组里时
     根本不存在（循环依赖）⇒ 必须由**与卡组无关**的帧点从外面叫进去。
   · `sdk.c`（**共享件**）：`BP_ce_item_frame`（`0x446ee3`，每个正常游玩帧一次、卡链遍历之后）尾部加
@@ -32631,9 +32633,15 @@ owner 2026-10-15 实跑逐字：
   该函数在非练习模式第一行就返回；练习模式里也只动 `owned[108]` 与 108 的对象。**没有改任何既有卡的
   回调 / 语义 / 数据表**；不新增站点（跳板池零增量）。回归 = `make dll` / `make test-host` / `make check` 全绿。
 - **验证**：`make dll` rc=0 ✓；`make test-host` rc=0 ✓；`strings th18_card_expand.dll` 命中
-  `youkai: practice auto-equip 108 (ce_owned=%d, r=%d)` 与 `... skipped (already owned)` ✓；
+  `youkai: practice auto-equip 108 (ce_owned=%d, r=%d)` / `... skipped (already owned)` /
+  `... was rebuilt away by reset_cards - re-giving once` ✓；
   `nm cards/youkai.o` = `T yk_practice_equip_once`、`nm sdk.o` = `U yk_practice_equip_once`、
-  `objdump -dr sdk.o` 的调用点落在 `BP_ce_item_frame` 内 ✓；`make check` / deploy 见当次发布台账。
+  `objdump -dr sdk.o` 的调用点落在 `BP_ce_item_frame` 内 ✓；
+  `make check` rc=2 —— **只红** modkit 同开护栏（`lang_zh-hans` × `th18_leveledit_sanae_mystia`、
+  `th18_card_expand_255` × leveledit 共 **12 处外部同路径冲突**，与本改动无关 ✓），其余全绿 ✓；
+  `deploy.py --skip-build --force` rc=0 ✓、四处 DLL md5 = `7c8d0b1e2c3bf613d6b3207a4dbf3115` ✓、
+  `deploy-manifest.json` 第 20 条（head `d4bc54ed`）✓。
 - **没有主机单测**（诚实标注）：判据与副作用全是引擎侧（练习全局 / `owned[]` / `ce_give_card`）⇒
   纯逻辑无法脱离 exe 测；实跑判据 = 日志里那一行 `youkai: practice auto-equip 108 (ce_owned=1, r=…)`
-  （`ce_owned=1` 即「已经在手上了」；跳过时是 `... skipped (already owned)`）。
+  （`ce_owned=1` 即「已经在手上了」；跳过时是 `... skipped (already owned)`；
+  若出现 `... was rebuilt away ... re-giving once` 说明 reset_cards 时序确实存在、已自动补上）。
