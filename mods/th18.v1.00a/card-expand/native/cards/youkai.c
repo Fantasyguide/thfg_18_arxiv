@@ -8184,6 +8184,7 @@ static int yk_in_spell_practice(int32_t *sid_out)
 static yk_transfer_t s_le_tr;
 static unsigned s_le_dropped, s_le_rect_ok, s_le_noboss;
 static uint32_t s_le_parent;
+static unsigned s_le_sa_logged;   /* ★ 2026-10-19t：无 108 那一支的存活日志（1 行）*/
 
 static void __attribute__((noinline)) yk_le_transfer_standalone(void)
 {
@@ -8211,7 +8212,16 @@ static void __attribute__((noinline)) yk_le_transfer_standalone(void)
     }
     if (boss && yk_le_here()) s_le_seen_stage = CE_CURRENT_STAGE();
     le_stage = (yk_le_here() || (s_le_seen_stage == CE_CURRENT_STAGE())) ? 1 : 0;
-    if (!le_stage) return;                       /* 不是他们那场 ⇒ 一个字节都不碰 ✓ */
+    /* ★ 2026-10-19t（owner：「仅 DLL 好像还是 20」）—— 原来这里整段 `if (!le_stage) return;`，
+     *   而 `le_stage` 依赖 `yk_le_here()`（boss 的 ECL 子程序号 ≥ 24），符卡练习里经常是 0
+     *   ⇒ **无 108 这一支整段没跑**（血量没写、转伤也没喂）。
+     *   ⇒ 改成逐条判：`le_stage` 成立时认 anm 28/29；否则只认他们 ECL 的显式标记 `$I3 == 997`
+     *     （零售敌机不会有 997 ✓）。这样「仅 DLL」这条路不会因为场地判据取不到而静默失效。*/
+    if (!le_stage && s_le_sa_logged < 1u) {
+        ++s_le_sa_logged;
+        ce_log("youkai/leveledit: no-108 path active (le_stage=0 this frame; will still take "
+               "explicit $I3==997 familiars)");
+    }
 
     for (i = 0; i < YK_XFAM_MAX; ++i) s_xfam[i].seen = 0;
     CE_ENEMY_FOREACH(em, e) {
@@ -8223,8 +8233,9 @@ static void __attribute__((noinline)) yk_le_transfer_standalone(void)
         if (!id) continue;
         anm0 = *(const int32_t *)(e + CE_ENEMY_DATA + 0x26c);
         iv3  = yk_le_iv3(e);
-        if (!(anm0 == YK_LE_FAM_ANM_A || anm0 == YK_LE_FAM_ANM_B || iv3 == YK_LE_FAM_MARK))
-            continue;                            /* 只认他们的使魔（两根判据，与卡内同源）*/
+        if (!(iv3 == YK_LE_FAM_MARK ||
+              (le_stage && (anm0 == YK_LE_FAM_ANM_A || anm0 == YK_LE_FAM_ANM_B))))
+            continue;                            /* 只认他们的使魔（997 恒可信；28/29 要场地成立）*/
         parent = (uint32_t)*(const int32_t *)(e + YK_ENEMY_PARENT_ID);
         if (!parent) {                            /* 没有母机 ⇒ 落点 = 当前 boss（一手语义）*/
             if (!boss) continue;
