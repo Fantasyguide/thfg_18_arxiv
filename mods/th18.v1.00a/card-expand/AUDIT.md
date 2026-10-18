@@ -32851,3 +32851,46 @@ youkai: practice auto-equip 108 (ce_owned=1, r=4, spell=8)
   owner 逐字：「对于米斯蒂亚的使魔，**108 接管的血量也跟没接管一样**，不然太难了」。
 - 接管保留：1/2 转伤（`ce_damage_rect` 那条链）、妖侧外观（藏本体 + 删拖尾）、`NOFIRE` 近身掐弹、关体术。
 - 旋钮保留：要再提血，把 `YK_LE_FAM_HP_FIXED` 改成正数即可（代码路径与日志都还在，只是常量 0 时被编译器消掉）。
+
+#### 2026-10-19r 追加（★ 转嫁 `hp_delta=0` 定案：**源没毛病，是目标那帧扣不动血**；撤回 19q）
+
+- **19q 的结论是错的**：`c1b85336` 写了「伤害源建得出来，但敌机侧 `0x45f0f0` 从不采纳它」并改成**直接扣血**。
+  本轮把 `0x45dfa0`（建源）/`0x45f0f0`（结算）/`0x42ed40`（敌机伤害段）逐条反汇编读完 ⇒ **源一个字段都不缺**：
+  - `ce_damage_rect` 的调用形状与原生卡 Remilia `0x40f4a6` **逐参同形**（`push dmg / push life / 0.0 角度 / center*`
+    + `XMM2 = 宽 / XMM3 = 高`，`ret 0x10`）；建源写的字段：`+0x74` dmg、`+0x7c` 累计上限 `9999999`、
+    `+0x80` 命中间隔 `1`、`+0x84` 一源一敌 tag、`+0x88` 冷却 `0`、`+0x8c` 类别 `0`、`+0x98` 特殊 handler `0`
+    （自机弹那条 `0x45e890` 才把 `+0x98` 改成 1，走 `0x4b4270` 表；0 = 通用路径，照常累加）；
+  - 结算侧 `0x45f0f0` 的四道自检（active / `timer.cur != timer.prev` / `timer.cur % +0x80 == 0` / `+0x88 <= 0`）
+    新建的源**全部通过**（`+0x88` 由玩家侧 `0x45c502 dec` 每帧递减，只会变负）。
+- **真因 = 引擎自己的三道闸**（`EnemyData__step_game_logic` `0x42ed40`，`ebx` = zEnemyData = `enemy+0x122c`）：
+  ① `42f101 test cl,0x21 / jne 42f3c5`（flags = `[ebx+0x5130]` = `enemy+0x635c` 的 bit0/bit5
+     = `CE_ENEMY_FLAG_NO_LOCK`）⇒ **整段伤害结算（含 `call 0x45f0f0`）被跳过**；
+  ② `42f2b9 test BYTE [ebx+0x5130],0x10 / jne 42f31c`（bit4 = `CE_ENEMY_FLAG_NO_DAMAGE`）⇒ 只进 `+0x5008`；
+  ③ `42f2c2 cmp DWORD [ebx+0x50f4],0 / jg 42f31c`（**无敌计时器** = `enemy+0x6320`）⇒ 只进 `+0x5008`。
+  扣血全 exe 只有 `42f2da sub [ebx+0x5000],esi` 与 `42f314 sub [ebx+0x4ff4],esi` 两处，都排在三道闸之后。
+- **6/6 条实跑逐条对闸（一手日志原文）**：`flags=0x40b10040 inv=117`、`0x40b10040 inv=87`、
+  `0x40b1004c inv=57`、`0x40b1004c inv=27` ⇒ 过了 ①，被 **③** 吃掉；
+  `0x4091004f inv=47`、`0x4091004f inv=17` ⇒ **bit0 置位**，被 **①** 整段跳过。
+  ⇒ **没有一条落在三道闸都开着的帧**，所以「源没被采纳」是误判。
+  ⚠ 19m 曾提出同一假设、被 `8ac2bc45` 以「inv=41/55/25 期间玩家伤害照样在进（hp 1000→832）」撤回 ——
+  那条推断不成立：观测是 30 帧节流的**瞬时采样**，HP 下降发生在**两次观测之间**，而 `0x50f4` 归零后
+  玩家就能打进去。本次以反汇编为准（`engine.h` 的 `CE_ENEMY_FLAG_NO_DAMAGE` 注释 2026-09-22 就已经写了这两道闸）。
+- **改了什么**（`cards/youkai.c`，只动 108 自己的卡，**不碰共享件**）：
+  1. 新增 `yk_target_damageable()`：三道闸全开才返回 1；免伤位（bit4）返回 −1（永远扣不动）；其余返回 0；
+  2. 卡内 + 无 108 两条路都在**建源前**过这道闸：闸关 ⇒ **不建源**，量攒在 `pending`（上限 `YK_XFER_HOLD_CAP` = 600），
+     窗口一开那一帧一次性落地（超出上限的部分进 `dropped` 账，`xfer[` 汇总对得上）；
+  3. `YK_XFER_DIRECT_HP` **1 → 0**（回到引擎的伤害源正路；那条直接扣血是绕过引擎的旁路，留作二分开关）；
+  4. `ce_damage_rect` 之后新增 owner 要的 `SRC …` 行，且打的是**从槽里回读的字段**而不是入参：
+     `youkai/leveledit: SRC id=… dmg=… ang=… flags=… owner=… life=… box=…, … slot=… act=… inv=…`
+     （`owner` = `+0x98`；`act` = 池里 active 槽数，**`act=1024` = 池满 ⇒ `0x45dfea` 那条出口不分配槽但仍返回 > 0**）；
+  5. `transfer applied` 那行加 `inv0=`（**建源那一帧**的无敌值）、`all=a->b all_delta=`（`enemy+0x6234`，
+     含被免伤吃掉的总伤害 ⇒ **源有没有命中**）、`src slot/alive/acc/dmg`（下一 tick 回读那条源自己的 `+0x78`
+     ⇒ **有没有被结算**）。
+- **验证（本轮）**：`make dll` rc=0、`make test-host` rc=0（63 checks）、`strings` 命中 `SRC id=` / `SRC hold` /
+  `all_delta=`。四处 DLL md5 见发布行。
+- **下一局判据（一眼）**：
+  · `SRC …` 出现且 `flags=0x1 dmg=<amount> act<1024` ⇒ 源确实建进池里了；
+  · `transfer applied … all_delta>0` ⇒ 引擎判了重叠；`src acc>0` ⇒ 那条源被结算过；
+  · `all_delta>0 而 hp_delta=0` ⇒ 命中了但被闸吃掉（`inv0>0` / flags bit0/bit5）—— 这说明 `yk_target_damageable()`
+    的判据还漏了一条，把那一格补上即可；
+  · `hp_delta>0` ⇒ 转嫁真的落地 ✓（`all_delta` 与 `hp_delta` 应同量级）。

@@ -22832,6 +22832,21 @@ DOCSTYLE/METHOD ✓ = **别人的** ✓）⇒ ★ **禁止 `git commit -a`** ✗
 
 
 | 2 | `YK_LE_FAM_HP_FIXED` / `YK_LE_FAM_HP_SCALE`（`cards/youkai.c`）| **600** × 1.0× | 接管使魔血量 = **定值 600**（owner 2026-10-19 拍板「按照 600 来吧」）× 本倍数旋钮。理由/一手见下节。|
+| 3 | `YK_XFER_HOLD_CAP`（`cards/youkai.c`）| **600** | ❓ 自定（工程值）。**转嫁在什么条件下落地**是一手（见 §2.0zz-2），但「无敌窗口里攒多少」没人给过数 ⇒ 取 600（≈ TH18 boss 一管血的 1/3~1/2，窗口一开是**一笔大伤害**而不是一击必杀）；超出部分进 `dropped` 账，`xfer[` 汇总里对得上。owner 报大/小就改这一行。|
+
+### §2.0zz-2 ★ 转嫁「落不了地」的真因（一手反汇编，2026-10-19r）
+
+- **结论**：`ce_damage_rect` **一个字段都不缺**；6/6 条 `hp_delta=0` 的真因是**建源那一帧目标本身扣不动血**。
+- 一手（`th18.exe`，`EnemyData__step_game_logic` `0x42ed40`，`ebx` = zEnemyData = `enemy+0x122c`）三道闸：
+  ① `42f101 test cl,0x21 / jne 42f3c5`（flags bit0/bit5 = `CE_ENEMY_FLAG_NO_LOCK`）⇒ **整段伤害结算跳过**；
+  ② `42f2b9 test BYTE [ebx+0x5130],0x10 / jne 42f31c`（bit4 = `CE_ENEMY_FLAG_NO_DAMAGE`）⇒ 不扣血；
+  ③ `42f2c2 cmp DWORD [ebx+0x50f4],0 / jg 42f31c`（无敌计时器 = `enemy+0x6320`，写点只有 ECL `setInvuln`）⇒ 不扣血。
+  扣血全 exe 只有 `42f2da` / `42f314` 两处，都排在三道闸之后。
+- 实跑 6/6 逐条对闸：`0x40b10040/inv=117`、`0x40b10040/87`、`0x40b1004c/57`、`0x40b1004c/27` ⇒ 被 ③；
+  `0x4091004f/47`、`0x4091004f/17` ⇒ bit0 置位，被 ①。**没有一条落在三道闸都开着的帧**。
+- ⇒ 修法：`yk_target_damageable()` 判这三道闸，**开着才建源**；关着就把量攒在 `pending`
+  （上限 = 上表 #3），窗口一开一次性落地。`YK_XFER_DIRECT_HP`（c1b85336 那条绕过引擎的直接扣血）
+  归 **0**，只留作二分开关。
 
 ### §2.0zz-1 `YK_LE_FAM_HP_SCALE` 为什么不是「照抄 TH08 的数字」
 
