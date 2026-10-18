@@ -8007,6 +8007,18 @@ static void __attribute__((noinline)) yk_le_transfer_standalone(void)
     fr = ce_sdk_frame();
     if ((fr & 1u) != 0u) return;                 /* 与卡内同节拍：每 2 帧扫一次 */
     boss = yk_boss();
+    /* ★ 2026-10-19n（owner：「108 接管使魔也是**仅 DLL** 接管使魔的血吧」）——
+     *   无 108 这一支要做到与卡内**同一条口径**（转伤 + 血量都算）：`yk_boss()` 的 lockable 门
+     *   在符卡练习里可能取不到 ⇒ 这里补卡内同款兜底（直接按 `CE_EM_BOSS_IDS` 的槽位找非零 id）。*/
+    if (!boss) {
+        unsigned bi;
+        for (bi = 0; bi < CE_EM_BOSS_SLOTS; ++bi) {
+            int32_t bid = *(const int32_t *)(em + CE_EM_BOSS_IDS + bi * 4);
+            if (!bid) continue;
+            boss = ce_enemy_by_id(em, (uint32_t)bid);
+            if (boss) break;
+        }
+    }
     if (boss && yk_le_here()) s_le_seen_stage = CE_CURRENT_STAGE();
     le_stage = (yk_le_here() || (s_le_seen_stage == CE_CURRENT_STAGE())) ? 1 : 0;
     if (!le_stage) return;                       /* 不是他们那场 ⇒ 一个字节都不碰 ✓ */
