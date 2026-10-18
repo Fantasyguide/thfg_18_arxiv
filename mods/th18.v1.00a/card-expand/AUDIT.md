@@ -32685,6 +32685,24 @@ owner 2026-10-15 实跑逐字：
   （`<modkit>/mods/` / `<modkit>/thcrap/bin/mod_*` / `<modkit>/thcrap/repos/Renko_1055/.../` / `native/`）、
   patch js md5 = `7eba2eb25452939a514290f8fec26d94`（未改）、`deploy-manifest.json` 最新一条 head =
   本条所在提交（`git log -1`）。
-- **没有主机单测**（诚实标注）：判据全是引擎全局 ⇒ 实跑判据 = 下一局日志里出现
-  `youkai: practiceprobe cand0=0x4cf438=5 cand1=0x4cccc8&0x30=0x20 cand2=0x4ccd14=<>=0> cand3=0x4c5f8c=-1 stage=N practice=1`
-  以及 `youkai: practice auto-equip 108 (ce_owned=…, r=…, spell=…)`（`r=1` 才算发成功）。
+- **没有主机单测**（诚实标注）：判据全是引擎全局 ⇒ 只能实跑验。
+
+#### ★ 实跑确认（2026-10-19 02:07 那局，owner「生效了」）✅
+
+日志 `game/th18_card_expand.log`（本次启动 02:07:51）原文两行，**与预测逐字一致**：
+
+```
+youkai: practiceprobe cand0=0x4cf438=5 cand1=0x4cccc8&0x30=0x20 cand2=0x4ccd14=8 cand3=0x4c5f8c=-1 stage=2 practice=1
+hud-card: refreshed after giving card 108 (selected=0653f078)
+youkai: practice auto-equip 108 (ce_owned=1, r=4, spell=8)
+```
+
+- `cand3=0x4c5f8c=-1` ⇒ **旧判据在符卡练习里确实是 -1**（这次订正的直接实证）；
+  `cand0=5` / `cand1=0x20` / `cand2=8`（第 2 面第 8 张符）⇒ ①②③ 三条候选全部落在预期值上。
+- 卡片确实进手且能跑：同一局 `hud: ===== claim_pinned` 里 **`card 108` 占 HUD 槽 #0（256x53）**，
+  结尾 `youkai: run done … 896 transfer damage … xfer[… rect 75 …]` ⇒ 转嫁逻辑有实际输出。
+- ⚠ **`r` 的口径订正**：`ce_give_card()` 返回的是引擎分配器 `AbilityManager__allocate_new_card 0x411460`
+  的返回值，**判据是 `>= 0`**（`ce_give_card_transaction` 内部就是 `if (result >= 0)` 才 mark）；
+  这一局它是 **4**，不是 1。早先「`r=1` 才算成功」的说法作废 —— 看日志请用 `r >= 0` + `ce_owned=1`。
+  全程**没有**出现 `... skipped (already owned)` / `... re-giving once` ⇒ 本局没有 `reset_cards` 抹卡，
+  补发那条闸空转（符合预期）。
