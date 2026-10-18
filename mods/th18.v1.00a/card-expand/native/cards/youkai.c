@@ -187,6 +187,17 @@ static int yk_option_script(int character)
 #define YK_TRANSFER_BOX_H 48.0f
 #define YK_TRANSFER_SRC_LIFE 4
 #define YK_XFER_PENDING_CAP 20000   /* ★ 2026-10-19m：无敌期攒转嫁量的上限（防涨爆）*/
+/* ★ 2026-10-19r：**引擎侧扣血闸要用的两个绝对偏移**（推导与一手依据见
+ *   `yk_target_damageable()` 上面那段长注释；这里提前定义是因为观测块 `yk_xfer_applied_tick`
+ *   用得到，而它排在那个注释块之前）。*/
+#define YK_ENEMY_INVULN_CUR   0x6320    /* zEnemyData+0x50f4 = 无敌计时器 current（0x122c + 0x50f4）*/
+#define YK_ENEMY_HP_DMGALL    0x6234    /* zEnemyData+0x5008 = total_damage_including_ignored
+                                         *   （**被闸吃掉的伤害也记这里** ⇒ 「源到底有没有命中」的判据）*/
+#define YK_XFER_HOLD_CAP      600       /* 攒着的上限（帧数不另设：攒到它就封顶）。
+                                         * 依据：TH18 的 boss 血量量级 1000~2000（leveledit 的 boss
+                                         * `lifeSet(1000/2000)`）⇒ 600 ≈ 1/3 管血，窗口一开是**一笔大伤害**
+                                         * 而不是一击必杀；超出部分进 `dropped` 账（不静默吞）。
+                                         * 旋钮登记 `TUNING.md` §2.0zz。*/
 static unsigned s_xfer_wait_invuln;  /* ★ 2026-10-19m：因为 boss 无敌而**没落地**的次数（诊断）*/      /* 源寿命 2 帧 = 建源帧 + 下一帧各结算一次，之后引擎自己回收
                                      *（`0x45c402` 循环，research §1.3a）；先例 71/72/75 同款。*/
 
@@ -4132,7 +4143,9 @@ static unsigned s_le_hp_logged;
 /* ★ 2026-10-19p（owner 改主意，逐字：「对于米斯蒂亚的使魔，**108 接管的血量也跟没接管一样**，
  *   不然太难了」）⇒ **默认不写血**（`0` = 关）。接管只做：转伤 / 妖侧外观 / 掐弹 / 关体术，
  *   **血量保持他们 ECL 给的原值**（实跑 = 20）。要再提血把这里改成正数即可（旋钮保留）。*/
-#define YK_LE_FAM_HP_FIXED 0
+/* ★ 2026-10-19s（owner 拍板：「**都改成 100 血**」）⇒ 接管时把使魔血量统一写成 100。
+ *   （之前 0 = 关、600 太厚；100 = 比 TH08 原值 20 厚 5 倍，又不会变成难打的墙。）*/
+#define YK_LE_FAM_HP_FIXED 100
 
 static void yk_le_fam_raise_hp(uint8_t *f, const uint8_t *boss)
 {
@@ -4362,15 +4375,37 @@ static int32_t  s_xfer_obs_amount, s_xfer_obs_ext, s_xfer_obs_hp;
 static uint8_t  s_xfer_obs_wait;
 static uint32_t s_xfer_obs_log_frame;
 static unsigned s_xfer_obs_skipped;
+/* ★★★ 2026-10-19r（判「源到底有没有被结算」的三格）：
+ *   · `inv0`  = **建源那一帧**目标的无敌值（`enemy+0x6320`；不是 1 tick 之后读的那个）；
+ *   · `all0`  = 建源那一帧目标的 `enemy+0x6234`（`+0x5008` = 含被免伤吃掉的总伤害）；
+ *   · `slot`  = `ce_damage_rect` 返回的 1-based 槽号 ⇒ 下一 tick 拿它回读那条源自己的 `+0x78`
+ *               （源累计命中量）与 `flags` bit0（还在不在池里）。
+ *   判读：`all_delta>0` ⇒ 引擎**判了重叠**（伤害进了 +0x5008）；`src_acc>0` ⇒ 那条源**被结算过**
+ *         （`0x45f4c5 add [edi+0x58],eax`）；两者都 0 ⇒ 源根本没命中（位置/几何/池满）。*/
+static int32_t  s_xfer_obs_inv0, s_xfer_obs_all0;
+static int      s_xfer_obs_slot;
 
 static void __attribute__((noinline)) yk_xfer_applied_tick(void)
 {
     uint8_t *te;
     int32_t hp_after;
+    int32_t all_after = -1, src_acc = -1, src_dmg = -1, src_alive = -1;
     if (!s_xfer_obs_wait) return;
     s_xfer_obs_wait = 0;
     te = s_xfer_obs_id ? ce_enemy_by_id(CE_ENEMY_MGR(), (int32_t)s_xfer_obs_id) : 0;
     hp_after = te ? *(const int32_t *)(te + YK_ED_LIFE_CUR) : -1;
+    if (te) all_after = *(const int32_t *)(te + YK_ENEMY_HP_DMGALL);
+    /* ★ 回读那条源（1-based 槽 → `PLAYER+0x204d8+slot*0x9c`）：它自己的累计命中量是**只属于我们**的
+     *   证据（同一帧自机弹的伤害不会记到这条槽上）。槽可能已被回收 ⇒ `alive=0` 也要打出来。*/
+    {   uint8_t *pl = CE_PLAYER();
+        if (pl && s_xfer_obs_slot > 0 && s_xfer_obs_slot <= CE_PLAYER_DMGSRC_SLOTS) {
+            const uint8_t *src = pl + CE_PLAYER_DMGSRC_BASE
+                                 + (size_t)s_xfer_obs_slot * CE_PLAYER_DMGSRC_STRIDE;
+            src_alive = (int)(*(const uint32_t *)src & 1u);
+            src_acc   = *(const int32_t *)(src + 0x78);   /* +0x78 = 累计已造成 */
+            src_dmg   = *(const int32_t *)(src + 0x74);   /* +0x74 = 每次结算伤害 */
+        }
+    }
     if (s_xfer_obs_log_frame && s_ledger_frame - s_xfer_obs_log_frame < YK_XFAM_LOG_EVERY) {
         ++s_xfer_obs_skipped;                          /* 节流：< 30 帧就攒着，下一行带 skipped */
         return;
@@ -4380,18 +4415,22 @@ static void __attribute__((noinline)) yk_xfer_applied_tick(void)
     if (hp_after >= 0)
         ce_log("youkai/leveledit: transfer applied boss=%u hp_before=%d hp_after=%d (hp_delta=%d; "
                "amount=%d, ext=%d; fed map/orb/ext=%u/%u/%u; skipped %u under %u-frame throttle; "
-               "boss_flags=0x%x inv=%d)",
+               "boss_flags=0x%x inv=%d; inv0=%d all=%d->%d all_delta=%d; "
+               "src slot=%d alive=%d acc=%d dmg=%d)",
                s_xfer_obs_id, (int)s_xfer_obs_hp, (int)hp_after, (int)(s_xfer_obs_hp - hp_after),
                (int)s_xfer_obs_amount, (int)s_xfer_obs_ext,
                s_xfer_mapped_feed, s_xfer_orbit_feed, s_xfer_ext_feed,
                s_xfer_obs_skipped, YK_XFAM_LOG_EVERY,
                (unsigned)*(const uint32_t *)(te + CE_ENEMY_FLAGS),
-               (int)*(const int32_t *)(te + 0x6320));
+               (int)*(const int32_t *)(te + YK_ENEMY_INVULN_CUR),
+               (int)s_xfer_obs_inv0, (int)s_xfer_obs_all0, (int)all_after,
+               (int)(all_after >= 0 ? all_after - s_xfer_obs_all0 : -1),
+               s_xfer_obs_slot, (int)src_alive, (int)src_acc, (int)src_dmg);
     else
         ce_log("youkai/leveledit: transfer applied boss=%u hp_before=%d hp_after=? (target gone; "
-               "amount=%d, ext=%d from their familiars, 1/2; skipped %u)",
+               "amount=%d, ext=%d from their familiars, 1/2; skipped %u; inv0=%d slot=%d)",
                s_xfer_obs_id, (int)s_xfer_obs_hp, (int)s_xfer_obs_amount, (int)s_xfer_obs_ext,
-               s_xfer_obs_skipped);
+               s_xfer_obs_skipped, (int)s_xfer_obs_inv0, s_xfer_obs_slot);
     s_xfer_obs_skipped = 0;
 }
 
@@ -4423,6 +4462,91 @@ static int yk_xfer_suppress_reason(void)
         invuln = (fl & YK_ENEMY_FLAG_NO_DAMAGE24) ? 1 : 0;
     }
     return yk_spell_xfer_block(flags, name_hit, invuln);
+}
+
+/* ★★★★★ 2026-10-19r（**一手反汇编定案；推翻 c1b85336 的「伤害源没被敌机侧采纳」**）
+ *
+ * 结论先说：**伤害源一个字段都不缺。** `ce_damage_rect` 走的就是引擎自己的
+ * `Player__create_damage_source_rect` `0x45dfa0`（原生卡 Remilia `0x40f4a6` 的**同一调用形状**：
+ * `push dmg / push life / 角度走栈参 / XMM2 = 宽 / XMM3 = 高`），返回 1-based 槽号，槽在
+ * `PLAYER+0x204d8+slot*0x9c`，`+0x74` = 每次结算伤害、`+0x80` = 命中间隔 1、`+0x7c` = 累计上限
+ * `9999999`、`+0x84` = 「一源一敌一次」tag、`+0x98` = 特殊 handler 下标（0 = 通用）。
+ *
+ * 6/6 条 `transfer applied … hp_delta=0` 的真因是**建源那一帧目标本身扣不动血** ——
+ * `EnemyData__step_game_logic` `0x42ed40` 的三道闸（`ebx` = zEnemyData = `enemy+0x122c`）：
+ *   ① `42f101 test cl,0x21 / jne 42f3c5`  —— flags（`[ebx+0x5130]` = `enemy+0x635c`）
+ *      bit0/bit5 = `CE_ENEMY_FLAG_NO_LOCK`（死亡 / 未登场 / 无敌切换中）⇒ **整段伤害结算被跳过**；
+ *   ② `42f2b9 test BYTE [ebx+0x5130],0x10 / jne 42f31c` —— bit4 = `CE_ENEMY_FLAG_NO_DAMAGE`
+ *      ⇒ 只累加 `+0x5008`（含被忽略的总伤害），**不碰 HP**；
+ *   ③ `42f2c2 cmp DWORD [ebx+0x50f4],0 / jg 42f31c` —— **无敌计时器** `zTimer{+0x50f0 prev,
+ *      +0x50f4 cur, +0x50f8 cur_f}`（绝对 `enemy+0x6320`；写点只有 ECL `setInvuln`：
+ *      `433c28 lea ecx,[edi+0x50f0]` + `405d10 Timer__set_value`；全 exe 只有两个读者：
+ *      `42f2c2` 本闸与 `4301de` 递减守卫 ⇒ 它存在的唯一语义就是「这帧扣不扣血」）⇒ 同上不扣血。
+ *   扣血全 exe 只有两处：`42f2da sub [ebx+0x5000],esi`（分段血条分支）与 `42f314 sub [ebx+0x4ff4],esi`
+ *   —— 两条都排在上述三道闸之后 ⇒ 闸关着时 `life.current`（`enemy+0x6220`）**一动不动**。
+ *
+ * 实跑 6/6 逐条对闸（日志原文）：
+ *   · `flags=0x40b10040 inv=117` / `0x40b10040 inv=87` / `0x40b1004c inv=57` / `0x40b1004c inv=27`
+ *     ⇒ bit0/bit5 清（过 ①），但 `inv > 0` ⇒ 被 ③ 吃掉；
+ *   · `flags=0x4091004f inv=47` / `0x4091004f inv=17` ⇒ bit0 **置位** ⇒ 被 ① 整段跳过。
+ *   **没有一条落在三道闸都开着的帧** ⇒ 与「源没被采纳」无关。
+ *   ⚠ 2026-10-19m 的同一假设曾被 `8ac2bc45` 撤回，理由是「inv=41/55/25 期间玩家伤害照样在进
+ *   （hp 1000→832）」—— 那条推断不成立：那次 HP 下降发生在**两次观测之间**（观测是 30 帧节流的
+ *   瞬时采样），而 `0x50f4` 会在无敌结束时归零 ⇒ 玩家只在**非无敌帧**打进去。本条以反汇编为准。
+ *
+ * ⇒ 修法：**只在目标三道闸都开着的那一帧建源**；否则把量攒在 `pending`（有上限），窗口一开就落地。
+ *   `YK_XFER_DIRECT_HP` 归 **0**（那条是绕过引擎的旁路：不出受击特效、也不吃引擎每帧伤害上限）。
+ *   ⚠ `YK_ENEMY_INVULN_CUR / YK_ENEMY_HP_DMGALL / YK_XFER_HOLD_CAP` 三个宏定义在文件头
+ *   （观测块 `yk_xfer_applied_tick` 排在它前面，先定义才能用）。*/
+static unsigned s_xfer_hold_ticks;      /* 因「目标扣不动血」而攒着的 tick 数（诊断）*/
+static unsigned s_xfer_hold_logged;     /* `SRC hold` 行数（节流用）*/
+static unsigned s_xfer_src_logs;        /* `SRC` 行数（节流用）*/
+
+/* 目标这一帧能不能扣血：1 = 能；0 = **暂时**不能（攒着等窗口）；-1 = 免伤位（永远扣不动 ⇒ 丢）。*/
+static int yk_target_damageable(const uint8_t *e)
+{
+    uint32_t fl;
+    if (!e) return -1;
+    fl = *(const uint32_t *)(e + CE_ENEMY_FLAGS);          /* = zEnemyData+0x5130 */
+    if (fl & CE_ENEMY_FLAG_NO_DAMAGE) return -1;           /* ② bit4：引擎永远不扣血 */
+    if (fl & CE_ENEMY_FLAG_NO_LOCK) return 0;              /* ① bit0/bit5…：整段伤害结算跳过 */
+    if (*(const int32_t *)(e + YK_ENEMY_INVULN_CUR) > 0) return 0;   /* ③ 无敌计时器未走完 */
+    return 1;
+}
+
+/* ★ `SRC …` 行（owner 要的对比日志）：建源那一帧把**槽里真正写进去的东西**读回来打一条
+ *   —— 不是把入参抄一遍（那样只能证明我们想传什么，不能证明引擎收到了什么）。
+ *   槽地址 = `PLAYER + 0x204d8 + slot*0x9c`（slot 是 1-based，一手见 `engine.h` 的
+ *   `CE_PLAYER_DMGSRC_BASE` 注释；弹侧 `0x45e889`、结算侧 `0x45f19f` 同一算式）。
+ *   判读：`act=1024` ⇒ **池满**（`0x45dfea` 那条出口：返回值仍 > 0 但**没分配到槽**，源根本没建）；
+ *         `flags` bit0 = active、`owner` = `+0x98`（0 = 卡侧源、1 = 自机弹）、`life` = 计时器 current。*/
+static void __attribute__((noinline)) yk_xfer_src_log(const uint8_t *tgt, int slot, int amount)
+{
+    static uint32_t last_frame;
+    uint8_t *pl = CE_PLAYER();
+    uint8_t *src;
+    unsigned act = 0, i;
+    (void)amount;
+    if (!pl || slot <= 0 || slot > CE_PLAYER_DMGSRC_SLOTS) return;
+    if (s_xfer_src_logs >= 24u) return;                              /* 整局最多 24 行 */
+    if (last_frame && s_ledger_frame - last_frame < YK_XFAM_LOG_EVERY) return;  /* 30 帧一条 */
+    last_frame = s_ledger_frame;
+    ++s_xfer_src_logs;
+    for (i = 1; i <= CE_PLAYER_DMGSRC_SLOTS; ++i)                    /* 池占用（1024 个 dword）*/
+        if (*(const uint32_t *)(pl + CE_PLAYER_DMGSRC_BASE + (size_t)i * CE_PLAYER_DMGSRC_STRIDE) & 1u)
+            ++act;
+    src = pl + CE_PLAYER_DMGSRC_BASE + (size_t)slot * CE_PLAYER_DMGSRC_STRIDE;
+    ce_log("youkai/leveledit: SRC id=%u dmg=%d ang=%.2f flags=0x%x owner=%d life=%d box=%d,%d "
+           "slot=%d act=%u inv=%d",
+           tgt ? (unsigned)*(const uint32_t *)(tgt + CE_ENEMY_ID) : 0u,
+           (int)*(const int32_t *)(src + 0x74),
+           (double)*(const float *)(src + 0x0c),
+           (unsigned)*(const uint32_t *)src,
+           (int)*(const int32_t *)(src + 0x98),
+           (int)*(const int32_t *)(src + 0x64),
+           (int)*(const float *)(src + 0x14), (int)*(const float *)(src + 0x18),
+           slot, act,
+           tgt ? (int)*(const int32_t *)(tgt + YK_ENEMY_INVULN_CUR) : -1);
 }
 
 /* 判据行（**同一敌人连续抑制只打一次**；抑制解除后再进入会再打一次）。*/
@@ -4832,11 +4956,37 @@ static void __attribute__((noinline)) yk_transfer_tick(yk_card_t *s)
             tgt = boss;
         }
     }
-    /* ★★★ 2026-10-19m（owner：「转伤有吗」+ 实跑一手）：4/4 条 `transfer applied` 都是 **hp_delta=0**，
-     *   而新加的探针打出 **`inv=41/55/25`** ⇒ boss 当时在**无敌计时器**里（`enemy+0x6320`，
-     *   引擎自己的闸 `0x42f2c2 cmp [ebx+0x50f4],0 / jg skip`，`ebx` = zEnemyData ⇒ 绝对 `+0x6320`）
-     *   ⇒ 我们的伤害源被引擎**整笔丢掉**，不是没建源。
-     *   ⇒ 修法：无敌期**不清 pending**（攒着），等无敌结束那一帧再落地；上限 `YK_XFER_PENDING_CAP` 防涨爆。*/
+    /* ★★★ 2026-10-19r（**落地闸**，一手见 `yk_target_damageable()` 上面那段）：
+     *   目标这一帧三道闸没全开 ⇒ **不建源**（建了也只会进 `+0x5008` 而不扣血，实跑 6/6 就是这样），
+     *   把量**攒在 `pending` 里**，窗口一开那一帧一次性落地。
+     *   · 免伤位（flags bit4）⇒ 永远扣不动 ⇒ 记账丢掉，别攒（否则 pending 永远不清）；
+     *   · 攒的上限 `YK_XFER_HOLD_CAP`，超出部分同样进 `dropped` 账（不静默吞）。*/
+    {
+        int dmg_ok = yk_target_damageable(tgt);
+        if (dmg_ok <= 0) {
+            if (dmg_ok < 0) {
+                s->dropped += (uint32_t)s->tr.pending;
+                s->tr.pending = 0;
+                return;
+            }
+            ++s_xfer_hold_ticks;
+            if (s->tr.pending > YK_XFER_HOLD_CAP) {
+                s->dropped += (uint32_t)(s->tr.pending - YK_XFER_HOLD_CAP);
+                s->tr.pending = YK_XFER_HOLD_CAP;
+            }
+            if (tgt && s_xfer_hold_logged < 8u &&
+                (s_xfer_hold_logged == 0u || (s_ledger_frame % 60u) == 0u)) {
+                ++s_xfer_hold_logged;
+                ce_log("youkai/leveledit: SRC hold id=%u (flags=0x%x inv=%d; pending=%d held=%u) "
+                       "- engine would not deduct HP this frame",
+                       (unsigned)*(const uint32_t *)(tgt + CE_ENEMY_ID),
+                       (unsigned)*(const uint32_t *)(tgt + CE_ENEMY_FLAGS),
+                       (int)*(const int32_t *)(tgt + YK_ENEMY_INVULN_CUR),
+                       (int)s->tr.pending, s_xfer_hold_ticks);
+            }
+            return;
+        }
+    }
     amount = yk_transfer_clamp(s->tr.pending, YK_TRANSFER_CAP_PER_FRAME);
     s->tr.pending = 0;
     if (amount <= 0) return;
@@ -4854,21 +5004,24 @@ static void __attribute__((noinline)) yk_transfer_tick(yk_card_t *s)
      *   （门 = `s_xfer_ext_le_amount > 0`）⇒ 108 **自己的**使魔（映射/绕转那两支）一直没有任何落地证据。
      *   现在改成**只要有量就记**（`amount > 0`），并在行尾带上本局三条支的喂料计数 ⇒ 下一次
      *   零售局打自己的使魔就能直接看 `hp_delta` 判「108 的 1/2 转伤到底落不落地」。
-     *   （`ext` 那一支的语义不变，只是不再独占这条日志。）*/
+     *   （`ext` 那一支的语义不变，只是不再独占这条日志。）
+     * ★ 2026-10-19r：再加 `inv0`（**建源那一帧**的无敌值，不是 1 tick 之后读的那个）、
+     *   `all0/all_delta`（`enemy+0x6234` = 含被免伤吃掉的总伤害 ⇒ **源有没有命中**的判据）、
+     *   `slot/alive/acc`（那条槽还活着吗、它自己的 `+0x78` 累计命中量 ⇒ **有没有被结算**）。*/
     if (tgt) {
         s_xfer_obs_id     = *(const uint32_t *)(tgt + CE_ENEMY_ID);
         s_xfer_obs_hp     = *(const int32_t *)(tgt + YK_ED_LIFE_CUR);
         s_xfer_obs_amount = amount;
         s_xfer_obs_ext    = s_xfer_ext_le_amount;
+        s_xfer_obs_inv0   = *(const int32_t *)(tgt + YK_ENEMY_INVULN_CUR);
+        s_xfer_obs_all0   = *(const int32_t *)(tgt + YK_ENEMY_HP_DMGALL);
+        s_xfer_obs_slot   = 0;
         s_xfer_obs_wait   = 1;
     }
-    /* ★★★ 2026-10-19q（owner：「转伤我跑了」；实跑 6/6 仍是 `hp_delta=0`，且源参数 16x16/2 与 48x48/4
-     *   都试过、`rect fail 0`）—— 结论：伤害源建得出来，但敌机侧 `0x45f0f0` **从不采纳**它。
-     *   ⇒ 改走**直接扣血**（`enemy+0x6220` = `life.current`，本卡自建使魔的 HP 就是这一格）：
-     *     语义 = 「使魔受的伤害 1/2 转给母机/boss」，只是不经引擎的伤害源结算。
-     *   ⚠ 代价：不产生受击特效/不参与引擎的每帧伤害上限（这是一条**自己记账**的路）。
-     *   `YK_XFER_DIRECT_HP = 0` 时退回老路（建 `ce_damage_rect` 源），两条互斥。*/
-#define YK_XFER_DIRECT_HP 1
+    /* ★★★ 2026-10-19r（**推翻 c1b85336**）：`YK_XFER_DIRECT_HP` 归 0 —— 「源没被采纳」是误判，
+     *   真因是上面那三道引擎闸（见 `yk_target_damageable()` 的一手注）。这条路绕过引擎
+     *   （不出受击特效、不吃每帧伤害上限、也不受符卡状态约束），只在**要二分**时打开。*/
+#define YK_XFER_DIRECT_HP 0
     if (YK_XFER_DIRECT_HP) {
         int32_t *lc = (int32_t *)(tgt + YK_ED_LIFE_CUR);
         int32_t nv = *lc - amount;
@@ -4882,7 +5035,9 @@ static void __attribute__((noinline)) yk_transfer_tick(yk_card_t *s)
     ce_raise_damage_cap(yk_base_damage_cap() + amount);
     {   int slot = ce_damage_rect(bp, 0.0f, YK_TRANSFER_SRC_LIFE, (int)amount,
                                   YK_TRANSFER_BOX_W, YK_TRANSFER_BOX_H);
-        if (slot <= 0) ++s_xfer_rect_fail;                    /* ★ 伤害源槽没开出来（>`0` = 成功）*/ }
+        if (slot <= 0) ++s_xfer_rect_fail;                    /* ★ 伤害源槽没开出来（>`0` = 成功）*/
+        s_xfer_obs_slot = slot;
+        yk_xfer_src_log(tgt, slot, (int)amount); }             /* ★ owner 要的 `SRC …` 对比日志 */
     s->transferred += (uint32_t)amount;
 }
 
@@ -8125,6 +8280,21 @@ static void __attribute__((noinline)) yk_le_transfer_standalone(void)
             s_le_tr.pending = 0;
             return;
         }
+        /* ★ 2026-10-19r：**与卡内同一条落地闸**（一手见 `yk_target_damageable()`）——
+         *   目标这帧扣不动血（flags bit0/bit5、flags bit4、无敌计时器 > 0）⇒ 不建源、攒着。*/
+        {
+            int dmg_ok = yk_target_damageable(tgt);
+            if (dmg_ok <= 0) {
+                if (dmg_ok < 0) {
+                    s_le_dropped += (unsigned)s_le_tr.pending;
+                    s_le_tr.pending = 0;
+                } else if (s_le_tr.pending > YK_XFER_HOLD_CAP) {
+                    s_le_dropped += (unsigned)(s_le_tr.pending - YK_XFER_HOLD_CAP);
+                    s_le_tr.pending = YK_XFER_HOLD_CAP;
+                }
+                return;
+            }
+        }
         {
             int amount = yk_transfer_clamp(s_le_tr.pending, YK_TRANSFER_CAP_PER_FRAME);
             s_le_tr.pending = 0;
@@ -8138,9 +8308,10 @@ static void __attribute__((noinline)) yk_le_transfer_standalone(void)
                 return;
             }
             ce_raise_damage_cap(yk_base_damage_cap() + amount);
-            if (ce_damage_rect(bp2, 0.0f, YK_TRANSFER_SRC_LIFE, (int)amount,
-                               YK_TRANSFER_BOX_W, YK_TRANSFER_BOX_H) > 0) {
-                if (++s_le_rect_ok <= 12u)
+            {   int slot = ce_damage_rect(bp2, 0.0f, YK_TRANSFER_SRC_LIFE, (int)amount,
+                                          YK_TRANSFER_BOX_W, YK_TRANSFER_BOX_H);
+                yk_xfer_src_log(tgt, slot, amount);
+                if (slot > 0 && ++s_le_rect_ok <= 12u)
                     ce_log("youkai/leveledit: transfer applied (no-108 path) boss id=%u amount=%d "
                            "(rects=%u dropped=%u noboss=%u)",
                            (unsigned)*(const uint32_t *)(tgt + CE_ENEMY_ID), amount,
