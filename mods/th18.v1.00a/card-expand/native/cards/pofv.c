@@ -6234,7 +6234,7 @@ static void pofv_c3m_tick(void)
  * ❓自定：① 档位取 **0**（`$G=25` 发 / `%H=4.0` ✓）；② `[-9987]`/`[-9989]`/`[-9999]` 未定位
  *          ⇒ ★ 本卡取 0（⇒ 激光角 = 正上 ✓、扫射基准角 = π ✓）；③ 伤害沿用 C1 口径 ✓。*/
 #define POFV_C4M_MAX        48
-#define POFV_C4M_DOTS        0   /* ★ 2026-10-18 owner：「一堆小点弹幕…行为本身和一手就不对」✗ => 关掉 ✓ */
+#define POFV_C4M_DOTS        1   /* 2026-10-19 owner 要'撞边界撒星' => 重新打开(原型) */   /* ★ 2026-10-18 owner：「一堆小点弹幕…行为本身和一手就不对」✗ => 关掉 ✓ */
 #define POFV_C4M_SPEED     4.0f      /* ★ 一手 ✓ `ins_571` 的档 0 = 4.0 */
 /* ★★ 2026-10-17（施工单 §12④-4 第 4 条 ＋ §63.3 #5 ✓）：★ 一手 `ins_571(%H, …)` 是**8 档速度表** ✓，
  *   ★ 卡里原来只用**单值 4.0** ✗ ⇒ ★ 按档补两张表 ✓：
@@ -6576,6 +6576,32 @@ static void pofv_c4m_tick(void)
          *   ★ 本卡 C4 从此**只有那三条激光** ✓（★ 与一手一致 ✓）。*/
         if (POFV_C4M_DOTS && s_c4m_st.timer >= start0 && s_c4m_st.timer < span) {
             int g;
+            /* ★ 2026-10-19：★ 一手里这束是"★ **激光撞到边界点** ⇒ ★ 在**那个点**向**画面内**发✗"
+             *   （`Boss00BossCard1H_at`：`ins_569` 求交 ⇒ `ins_620($C, %E, %F)` 定位 ⇒
+             *    `ins_604($C, %B + 3°)` 方向 ⇒ `ins_601` 每 3 帧一发 ✓）。
+             *   ⇒ ★ 这里把发射原点搬到**激光的边界交点**✗，★ 方向取**朝场内**（交点 → 场地中心）✓。*/
+            {
+                float ex = 0.0f, ey = POFV_FIELD_H * 0.5f;
+                const float *pp0 = ce_player_pos();
+                const float tx0 = pp0 ? pp0[0] : 0.0f, ty0 = pp0 ? pp0[1] : POFV_FIELD_H * 0.5f;
+                float th0 = -1.5707963f;
+                {
+                    const float oy_b = POFV_FIELD_H - 128.0f;   /* ★ boss y = 320 ✓ */
+                    const float dx0 = tx0 - 0.0f, dy0 = ty0 - oy_b;
+                    int ti0 = 9; float b0 = -1e9f, ii0;
+                    if (dx0 * dx0 + dy0 * dy0 > 1e-6f) {
+                        for (ii0 = 0; ii0 < 36; ii0 += 1.0f) {
+                            const int k0 = (int)ii0;
+                            const float d0 = dx0 * s_c2_dir36[k0][0] + dy0 * s_c2_dir36[k0][1];
+                            if (d0 > b0) { b0 = d0; ti0 = k0; }
+                        }
+                    }
+                    th0 = (float)ti0 * 0.17453293f;
+                }
+                pofv_c4m_edge(0.0f, oy_b, th0, &ex, &ey);
+                s_c4m_st.ox = ex; s_c4m_st.oy = ey;                 /* ★ 从边界交点发 ✓ */
+                s_c4m_st.base = -th0 + 3.1415927f;                  /* ★ 朝场内（反向）✓ */
+            }
             for (g = 0; g < groups; ++g) {
                 const int t0 = start0 + gap * g;                    /* ★ 台 g 的起点 ✓ */
                 if (s_c4m_st.timer >= t0 && ((s_c4m_st.timer - t0) % every) == 0) {
