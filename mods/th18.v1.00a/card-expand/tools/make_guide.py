@@ -48,13 +48,21 @@ def esc(s):
 INLINE = re.compile(r'`([^`]+)`|\*\*([^*]+)\*\*')
 
 
+def _tt(s):
+    """`code` → \\texttt，并在 / : . - 后补可断点（文件:行 这种长串在双栏里会撑出边界 ✗）。"""
+    s = esc(s)
+    for ch in ('/', ':', '.', '-', r'\_'):
+        s = s.replace(ch, ch + r'\allowbreak{}')
+    return r'\texttt{' + s + '}'
+
+
 def inline(s):
     """行内 markdown：`code` / **bold** → LaTeX（其余部分转义 ✓）"""
     out, i = [], 0
     for m in INLINE.finditer(s):
         out.append(esc(s[i:m.start()]))
         if m.group(1) is not None:
-            out.append(r'\texttt{' + esc(m.group(1)) + '}')
+            out.append(_tt(m.group(1)))
         else:
             out.append(r'\textbf{' + esc(m.group(2)) + '}')
         i = m.end()
@@ -246,7 +254,7 @@ def main():
     guide = parse_guide(md)
     sysids = [i for i in range(106, 118) if i in cards]      # ★ 系统卡 = 106–117
     extra = [i for i in (118,) if i in cards]               # ★ 附：118 挑战卡
-    skip = {201, 200}                                       # ★ 不进图册：201（调试）与 200（测试卡）
+    skip = {200}                                            # ★ 不进图册：200（测试卡）；201 是调试卡，owner 2026-10-19 要它进册
     others = sorted(i for i in cards if i not in sysids and i not in extra and i not in skip)
 
     L = [PRE, card_macros(cards)]
@@ -257,7 +265,8 @@ def main():
     L.append(r'\end{center}')
     L.append(r'\vspace{6pt}')
     L.append(r'本册分两部分：\textbf{第一部分}逐张讲 106--117 怎么用、代价是什么（正文来自玩家手册）；'
-             r'\textbf{第二部分}是本 mod 其它卡片的图鉴（卡面 + 卡面上印的字）。调试工具与测试卡（201、200）不进本册；118 是挑战卡。')
+             r'\textbf{第二部分}是本 mod 其它卡片的图鉴 —— 卡面、卡面上印的字，以及每张一段展开说明（定位 / 数值 / 用法 / 注意事项）。'
+             r'118 是挑战卡；201 是临时调试卡，正式版会删。测试卡 200 不进本册。')
     L.append(r'\tableofcontents')
     L.append(r'\clearpage')
 
@@ -296,11 +305,14 @@ def main():
             L.append(r'\printedlabel')
             L.append(r'{\small %s}\par' % '\\\\'.join(inline(x) for x in c['desc']))
             L.append(r'\end{minipage}')
+            if cid in guide:                    # ★ 118 也带展开说明（owner 2026-10-19）
+                L.append(r'\divider')
+                L.append(r'{\footnotesize ' + linkify(md2tex(guide[cid]), cards) + '}')
             L.append('')
     # ── 第二部分：其它卡 ──
     L.append(r'\clearpage')
     L.append(r'\parthdr{第二部分}{本 mod 其它卡}')
-    L.append(r'{\small 下列卡片按卡号排列；每张给卡面图与卡面上印的字。}')
+    L.append(r'{\small 下列卡片按卡号排列；每张给卡面图、卡面上印的字，以及一段展开说明。}')
     L.append(r'\begin{multicols}{2}')
     for cid in others:
         c = cards[cid]
@@ -316,6 +328,8 @@ def main():
         L.append(r'{\bfseries %d %s}\par\smallskip' % (cid, esc(c['name'])))
         L.append(r'{\footnotesize %s}\par' % '\\\\'.join(inline(x) for x in c['desc']))
         L.append(r'\end{minipage}')
+        if cid in guide:                    # ★ 非系统卡的展开说明（owner 2026-10-19）
+            L.append(r'{\footnotesize ' + linkify(md2tex(guide[cid]), cards) + '}')
         L.append(r'\par\smallskip{\color{gray}\hrule}\smallskip')
     L.append(r'\end{multicols}')
     L.append(r'\end{document}')
