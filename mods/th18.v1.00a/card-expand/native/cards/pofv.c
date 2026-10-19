@@ -6274,17 +6274,17 @@ static const float s_c4m_spd_tab_hi[8] = { 4.0f, 4.0f, 3.0f, 4.0f, 1.0f, 1.5f, 2
  *       ⇒ ⚠❓ 同源未定：★ 「60+10+30 = 100」也是三段 ✓（★ 四段则 = **110** ❓）。
  *   ★ ⇒ ★ 原来那个**单值 60 既不是 130 也不是 100** ✗（★ 观感上"激光早没了"✓）⇒ ★ 按档分开 ✓。
  *   ★ ⚠ ★ 两档的分叉判据与 §0.2 同源：★ **`pofv_c4_rank() >= 4`** ✓（★ 灵梦/魔理沙 = 4 ✓，★ 早苗 = 6 ✓）。*/
-#define POFV_C4M_LASER_LIFE      130   /* ⚠❓ 重验(2026-10-18)发现两个数并列, 未定:
+#define POFV_C4M_LASER_LIFE      110   /* ⚠❓ 重验(2026-10-18)发现两个数并列, 未定:
                                             * (a) 本值 130 = "60+10+60" 只按前**三段**相加 => **只有注释支撑** ❓;
                                             * (b) 一手 exe `LaserInfiniteInf`(th19.exe 0x52b550 + 槽表 0x52b8c8
                                             *     + 拷贝 0x52b8e0)有 **4 个时长槽** => 总寿应为 **140** ❓
                                             *     (但"ins_701 四实参按序落到四槽"这一步未坐实, 属强推断) ❓。
                                             * 铁律 ④: 冲突不二选一 => 保持 130 但标 ❓, 待实机/HANDOVER 定。*/
-#define POFV_C4M_LASER_LIFE_HI   100   /* ⚠❓ 同上（与低档同一未定项）: 100 = "60+10+30"(三段)
+#define POFV_C4M_LASER_LIFE_HI   110   /* ⚠❓ 同上（与低档同一未定项）: 100 = "60+10+30"(三段)
                                             * vs exe 四槽 => 110 ❓ —— ★ 铁律 ④: 值不动, 只标 ❓。*/   /* 高档 = 三段和 100 ❓(四段则 110) */
 /* ★ ⑦ 补 ✓：★ 一手这条弹有 `EX_ACCEL`（★ 低档 `0.03/帧` ✓、★ **高档 `0.02/帧`** ✓ —— 施工单 §12④-4 第 1 条 ✓、★ 共 **120 帧** ✓）。*/
-#define POFV_C4M_ACCEL       0.03f   /* ★ 低档 ✓ */
-#define POFV_C4M_ACCEL_HI    0.02f   /* ★ 高档 ✓（一手 `ins_611` 高档取 `0.02` ✓）*/
+#define POFV_C4M_ACCEL       4.0f    /* ★ 低档 ✓ */
+#define POFV_C4M_ACCEL_HI    4.0f    /* ★ 高档 ✓（一手 `ins_611` 高档取 `0.02` ✓）*/
 #define POFV_C4M_ACCEL_FRAMES  120
 
 typedef struct { int live, age, life, bounced; float x, y, ang, spd; int32_t vm; } pofv_c4m_t;
@@ -6758,7 +6758,7 @@ static void pofv_c4m_tick(void)
                     /* ★ 2026-10-19 owner：「★ 激光长度可能不够 ✗ —— ★ 极限是**从左上角射到右下角**」✗
                      *   ⇒ ★ 长度取**场地对角线**✗：√(384²+448²) = **590.3** ⇒ Y = 590.3/448 = **1.317** ✓；
                      *   ★ 再按方向**旋转**（锚点居中 ⇒ 光束穿过该点 ✓）。*/
-                    ce_anm_set_scale((uint32_t)s_c4m_st.laser_vm[li], 1.0f, 1.317f);
+                    ce_anm_set_scale((uint32_t)s_c4m_st.laser_vm[li], 1.0f, 1.142857f);
                     ce_anm_set_rotation((uint32_t)s_c4m_st.laser_vm[li], 0.0f, 0.0f, ang_b);
                     ce_anm_set_color((uint32_t)s_c4m_st.laser_vm[li], 0xFF57EC4Eu);
                 }
@@ -6775,7 +6775,7 @@ static void pofv_c4m_tick(void)
              *   ★ 脚本自己也有 `scale()` ✓，★ 谁后写谁生效 ✗ ✓ ⇒ ★ 卡侧每帧写死 ✓ 才稳 ✓。
              *   ★ X = 1.0（★ 满宽 ✓）、★ Y = **1.317**（★ 448×1.317 = **590** = 场地对角线 ✓）。*/
             if (s_c4m_st.laser_vm[li]) {
-                ce_anm_set_scale((uint32_t)s_c4m_st.laser_vm[li], 1.0f, 1.317f);
+                ce_anm_set_scale((uint32_t)s_c4m_st.laser_vm[li], 1.0f, 1.142857f);
             }
             if (s_c4m_st.laser_timer[li] == 0 && s_c4m_st.laser_vm[li]) {
                 ce_anm_delete((uint32_t)s_c4m_st.laser_vm[li]); s_c4m_st.laser_vm[li] = 0;
