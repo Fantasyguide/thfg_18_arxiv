@@ -833,7 +833,7 @@ Miss 一次 → 残机一次少 **2**，日志
 
 | # | claim | 结论 |
 | --- | --- | --- |
-| T1 | `0x4203bc` 不多不少覆盖每一次炸弹消耗 | **CONFIRMED** —— 见下「T1 证据」 |
+| T1 | `0x4203bc` 的覆盖面 | **2026-10-19 订正**：只覆盖**走 `consume_bomb` 的**炸弹消耗 ✓；**死亡回避 `0x40a2a0` 不走这条路** ✗（它自己扣 `CURRENT_BOMBS`）⇒ 另开站点 `ce_death_save_spent` `0x40a44b`，见 §BE `BE-CORRUPTION-DEATHSAVE-2026-10-19` |
 | T2 | 断点落点可用（5 字节、无相对寻址）| **CONFIRMED** —— `a1 c0 f2 4c 00` = `mov eax, ds:0x4cf2c0`，绝对 moffs，整条可搬进 cave |
 | T3 | `CURRENT_BOMBS += 1` 是**精确**还原 | **CONFIRMED** —— 见下「T3 证据」 |
 | T4 | 每关开场会把当前数压回 `min(3, 上限)`，需要抵消 | **CONFIRMED** —— 见下「T4 证据」 |
@@ -843,8 +843,19 @@ Miss 一次 → 残机一次少 **2**，日志
 | T8 | 上限顶到 7 不会越界 | **CONFIRMED** —— 7 就是原生开局值（`0x4428ed` / `0x442920` / `0x442957` 三处 `mov [0x4ccd64],7`），也是 `CardBomb` 加上限的钳位值，HUD 画得下 |
 
 **T1 证据**：全 `.text` 扫 `E8` 相对调用，目标为 `consume_bomb` `0x4574d0` 的**只有 `0x4203b7`
-一处**，而它就在 `do_bomb` 里。所以挂在它返回后的 `0x4203bc`，覆盖面 = 每一次炸弹消耗，
+一处**，而它就在 `do_bomb` 里。所以挂在它返回后的 `0x4203bc`，覆盖面 = **每一次走 `consume_bomb` 的**炸弹消耗，
 且不会被别的路径误触发。同帧改完，玩家看不到 HUD 闪动（用 `on_tick_2` 的边沿要等下一帧）。
+
+★ **2026-10-19 订正（真 bug，一手）**：上面那句原来写的是「覆盖面 = **每一次**炸弹消耗」✗ ——
+**不成立**。原生**死亡回避**（`AUTOBOMB` = 原生卡 23）走 `Card__death_save_bomb_revive` `0x40a2a0`
+（唯一调用方 `0x40a534`；前置 `Bomb__can_bomb_and_deathbomb_check` `0x420420` 只要求
+`CURRENT_BOMBS > 0` ⇒ 只剩 1 发也放行），它在 `0x40a3ed` 与 `0x40a42c` 各做一次
+「`CURRENT_BOMBS 0x4ccd58` − 1 → 钳 0 → 再钳 `MAX_BOMBS 0x4ccd64`」**而完全不写 MAX**
+（全函数对 MAX 只有读：`0x40a3d7` / `0x40a40c`），**也不经过 `consume_bomb`** ⇒ `ce_bomb_spent` 抓不到。
+带 70 时那 1–2 发被 `on_tick_2` 每帧钉回 MAX ⇒ 每次死亡免费、残机永不减。
+⇒ 这一类现由**新站点 `ce_death_save_spent` `0x40a44b`**（两扣之后、MAX 未动的汇合点）取
+`spent = MAX − CURRENT` 后沿卡链表广播 `on_death_save_spent(card, spent)` —— **精确记录、不再靠猜**。
+详见 §BE `BE-CORRUPTION-DEATHSAVE-2026-10-19`。
 
 **T3 证据**：`consume_bomb` `0x4574d0` 做三件事：`add [edx+0x7c],-1`；`js → mov [edx+0x7c],0`
 （钳 0）；`cmovg` 钳 MAX。进 `do_bomb` 之前 `Bomb__can_bomb_and_deathbomb_check` `0x420420`
@@ -867,6 +878,13 @@ Miss 一次 → 残机一次少 **2**，日志
 `corruption: acquired — bombs 7/7 (…)`；放一发 → **炸弹数 7 → 6**（不是"当前数 3 → 2"），
 日志 `corruption: bomb spent the cap — bombs 6/6 left`；过关后仍是 6/6（**不该**回到 3）；
 放到 0/0 后按炸弹键没反应。`sdk:` 那行要报 `ce_bomb_spent` 断点已应用，否则门会 `FAIL`。
+
+★ **死亡回避（2026-10-19 修的那条，owner 口径「只动上限、B 还是满的」）**：带 23 死秽回避 + 70 时，
+撞一次 ⇒ 原生死秽回避救场、日志 `corruption: death save cost 2 of the cap — bombs 5/5 left`（**7/7 → 5/5**，
+`5/5` 不是 `5/7`）；再撞两次 ⇒ **3/3 → 1/1**；第 4 次撞（`0x420420` 只查 `CURRENT > 0` ⇒ 这次只花掉最后 1 发）
+⇒ 日志 `cost 1 … 0/0`、这一次**仍然救场**，**再撞一次才是真死**（0/0 时引擎不放行死亡回避）。
+撞一次但被 113 / 六文钱 / 按 B 自救救下 ⇒ **不出 `death save cost` 这行**、预算不变 ✓。
+`sdk:` 那段断点回读要包含 `ce_death_save_spent`（挂不上会直接 `FAIL`）。不带 23 时行为逐字不变 ✓。
 
 ## U. 破损核心（id 71）—— 第一张走原生装备卡机制的卡（子机）+ 定点伤害源闪电
 
@@ -4850,6 +4868,7 @@ UI 列表尾插、组内后生成者后画（§2b.4）。
 | 2026-10-04 | **删除 109 卡全部代码**（含别人的文件：脚本编号前移 / sht 生成器）| 见下方小节「§BE-109 删除记录」|
 | 日期 | 别人的卡 | 文件 | 改了什么 | 为什么 | 验证 |
 | --- | --- | --- | --- | --- | --- |
+| 2026-10-19 | **70 腐化**（★ owner 已授权：**全权主持修改** ✓）+ **108 永夜抄**（1 行上报）+ **共享件** | `cards/corruption_core.{h,c}`(新)、`tests/test_corruption_core.c`(新)、`cards/youkai.c`(1 行)；★ 共享件 `sites.py` / `sdk.c` / `sdk/public.h`；生成物 `sites_gen.h` / patch / `.def` | ★ 新站点 **`ce_death_save_spent` `0x40a44b`** + 钩子 `on_death_save_spent(card, spent)` + 上报函数 `ce_death_save_spent_note()`；腐化改「只减上限、CURRENT 拉满」⇒ 详见文末「BE-CORRUPTION-DEATHSAVE-2026-10-19」 | ★ 一手真 bug：死亡回避 `0x40a2a0` 只扣 `CURRENT_BOMBS`、**不写 MAX**、**不走 `consume_bomb`** ⇒ 带 70 时那 1–2 发被每帧钉回 ⇒ **每次死亡免费、残机永不减** ✗ | `make dll` / `make test-host` rc=0 ✓；单测 20 断言 ✓；`sitecheck 0x40a44b 6` 四项全绿 ✓；`make check` 仅**环境 leveledit 同开冲突**红（与本次无关）✓；四处 DLL 同 md5 ✓ |
 | 2026-10-13 | **109 卡专属（未改共享件 ✓）** | ★ 新增脚本 `457`/`458`/`459` + 阴阳玉贴图（`bball/` 30×30、62×62）+ 生成器 ⇒ 详见「§BE-109-BBALL」✓ |
 | 2026-10-13 | **109 卡专属（未改共享件 ✓）** | ★ 新增脚本 `456` + 本卡 7 处 spawn 换引用 ⇒ 详见下方小节「§BE-109-HUD20」✓ |
 | 2026-10-12 | **所有卡（共享件：shooterset 生成器）** | 见下方小节「§BE-109 两格」 |
@@ -32921,3 +32940,132 @@ youkai: practice auto-equip 108 (ce_owned=1, r=4, spell=8)
         量于**主检出 `main` @ `7dc19563`**；本分支 @ `9278afed` 同命令为 **150 行 / 35 文件**（文档比 main 新）✓；
       全仓口径同日为 **244 行 / 55 文件**（`git grep -c 零售` 不带 pathspec）✓；
       按「出现次数」口径 `git grep -o | wc -l` 为 **251 次 / 56 文件** —— 三个数都要报，别混用 ✓）
+
+### BE-CORRUPTION-DEATHSAVE-2026-10-19 · 腐化（70）× 原生死秽回避 = 简单无敌（已修 ✓，走**精确事件**）
+
+> **授权口径**：owner 2026-10-19「**得改，我目前全权主持修改**」✓ ⇒ 本批直接改、无需再问 id 70 作者 ✓
+> （协作纪律要求的登记照做 ✓ —— 即本条）。
+> **设计口径**（owner 同日晚，逐字）：「我倾向于是**正常消耗 B 上限**，或者更好玩一点：**切实记录死秽回避
+> 消耗的 B 数，腐化只动上限**」+「**但无论如何，106+108 的决死 B 消耗 2 也会对腐化生效**」+「腐化**只动上限**，
+> 我消耗了一个 B 的时候，**挪动 B 上限，B 还是满的**」✓
+
+**谁改的**：统筹（本会话）。**性质**：**已定性的真 bug**（一手反汇编定案，不是"可选优化"）。
+**走过两步**：先按「`+0x10` 快照 + 24 帧窗口里猜 `MAX−CURRENT`」实现（commit `03109cb3`），
+owner 给了上面的口径后**改成精确事件**（commit `65c0e178`，本节描述的就是它；旧的启发式已全部撤掉）。
+
+#### ① 文件 → 改了什么
+
+| 文件 | 改了什么 |
+| --- | --- |
+| `native/sites.py` ★共享件 | 新站点 `ce_death_save_spent` @ `0x40a44b`（6 字节）+ `_SDK_KEEP_NAMED` 点名 + 生成 `CE_BP_DEATH_SAVE_SPENT_RVA`。**既有站点一条没动、一个字节没改**。 |
+| `native/sdk/public.h` ★共享件 | `ce_hooks_t` **尾部**加 `on_death_save_spent(ce_card_t *, int32_t spent)`（尾部 ⇒ 旧卡的指定初始化器全不受影响）；新增公开上报函数 `ce_death_save_spent_note(int32_t spent)`（含语义约定注释）。 |
+| `native/sdk.c` ★共享件 | `ce_death_save_spent_dispatch()`（沿卡链表广播）+ `ce_death_save_spent_note()` + `BP_ce_death_save_spent`（站点里 `spent = MAX − CURRENT`）+ `bps[]` 加这条（**挂不上直接 FAIL**）+ 文件头/实现注释。**没有改任何既有 handler 的一行逻辑**。 |
+| `native/cards/corruption.c` | ★ 新增 `on_death_save_spent`：`MAX −= spent`（钳 ≥0）+ `CURRENT = MAX` + 刷 HUD + 日志。<br>★ `on_tick_2` **回到只钉不变式**（上一版"先结算"整段删掉）。<br>★ 订正原 `:61-64` 的**错注释**（`0x40a3d0` 不是"碎片进位"）。<br>★ 文件头补一手因果链 + 修法。 |
+| `native/cards/corruption_core.{h,c}`（**新增**） | 纯逻辑 `corruption_charge_death_save()`（零引擎依赖 ⇒ 主机可测）。 |
+| `native/tests/test_corruption_core.c`（**新增**） | 6 组 / **20 断言**：2 发结算（7/7→5/5）、`spent 0/负` 不动、真死不产生事件、连撞 7→5→3→1→0、108 的卡侧 1 发、异常大值钳到 0。 |
+| `native/cards/youkai.c`（**108 永夜抄 —— 别人的卡**） | 1 行：它「有 106 ⇒ 决死多扣 1」那发是**卡侧直接写 CURRENT**，扣完调 `ce_death_save_spent_note(1)`（详见 ②-⑤）。**没有收方时空转 ⇒ 行为逐位不变。** |
+| 生成物 | `native/sites_gen.h`、`patch/th18.v1.00a.js`、`native/th18_card_expand.def`（`sites.py gen` + `tools/gen_def.py` 现算，`gen_drift`/`gen_def --check` 全绿）。 |
+
+★ **没动的**：`sdk.h`（CE_CARD 宏不需要桩 —— 这个钩子和 `on_bomb_spent` 一样是"断点直呼"型）、
+`sdk_core.*`、`cards_def.c`、`Makefile`、`patch/**` 的其它文件、`assets/**`、`local/**` ✓
+（新单测仍走**手工一条 `cc`**：挂进 `make test-host` 要改共享件 `Makefile`，本批不做，见 ⑤）。
+
+#### ② 为什么（一手因果链，th18 v1.00a，全部本机反汇编核对）
+
+1. **原生卡 23 = 死秽回避之药 = `CardEirin__on_player_death_after_deathbomb` `0x40a4f0`**（虚表 `+0x0c`）：
+   它先在自己的卡链表里找 `card->id == 0x23`、再查 `[0x4ccd34] >= 0xc8`，然后
+   `cmp [0x4cf2b8],0`（炸弹管理器在）→ `0x40a52b call 0x420420`（`Bomb__can_bomb_and_deathbomb_check`，
+   **只要求 `CURRENT_BOMBS > 0`** ⇒ 只剩 1 发也放行）→ `0x40a534 call 0x40a2a0`（真正的扣 B + 复活）→
+   `0x40a53f call 0x45d590`（`Player__cancel_impending_death`）→ `eax = 1` 返回。
+2. **`+0x0c` 的广播与返回值**（`Player__on_tick__body`）：
+   ```
+   0x45c0f4  mov eax,[edi+0x638]      ; 决死窗计时
+   0x45c0fa  cmp eax,[edi+0x47908]    ; 窗上限（8，0x45d557 写的）
+   0x45c100  jl 0x45c2a9              ; 还在窗内 ⇒ 走「按 B 决死」那条
+   0x45c114  mov ecx,[esi] / push edi / mov eax,[ecx] / mov eax,[eax+0xc] / call eax
+   0x45c121  or edi,eax               ; ★ 每张卡的返回值 OR 起来
+   0x45c127  test edi,edi
+   0x45c12d  jne 0x45c3d1             ; ★ 任一卡救下 ⇒ 跳过扣命
+   0x45c133  mov ecx,edi / call 0x45d090   ; 真死：扣命 + CURRENT 重设
+   ```
+3. **`Card__death_save_bomb_revive` `0x40a2a0`**（全 `.text` 唯一调用方 `0x40a534`）的两处扣：
+   ```
+   0x40a3d0  a1 58 cd 4c 00   mov eax,[0x4ccd58]   ; CURRENT_BOMBS
+   0x40a3dd  83 c0 ff         add eax,-1
+   0x40a3e0  0f 49 d0         cmovns edx,eax       ; 钳 0
+   0x40a3e7  3b d1            cmp edx,ecx          ; ecx = [0x4ccd64] MAX（0x40a3d7 读）
+   0x40a3ea  0f 4f d1         cmovg edx,ecx        ; 钳 MAX
+   0x40a3ed  89 15 58 cd 4c 00  mov [0x4ccd58],edx ; ★ 只写 CURRENT
+   0x40a418–0x40a42c                              ; ★ 第二次同样一扣（再 −1、同样钳、再写 CURRENT）
+   ```
+   ⇒ 一次死亡回避花 **1 或 2 发当前数**；**全函数对 `MAX_BOMBS 0x4ccd64` 只有读、零写** ✗。
+4. **决死 B（按 B）**走的是正常炸弹：`0x45c2c3 call 0x420420` → `0x45c2d0 call 0x420360`（`do_bomb`）→
+   `0x4203b7 call 0x4574d0`（`consume_bomb`）⇒ **`ce_bomb_spent` 已经覆盖** ✓（这道题 owner 点名要验，
+   答案 = **走 consume_bomb**，所以 106/108 的「按 B 那一发」不用额外接线）。
+5. **为什么 106+108 的那一发抓不到**：108 的 `on_death_before_deathbomb` 里「有 106 ⇒ 多扣 1」是
+   **自己写 `CE_CURRENT_BOMBS()`**（`youkai.c`），既不走 `consume_bomb`、也不在 `0x40a2a0` 里 ⇒
+   两条既有事件都看不见；而 70 每帧「CURRENT 钉回 MAX」会把它抹掉（等于白送）。
+6. 带 70 时那 1–2 发被 `on_tick_2` 每帧钉回 MAX ⇒ `MAX` 一分不掉 ⇒ **每次死亡免费、残机永不减** ✗ ——
+   **这就是这个 bug 的根。**
+
+#### ③ 修法（owner 口径：只动上限、B 还是满的）
+
+- **站点** `0x40a44b`（`8b 86 84 77 04 00` = `mov eax,[esi+0x47784]`，6 字节、无相对寻址；
+  `0x40a434 je 0x40a44b` 落在**窗口首字节** ⇒ 安全）：两处扣 B **之后**、`MAX` 还没被任何东西改之前
+  ⇒ `spent = MAX − CURRENT` = 这一次真正花掉的发数（1 或 2；含别的卡在 `+0x10` 里先扣的那一发）。
+- **广播** `on_death_save_spent(card, spent)`：只记数，**不写引擎值**（扣已经发生过了）。
+- **腐化（70）**：
+  ```c
+  b.max_bombs = CE_MAX_BOMBS(); b.current_bombs = CE_CURRENT_BOMBS();
+  charged = corruption_charge_death_save(&b, spent);   /* MAX −= spent（钳 ≥0）；CURRENT = MAX */
+  CE_MAX_BOMBS() = b.max_bombs; CE_CURRENT_BOMBS() = b.current_bombs;  /* ← "B 还是满的" */
+  ce_gui_update_bombs();
+  ce_log("corruption: death save cost %d of the cap — bombs %d/%d left", charged, …);
+  ```
+  ⇒ 读数：`7/7` → 死秽回避 −2 ⇒ **`5/5`**；连撞 ⇒ `3/3` → `1/1`；第 4 次只剩 1 发（钳 0）⇒ `0/0`，
+  **再撞一次才真死**（`0x420420` 查 `CURRENT > 0` ⇒ 0/0 时引擎不放行死亡回避）。
+- `on_bomb_spent`（正常 B，走 `consume_bomb`）**保持原样** —— 它本来就是「`MAX −= 1` 且 `CURRENT` 拉回 `MAX`」
+  （`CURRENT += 1` 还原 + 钳 MAX）⇒ `7/7` → `6/6` ✓（owner 的读数示例逐字对上）。
+- `on_tick_2` 的「`CURRENT` 钉回 `MAX`」**保留**（那是本卡的语义）；因为上限真的减了，它不会再白送。
+- **108**：扣完那 1 发调 `ce_death_save_spent_note(1)` ⇒ 106+108 的决死 B = 108 的 1 发 + 按 B 的 1 发
+  = **2 发都记进腐化预算** ✓（owner 点名的那条）。
+
+#### ④ 共享件影响面 + 站点预算（协作纪律要求单开）
+
+- **对既有卡的影响面**：`sites.py` 只**新增**一条站点声明（既有 33 条逐字节未动，`gen_drift` 证明生成物与
+  现算一致）；`sdk.c` 只**新增**一个函数族与一条 `bps[]` 行（既有的 33 个 handler 一行没改）；
+  `sdk/public.h` 在 `ce_hooks_t` **尾部**加一个字段 + 新增一个公开函数（尾部加字段 ⇒ 所有旧卡的
+  指定初始化器仍合法；但**必须整批重编**：`make dll` 会重编全部 `.o`，`deploy.py` 强制重链）。
+  ⇒ 唯一的行为变化只对**声明了 `on_death_save_spent` 的卡**（目前只有 70）生效；其余卡逐位不变 ✓。
+- **对 108 的影响**：多调一次广播；**没有收方（不带 70）时 `ce_death_save_spent_dispatch()` 找不到任何
+  声明者 ⇒ 一个字节都不写** ⇒ 108 的行为/日志逐字不变 ✓（它的 `deathbomb cost = 2` 那行照旧）。
+- **站点预算**（`sites.py check`）：
+  - 本 patch 声明 **34 条**（SDK 22 + 商店 2 + 其它 10）—— 比本批之前 **+1**（就是本条）；
+  - 进程级 **54 条**（我们 34 + 测试归档 2 + `base_tsa` 20）—— 本批之前是 **53**，同样在
+    `SITE_TOTAL_BUDGET = 42` 之上。**42 不是判据**（`GATES.md` §8.1：同一个 40 既崩过也跑通过；
+    真判据 = `pool:` 实测格数 + 池崩签名 + 实跑一局）⇒ 本条按"记账 + 实跑复核"处理，
+    `GATES.md` §8 的表里加了这一行（**未上机，`pool:` 待实跑**）。
+  - 窗口体检：`python3 tools/sitecheck.py 0x40a44b 6` ⇒ W1 长度 6 ≥ 5 / W2 整指令 1 条 6 字节 /
+    W3 窗内无分支 / W4 与所有 binhack·站点零重叠，**四项全绿** ✓；`make check` 的 `sitecheck --all`
+    （59 个窗口）也全过 ✓。
+- **万一新站点被 thcrap 拒装载**：`sdk.c` 的 `bps[]` 那条会**直接 `FAIL`**（不是静默失效）；
+  降级路径 = 上一版候选 1（`+0x10` 残机快照 + 24 帧窗口）—— 它在 `03109cb3` 里完整实现过，
+  `git revert 65c0e178` 即可回到那一态（代价：真死判据要靠残机、且卡侧写入抓不到 108 那一路）。
+
+#### ⑤ 怎么验证的
+
+- `make dll` **rc=0** ✓；`make test-host` **rc=0** ✓（既有 63 checks + 全部既有套件）；
+- 新单测：`cc -std=c11 -Wall -Wextra -Werror -o tests/build/test_corruption_core tests/test_corruption_core.c cards/corruption_core.c && ./tests/build/test_corruption_core`
+  ⇒ `test_corruption_core: 20 checks OK`（6 组）✓；
+- `python3 sites.py gen --rows 255 -o ../patch/th18.v1.00a.js` **rc=0**（213 binhack + 11 codecave）；
+  `tools/gen_def.py` 写出 **35 个导出 = 1 + 34 断点**，与 patch 声明集合相等 ✓；
+- `objdump -d -r sdk.o` 的 `_BP_ce_death_save_spent`：`mov ecx,[0x4ccd64]` / `sub ecx,[0x4ccd58]` /
+  `call _ce_death_save_spent_dispatch` / `mov eax,1; ret` ✓；
+  `objdump -d -r cards/corruption.o` 的 `_on_death_save_spent`：读 `0x4ccd64`/`0x4ccd58` →
+  `call _corruption_charge_death_save` → `test eax,eax; jle 出口` → 写 `0x4ccd64`/`0x4ccd58` →
+  `call *0x4420e0`（HUD 炸弹行）→ `call _ce_log` ✓；
+- `objdump -p th18_card_expand.dll` 里 `BP_ce_death_save_spent` 已导出；`th18_card_expand.def` 有 `@7` ✓；
+- `make check`：站点/gen 漂移/sitecheck/契约/capcheck/引擎 ABI/anm 全部 ✅；**唯一红**是
+  `check_modkit_packages.py` 报的 **9 处同路径冲突**（`th18_leveledit_sanae_mystia` 与
+  `lang_zh-hans` / 本包同时启用）—— **与本批无关的环境状态**（改动前后同样红），不是本批引入 ✗；
+- 实跑判据见 §T 末尾「实跑要看的」那一段的补充（撞一次看 `5/5`、连撞到 `1/1`、第 4 次 `0/0`、第 5 次真死）。
