@@ -48,6 +48,45 @@
 patch 之间还能再叠一层：ExpHP 的 `base_exphp` 自述 *"Provides functions that help other
 patches…"*，`c_key` 自述 *"for use by other patches"*。**能力层不一定要是 DLL。**
 
+## 2.5 ★ `gentext`：**运行时**改文案的钩子（`abilities.js` / `trophy.js`）
+
+> 一手：`th18_modkit/thcrap/repos/nmlgc/base_tsa/th18.js` 的 `breakpoints` + 本仓反汇编 + 实跑日志。
+> 版本：TH18 v1.00a（裸地址默认属该版本）。
+
+base_tsa 对**卡牌文案**挂的是两个 `gentext` 断点，数据文件都写 `"file": "abilities.js"`：
+
+| 断点 | `addr` | 取哪一行 | 谁读 |
+| --- | --- | --- | --- |
+| `gentext#card_name` | `th18:0x41669c` | `line: 0` → `abilities.js["<id>"]`（**字符串**） | 卡名（`th18:0x416694` 算 `zAbilityText + id*0x1c0`，第 0 行） |
+| `gentext#card_desc` | `th18:0x4167b0` | `line: "6 - [esp + 0x18]"` → `abilities.js["<id>_0"]`（**数组**） | 说明 6 行 |
+
+**行号映射（反汇编，`th18:0x4167a0` 起的循环）**：`th18:0x416783` 把行计数置 6，每轮 `sub [esp+0x10],1`；
+`edi` 从 `zAbilityText + id*0x1c0 + 0x40`（= 说明第 1 行）起步、每轮 `+0x40`，共 6 轮。
+断点在 `push edi` 之后执行 ⇒ `[esp+0x18]` 就是那个行计数 ⇒ `line = 6-counter` = **0..5**
+↔ **说明第 1..6 行**。⇒ `abilities.js["<id>_0"][i]` 换掉 `zAbilityText` 的说明第 `i+1` 行。
+
+**栈语义 = 逐层 JSON 合并，同名 key 后写者胜**（不是「整文件替换」）：
+`base_tsa` 只声明钩子，文件本身由栈里**任何** patch 提供；解析日志会把每一层都列出来（缩进递增），
+例如 `th18/spells.js` 由 `lang_zh-hans` + 两个 `leveledit` patch 三层叠起来。
+`th18/cards.js` 也是同一套：我们那份只有 49 个新 id（58–），靠合并才进表。
+
+**⇒ 对改文案的后果（2026-10-19 踩过 ✗）**：`ability.txt` 只是「源头」，
+`lang_zh-hans` 自带一份中文 `th18/abilities.js`（`"0_0"` = 空白卡的中文原生文本），
+**运行时把解析出来的 6 行说明整段换掉** ⇒ 只盖 `ability.txt` 的改动**永远看不见** ✗。
+实跑日志里两行并存就是证据：
+
+```
+(JSON) Resolving th18/abilities.js...
+  + .../repos/thpatch/lang_zh-hans/th18/abilities.js
+(Data) Resolving th18/ability.txt...
+  + .../repos/Renko_1055/th18_card_expand_255/th18/ability.txt
+```
+
+⇒ 改**原版卡**（id < 57）的说明要**两个文件一起出**：`th18/ability.txt`（兜底 + 未覆盖行）
+和 `th18/abilities.js`（`"<id>_0"`，我们排在 lang 包之后 ⇒ 合并时胜）。
+实例见 [`th18.v1.00a/card-expand/assets/derive_ability_txt.py`](th18.v1.00a/card-expand/assets/derive_ability_txt.py) 的头注。
+
+
 ## 3. ★ asm 路线：怎么把汇编变成 patch
 
 ### 3.1 目录形状（照抄 ExpHP `bullet_cap`）

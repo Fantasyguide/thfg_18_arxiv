@@ -34,15 +34,19 @@ for d in *.deb; do dpkg-deb -x "$d" "$REPO/local/vendor/fluidsynth-2.2.5/"; done
 
 ### 2. ★ sf2 位置
 
-`local/th18.v1.00a/sf2/GeneralUser-GS.sf2` = **GeneralUser GS v2.0.3**
-（32,319,396 B；sha256 `9575028c7a1f589f5770fccc8cff2734566af40cd26ed836944e9a5152688cfe`；
-来源 URL 与许可见同目录 `SOURCE.txt`，正文抄进 `mods/th18.v1.00a/card-expand/NOTICE.md` 的「音色库」一节）。
+`local/th18.v1.00a/sf2/thfont.sf2` = **THfont**（SD-90 采样系，owner 提供；
+261,192,820 B / 249.1 MiB；sha256 `c05372f76164aac916f9913550fab9d30d650cf205f000da27513ab98054b419`；
+186 预设，bank 128 prog 127 = `SD90`；**许可未声明 ⇒ 只本机自用、发布包不带 sf2**）。
+来源/许可的正文见 `mods/th18.v1.00a/card-expand/NOTICE.md` 的「音色库」一节。
 
 - `find_sf2()` 顺序：`--sf2` → `$RL_SF2` → 该目录下的 `*.sf2`；
   ★ **多份时优先挑文件名带 `thfont` 的**，否则按文件名排序取第一份。
-- ⇒ 以后把 `thfont.sf2` 丢进 `local/th18.v1.00a/sf2/` 就**自动换**（换库后必须重跑 3 首试点确认听感）。
-- 目标音色仍是 **Roland SD-90**（ZUN 原曲用的硬件）；THfont 拿不到（无官方页、无可核验哈希），
-  按纪律停在 GeneralUser GS（GS/GM 兼容，同属 Roland GS 家族）。
+- 目标音色是 **Roland SD-90**（ZUN 原曲用的硬件）；THfont 就是 SD-90 采样系 ——
+  2026-10-19 owner 3 首试点后拍板**定为正式音源**，全量 17 首已换。
+- **备选**：同目录的 `GeneralUser-GS.sf2`（GeneralUser GS v2.0.3，32,319,396 B，sha256
+  `9575028c7a1f589f5770fccc8cff2734566af40cd26ed836944e9a5152688cfe`，许可明确）——
+  听感差一档，仍留着作 A/B 对照；删掉 `thfont.sf2` 会自动回落它（或 `--sf2` 显式指定）。
+- 换库后**必须**重跑试点重新确认听感。
 
 ### 3. ★ MIDI 位置
 
