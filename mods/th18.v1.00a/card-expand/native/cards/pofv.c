@@ -6331,7 +6331,8 @@ static const uint8_t *pofv_c4_target_boss(float *out_cos)
     uint8_t *em = CE_ENEMY_MGR();
     const float *pp = ce_player_pos();
     const uint8_t *best_e = 0;
-    float best_num = -1.0f, best_d2 = 1.0f, best_h2 = 1.0f;
+    float best_num = -1.0f, best_d2 = 1.0f;
+    double best_h2 = 1.0;
     int bi;
     if (out_cos) *out_cos = 0.0f;
     if (!em || !pp) return 0;
@@ -6357,10 +6358,16 @@ static const uint8_t *pofv_c4_target_boss(float *out_cos)
                  *   （★ `enemy + **0x6220**` ✓ = `CE_ENEMY_DATA + 0x4ff4` ✓，★ 源头 `cards/youkai.c:74` ✓）
                  *   ★ 排序口径 ★ **`cos²θ × HP²`**✗（★ 不开方 ✓，★ 与 `|cos|×HP` **等价**✓）。
                  *   ★ 交叉相乘比较 ✓：`num·hp² / d2` 比大小 ⇒ `num_a·hp_a²·d2_b > num_b·hp_b²·d2_a` ✓。*/
-                const float hp = (float)*(const int32_t *)(e + 0x6220);
-                const float h2 = hp * hp;
+                /* ★ 2026-10-19 owner 问「hp² 会不会打到 float/int max」✗ ✓ 我算了：
+                 *   ★ 最大 `num·HP²·d2 ≈ 3.2e29`✗ ✓，★ `float` 上限 **3.4e38** ⇒ ★ **不会溢出**✗ ✓（★ 余量 1e9 倍 ✓）。
+                 *   ★ 但 `float` 只有 **24 位尾数**✗ ⇒ 两个**接近**的分数可能比不出大小 ✓
+                 *   ⇒ ★ 比较一律改用 **`double`**✗ ✓（★ 53 位尾数 ✓，★ 且**不用开方** ✓）。
+                 *   ★ 另：★ HP 若为负（★ 某些"无限血"哨兵 ✓）按 0 计 ✓，★ 免得 `hp²` 反而排到前面 ✓。*/
+                const double hp = (double)*(const int32_t *)(e + 0x6220);
+                const double h2 = (hp > 0.0) ? hp * hp : 0.0;
                 if (d2 > 1e-6f) {
-                    if (best_e == 0 || num * h2 * best_d2 > best_num * best_h2 * d2) {
+                    if (best_e == 0 || (double)num * h2 * (double)best_d2
+                                      > (double)best_num * best_h2 * (double)d2) {
                         best_e = e; best_num = num; best_d2 = d2; best_h2 = h2;
                     }
                 }
