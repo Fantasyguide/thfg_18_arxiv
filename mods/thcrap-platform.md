@@ -57,10 +57,10 @@ base_tsa 对**卡牌文案**挂的是两个 `gentext` 断点，数据文件都�
 
 | 断点 | `addr` | 取哪一行 | 谁读 |
 | --- | --- | --- | --- |
-| `gentext#card_name` | `0x41669c` | `line: 0` → `abilities.js["<id>"]`（**字符串**） | 卡名（`0x416694` 算 `zAbilityText + id*0x1c0`，第 0 行） |
-| `gentext#card_desc` | `0x4167b0` | `line: "6 - [esp + 0x18]"` → `abilities.js["<id>_0"]`（**数组**） | 说明 6 行 |
+| `gentext#card_name` | `th18:0x41669c` | `line: 0` → `abilities.js["<id>"]`（**字符串**） | 卡名（`th18:0x416694` 算 `zAbilityText + id*0x1c0`，第 0 行） |
+| `gentext#card_desc` | `th18:0x4167b0` | `line: "6 - [esp + 0x18]"` → `abilities.js["<id>_0"]`（**数组**） | 说明 6 行 |
 
-**行号映射（反汇编，`0x4167a0` 起的循环）**：`0x416783` 把行计数置 6，每轮 `sub [esp+0x10],1`；
+**行号映射（反汇编，`th18:0x4167a0` 起的循环）**：`th18:0x416783` 把行计数置 6，每轮 `sub [esp+0x10],1`；
 `edi` 从 `zAbilityText + id*0x1c0 + 0x40`（= 说明第 1 行）起步、每轮 `+0x40`，共 6 轮。
 断点在 `push edi` 之后执行 ⇒ `[esp+0x18]` 就是那个行计数 ⇒ `line = 6-counter` = **0..5**
 ↔ **说明第 1..6 行**。⇒ `abilities.js["<id>_0"][i]` 换掉 `zAbilityText` 的说明第 `i+1` 行。
