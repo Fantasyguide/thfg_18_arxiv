@@ -6690,7 +6690,7 @@ static void pofv_c4m_tick(void)
      *   ★ 门 = `s_c4m_st.active` ✓（★ 必须在 C4 进行中 ✓，★ 否则 clear 之后残留延迟会凭空 spawn ✗）*/
     if (s_c4m_st.active) {   int li;
         for (li = 0; li < 3; ++li) {   /* 2026-10-18（§2.4 #1）：三条都走延迟 ✅ */
-            if (s_c4m_st.laser_delay[li] <= 0) continue;
+            if (s_c4m_st.laser_delay[li] < 0) continue;
             if (--s_c4m_st.laser_delay[li] > 0) continue;
             {
                 /* ★ 2026-10-18 订正（IMPL §2 #1 ✓）：★ 起点 = **方向与活动区的交点** ✗ ——
