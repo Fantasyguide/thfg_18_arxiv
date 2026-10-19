@@ -5011,6 +5011,18 @@ static void pofv_c4_clear(void)
 }
 
 /* ★ 一轮开始（一手：每 60 帧调两次 `_at`，方向 +2π / −2π ✓）*/
+/* ★ 2026-10-19 owner 的「彩弹」16 颗（`bullet1.png` 左下角 64×16 ✓）—— 文件作用域 ✓，
+ *   ★ 魔理沙 C4 与**灵梦 C4** 共用这套随机贴图 ✗ ✓。*/
+static const int s_caidan_spr[16] = {
+    CE_ANM_ABILITY_SPRITE_POFV109_CD00, CE_ANM_ABILITY_SPRITE_POFV109_CD01,
+    CE_ANM_ABILITY_SPRITE_POFV109_CD02, CE_ANM_ABILITY_SPRITE_POFV109_CD03,
+    CE_ANM_ABILITY_SPRITE_POFV109_CD04, CE_ANM_ABILITY_SPRITE_POFV109_CD05,
+    CE_ANM_ABILITY_SPRITE_POFV109_CD06, CE_ANM_ABILITY_SPRITE_POFV109_CD07,
+    CE_ANM_ABILITY_SPRITE_POFV109_CD08, CE_ANM_ABILITY_SPRITE_POFV109_CD09,
+    CE_ANM_ABILITY_SPRITE_POFV109_CD10, CE_ANM_ABILITY_SPRITE_POFV109_CD11,
+    CE_ANM_ABILITY_SPRITE_POFV109_CD12, CE_ANM_ABILITY_SPRITE_POFV109_CD13,
+    CE_ANM_ABILITY_SPRITE_POFV109_CD14, CE_ANM_ABILITY_SPRITE_POFV109_CD15 };
+
 static void pofv_c4_fire(void)
 {
     s_c4.live = 1; s_c4.timer = 0; s_c4.emitted = 0; s_c4.dir = 1; s_c4.sweep = 0;
@@ -5069,6 +5081,12 @@ static void pofv_c4_emit(int dir)
                                                                   : POFV109_C4_ORB_SCRIPT),
                                          POFV109_BBALL_LAYER);
     if (s_c4_b[k].vm) {
+        /* ★ 2026-10-19 owner：★「★ **灵梦 C4 也接入随机彩弹**」✗ ✓
+         *   ★ 她 C4 是**交替**的 ✓（★ 偶数发阴阳玉 ✓、★ **奇数发 8×8 彩弹** ✓）
+         *   ⇒ ★ 奇数发从 16 颗里**随机换贴图**✗ ✓（★ 不动她的反弹／其它行为 ✗）。*/
+        if (s_c4_b[k].vm && ((s_c4_emit_parity & 1) == 0))
+            ce_anm_set_sprite(CE_ABILITY_ANM(), (uint32_t)s_c4_b[k].vm,
+                              (uint32_t)s_caidan_spr[(int)(ce_rand() % 16u)]);
         ce_anm_set_pos((uint32_t)s_c4_b[k].vm, s_c4_b[k].x, s_c4_b[k].y, 0.0f);
     }
 }
@@ -6545,15 +6563,6 @@ static void pofv_c4m_emit(float ang)
                 /* ★ 2026-10-19 owner 的「彩弹」定义 ✗：★ `bullet1.png` **左下角 64×16** 的
                  *   **16 颗 8×8** ✓ ⇒ ★ 已切成 16 张独立贴图 `POFV109_CD00..CD15`✗ ✓；
                  *   ★ 每颗**随机挑一张**✗ ✓（★ 换贴图 ✓，★ **不是** `set_color` 染色 ✗）。*/
-                static const int cd_spr[16] = {
-                    CE_ANM_ABILITY_SPRITE_POFV109_CD00, CE_ANM_ABILITY_SPRITE_POFV109_CD01,
-                    CE_ANM_ABILITY_SPRITE_POFV109_CD02, CE_ANM_ABILITY_SPRITE_POFV109_CD03,
-                    CE_ANM_ABILITY_SPRITE_POFV109_CD04, CE_ANM_ABILITY_SPRITE_POFV109_CD05,
-                    CE_ANM_ABILITY_SPRITE_POFV109_CD06, CE_ANM_ABILITY_SPRITE_POFV109_CD07,
-                    CE_ANM_ABILITY_SPRITE_POFV109_CD08, CE_ANM_ABILITY_SPRITE_POFV109_CD09,
-                    CE_ANM_ABILITY_SPRITE_POFV109_CD10, CE_ANM_ABILITY_SPRITE_POFV109_CD11,
-                    CE_ANM_ABILITY_SPRITE_POFV109_CD12, CE_ANM_ABILITY_SPRITE_POFV109_CD13,
-                    CE_ANM_ABILITY_SPRITE_POFV109_CD14, CE_ANM_ABILITY_SPRITE_POFV109_CD15 };
                 const int cd_i = (int)(ce_rand() % 16u);
                 s_c4m[k2] = s_c4m[k];
                 s_c4m[k2].ang = ang + ((float)(ce_rand() % 62832u) * 0.0001f);
@@ -6561,7 +6570,7 @@ static void pofv_c4m_emit(float ang)
                 s_c4m[k2].vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
                                      CE_ANM_ABILITY_SCRIPT_POFV109_C4M_STAR, POFV_C4_VM_LAYER);
                 if (s_c4m[k2].vm) {
-                    ce_anm_set_sprite(CE_ABILITY_ANM(), (uint32_t)s_c4m[k2].vm, (uint32_t)cd_spr[cd_i]);
+                    ce_anm_set_sprite(CE_ABILITY_ANM(), (uint32_t)s_c4m[k2].vm, (uint32_t)s_caidan_spr[cd_i]);
                 }
             }
         }
