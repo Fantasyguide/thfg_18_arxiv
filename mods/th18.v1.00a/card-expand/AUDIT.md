@@ -32964,11 +32964,11 @@ owner 给了上面的口径后**改成精确事件**（commit `65c0e178`，本�
 | `native/cards/corruption_core.{h,c}`（**新增**） | 纯逻辑 `corruption_charge_death_save()`（零引擎依赖 ⇒ 主机可测）。 |
 | `native/tests/test_corruption_core.c`（**新增**） | 6 组 / **20 断言**：2 发结算（7/7→5/5）、`spent 0/负` 不动、真死不产生事件、连撞 7→5→3→1→0、108 的卡侧 1 发、异常大值钳到 0。 |
 | `native/cards/youkai.c`（**108 永夜抄 —— 别人的卡**） | 1 行：它「有 106 ⇒ 决死多扣 1」那发是**卡侧直接写 CURRENT**，扣完调 `ce_death_save_spent_note(1)`（详见 ②-⑤）。**没有收方时空转 ⇒ 行为逐位不变。** |
+| `native/Makefile` ★共享件 | `test-host` 加 2 行把新单测挂进日常门（与既有 40 多行同款；**只影响主机单测、不影响 DLL 一个字节**）。 |
 | 生成物 | `native/sites_gen.h`、`patch/th18.v1.00a.js`、`native/th18_card_expand.def`（`sites.py gen` + `tools/gen_def.py` 现算，`gen_drift`/`gen_def --check` 全绿）。 |
 
 ★ **没动的**：`sdk.h`（CE_CARD 宏不需要桩 —— 这个钩子和 `on_bomb_spent` 一样是"断点直呼"型）、
-`sdk_core.*`、`cards_def.c`、`Makefile`、`patch/**` 的其它文件、`assets/**`、`local/**` ✓
-（新单测仍走**手工一条 `cc`**：挂进 `make test-host` 要改共享件 `Makefile`，本批不做，见 ⑤）。
+`sdk_core.*`、`cards_def.c`、`patch/**` 的其它文件、`assets/**`、`local/**` ✓
 
 #### ② 为什么（一手因果链，th18 v1.00a，全部本机反汇编核对）
 
@@ -33039,6 +33039,8 @@ owner 给了上面的口径后**改成精确事件**（commit `65c0e178`，本�
   ⇒ 唯一的行为变化只对**声明了 `on_death_save_spent` 的卡**（目前只有 70）生效；其余卡逐位不变 ✓。
 - **对 108 的影响**：多调一次广播；**没有收方（不带 70）时 `ce_death_save_spent_dispatch()` 找不到任何
   声明者 ⇒ 一个字节都不写** ⇒ 108 的行为/日志逐字不变 ✓（它的 `deathbomb cost = 2` 那行照旧）。
+- **对 `Makefile` 的影响**：`test-host` 只加 2 行（编 + 跑 `test_corruption_core`）；**不参与 DLL 构建**，
+  产物一个字节不变 ⇒ 对其它卡零影响 ✓（改它只是为了让新单测进日常门，不然会烂掉）。
 - **站点预算**（`sites.py check`）：
   - 本 patch 声明 **34 条**（SDK 22 + 商店 2 + 其它 10）—— 比本批之前 **+1**（就是本条）；
   - 进程级 **54 条**（我们 34 + 测试归档 2 + `base_tsa` 20）—— 本批之前是 **53**，同样在
@@ -33054,8 +33056,9 @@ owner 给了上面的口径后**改成精确事件**（commit `65c0e178`，本�
 
 #### ⑤ 怎么验证的
 
-- `make dll` **rc=0** ✓；`make test-host` **rc=0** ✓（既有 63 checks + 全部既有套件）；
-- 新单测：`cc -std=c11 -Wall -Wextra -Werror -o tests/build/test_corruption_core tests/test_corruption_core.c cards/corruption_core.c && ./tests/build/test_corruption_core`
+- `make dll` **rc=0** ✓；`make test-host` **rc=0** ✓（既有全部套件 + **新单测已挂进该目标**）；
+- 新单测（`make test-host` 里就跑，也可单独跑）：
+  `cc -std=c11 -Wall -Wextra -Werror -o tests/build/test_corruption_core tests/test_corruption_core.c cards/corruption_core.c && ./tests/build/test_corruption_core`
   ⇒ `test_corruption_core: 20 checks OK`（6 组）✓；
 - `python3 sites.py gen --rows 255 -o ../patch/th18.v1.00a.js` **rc=0**（213 binhack + 11 codecave）；
   `tools/gen_def.py` 写出 **35 个导出 = 1 + 34 断点**，与 patch 声明集合相等 ✓；
