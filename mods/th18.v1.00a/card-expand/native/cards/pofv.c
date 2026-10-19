@@ -6542,18 +6542,26 @@ static void pofv_c4m_emit(float ang)
             int k2;
             for (k2 = 0; k2 < POFV_C4M_MAX; ++k2) if (!s_c4m[k2].live) break;
             if (k2 < POFV_C4M_MAX) {
-                static const uint32_t cols[8] = { 0xFFFF4040u,0xFFFFA020u,0xFFFFF040u,0xFF40FF40u,
-                                                  0xFF40FFFFu,0xFF4080FFu,0xFFC040FFu,0xFFFF40C0u };
-                const uint32_t cc = cols[(ce_rand() >> 4) & 7u];
+                /* ★ 2026-10-19 owner 的「彩弹」定义 ✗：★ `bullet1.png` **左下角 64×16** 的
+                 *   **16 颗 8×8** ✓ ⇒ ★ 已切成 16 张独立贴图 `POFV109_CD00..CD15`✗ ✓；
+                 *   ★ 每颗**随机挑一张**✗ ✓（★ 换贴图 ✓，★ **不是** `set_color` 染色 ✗）。*/
+                static const int cd_spr[16] = {
+                    CE_ANM_ABILITY_SPRITE_POFV109_CD00, CE_ANM_ABILITY_SPRITE_POFV109_CD01,
+                    CE_ANM_ABILITY_SPRITE_POFV109_CD02, CE_ANM_ABILITY_SPRITE_POFV109_CD03,
+                    CE_ANM_ABILITY_SPRITE_POFV109_CD04, CE_ANM_ABILITY_SPRITE_POFV109_CD05,
+                    CE_ANM_ABILITY_SPRITE_POFV109_CD06, CE_ANM_ABILITY_SPRITE_POFV109_CD07,
+                    CE_ANM_ABILITY_SPRITE_POFV109_CD08, CE_ANM_ABILITY_SPRITE_POFV109_CD09,
+                    CE_ANM_ABILITY_SPRITE_POFV109_CD10, CE_ANM_ABILITY_SPRITE_POFV109_CD11,
+                    CE_ANM_ABILITY_SPRITE_POFV109_CD12, CE_ANM_ABILITY_SPRITE_POFV109_CD13,
+                    CE_ANM_ABILITY_SPRITE_POFV109_CD14, CE_ANM_ABILITY_SPRITE_POFV109_CD15 };
+                const int cd_i = (int)(ce_rand() % 16u);
                 s_c4m[k2] = s_c4m[k];
                 s_c4m[k2].ang = ang + ((float)(ce_rand() % 62832u) * 0.0001f);
                 s_c4m[k2].spd = s_c4m[k].spd * 0.7f;
                 s_c4m[k2].vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
                                      CE_ANM_ABILITY_SCRIPT_POFV109_C4M_STAR, POFV_C4_VM_LAYER);
                 if (s_c4m[k2].vm) {
-                    ce_anm_set_sprite(CE_ABILITY_ANM(), (uint32_t)s_c4m[k2].vm,
-                                      CE_ANM_ABILITY_SPRITE_POFV109_LASER);   /* ★ 8×8 彩弹 ✓ */
-                    ce_anm_set_color((uint32_t)s_c4m[k2].vm, cc);
+                    ce_anm_set_sprite(CE_ABILITY_ANM(), (uint32_t)s_c4m[k2].vm, (uint32_t)cd_spr[cd_i]);
                 }
             }
         }
