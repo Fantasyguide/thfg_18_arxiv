@@ -6496,8 +6496,11 @@ static void pofv_c4m_emit(float ang)
     /* ★ 2026-10-17（施工单 §63.3 #5 ✓）：★ 速度改**按档取 8 档表** —— ★ 低 `s_c4m_spd_tab` ✓／★ 高 `s_c4m_spd_tab_hi` ✓
      *   （★ 原来是无条件 `POFV_C4M_SPEED` = 4.0 ✗，★ 连低档的"档 2 = 3.0"都没体现 ✗）。*/
     s_c4m[k].ang = ang;
-    s_c4m[k].spd = (s_c4m_st.level >= 4) ? s_c4m_spd_tab_hi[s_c4m_st.level]
-                                          : s_c4m_spd_tab[s_c4m_st.level];
+    /* ★ 2026-10-19 owner：「★ 速度、加速和发数按一手」✗ ✓
+     *   ★ 一手 `Boss00BossCard1H_at` ✗：★ `ins_605($C, **1.5f + (%D * 0.8f)**, 1.0f)`✗
+     *     （★ `%D = [-9888.0f]` = **档位** ✓）⇒ ★ 初速 = `1.5 + 档 × 0.8`✗ ✓
+     *   ★ 加速 = `ins_611($C, 0, **4, 120**, …)`✗ ⇒ ★ 每帧 **+4**、★ 上限 **120** ✓ ❓（★ 语义近似 ✓）*/
+    s_c4m[k].spd = 1.5f + (float)s_c4m_st.level * 0.8f;
     /* ★ 2026-10-13（★ owner 定 ✓）：★ 出发点取 ★ **第一束发射那一刻钉住的那个** ✓
      *   （★ `s_c4m_st.ox/oy` ✓，★ 在 `pofv_c4m_fire()` 里写入 ✓）★ —— ★ 原来这里**每束各自读**
      *   `ce_player_pos()` ✗ ⇒ ★ 自机一动三束就散开 ✗（★ owner 说"★ 为了保证美观度"✓ 才要钉住 ✓）。

@@ -1308,6 +1308,7 @@ POFV109_LASER362      ability/POFV109_LASER362.png          16x14
 POFV109_LASER358      ability/POFV109_LASER358.png          16x14
 POFV109_TIP9          ability/POFV109_TIP9.png              32x32
 POFV109_TIP_EFF      ability/POFV109_TIP_EFF.png          16x16
+POFV109_STAR317      ability/POFV109_STAR317.png          14x16
 POFV109_LASER_CORE ability/POFV109_LASER_CORE.png        16x14
 POFV109_STAR       ability/POFV109_STAR.png             14x14
 # ★ 109 · **咲夜 C1 的弹 = 蓝飞刀** ✓（一手 = TH09 `pl02.png` 的 `(0,160,32,16)` ✓，owner 指的"第二行" ✓）
