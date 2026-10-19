@@ -4,6 +4,8 @@
     python3 tools/make_trance_rearr.py --stem th18_03 --stem th18_04     # 先做 1 面那两首
     python3 tools/make_trance_rearr.py                                  # 全部（读 MANIFEST 里有的）
     python3 tools/make_trance_rearr.py --render=naive --stem th18_03    # 老合成器（兜底 / A-B 对照）
+    python3 tools/make_trance_rearr.py --stem th18_03 --prog-gain 56=-4.4 --low-db 2.3
+                                                                        # 临时按音色调（dB）
 
 ## 用户口径（2026-09-14）
 「只要有 th18 的 midi，**放大其非主旋律、减小其主旋律**即可」——听感上要像"**另一首曲子**"，
@@ -19,10 +21,15 @@ TH13 的 `NN`/`NNb` 对**时长严格相等、时间轴零延迟对齐**（能�
 ## 管线（四步）
 1. **解析 SMF**（`parse_smf`，自写，支持 format 0/1、running status、tempo 变化、program change）；
 2. **判主旋律**（`pick_melody`）：按"音域最高 + 单音为主 + 音符密度"打分，选出 1–2 条主旋律轨；
-   主旋律 × `--melody-gain`（默认 0.35 ≈ −9 dB）、伴奏 × 1.0，贝斯通道再 × `--bass-gain`（默认 1.6）；
+   ★ **调音按音色（2026-10-19 起，owner 口径「从音色是什么冲调 arrange」）**：文件头两张表全是 **dB** ——
+   `GLOBAL`（17 首通用，目前只有 `drums_db = +2.5`）与 `PER_TRACK`（单曲例外，键 = 内部曲名）。
+   每音的增益按优先级取**一条**：**鼓（ch9 / CC0=128）> melody 轨 > `prog_db`（GM program 表）
+   > 倍斯 program 32–39 > 低音区乐器 > 1.0**。CLI 可临时覆盖：`--drums-gain` / `--prog-gain 56=-4.4`
+   （支持 `56-63=-3` 区间）/ `--melody-db` / `--bass-db` / `--low-db` / `--track-config <json>`；
+   旧的线性口径 `--melody-gain 0.35` / `--bass-gain 1.6` 仍可用（内部换算成 dB）。
 3. **渲染**（`--render`）：
-   - **`sf2`（默认）** = **GM SoundFont 真采样渲染**（2026-10-19 起）：把增益写进 MIDI 的
-     **note-on velocity**（主旋律 × `--melody-gain`、贝斯通道 × `--bass-gain`、其余 ×1.0，
+   - **`sf2`（默认）** = **GM SoundFont 真采样渲染**（2026-10-19 起）：把调音表写进 MIDI 的
+     **note-on velocity**（每音按"鼓 / melody / program / 倍斯 / 低音区"取一条增益，
      超 127 时**整体等比缩**保相对关系）⇒ 存临时 `.mid` ⇒
      `fluidsynth -F out.wav -r 44100 -g 1.0 <sf2> <mid>` ⇒ 读回 PCM ⇒ 44100→22050（FIR 半带抽取）
      ⇒ 22050 Hz 立体声 16 bit —— 与引擎里其它素材同格式（`trance_bgm_core` 的 fmt 记录口径）。
@@ -109,6 +116,54 @@ SR = 22050
 BLOCK = 2 * 2                       # 16 bit 立体声
 FMT_RECORD = 0x34
 
+# ---------------------------------------------------------------- 调音表（**按音色**，dB）
+# ★ 方法论（owner 2026-10-19 第二轮原话）：**「从音色是什么冲调 arrange」** ——
+#   不要按 "melody / bass" 这种粗分轨调，要按「**这条轨用的是什么音色**」（GM program / 鼓通道）给增益。
+#   所以下面两张表的单位全是 **dB**（velocity→振幅实测近似线性，见 `_sf2_velocity_gain`；
+#   g_lin = 10^(dB/20)）。优先级（每音只命中一条，不叠乘）：
+#       **鼓（ch9 / CC0=128）> melody 轨 > 指定 program > 倍斯 program 32–39 > 低音区乐器 > 1.0**
+#
+# `GLOBAL` = 17 首全部生效；`PER_TRACK` = 单曲覆盖（键 = **内部曲名**，不是 wav 名）。
+# ⚠ 单曲例外**不要**摊到全量：owner 只点了 03/07/08 三首。
+
+GLOBAL = {
+    # ★ owner：「整体灵界可以把鼓的声音放大」⇒ 17 首全加。
+    #   只认 **GM 鼓**：ch9（GM 规定的鼓通道）或 CC0=128 的 bank（本批 MIDI 全是 ch9）。
+    #   ⚠ 实测本批有几首把鼓**另写一层在 ch15**（`GA5 (Elementics)` / `Triebwerk (Drum Kit 6)`，
+    #     且**没有** CC0=128）⇒ fluidsynth 按 prog 0 把它渲成钢琴，那不是"鼓"，不该吃这个增益。
+    "drums_db": +2.5,
+}
+
+PER_TRACK = {
+    # ── 03 一面道中 ── owner 第一轮：「zun 号可以再压，低音的其他乐器可以再加」
+    #   · zun 号 = ZUNpet = SD-90 `Romantic Tp`：本曲 MIDI（`th18_02.mid`）track7 / ch4 / **GM 56**
+    #     （它**不在** melody 集里 —— melody 是 track5「Mantra Melody」ch2 GM 80）⇒ 原来 1.0。
+    #     56–58 一起压（小号/长号/大号 = 铜管低音区也在内），取 **−4.4 dB**（= 第一轮验证过的 ×0.6）。
+    #   · 低音区其它乐器：**按乐器**（轨+通道）判「平均音高 < 60 (C4)」⇒ 整件 +2.3 dB（= ×1.3）。
+    #     为什么不是「平均音高 < 48」：实测本曲 <48 的音符**全在**两个倍斯通道（ch5/ch6，已吃 bass），
+    #     照 48 等于零改动；真正被漏掉的是 ch1「Model D Close」钢琴（均 56.8，占全曲能量 33.6%）。
+    #     它和 ch0 是同一台琴的八度叠奏 ⇒ **按乐器抬**（逐音抬会把八度关系弄歪）。
+    #   · melody 0.35 → 0.30（−10.5 dB，owner 第一轮「再压」）。
+    "th18_03": dict(melody_db=-10.5, prog_db={56: -4.4, 57: -4.4, 58: -4.4},
+                    low_db=+2.3, low_mean_max=60),
+    # ── 07 三面道中 ── owner 第二轮：「07b 的主旋律弦乐可以压」
+    #   ⚠ **本曲 MIDI 里没有 40–47 弦乐**（Karl Zuñiga 这版把弦乐声部换成了
+    #     prog 1 钢琴 6% / prog 25 十二弦钢吉他 34.2% / prog 66 次中音萨克斯 7.6% / prog 78 哨音 7.2%）。
+    #     ⇒ 按「**主旋律**再压 3 dB」落地（melody 轨 = track4/ch1/prog 1）；40–47 那张表照样写着
+    #     （命中 0 个音），是为了口径可追溯 —— 真按"弦乐"点名要等 owner 指定是哪个音色。
+    "th18_07": dict(melody_db=-12.1,
+                    prog_db={p: -3.0 for p in range(40, 48)}),
+    # ── 08 三面 boss ── owner 第二轮：「08b 的号也得压」
+    #   本曲"号"= track10/ch5/**GM 61 (`BRASS`)**（16.6% 能量，源轨名 `Romantic Tp`）
+    #   ⇒ 铜管族 56–63 一起 −3 dB（本曲实际命中 61）。melody 是 SawLead(81)，owner 没点，不动。
+    "th18_08": dict(prog_db={p: -3.0 for p in range(56, 64)}),
+}
+
+# 默认 melody / 倍斯（历史口径的线性增益换算成 dB：0.35 / 1.6）
+DB_MELODY = 20 * math.log10(0.35)      # −9.1 dB
+DB_BASS = 20 * math.log10(1.6)         # +4.1 dB
+
+
 
 # ---------------------------------------------------------------- SMF 解析
 def _vlq(b, i):
@@ -175,6 +230,9 @@ def parse_smf(path, velout=None):
                         velout.append((ti, tick, ch, a, b, vel_at))
                 elif hi == 0x80 or (hi == 0x90 and b == 0):
                     evs.append((tick, "off", ch, a, 0))
+                elif hi == 0xB0 and a in (0, 32):
+                    # 只留 bank select（CC0/CC32）：判鼓组（bank 128）要用；其余 CC 不装
+                    evs.append((tick, "cc", ch, a, b))
             elif hi in (0xC0, 0xD0):
                 a = body[i]; i += 1
                 if hi == 0xC0:
@@ -442,26 +500,70 @@ def read_wav_pcm(path, want_sr=RENDER_SR):
     return a, sr
 
 
+def _db2lin(db):
+    """dB → 线性振幅倍数（velocity 因子）。"""
+    return 10.0 ** (float(db) / 20.0)
+
+
 def render_sf2(mid_path, sf2, fs, fs_libdir, melody_tracks, prog_by_ch, notes,
-               mel_gain, bass_gain, log=print):
+               mel_gain, bass_gain, log=print, tune=None):
     """SoundFont 渲染：改 velocity 的临时 MIDI ⇒ fluidsynth 渲 44100 Hz wav ⇒ 读回 ⇒ 降到 22050。
 
     返回 (n,2) float32 @ SR —— 与 `render_naive` 同接口，后面的 fine_align / 截断 / 归一化
     **一个字都没改**（换的只是音源，时间轴不动）。
+
+    `tune` = 调音表（见文件头 `GLOBAL` / `PER_TRACK`，**单位 dB**）：
+      · `drums_db` —— **鼓**（ch9 或 CC0=128 的鼓组 bank）；
+      · `melody_db` —— `pick_melody` 选的 melody 轨；
+      · `prog_db` = {GM program: dB} —— 按 **program change** 命中（"从音色是什么调"的关键旋钮）；
+      · `bass_db` —— 倍斯 program 32–39；
+      · `low_db` / `low_mean_max` —— **按乐器**（轨+通道）判低音区：平均音高 < `low_mean_max`
+        就整件 +`low_db`。★ 不按单音抬：伴奏常是**八度叠奏**，逐音只抬低八度会把八度关系弄歪。
+    优先级（每音只命中一条，不叠乘）：鼓 > melody 轨 > `prog_db` > 倍斯 > 低音区乐器 > 1.0。
     """
+    tune = tune or {}
+    drums_gain = _db2lin(tune.get("drums_db") or 0.0)
+    mel_gain = _db2lin(tune["melody_db"]) if "melody_db" in tune else mel_gain
+    bass_gain = _db2lin(tune["bass_db"]) if "bass_db" in tune else bass_gain
+    prog_gain = {int(k): _db2lin(v) for k, v in (tune.get("prog_db") or {}).items()}
+    low_gain = _db2lin(tune.get("low_db") or 0.0)
+    low_mean_max = float(tune.get("low_mean_max") or 60)
+    drum_hit = pg_hit = low_hit = 0
     vol = []
-    parse_smf(mid_path, velout=vol)            # 只为拿 velocity 字节偏移（几何与主流程那份一致）
+    tracks, _, _ = parse_smf(mid_path, velout=vol)   # 只为拿 velocity 字节偏移（几何与主流程一致）
+    # 鼓通道：ch9（GM 规定）+ 任何 CC0=128 选了鼓组 bank 的通道
+    drum_ch = {9} | {ch for evs in tracks for tick, k, ch, a, b in evs
+                     if k == "cc" and a == 0 and b == 128}
+    # 每件乐器（轨+通道）的平均音高 —— 判它是不是"低音乐器"
+    agg = {}
+    for ti, tick, ch, note, vel, at in vol:
+        if ch not in drum_ch:
+            s, n = agg.get((ti, ch), (0, 0))
+            agg[(ti, ch)] = (s + note, n + 1)
+    mean_pitch = {k: s / n for k, (s, n) in agg.items()}
+    low_inst = {k for k, mp in mean_pitch.items()
+                if mp < low_mean_max
+                and (prog_by_ch.get(k[1]) or 0) not in range(32, 40)   # 倍斯另有 bass_db
+                and k[0] not in melody_tracks}                          # melody 轨另有 melody_db
     raw = bytearray(open(mid_path, "rb").read())
-    # ① 每音的线性增益：主旋律（按**轨**判，`pick_melody` 的结论原样用）→ mel_gain；
-    #    贝斯（该通道的 GM program ∈ 32–39）→ bass_gain；鼓（ch 9）/其余 → 1.0。
+    # ① 每音的线性增益（优先级见 docstring）
     scaled = []
     for ti, tick, ch, note, vel, at in vol:
         g = 1.0
-        if ch != 9:
-            if ti in melody_tracks:
-                g = mel_gain
-            elif (prog_by_ch.get(ch) or 0) in range(32, 40):
-                g = bass_gain
+        prog = prog_by_ch.get(ch) or 0
+        if ch in drum_ch:
+            g = drums_gain
+            drum_hit += 1
+        elif ti in melody_tracks:
+            g = mel_gain
+        elif prog in prog_gain:
+            g = prog_gain[prog]
+            pg_hit += 1
+        elif prog in range(32, 40):
+            g = bass_gain
+        elif (ti, ch) in low_inst:
+            g = low_gain
+            low_hit += 1
         scaled.append((_sf2_velocity_gain(vel, g), vel, at))
     # ② 超过 127 就**整体等比缩**（不是逐音 clip）：相对关系不变，绝对电平交给末尾的峰值归一。
     top = max(v for v, _, _ in scaled)
@@ -489,8 +591,19 @@ def render_sf2(mid_path, sf2, fs, fs_libdir, melody_tracks, prog_by_ch, notes,
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     out = downsample_2x(pcm, sr)
+    extra = ""
+    if drums_gain != 1.0:
+        extra += f"，鼓 {tune['drums_db']:+.1f} dB（命中 {drum_hit} 个音）"
+    if prog_gain:
+        extra += ("，program " + ", ".join(f"{p}:{tune['prog_db'][p]:+.1f}dB"
+                                           for p in sorted(prog_gain))
+                  + f"（命中 {pg_hit} 个音）")
+    if low_gain != 1.0:
+        names = ", ".join(f"ch{ch}" for ti, ch in sorted(low_inst))
+        extra += (f"，低音区乐器（平均音高 <{low_mean_max:g}：{names or '无'}）"
+                  f"{tune['low_db']:+.1f} dB（命中 {low_hit} 个音）")
     log(f"    [sf2] {os.path.basename(sf2)}: velocity 改 {chg}/{len(scaled)} 个音"
-        f"（全局缩 {shrink:.3f}），{len(pcm)/sr:.1f}s@{sr} → {len(out)/SR:.1f}s@{SR}")
+        f"（全局缩 {shrink:.3f}{extra}），{len(pcm)/sr:.1f}s@{sr} → {len(out)/SR:.1f}s@{SR}")
     return out
 
 
@@ -664,12 +777,99 @@ def write_wav(path, pcm_bytes, rate=SR, channels=2):
         w.writeframes(pcm_bytes)
 
 
+def _parse_prog_spec(spec):
+    """`56=-4.4` / `56-58=-3` / `40-47=-3` → {56: -4.4} / {56,57,58: -3}。"""
+    k, sep, v = spec.partition("=")
+    if not sep:
+        raise SystemExit(f"--prog-gain 要写成 PROG[-HI]=dB（例 56=-4.4 / 56-63=-3），收到：{spec!r}")
+    try:
+        db = float(v)
+        if "-" in k.strip()[1:]:
+            lo, _, hi = k.strip().partition("-")
+            lo, hi = int(lo), int(hi)
+            if hi < lo:
+                raise ValueError
+            return {p: db for p in range(lo, hi + 1)}
+        return {int(k): db}
+    except ValueError:
+        raise SystemExit(f"--prog-gain 的 PROG/range 不合法：{spec!r}")
+
+
+def resolve_tune(stem, a):
+    """→ (tune, mel_gain, bass_gain)。顺序：全局 GLOBAL → 逐曲 PER_TRACK → `--track-config` → CLI。
+
+    优先级后者覆盖前者；`prog_db` 做**并集**（CLI 可以只加一个 program 而不清掉表里的）。
+    """
+    tune = {"drums_db": GLOBAL["drums_db"], "melody_db": DB_MELODY, "bass_db": DB_BASS,
+            "prog_db": {}, "low_db": 0.0, "low_mean_max": 60}
+    tune.update({k: (dict(v) if isinstance(v, dict) else v)
+                 for k, v in (PER_TRACK.get(stem) or {}).items()})
+    tune["prog_db"] = {int(k): float(v) for k, v in (tune.get("prog_db") or {}).items()}
+    # --track-config：JSON，按**内部曲名**键（也可直接给一份不带曲名的对象）
+    if a.track_config:
+        import json
+        try:
+            cfg = json.loads(a.track_config)
+        except json.JSONDecodeError as e:
+            raise SystemExit(f"--track-config 不是合法 JSON：{e}")
+        cfg = cfg.get(stem, cfg) if isinstance(cfg, dict) else {}
+        for k, v in cfg.items():
+            if k == "prog_db":
+                tune["prog_db"].update({int(p): float(db) for p, db in v.items()})
+            else:
+                tune[k] = v
+    # CLI（最高优先级）
+    if a.prog_gain:
+        for spec in a.prog_gain:
+            tune["prog_db"].update(_parse_prog_spec(spec))
+    if a.drums_gain is not None:
+        tune["drums_db"] = a.drums_gain
+    if a.low_db is not None:
+        tune["low_db"] = a.low_db
+    if a.low_mean_max is not None:
+        tune["low_mean_max"] = a.low_mean_max
+    if a.melody_db is not None:
+        tune["melody_db"] = a.melody_db
+    if a.bass_db is not None:
+        tune["bass_db"] = a.bass_db
+    if a.melody_gain is not None:                    # 旧线性口径（兼容）
+        tune["melody_db"] = 20 * math.log10(a.melody_gain)
+    if a.bass_gain is not None:
+        tune["bass_db"] = 20 * math.log10(a.bass_gain)
+    return tune, _db2lin(tune["melody_db"]), _db2lin(tune["bass_db"])
+
+
+def tune_knobs(tune):
+    """→ 一行旋钮摘要（印在逐曲报表里，便于事后对账"这首用了什么参数"）。"""
+    s = f"drums {tune['drums_db']:+.1f}dB / mel {tune['melody_db']:+.1f}dB / bass {tune['bass_db']:+.1f}dB"
+    if tune.get("prog_db"):
+        s += " / prog " + ",".join(f"{p}:{db:+.1f}" for p, db in sorted(tune["prog_db"].items()))
+    if float(tune.get("low_db") or 0.0) != 0.0:
+        s += f" / low<{float(tune.get('low_mean_max') or 60):g}:{float(tune['low_db']):+.1f}dB"
+    return s
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--stem", action="append", default=None,
                     help="曲目 stem（可多次，例 th18_03）；默认 = MANIFEST 里全部")
-    ap.add_argument("--melody-gain", type=float, default=0.35, help="主旋律增益（默认 0.35 ≈ −9 dB）")
-    ap.add_argument("--bass-gain", type=float, default=1.6, help="贝斯增益（默认 1.6）")
+    ap.add_argument("--melody-gain", type=float, default=None,
+                    help="主旋律**线性**增益（旧口径，默认 0.35 ≈ −9.1 dB；等价于 --melody-db -9.1）")
+    ap.add_argument("--bass-gain", type=float, default=None,
+                    help="倍斯（GM program 32–39）**线性**增益（旧口径，默认 1.6 ≈ +4.1 dB）")
+    ap.add_argument("--melody-db", type=float, default=None, help="主旋律增益（dB）")
+    ap.add_argument("--bass-db", type=float, default=None, help="倍斯增益（dB）")
+    ap.add_argument("--drums-gain", type=float, default=None, metavar="DB",
+                    help="鼓（ch9 / CC0=128 鼓组）增益，dB（全局默认 +2.5）")
+    ap.add_argument("--prog-gain", action="append", default=None, metavar="PROG[-HI]=DB",
+                    help="按 GM program（或 program 区间）调增益，dB，可重复"
+                         "（例 --prog-gain 56=-4.4 --prog-gain 56-63=-3）")
+    ap.add_argument("--low-db", type=float, default=None,
+                    help="低音区乐器增益（dB）：按**乐器**（轨+通道）平均音高 < --low-mean-max 判")
+    ap.add_argument("--low-mean-max", type=float, default=None,
+                    help="低音区乐器的平均音高上限（默认 60 = C4）")
+    ap.add_argument("--track-config", default=None, metavar="JSON",
+                    help='逐曲覆盖（JSON，按内部曲名键）：\'{"th18_07": {"prog_db": {"25": -1.5}}}\'')
     ap.add_argument("--out", default=OUT_DIR)
     ap.add_argument("--peak", type=float, default=0.92, help="峰值归一目标")
     ap.add_argument("--dry-run", action="store_true", help="只解析 + 报表，不渲染")
@@ -723,6 +923,7 @@ def main(argv=None):
         if mi is None:
             print(f"  ★ 跳过 {stem}：dat/musiccmt.txt 里没有这个内部曲名（不是本作曲目）")
             continue
+        tune, mel_gain, bass_gain = resolve_tune(stem, a)
         mid = os.path.join(MIDI_DIR, f"th18_{mi:02d}.mid")
         if not os.path.exists(mid):
             print(f"  ★ 跳过 {stem}：没有 {os.path.relpath(mid, REPO)}（音乐室 No.{mi}）")
@@ -760,10 +961,10 @@ def main(argv=None):
                     mel_ch.add(ch)
         if a.render == "sf2":
             rendered = render_sf2(mid, sf2, fs, fs_lib, mel, prog, notes,
-                                  a.melody_gain, a.bass_gain)
+                                  mel_gain, bass_gain, tune=tune)
         else:
-            rendered = render_naive(notes, prog, midi_secs + 0.5, mel_ch, a.melody_gain,
-                                    a.bass_gain, seed=hash(stem) & 0xFFFF)
+            rendered = render_naive(notes, prog, midi_secs + 0.5, mel_ch, mel_gain,
+                                    bass_gain, seed=hash(stem) & 0xFFFF)
         # ── 起点：**照原曲的 intro 长度**（一手：fmt 的 intro_size；同人 MIDI 用的是原曲速度，
         #    实测 MIDI 主 tempo 170.1 BPM ↔ 原曲能量自相关 0.360 s ⇒ 两边时间轴同构），
         #    再按拍/小节对齐（4/4）⇒ 起点落在小节线上。
@@ -826,9 +1027,10 @@ def main(argv=None):
             return mel_e / max(tot, 1e-9)
         print(f"{stem:<9}{len(tracks):>4}{len(notes):>7}{str(sorted(mel)):>9}{midi_secs:>9.2f}s"
               f"{loop_secs:>8.2f}s{start_sec:>+8.2f}s{r_corr:>7.3f}  {os.path.relpath(path, REPO)}"
-              f"   [{a.render} | BPM {midi_bpm(tempos, tick_at_intro):.1f} 主旋律能量占比 "
+              f"   [{a.render} | {tune_knobs(tune)} | BPM "
+              f"{midi_bpm(tempos, tick_at_intro):.1f} 主旋律能量占比 "
               f"{share(mel_ch)*100:.0f}%→"
-              f"{share(mel_ch)*100*a.melody_gain**2/(1-share(mel_ch)+share(mel_ch)*a.melody_gain**2):.0f}%]")
+              f"{share(mel_ch)*100*mel_gain**2/(1-share(mel_ch)+share(mel_ch)*mel_gain**2):.0f}%]")
     print(f"\n写出 {wrote} 个文件 → {os.path.relpath(a.out, REPO)}"
           f"（切模式：mode.txt 写 `rearr`；同步：bash local/sync_modkit_dll.sh）")
     return 0 if wrote or a.dry_run else 2

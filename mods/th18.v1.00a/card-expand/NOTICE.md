@@ -170,33 +170,55 @@ thcrap 生态的通行做法就是分发「替换后的整文件」，玩家需�
 - **许可状态**：该合集**没有 LICENSE 文件**，只有 §6.3 引的那段 Usage Policy ——
   **不要**把它转述成"没有许可所以不能用"。
 
-### 6.2 音色库（SoundFont）—— 2026-10-19 起
+### 6.2 音色库（SoundFont）—— 2026-10-19 起：THfont
 
 **目标音色**：ZUN 自 TH06 起用的是 **Roland Edirol SD-90**（2001，已停产、无 VST）。
-社区常见替代是 **THfont**，但 THfont 的采样是从 Roland 硬件/软音源 rip 出来的（ShrineMaiden 上
-2016 年那帖被版主以"分发采样合成器的采样非法"为由锁掉），**没有官方下载页、也没有可核对的哈希**；
-2026-10-19 实测可达的转存（musical-artifacts #2451 → Google Drive）被 Cloudflare 挡住（HTTP 403）
-⇒ **拿不到可核验的字节，不硬凑**。
+本 mod 现在用的就是 SD-90 采样系的 **THfont**（owner 提供），不再用 GeneralUser GS 近似。
 
 ★ **旁证（可复核）**：Karl Zuñiga 这 17 个 MIDI 的**轨名**里有 **18 处**直接写着 `SD-90 (…)`
 （如 `SD-90 (Romantic Tp)`、`SD-90 (Sop. Sax vib)`、`SD-90 (St.ChoirAahs)`）—— 编曲者自己就是
-**按 SD-90 的音色**写的。我们只能用 GM 程序号 + GeneralUser GS 近似，**不是** SD-90 原声。
+**按 SD-90 的音色**写的，换 THfont 正是冲着这条去的。
 
-**实际采用**：
+**实际采用（2026-10-19 owner 拍板：3 首试点听感优于 GeneralUser ⇒ 全量 17 首换 THfont）**：
 
 | 项 | 值 |
 | --- | --- |
-| 音色库 | **GeneralUser GS v2.0.3**（GM/GS 兼容，Roland GS 家族的声音取向） |
-| 文件 | `GeneralUser-GS.sf2`（只落在 `local/th18.v1.00a/sf2/`，gitignored；**发布包不带 sf2**） |
-| 大小 / sha256 | 32,319,396 B / `9575028c7a1f589f5770fccc8cff2734566af40cd26ed836944e9a5152688cfe` |
-| 来源 URL | <https://github.com/mrbumpy409/GeneralUser-GS>（作者 S. Christian Collins 本人的官方仓库）→ `GeneralUser-GS.sf2`；主页 <https://schristiancollins.com/generaluser.php> |
-| 取回时间 | 2026-10-19 |
-| 许可 | **GeneralUser GS License v2.0**（仓库 `documentation/LICENSE.txt`）：可自由用于音乐制作（含商业）、可再分发、可修改；库内采样声明为可自由使用的公开 SoundFont 采样，**作者声明没有一个来自商业 SoundFont 或采样 CD**，但极少数早期来源无法 100% 追溯 |
-| 瑕疵口径 | 与上面的东方素材**同一口径**：社区惯例使用、**存在瑕疵**、权利方要求即移除 |
+| 音色库 | **THfont**（SD-90 采样系；社区从 Roland SD-90 硬件/软音源里 rip 出来的采样集合） |
+| 文件 / 原名 | `thfont.sf2` ← 原名 `Touhou.sf2`，**owner 提供** `D:\Downloads\Touhou.sf2`；只落在 `local/th18.v1.00a/sf2/`（gitignored） |
+| 大小 / sha256 | 261,192,820 B（249.1 MiB）/ `c05372f76164aac916f9913550fab9d30d650cf205f000da27513ab98054b419` |
+| 容器 / 元数据 | RIFF `sfbk`；`INAM=Touhou.sf2`，`IPRD=ISFT=IENG=SynthFont Viena`（**打包工具**，不是作者/来源 —— 原始元数据已被打包过程抹掉） |
+| 预设 | **186 个**：bank 0 = 128 个（**GM 0–127 全覆盖**）、bank 128 鼓组 = 14 个、bank 8 = 22 个，另 bank 1/2/9/16/17/18/24/27/33/255 少量 |
+| THfont 判据 | **bank 128 prog 127 = `SD90`**、prog 25 = `TR-909 [SC-55]`、prog 24 = `ELECTRONIC`；鼓组名 `KICK & SNARE`/`ORCHESTRA`/`ETHNIC`；bank 0 音色名亦为 SD-90/SC 系 ⇒ 判定社区 THfont 系，非 GM 官方库（详见下方"判据"） |
+| 取回时间 | 2026-10-19（owner 本地提供） |
+| 许可 | ★ **未声明**（权利状态不明）⇒ **只本机自用**；★ **发布包只带渲染出的 wav，不带 sf2**；★ 社区惯例使用、**存在瑕疵**、**权利方要求即立即移除**（完整口径见下方"许可"） |
 | 渲染器 | `fluidsynth 2.2.5`（Ubuntu 22.04 `apt-get download` + `dpkg-deb -x` 解到 `local/vendor/fluidsynth-2.2.5/`，**不动系统、不需要 root**；LGPL） |
 
+**判据（"这是 THfont 系"怎么认的）**：bank 128 prog 127 = `SD90`、prog 25 = `TR-909 [SC-55]`、
+prog 24 = `ELECTRONIC`；鼓组名 `KICK & SNARE` / `ORCHESTRA` / `ETHNIC`；bank 0 音色名亦为 SD-90/SC 系
+（`TyrosNylon`、`ClavinovaHarp`、`P5 Saw Lead` …）⇒ 判定为社区 THfont 系，**不是** General MIDI 官方库。
+
+**许可（未声明 —— 所以发布包不带它）**：THfont 系的采样是从 Roland SD-90 硬件/软音源里 rip 出来的
+（ShrineMaiden 上 2016 年原作者那帖被版主以「分发采样合成器的采样非法」为由锁掉），
+**没有官方下载页、没有可核对的哈希、权利状态不明** ⇒ 只作**本机自用**；
+★ **发布包只带渲染出的 wav，不带 sf2**；★ 与上面的东方素材**同一口径**：社区惯例使用、
+**存在瑕疵**、**权利方要求即立即移除**。
+
+**备选：GeneralUser GS v2.0.3**（保留说明，随时可切回）
+
+2026-10-19 早些时候先用它渲了全量 —— 作者官方仓库、**许可明确**（GeneralUser GS License v2.0：
+可自由用于音乐制作含商业、可再分发、可修改；作者声明没有一个采样来自商业 SoundFont 或采样 CD，
+但极少数早期来源无法 100% 追溯），GM/GS 兼容、同属 Roland GS 家族，但**不是** SD-90 本身，
+听感比 THfont 差一档（owner 3 首 A/B 后拍板换 THfont）。文件 32,319,396 B / sha256
+`9575028c7a1f589f5770fccc8cff2734566af40cd26ed836944e9a5152688cfe`，仓库
+<https://github.com/mrbumpy409/GeneralUser-GS>（作者 S. Christian Collins，主页
+<https://schristiancollins.com/generaluser.php>），仍留在 `local/th18.v1.00a/sf2/` 里作对照。
+
+> 历史：2026-10-19 早上曾尝试从公开转存取 THfont（musical-artifacts #2451 → Google Drive，
+> 被 Cloudflare 挡，HTTP 403）⇒ 当时「拿不到可核验的字节，不硬凑」，退回 GeneralUser。
+> 后来 owner 直接给了本地文件，本节以 THfont 为准；上面那段保留为来源溯源。
+
 ★ **换音源只改一处**：把任意 GM/GS `.sf2` 丢进 `local/th18.v1.00a/sf2/`（`find_sf2()` 优先挑文件名
-带 `thfont` 的）。换库后**必须**重跑试点重新确认听感，并把新库的 URL + sha256 补进本表。
+带 `thfont` 的，其余按文件名排序取第一份）。换库后**必须**重跑试点重新确认听感，并把新库的来源 + sha256 补进本表。
 来源与 sha256 的原始登记：`local/th18.v1.00a/sf2/SOURCE.txt`（本机，不入库）。
 
 ### 6.3 MIDI 署名（Usage Policy 原文 + 17 首逐曲清单）
@@ -246,10 +268,14 @@ thcrap 生态的通行做法就是分发「替换后的整文件」，玩家需�
 它们是**衍生作品**（同人 MIDI 重编曲 + 第三方 SoundFont 渲染），不是 ZUN 的原始音频；
 分发它们仍受上面第 1/3 条约束。
 
-**2026-10-19 全量批**：17 首 `_rearr` **全部**换成 GeneralUser GS 渲染版（`--render sf2`，已设为默认）。
-旧的自写合成器（`--render naive`）版 17 个留在 `<modkit>\thcrap\bin\bgm\*.wav.naive.bak`
-（`thcrap/bin/bgm/` 同目录、共 191.5 MB，覆盖前逐字节复制并核对 md5）。两版**帧数逐首相等**
-（= `thbgm.fmt` 的循环体长度）⇒ 循环点 / 同时间点 seek 的口径不变。
+**2026-10-19 全量批（现行）**：17 首 `_rearr` **全部**是 **THfont** 渲染版（`--render sf2` 为默认，
+`find_sf2()` 优先挑 `thfont.sf2`）。混音不是"一刀切"：按 **GM program（音色号）/ 鼓通道** 给 dB 增益，
+逐曲例外（03 小号/低音区、07 主旋律、08 铜管）登记在 `tools/make_trance_rearr.py` 的
+`GLOBAL` / `PER_TRACK` 表，规则与当前取值见 [`TUNING.md`](TUNING.md) §2.0h。
+**上一代音源留档**：GeneralUser GS 渲染版 17 个另存为 `<modkit>\thcrap\bin\bgm\*.wav.gu.bak`
+（`thcrap/bin/bgm/` 同目录，覆盖前逐字节复制并核对 md5）；
+更早的自写合成器（`--render naive`）版 17 个仍在 `*.wav.naive.bak`（共 191.5 MB）。
+三代**帧数逐首相等**（= `thbgm.fmt` 的循环体长度）⇒ 循环点 / 同时间点 seek 的口径不变。
 
 ---
 
