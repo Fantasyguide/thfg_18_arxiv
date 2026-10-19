@@ -6328,49 +6328,42 @@ static void pofv_c4m_edge(float px, float py, float ang, float *ex, float *ey)
  *     ★ HP 那一项标 ❓ ✓（★ 等找到 `enemy + HP` 偏移再加 ✓）。*/
 static const uint8_t *pofv_c4_target_boss(float *out_cos)
 {
+    /* ★★★ 2026-10-19 owner 定的**索敌逻辑**✗（★ 反向模型用 ✓）：
+     *   「★ 索敌按照一定 Boss ✗，★ 然后以**自机位置正上方为 theta = 0**✗，
+     *     ★ `abs(cos theta) * **剩余血量**` 排序」✗
+     *   ★ 2026-10-19 追加：★「★ `th18` **没有双 boss** ✗ —— ★ 这一条**主要对着的是**小怪索敌✗」
+     *   ⇒ ★ 所以这里**遍历全部敌人**✗ ✓（★ 不只 4 个 boss 槽 ✓），★ 取
+     *     ★ `|cos θ| × HP` 最大的那个 ✗ ✓。
+     *   ★ HP = `zEnemyData.life.current` = `enemy + **0x6220**` ✓
+     *     （★ 来源 `cards/youkai.c:74` ＝ `CE_ENEMY_DATA + 0x4ff4` ✓；★ 108 妖机体同款 ✓）。
+     *   ★ 排序用 **`cos²θ × HP²`**✗ ✓（★ 不开方 ✓、★ `double` 比较 ✓、★ 交叉相乘 ✓）。*/
     uint8_t *em = CE_ENEMY_MGR();
     const float *pp = ce_player_pos();
     const uint8_t *best_e = 0;
     float best_num = -1.0f, best_d2 = 1.0f;
     double best_h2 = 1.0;
-    int bi;
     if (out_cos) *out_cos = 0.0f;
     if (!em || !pp) return 0;
     {
-        const int32_t *bids = (const int32_t *)(em + CE_EM_BOSS_IDS);
-        for (bi = 0; bi < 4; ++bi) {
-            uint8_t *e;
+        uint8_t *e;
+        CE_ENEMY_FOREACH(em, e) {
             const float *ep;
-            float dx, dy, len;
-            if (bids[bi] <= 0) continue;
-            e = ce_enemy_by_id(em, bids[bi]);
+            float dx, dy, d2, num;
+            double hp, h2;
             if (!e || !ce_enemy_lockable(e)) continue;
             ep = ce_enemy_pos(e);
+            if (!ep) continue;
             dx = ep[0] - pp[0];
-            dy = ep[1] - pp[1];          /* ★ 画面 y 向下 ✓ */
-            (void)len;
-            /* ★ `|cos θ|` 的**比值比较**不用 sqrt ✗：★ 比 `(-dy)^2 / |d|^2` 即可 ✓
-             *   （★ 交叉相乘 ✓：`a_dy^2 * b_d2` vs `b_dy^2 * a_d2` ✓）。*/
-            {
-                const float d2 = dx * dx + dy * dy;
-                const float num = dy * dy;                 /* ★ (-dy)^2 ✓ = 竖直分量的平方 ✓ */
-                /* ★ 2026-10-19 owner：★ 分数字段用 `zEnemyData.life.current`✗
-                 *   （★ `enemy + **0x6220**` ✓ = `CE_ENEMY_DATA + 0x4ff4` ✓，★ 源头 `cards/youkai.c:74` ✓）
-                 *   ★ 排序口径 ★ **`cos²θ × HP²`**✗（★ 不开方 ✓，★ 与 `|cos|×HP` **等价**✓）。
-                 *   ★ 交叉相乘比较 ✓：`num·hp² / d2` 比大小 ⇒ `num_a·hp_a²·d2_b > num_b·hp_b²·d2_a` ✓。*/
-                /* ★ 2026-10-19 owner 问「hp² 会不会打到 float/int max」✗ ✓ 我算了：
-                 *   ★ 最大 `num·HP²·d2 ≈ 3.2e29`✗ ✓，★ `float` 上限 **3.4e38** ⇒ ★ **不会溢出**✗ ✓（★ 余量 1e9 倍 ✓）。
-                 *   ★ 但 `float` 只有 **24 位尾数**✗ ⇒ 两个**接近**的分数可能比不出大小 ✓
-                 *   ⇒ ★ 比较一律改用 **`double`**✗ ✓（★ 53 位尾数 ✓，★ 且**不用开方** ✓）。
-                 *   ★ 另：★ HP 若为负（★ 某些"无限血"哨兵 ✓）按 0 计 ✓，★ 免得 `hp²` 反而排到前面 ✓。*/
-                const double hp = (double)*(const int32_t *)(e + 0x6220);
-                const double h2 = (hp > 0.0) ? hp * hp : 0.0;
-                if (d2 > 1e-6f) {
-                    if (best_e == 0 || (double)num * h2 * (double)best_d2
-                                      > (double)best_num * best_h2 * (double)d2) {
-                        best_e = e; best_num = num; best_d2 = d2; best_h2 = h2;
-                    }
-                }
+            dy = ep[1] - pp[1];
+            d2 = dx * dx + dy * dy;
+            if (d2 <= 1e-6f) continue;
+            num = dy * dy;                       /* ★ (-dy)² ✓ = 竖直分量 ✓ */
+            hp = (double)*(const int32_t *)(e + 0x6220);
+            h2 = (hp > 0.0) ? hp * hp : 0.0;     /* ★ HP≤0（无限血哨兵）按 0 ✓ */
+            if (best_e == 0 || (double)num * h2 * (double)best_d2
+                              > (double)best_num * best_h2 * (double)d2) {
+                best_e = e; best_num = num; best_d2 = d2; best_h2 = h2;
+                if (out_cos) *out_cos = num / d2;
             }
         }
     }
@@ -6649,10 +6642,14 @@ static void pofv_c4m_tick(void)
                  *   ★ 若自机不动 ⇒ 三条方向**完全一致** ✓（★ 这正是一手的样子 ✓）。*/
                 float ang_b;
                 {
+                    /* ★ 2026-10-19：★ 用**索敌结果**✗（`pofv_c4_target_boss` ✓）算出 `theta` ✓：
+                     *   ★ 有目标 ⇒ ★ 从 boss 指向**该目标**✗ ✓；★ 没目标 ⇒ 退回"★ 朝自机"✗ ✓。*/
+                    const uint8_t *tg = pofv_c4_target_boss(0);
                     const float *pp3 = ce_player_pos();
-                    const float tx = pp3 ? pp3[0] : 0.0f;
-                    const float ty = pp3 ? pp3[1] : POFV_FIELD_H * 0.5f;
-                    const float dx = tx - 0.0f, dy = ty - oy_b;     /* ★ 从 boss 指出去 ✓ */
+                    const float *tp = tg ? ce_enemy_pos(tg) : 0;
+                    const float tx = tp ? tp[0] : (pp3 ? pp3[0] : 0.0f);
+                    const float ty = tp ? tp[1] : (pp3 ? pp3[1] : POFV_FIELD_H * 0.5f);
+                    const float dx = tx - 0.0f, dy = ty - oy_b;     /* ★ 从 boss 指向目标 ✓ */
                     int ti = 9; float best = -1e9f;
                     if (dx * dx + dy * dy > 1e-6f) {
                         int ii;
