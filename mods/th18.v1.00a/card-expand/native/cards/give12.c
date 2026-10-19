@@ -1,5 +1,6 @@
 /* 118「挑战：十二合一」—— 主动卡（D 切到本卡后按 C 发动）：一次把 106–117 十二张系统卡发到手上。
- * ⚠ 109（花映塚）本版整体摘除 ⇒ 实际发的是**除 109 外的十一张**（见 on_activate 里的显式跳过）。
+ * ★ 2026-10-19（owner：「继续开发 109」）⇒ 本条**恢复发放完整十二张**（106–117，含 109）✓。
+ *   （早先那版把 109 整体摘除、这里显式跳过，那个跳过已随 109 恢复一并删掉 ✗。）
  *
  * 定位（用户 2026-09-17 口径）：正式构建也带，它是一个**挑战**卡 —— 挑战来自你自己决定
  * 把哪些系统机制叠在一起打。它同时是"106–117 全装"的总验收载体。
@@ -57,14 +58,6 @@ static int on_activate(ce_card_t *c)
     }
     s_given_run = s_epoch;
     for (id = GIVE12_FIRST; id <= GIVE12_LAST; ++id) {
-        /* ★ 2026-10-18（owner 口径：「118 别摘掉，是只摘掉里面的 109」）：
-         *   109（花映塚）本版整体摘除（cards.js 里 deck_visible=0 + weight=0），
-         *   而本卡（118）的发放范围 106–117 含 109 ✗ ⇒ 这里显式跳过，避免"用 118 绕过摘除"✗。*/
-        if (id == CE_GIVE12_SKIP) {
-            ce_log("give12: skip card %u (removed from this build)", id);
-            ++skipped;
-            continue;
-        }
         /* ★★★ 2026-10-19（owner：「已经拥有的卡还会再发一张」✗）：**先查再给** ——
          *   `0x411460` 自己不查 `owned[]` ⇒ 不挡就会再建一个同 id 的卡对象（见本文件头注释）。*/
         if (!ce_give12_should_give(owned, CE_GIVE12_OWNED_LEN, id)) {
@@ -76,7 +69,7 @@ static int on_activate(ce_card_t *c)
         if (r) ++ok; else ++fail;
         ce_log("give12: gave card %u -> %d", id, r);
     }
-    ce_log("give12: 发动完成 —— %u 张成功 / %u 张失败 / %u 张跳过（已持有或摘除）（%u..%u）；"
+    ce_log("give12: 发动完成 —— %u 张成功 / %u 张失败 / %u 张跳过（已持有）（%u..%u）；"
            "拿到后请到编成里自行装上",
            ok, fail, skipped, GIVE12_FIRST, GIVE12_LAST);
     return 0;

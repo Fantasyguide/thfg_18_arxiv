@@ -6,7 +6,6 @@
 int ce_give12_should_give(const int32_t *owned, unsigned owned_len, uint32_t id)
 {
     if (id < CE_GIVE12_FIRST || id > CE_GIVE12_LAST) return 0;   /* 区间外：本卡不管 */
-    if (id == CE_GIVE12_SKIP) return 0;                          /* 109 本版摘除 ✓ */
     if (!owned) return 1;                                        /* 拿不到管理器 ⇒ 不挡（老行为）*/
     if (id >= owned_len) return 1;                               /* 上界外不读（同 `ce_owned()` 口径 ✓）*/
     return owned[id] == 0;                                       /* 已持有 ⇒ 不发 ✓（0x411460 不会替你判 ✗）*/

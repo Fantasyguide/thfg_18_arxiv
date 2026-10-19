@@ -17,22 +17,21 @@
  *   ★ 本条**不新增站点、不改引擎**：只是在调分配器**之前**按游戏自己的字段挡一下 ✓。
  *
  * ## 语义（纯函数，逐条）
- * 1. 区间 = `[CE_GIVE12_FIRST, CE_GIVE12_LAST]` = **106..117**（十二张系统卡）；
- * 2. `CE_GIVE12_SKIP` = **109（花映塚）本版整体摘除** ⇒ 永远不发（owner 2026-10-18 口径：
- *    「118 别摘掉，是只摘掉里面的 109」）✓ —— 与"已持有"是**两种不同的跳过**，日志要分开写；
- * 3. `owned[id] != 0` ⇒ **不发**（这就是本次的修法）；
- * 4. `owned_len` 之外的下标一律当"未持有"（防越界：引擎数组 `int[255]`，`sdk.h:495` 的
+ * 1. 区间 = `[CE_GIVE12_FIRST, CE_GIVE12_LAST]` = **106..117**（十二张系统卡，含 109 ✓）；
+ *    ★ 2026-10-19（owner：「继续开发 109」）：早先那条「109 本版整体摘除 ⇒ 永远不发」的
+ *    `CE_GIVE12_SKIP` 已删 ✗ —— 109 恢复可见可抽，本卡也恢复发它 ✓。
+ * 2. `owned[id] != 0` ⇒ **不发**（这就是本次的修法）；
+ * 3. `owned_len` 之外的下标一律当"未持有"（防越界：引擎数组 `int[255]`，`sdk.h:495` 的
  *    `ce_owned()` 也是 `id < 255` 才读 ✓ —— 这里保持同一个上界口径）。*/
 
 #include <stdint.h>
 
 #define CE_GIVE12_FIRST   106u
 #define CE_GIVE12_LAST    117u
-#define CE_GIVE12_SKIP    109u
 #define CE_GIVE12_OWNED_LEN 255u   /* = `zAbilityManager.owned[]` 的长度（`sdk.h:495` / `10-extensibility-limits.md` §8.7）*/
 #define CE_GIVE12_PLAN_MAX  16u    /* 区间最多 12 格，留余量 */
 
-/* 这张卡这次该不该发？返回 1 = 发，0 = 不发（已持有 / 被摘除 / 越界）。
+/* 这张卡这次该不该发？返回 1 = 发，0 = 不发（已持有 / 越界）。
  * `owned == NULL` ⇒ 一律当未持有（调用方拿不到管理器时不至于一张都不发 ✗）。*/
 int ce_give12_should_give(const int32_t *owned, unsigned owned_len, uint32_t id);
 

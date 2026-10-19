@@ -419,9 +419,8 @@
     "category": 0,
     "internal_name": "POFV_BLAST",
     "initial_unlocked": 1,
-    "deck_visible": 0,
     "price_tier": 10,
-    "weight": 0,
+    "weight": 2,
     "sprite_large": 212,
     "sprite_small": 213
   },
