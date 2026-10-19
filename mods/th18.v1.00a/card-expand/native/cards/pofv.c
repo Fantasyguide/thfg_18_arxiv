@@ -6608,7 +6608,7 @@ static void pofv_c4m_tick(void)
          *   ❓ ★ `$G` 具体取表中哪一项 —— 一手**由运行时索引决定** ✗（★ 复核审计标"证据不足"✓）
          *     ⇒ ★ 卡沿用"按 level 取表" ✓（★ 与一手的 8 项表同构 ✓）。*/
         /* ★ 2026-10-17（施工单 §63.3 #4 ✓）：★ 按档取 `$G` 表 —— ★ 低档 `cnt` ✓／★ 高档 `cnt_hi` ✓。*/
-        const int n = 2 * ((s_c4m_st.level >= 4) ? cnt_hi[s_c4m_st.level] : cnt[s_c4m_st.level]);
+        const int n = (s_c4m_st.level >= 4) ? cnt_hi[s_c4m_st.level] : cnt[s_c4m_st.level];   /* 一手 $G 就是发数, 不再乘 2 */
         /* ★★★★ 2026-10-17（施工单 §63.3 #7 ＋ §80 ＋ §12④-5 ✓）：★ **高档 = 3 台并发、错开 30 帧启动** ✗ ——
          *   ★ 一手 `Boss00BossCard1H()`（`pl01.txt:270` 起 ✓，逐字 ✓）：
          *     `ins_23(60)` ⇒ ★ 第 1 台 `_at(3, [-9989] + 30°)` ✓ ⇒ `ins_23(20)`＋`ins_23(10)`（★ 共 **30 帧** ✓）
@@ -6623,8 +6623,8 @@ static void pofv_c4m_tick(void)
          *     ★ ⚠ **2026-10-18 重验更正** ✗：★ 现在**高档已经是 3 条激光** ✓（`laser_delay` 60/90/120 ✓、
          *     ★ 朝向 +30°／−30°／竖直 ✓）、★ 低档 1 条（竖直 ✓）✓ —— ★ 原来这句
          *     ★「先照 1 条激光 ＋ 3 组弹」✗ **已过期** ✓。*/
-        const int groups = (s_c4m_st.level >= 4) ? 3 : 1;          /* ★ 台数 ✓：高 3／低 1 ✓ */
-        const int every  = (s_c4m_st.level >= 4) ? POFV_C4M_EVERY_HI : POFV_C4M_EVERY;
+        const int groups = 1;   /* 2026-10-19 对齐一手 pl01.txt:319: H 是单路 => 台数固定 1 (旧"高难度3台"作废) */          /* ★ 台数 ✓：高 3／低 1 ✓ */
+        const int every  = 3;   /* 一手 ins_23(3) => 每 3 帧一发 */
         const int start0 = POFV_C4M_CYCLE;                         /* ★ = 60 ✓ = 一手 `ins_23(60)` ✓ */
         const int gap    = (groups > 1) ? 30 : 0;                  /* ★ 台间错开 **30 帧** ✓ */
         const int span   = start0 + gap * (groups - 1) + n * every; /* ★ 本轮结束时刻 ✓ */
