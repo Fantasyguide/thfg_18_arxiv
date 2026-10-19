@@ -6304,7 +6304,9 @@ static void pofv_c4m_clear(void)
  *   ★ 本函数求**出射点**；★ 卡侧 y 向下 ⇒ 角度用卡侧约定 ✓；★ 活动区 x ∈ [−144,144]、y ∈ [0,448] ✓。*/
 static void pofv_c4m_edge(float px, float py, float ang, float *ex, float *ey)
 {
-    const float hx = 144.0f;
+    /* ★ 2026-10-19 owner：★「★ 你的边界似乎是取的 **th19** 的边界 ✗，★ **th18 的 x 是更大的**」✗
+     *   ⇒ ★ 原来写死 `144`（★ = th19 的活动区半宽 ✓）✗ ⇒ ★ 改成 **本卡场地半宽 `POFV_FIELD_HALF_W`（192）**✗ ✓。*/
+    const float hx = POFV_FIELD_HALF_W;
     const float cx = pofv_c4s_cosf(ang), cy = pofv_c4s_sinf(ang);
     float t = 1e9f, t1;
     if (cx >  1e-6f) { t1 = ( hx - px) / cx; if (t1 > 0.0f && t1 < t) t = t1; }
@@ -6721,6 +6723,9 @@ static void pofv_c4m_tick(void)
                 s_c4m_st.laser_dx[li] = dxb;      /* ★ 回写交点 x（伤害盒要用）✓ */
                 s_c4m_st.laser_vm[li] = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
                                              CE_ANM_ABILITY_SCRIPT_POFV109_C4M_LASER, POFV_C3M_VM_LAYER);
+                ce_log("pofv: [C4M] spawn li=%d ang=%.2f dx=%.1f dy=%.1f vm=%d lv=%d",
+                       li, (double)ang_b, (double)dxb, (double)dyb,
+                       (int)s_c4m_st.laser_vm[li], s_c4m_st.level);
                 if (s_c4m_st.laser_vm[li]) {
                     ce_anm_set_pos((uint32_t)s_c4m_st.laser_vm[li], dxb, POFV_FIELD_H * 0.5f, 0.0f);   /* 2026-10-18: 焦点只给 x, y 固定场地中心 224 */   /* ★ 交点 ✓ */
                     /* ★ 2026-10-19 owner：「★ 激光长度可能不够 ✗ —— ★ 极限是**从左上角射到右下角**」✗
