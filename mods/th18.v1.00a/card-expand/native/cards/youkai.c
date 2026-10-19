@@ -9491,6 +9491,14 @@ static int on_death_before_deathbomb(ce_card_t *c)
         int32_t before = CE_CURRENT_BOMBS();
         if (before > 0) {
             CE_CURRENT_BOMBS() = before - 1;
+            /* ★★ 2026-10-19（owner：「**切实记录死秽回避消耗的 B 数，腐化只动上限**」+「106+108 的决死 B
+             *   消耗 2 也会对腐化生效」）：这 1 发是**卡侧直接写** CURRENT 的 —— 既不走 `consume_bomb`
+             *   （`on_bomb_spent` 抓不到），也不在原生死亡回避 `0x40a2a0` 里（站点 `0x40a44b` 抓不到）
+             *   ⇒ 必须自己报进同一个广播 `on_death_save_spent`。收方（腐化 70）会把它记进自己的预算
+             *   并把 CURRENT 拉回新的 MAX；**没有收方时本函数不写任何引擎值**（行为逐位不变）。
+             *   一次决死 B 的总消耗 = 这里 1 发 + 按 B 那一发（走 do_bomb `0x420360` → consume_bomb
+             *   `0x4574d0`，`ce_bomb_spent` 覆盖）⇒ 与 owner 的「消耗 2」对得上。*/
+            ce_death_save_spent_note(1);
             if (s_db106_logged < 32u) {
                 ++s_db106_logged;
                 ce_log("youkai/debug: deathbomb cost = 2 (card 106 present); bombs %d -> %d%s",

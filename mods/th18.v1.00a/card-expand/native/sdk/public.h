@@ -223,6 +223,14 @@ typedef struct {
      *   ⚠ 先判 `ev->is_player_bullet`：同一个池里还有原生卡与各卡 `ce_damage_rect` 放的源。
      *   ⚠ 加在结构体**最后**（`ce_hooks_t` 全是静态常量的指定初始化器 ⇒ 尾部加字段不影响旧卡）。*/
     void (*on_bullet_hit)(ce_card_t *, const ce_bullet_hit_t *);
+    /* ★★★ 2026-10-19（腐化 70 × 原生 23 死秽回避之药）：**死亡消耗了 B**（`spent` = 已经扣掉的发数 1–2）。
+     *   两个来源，语义相同：
+     *     ① 站点 `ce_death_save_spent` `0x40a44b`：原生死亡回避 `0x40a2a0` 扣完 CURRENT（`0x40a3ed`/`0x40a42c`）
+     *        之后的汇合点 ⇒ `spent = MAX_BOMBS − CURRENT_BOMBS`（此刻 MAX 还没动）；
+     *     ② 卡侧 `ce_death_save_spent_note(n)`：别的卡在 `+0x10` 里自己扣了 B（108 的「有 106 多扣 1」）。
+     *   ⚠ 只做记账：**不要**在这里扣 CURRENT（扣已经发生过了）；要「把这次消耗记进自己的预算」就在这里改自己的量。
+     *   ⚠ 加在结构体**最后**（`ce_hooks_t` 全是静态常量的指定初始化器 ⇒ 尾部加字段不影响旧卡）。*/
+    void (*on_death_save_spent)(ce_card_t *, int32_t spent);
 } ce_hooks_t;
 
 /* 改这张卡当前的自机弹伤害倍率（千分比）。只在值真的变了的时候调（古锭刀在终符沿、衔尾蛇在叠层时）。*/
@@ -266,3 +274,18 @@ int ce_give_card(uint32_t id, uint32_t mode, uint32_t notify);
 int ce_destroy_card(ce_card_t *victim);
 ce_card_t *ce_pick_random_card(ce_card_t *exclude);
 void ce_log(const char *fmt, ...);
+
+/* ★★★ 2026-10-19（腐化 70 × 原生 23 死秽回避之药 = 简单无敌）：**卡侧「死亡消耗了 B」的上报通道**。
+ *
+ * 引擎自己那条死亡回避（`Card__death_save_bomb_revive 0x40a2a0`）由站点 `0x40a44b` 自动上报
+ * （`BP_ce_death_save_spent`，spent = MAX − CURRENT）。但**卡侧**也有一条会在死亡时扣 B 的路，
+ * 它直接写 `CURRENT_BOMBS`（不走 `consume_bomb` ⇒ `on_bomb_spent` 也抓不到）：
+ *   · 108 永夜抄：`on_death_before_deathbomb` 里「有 106 ⇒ 决死多扣 1 个 B」（owner 2026-10-11 口径）。
+ * 那种写入会被「腐化」每帧的 `CURRENT = MAX` 钉回去（= 白送），所以扣完必须调本函数报一次：
+ * 沿卡链表广播 `on_death_save_spent(NULL 卡的 spent)`，由收方（腐化）把它记进自己的预算。
+ *
+ * 语义约定：
+ *   · `spent` = 这一次死亡**已经真的从 CURRENT 扣掉**的发数（> 0；≤ 0 直接忽略）；
+ *   · 调用**前**先完成扣 B（本函数只广播、不写引擎值）；收方回写 CURRENT 是它自己的事；
+ *   · 没有收方（没带腐化）= 空转，一个字节都不写 ⇒ 旧行为逐位不变。*/
+void ce_death_save_spent_note(int32_t spent);

@@ -34,18 +34,20 @@
  *   ③ 本卡 `on_tick_2` 每帧把 CURRENT 钉回 MAX ⇒ 那 1–2 发下一帧被"补回" ⇒ MAX 一分不掉
  *      ⇒ **每次死亡免费** ⇒ 残机永不减。**这就是 2026-10-19 这个 bug 的根。**
  *
- * 修法（只在本卡内闭环，不动共享件；纯逻辑在 `corruption_core.{h,c}`）：
- *   · 新增 `on_death_before_deathbomb`（虚表 **`+0x10`**）：`Player__die` `0x45d3a0` 末尾
- *     `0x45d574` 对链表每张卡各 `call [vt+0x10]` 一次、**返回值被忽略**（所以这里只记账、
- *     不"救场"）；此时 `0x45d557` 刚把决死计时 `player+0x47908` 设成 8 帧、**还没扣命**
- *     ⇒ 正好在这里拍残机快照 + 开 24 帧窗口。
- *   · `on_tick_2` 改成**先结算、再钉不变式**：窗口内 `MAX − CURRENT ∈ {1,2}` ⇒ 那就是死亡回避
- *     漏记的支出 ⇒ `MAX −= spent; CURRENT = MAX`，并**自己刷 HUD**（结算后 CURRENT == MAX，
- *     原来那条"不相等才刷"的判据不会触发）。
- *   · 真死（`0x45d1a0` 扣命、`0x45d1e8` 把 CURRENT 重设成
- *     `clamp(每条命炸弹数 0x4ccd60 = 3, 0, MAX)`）⇒ 残机快照变小
- *     ⇒ **不结算**、关窗。
- *   · 按 B 自救 / 六文钱 / 113 救场 ⇒ CURRENT 仍等于 MAX ⇒ `spent == 0` ⇒ 自动不重复记（不加额外判据）。
+ * 修法（owner 2026-10-19 定：「**切实记录死秽回避消耗的 B 数，腐化只动上限**」）：
+ *   · **精确事件**：新站点 `ce_death_save_spent` `0x40a44b`（`8b 86 84 77 04 00` = `mov eax,[esi+0x47784]`）
+ *     正好在两处扣 B **之后**、`MAX` 还没被任何东西改之前 ⇒ `spent = MAX − CURRENT` 就是这一次真正花掉的发数
+ *     （1 或 2；含别的卡在 `+0x10` 里先扣的那一发）。`sdk.c` 沿卡链表广播 `on_death_save_spent(card, spent)`。
+ *   · 本卡只做一件事：`MAX_BOMBS -= spent`（钳 ≥0）+ `CURRENT_BOMBS = MAX` + 刷 HUD + 记一行
+ *     `corruption: death save cost %d of the cap — bombs %d/%d left`。
+ *   · `on_bomb_spent`（正常 B 的消耗，走 `consume_bomb` `0x4574d0`）**保持不动** ⇒ 106/108 的**决死 B**
+ *     只要走 `do_bomb`（一手 `0x45c2d0 call 0x420360` → `0x4203b7 call 0x4574d0`）就自动覆盖 ✓。
+ *   · 108 在 `+0x10` 里「有 106 ⇒ 多扣 1」那一路**直接写** `CURRENT_BOMBS`（不走 consume_bomb、也走不到本站点），
+ *     而本卡每帧的「CURRENT 钉回 MAX」会把它抹掉 ⇒ 108 扣完调 `ce_death_save_spent_note(1)` 报进同一个广播 ✓。
+ *   · 真死（`0x45d1a0` 扣命）时**根本走不到** `0x40a2a0`（死亡回避没救成 ⇒ `+0x0c` 全链返回 0）
+ *     ⇒ 不会有事件 ⇒ 天然不结算，不需要拿残机做判据。
+ *   · 不带原生 23、也没别的卡报这一路 ⇒ 事件一次都不来 ⇒ 行为与改动前逐位相同。
+ * 纯逻辑（钳位/连撞的账）在 `corruption_core.{h,c}`，主机单测 `tests/test_corruption_core.c`。
  * ============================================================================================
  */
 #include "sdk.h"
@@ -54,10 +56,6 @@
 #define CORRUPTION_MAX_BOMBS 7          /* 原生上限（0x4428ed 等三处 mov [0x4ccd64],7）*/
 
 static void sync_hud(void) { ce_gui_update_bombs(); }
-
-/* 中弹窗口：`+0x10` 拍快照（corruption_death_window_open）、`on_tick_2` 消费。
- * 纯逻辑与一手对位见 `corruption_core.h`；为什么需要它见文件头 2026-10-19 那一段。*/
-static corruption_death_window_t s_death_window;
 
 static int ctor(ce_card_t *c)
 {
@@ -91,46 +89,44 @@ static void on_stage_start(ce_card_t *c)
     }
 }
 
-/* ---- 中弹瞬间（虚表 `+0x10`，`Player__die` 末尾 `0x45d574`）----
- * 这里只**记账**，不"救场"（返回值本来就被引擎忽略）：
- *   拍下中弹那一刻的残机 + 开一个 24 帧的窗口 ⇒ 给下面 `on_tick_2` 判断「这一下是死亡回避
- *   花的 1–2 发、还是真死（残机 −1）」用。见文件头 2026-10-19 那一段。*/
-static int on_death_before_deathbomb(ce_card_t *c)
+/* ---- 死亡消耗了 B（`on_death_save_spent`，虚表外的广播）----
+ * 两个来源（语义见 `sdk/public.h` 那个字段的注释）：
+ *   ① 站点 `ce_death_save_spent` `0x40a44b`：原生卡 23 死秽回避之药走
+ *      `Card__death_save_bomb_revive 0x40a2a0` 扣完 1–2 发 CURRENT 之后；spent 由 SDK 算好（= MAX − CURRENT）。
+ *   ② 卡侧 `ce_death_save_spent_note(n)`：别的卡在 `+0x10` 里自己扣了 B（108 的「有 106 ⇒ 多扣 1」）。
+ * 本卡只**动上限**（owner 2026-10-19 口径）：`MAX -= spent`（钳 ≥0），再把 CURRENT 拉平到新的 MAX
+ * —— 这样「预算」真的少掉这一下，下一次 `on_tick_2` 钉不变式时不会白送回来。*/
+static void on_death_save_spent(ce_card_t *c, int32_t spent)
 {
+    corruption_budget_t b;
+    int32_t charged;
+
     (void)c;
-    corruption_death_window_open(&s_death_window, CE_CURRENT_LIVES(),
-                                 CORRUPTION_DEATH_WINDOW_FRAMES);
-    return 0;
+    b.max_bombs = CE_MAX_BOMBS();
+    b.current_bombs = CE_CURRENT_BOMBS();
+    charged = corruption_charge_death_save(&b, spent);
+    if (charged <= 0) return;
+    CE_MAX_BOMBS() = b.max_bombs;
+    CE_CURRENT_BOMBS() = b.current_bombs;
+    /* ★ 必须自己刷 HUD：结算后 CURRENT == MAX，`on_tick_2` 那条"不相等才刷"的判据不会触发。*/
+    sync_hud();
+    ce_log("corruption: death save cost %d of the cap — bombs %d/%d left",
+           charged, CE_CURRENT_BOMBS(), CE_MAX_BOMBS());
 }
 
-/* 每帧：**先结算、再钉不变式**。
+/* 每帧钉不变式（这张卡的模型就是 `CURRENT == MAX = 剩余预算`）。
  * ⚠ 2026-10-19 订正：这里原来写「`0x40a3d0` 一带的**碎片进位**」——**错**。`0x40a3d0` 是
  * 死亡回避 `0x40a2a0` 的**第 1 次扣炸弹**（`a1 58 cd 4c 00` = `mov eax,[0x4ccd58]` …
  * `0x40a3ed mov [0x4ccd58],edx`），第 2 次在 `0x40a418`–`0x40a42c`；碎片是另一个全局
  * `0x4ccd5c`（复活那条 `0x45d1aa` 读它刷 HUD），跟这里无关。
- * 真正会打破不变式「CURRENT == MAX = 剩余预算」的：① 死亡回避扣 CURRENT（`0x40a3ed` / `0x40a42c`，
- * 由上面的窗口结算记账）；② 每关 `CURRENT = min(3, MAX)` 补给（`0x44278f`，由 on_stage_start 抵消）。
- * ⇒ 每帧仍然要把不变式拉回来，但**必须排在结算之后**。*/
+ * 会打破不变式的两类写入与各自的处置：
+ *   ① 死亡回避扣 CURRENT（`0x40a3ed` / `0x40a42c`）—— 由 `on_death_save_spent` **先把 MAX 记掉**
+ *      ⇒ 到这一帧 CURRENT 已经等于新的 MAX，钉不变式不会白送；
+ *   ② 每关 `CURRENT = min(3, MAX)` 补给（`0x44278f`）—— 由 on_stage_start 抵消。
+ * ⚠ 这条每帧钉的动作**保留**（它是本卡的语义：当前数恒等于预算），别因为上面那条事件就删它。*/
 static int on_tick_2(ce_card_t *c)
 {
-    corruption_budget_t b;
-    int32_t spent = 0;
-
     (void)c;
-    /* ① 结算（窗口内、残机没变小）：把死亡回避漏记的 1–2 发记进预算 */
-    b.max_bombs = CE_MAX_BOMBS();
-    b.current_bombs = CE_CURRENT_BOMBS();
-    b.lives = CE_CURRENT_LIVES();
-    if (corruption_death_window_tick(&b, &s_death_window, &spent) == CORRUPTION_SETTLED) {
-        CE_MAX_BOMBS() = b.max_bombs;
-        CE_CURRENT_BOMBS() = b.current_bombs;
-        /* ★ 必须自己刷 HUD：结算后 CURRENT == MAX，下面那条"不相等才刷"的判据不会触发。*/
-        sync_hud();
-        ce_log("corruption: death save cost %d of the cap — bombs %d/%d left",
-               spent, CE_CURRENT_BOMBS(), CE_MAX_BOMBS());
-    }
-
-    /* ② 再钉不变式（这张卡的模型就是 CURRENT 恒等于 MAX）*/
     if (CE_CURRENT_BOMBS() != CE_MAX_BOMBS()) {
         CE_CURRENT_BOMBS() = CE_MAX_BOMBS();
         sync_hud();
@@ -168,5 +164,5 @@ static void on_delete(ce_card_t *c)
 }
 
 CE_CARD(70, .ctor = ctor, .on_bomb_spent = on_bomb_spent, .on_stage_start = on_stage_start,
-            .on_death_before_deathbomb = on_death_before_deathbomb,
+            .on_death_save_spent = on_death_save_spent,
             .on_tick_2 = on_tick_2, .on_delete = on_delete);

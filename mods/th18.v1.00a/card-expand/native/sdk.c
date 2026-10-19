@@ -12,6 +12,12 @@
  *                      2026-09-13 起是**纯观察者**（不写 regs->esi、不调卡回调），只打 `score-out:` 那行，
  *                      用来在实跑日志里看见引擎的高度系数（满额支 engine == ours，线下支 engine < ours）。
  *   BP_ce_bomb_spent   0x4203bc  do_bomb 里 consume_bomb 刚返回。沿卡链表调 on_bomb_spent()。
+ *   BP_ce_death_save_spent 0x40a44b  Card__death_save_bomb_revive 0x40a2a0 两处扣 CURRENT_BOMBS
+ *                      （0x40a3ed / 0x40a42c，**不写 MAX**）之后的汇合点。此刻 MAX 未动、CURRENT 已扣完
+ *                      ⇒ spent = MAX − CURRENT，沿卡链表调 on_death_save_spent(spent)。
+ *                      ★ 这条路**不走** consume_bomb ⇒ 上面那条抓不到；带「腐化」(70) 时那 1–2 发会被
+ *                      每帧钉回 ⇒ 每次死亡免费（AUDIT §BE `BE-CORRUPTION-DEATHSAVE-2026-10-19`）。
+ *                      卡侧自己扣 B 的路（108 的「有 106 多扣 1」）走 `ce_death_save_spent_note()` 同一个广播。
  *   BP_ce_enemy_drop   0x430510  Enemy__drop_items_and_notify_cards 入口（ecx = zEnemyDrop = enemy+0x623c，不是敌人）。撒附加表之前
  *                                沿卡链表调 on_enemy_drop_pre(counts)，counts = zEnemyDrop+0x04 起 20 个 int32；主掉落 +0x00 已经撒过（S10）。
  *                                卡循环之后施加**乘法层** ce_drop_apply()（EVENTS-CONTRACT §2）。
@@ -1787,6 +1793,55 @@ int __cdecl BP_ce_bomb_spent(x86_reg_t *regs, void *bp_info)
     return BP_EXEC_ORIGINAL;
 }
 
+/* ============================ ★★★ 死亡消耗 B（死亡回避）============================
+ * 两个来源共用同一条广播（`on_death_save_spent`，trace 0x7c）：
+ *   ① **引擎的死亡回避** `Card__death_save_bomb_revive` `0x40a2a0`（原生卡 23 = 死秽回避之药，
+ *      由 `CardEirin__on_player_death_after_deathbomb` `0x40a4f0` 在虚表 `+0x0c` 里调；`+0x0c` 的返回值
+ *      被 `Player__on_tick__body` `0x45c11d or edi,eax` 收集，非 0 ⇒ 跳过 `0x45d090` 的扣命）：
+ *      它在 `0x40a3ed` / `0x40a42c` 各扣 1 发 `CURRENT_BOMBS 0x4ccd58`（每处钳 0、再钳 `MAX_BOMBS 0x4ccd64`），
+ *      **从不写 MAX**，也**不走 consume_bomb** ⇒ `BP_ce_bomb_spent` 完全抓不到它。
+ *      站点 `0x40a44b` 在两次扣之后、`MAX` 尚未被任何东西改之前 ⇒ `spent = MAX − CURRENT` 就是真实花掉的发数。
+ *   ② **卡侧自己扣的 B**（如 108 的「有 106 ⇒ 死决多扣 1」）：那一路直接写 `CURRENT_BOMBS`，
+ *      站点也看不见 ⇒ 由卡在扣完之后调 `ce_death_save_spent_note(n)` 报一次。
+ * 为什么要这条：带「腐化」(70) 时它每帧把 `CURRENT` 钉回 `MAX` ⇒ 不走 consume_bomb 的扣减等于没扣
+ * ⇒ **每次死亡免费、残机永不减**（owner 2026-10-19 定的真 bug）。见 AUDIT §BE `BE-CORRUPTION-DEATHSAVE-2026-10-19`。
+ * 没有卡声明 `on_death_save_spent` ⇒ 一个字都不写（与原生逐位相同）。*/
+static void ce_death_save_spent_dispatch(int32_t spent)
+{
+    uint8_t *mgr;
+    unsigned guard = 0;
+
+    if (spent <= 0) return;
+    mgr = CE_ABILITY_MGR();
+    if (!mgr) return;
+    for (const uint8_t *node = *(const uint8_t *const *)(mgr + CE_MGR_CARD_LIST_FIRST);
+         node && guard < 256;
+         node = *(const uint8_t *const *)(node + CE_NODE_NEXT), ++guard) {
+        uint8_t *card = *(uint8_t *const *)(node + CE_NODE_CARD);
+        if (!card) continue;
+        const ce_hooks_t *h = hooks_of(card);
+        if (h && h->on_death_save_spent) {
+            h->on_death_save_spent((ce_card_t *)card, spent);
+            ce_sdk_trace(ce_card_id(card), 0x7c, "on_death_save_spent");
+        }
+    }
+}
+
+/* 卡侧入口（`sdk/public.h` 有语义约定）：**调用前**已经扣了 B，这里只广播。*/
+void ce_death_save_spent_note(int32_t spent)
+{
+    ce_death_save_spent_dispatch(spent);
+}
+
+/* 站点 0x40a44b：`mov eax,[esi+0x47784]`（6 字节，无相对寻址）。此刻两次扣 B 都做完了、MAX 还没动。*/
+int __cdecl BP_ce_death_save_spent(x86_reg_t *regs, void *bp_info)
+{
+    (void)regs; (void)bp_info;
+    ce_site_trail("ce_death_save_spent");
+    ce_death_save_spent_dispatch(CE_MAX_BOMBS() - CE_CURRENT_BOMBS());
+    return BP_EXEC_ORIGINAL;
+}
+
 /* Player__on_tick__body 0x45c048 的普通炸弹分支：原指令 `test BYTE PTR ds:0x4ca434,0x2`。
  * 任一在场行为卡的 `on_bomb_gate` 返回 1 时，跳过原指令并把 retaddr 指到 0x45c056（**跳过 0x45c051
  * 的 `call do_bomb`**；该调用前后只有 test/je/call 三条）。没有卡要求拦截时返回 1 放行，原版炸弹不受影响。*/
@@ -3452,6 +3507,9 @@ int ce_sdk_setup(uint8_t *base, int trace)
          *   两条都是 2026-09-16 的「二分（临时）」摘的、**从没回填** ⇒ 静默失效。sitecheck 四项全过。*/
         { "ce_item_score_in", CE_BP_ITEM_SCORE_IN_RVA, 8 },
         { "ce_bomb_spent",  CE_BP_BOMB_SPENT_RVA,  5 },
+        /* ★ 2026-10-19（腐化 70 × 原生 23）：死亡回避的扣 B **不走 consume_bomb** ⇒ 单独一条；
+         *   不挂 = 带 70 时每次死亡免费（原 bug 原样复现）⇒ 必须在这里「挂不上直接 FAIL」。*/
+        { "ce_death_save_spent", CE_BP_DEATH_SAVE_SPENT_RVA, 6 },
         /* ⛔ ce_death_result / ce_poc_gate_a / ce_poc_gate_b / ce_chain_node_guard：仍 park（见 §BE-FE）*/
         { "ce_enemy_drop",  CE_BP_ENEMY_DROP_RVA,  6 },
         /* ★★ 2026-09-22 恢复（本表曾被 2026-09-16/17 的「二分」整片注释掉，但那些站点后来
