@@ -6580,11 +6580,32 @@ static void pofv_c4m_tick(void)
                  *   ★ 我原来的 "+30°／−30°／竖直"✗ **是我自己编的** ✗ ⇒ ★ **删掉** ✓。
                  *   ★ 后面那条 `ins_604($A, %D, 0)` 的 %D 是**交点方向**✗ ⇒ 与我们"瞄准板边"等价 ✓，
                  *     ★ 因为交点本来就是沿这个方向算出来的 ✓。*/
-                /* ★ 2026-10-19 owner：★ **低难度一条激光、高难度三条**✗
-                 *   ⇒ ★ `rank < 4` 时**只建第三条**（`li == 2`）✓；★ 高难度三条全建 ✓。*/
+                /* ★ 2026-10-19 owner：★ **低难度一条激光、高难度三条**✗（★ **先后** ✓，★ 不是同时 ✓）
+                 *   ⇒ ★ 三条各在 `laser_delay = 60/90/120` 出生 ✓ ⇒ **天然就是"先后"**✗ ✓。*/
                 if (pofv_c4_rank() < 4 && li != 2) { s_c4m_st.laser_timer[li] = 0; continue; }
-                const float ang_b = -1.5707963f
-                                  + ((float)(ce_rand() % 10001u) * 0.0001f) * 0.17453292f;
+                /* ★★★ 2026-10-19 **读透之后**✗（owner：「★ 人眼看不出 delta ✗」⇒ ★ **不要 delta**✗）：
+                 *   一手 `ins_569(%E, %F, [-9997], [-9996], %B)` ✗ 的射线就是**
+                 *   ★ boss → 自机**✗ ✓ ⇒ ★ `%B` = **从 boss 指向当时的自机**✗ ✓；
+                 *   然后 `ins_604($A, %B, 0)` ⇒ ★ **激光朝当时的自机**✗ ✓。
+                 *   ★ 三条**先后**发 ✓，★ 每条**在它自己那一帧重读自机**✗ ✓ ⇒
+                 *   ★ 方向差**完全来自自机的移动**✗ ✓ —— ★ **不需要 delta** ✗ ✓。
+                 *   ★ 若自机不动 ⇒ 三条方向**完全一致** ✓（★ 这正是一手的样子 ✓）。*/
+                float ang_b;
+                {
+                    const float *pp3 = ce_player_pos();
+                    const float tx = pp3 ? pp3[0] : 0.0f;
+                    const float ty = pp3 ? pp3[1] : POFV_FIELD_H * 0.5f;
+                    const float dx = tx - 0.0f, dy = ty - oy_b;     /* ★ 从 boss 指出去 ✓ */
+                    int ti = 9; float best = -1e9f;
+                    if (dx * dx + dy * dy > 1e-6f) {
+                        int ii;
+                        for (ii = 0; ii < 36; ++ii) {
+                            const float d = dx * s_c2_dir36[ii][0] + dy * s_c2_dir36[ii][1];
+                            if (d > best) { best = d; ti = ii; }
+                        }
+                    }
+                    ang_b = (float)ti * 0.17453293f;                /* ★ 10° 一档（无 atan2 ✓）*/
+                }
                 float dxb = 0.0f, dyb = 0.0f;
                 pofv_c4m_edge(ox_b, oy_b, ang_b, &dxb, &dyb);
                 s_c4m_st.laser_dx[li] = dxb;      /* ★ 回写交点 x（伤害盒要用）✓ */
