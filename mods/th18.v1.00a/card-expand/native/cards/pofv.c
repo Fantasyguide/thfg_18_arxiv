@@ -6582,11 +6582,11 @@ static void pofv_c4m_tick(void)
              *   ⇒ ★ 这里把发射原点搬到**激光的边界交点**✗，★ 方向取**朝场内**（交点 → 场地中心）✓。*/
             {
                 float ex = 0.0f, ey = POFV_FIELD_H * 0.5f;
+                const float oy_b = POFV_FIELD_H - 128.0f;   /* ★ boss y = 320 ✓ */
                 const float *pp0 = ce_player_pos();
                 const float tx0 = pp0 ? pp0[0] : 0.0f, ty0 = pp0 ? pp0[1] : POFV_FIELD_H * 0.5f;
                 float th0 = -1.5707963f;
                 {
-                    const float oy_b = POFV_FIELD_H - 128.0f;   /* ★ boss y = 320 ✓ */
                     const float dx0 = tx0 - 0.0f, dy0 = ty0 - oy_b;
                     int ti0 = 9; float b0 = -1e9f, ii0;
                     if (dx0 * dx0 + dy0 * dy0 > 1e-6f) {
