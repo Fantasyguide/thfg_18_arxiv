@@ -19,12 +19,45 @@
  * 进 do_bomb 前 can_bomb 已保证 `CURRENT >= 1`，且不变式 `CURRENT <= MAX` 成立，
  * 所以 consume 里的两次钳位（`< 0 → 0`、`min(cur,max)`）都不会触发 —— 扣完必然正好是
  * `CURRENT-1`，`+= 1` 就是精确还原。
+ *
+ * ============================================================================================
+ * ★★ 2026-10-19 修掉的真 bug：带本卡时**每一次死亡都免费**（残机永不减）
+ *
+ * 因果链（一手反汇编，th18 v1.00a，地址全核对过）：
+ *   ① 原生死秽回避（`AUTOBOMB` = 原生卡 id 23）走 `Card__death_save_bomb_revive` `0x40a2a0`
+ *      （唯一调用方 `0x40a534`，前置 `Bomb__can_bomb_and_deathbomb_check` `0x420420`，
+ *      后者**只要求 `CURRENT_BOMBS > 0`** ⇒ 只剩 1 发也放行）。它在 `0x40a3ed` 与 `0x40a42c`
+ *      各做一次「`CURRENT_BOMBS 0x4ccd58` − 1 → 钳 0 → 再钳 `MAX_BOMBS 0x4ccd64`」，
+ *      ⇒ 一次死亡回避花掉 **1 或 2 发当前数**，**只写 CURRENT、从不写 MAX**
+ *      （全函数对 MAX 只有读：`0x40a3d7` / `0x40a40c`）。
+ *   ② 它**不经过** `consume_bomb 0x4574d0` ⇒ 本卡挂在 `0x4203bc` 的 `on_bomb_spent` **抓不到它**。
+ *   ③ 本卡 `on_tick_2` 每帧把 CURRENT 钉回 MAX ⇒ 那 1–2 发下一帧被"补回" ⇒ MAX 一分不掉
+ *      ⇒ **每次死亡免费** ⇒ 残机永不减。**这就是 2026-10-19 这个 bug 的根。**
+ *
+ * 修法（只在本卡内闭环，不动共享件；纯逻辑在 `corruption_core.{h,c}`）：
+ *   · 新增 `on_death_before_deathbomb`（虚表 **`+0x10`**）：`Player__die` `0x45d3a0` 末尾
+ *     `0x45d574` 对链表每张卡各 `call [vt+0x10]` 一次、**返回值被忽略**（所以这里只记账、
+ *     不"救场"）；此时 `0x45d557` 刚把决死计时 `player+0x47908` 设成 8 帧、**还没扣命**
+ *     ⇒ 正好在这里拍残机快照 + 开 24 帧窗口。
+ *   · `on_tick_2` 改成**先结算、再钉不变式**：窗口内 `MAX − CURRENT ∈ {1,2}` ⇒ 那就是死亡回避
+ *     漏记的支出 ⇒ `MAX −= spent; CURRENT = MAX`，并**自己刷 HUD**（结算后 CURRENT == MAX，
+ *     原来那条"不相等才刷"的判据不会触发）。
+ *   · 真死（`0x45d1a0` 扣命、`0x45d1e8` 把 CURRENT 重设成
+ *     `clamp(每条命炸弹数 0x4ccd60 = 3, 0, MAX)`）⇒ 残机快照变小
+ *     ⇒ **不结算**、关窗。
+ *   · 按 B 自救 / 六文钱 / 113 救场 ⇒ CURRENT 仍等于 MAX ⇒ `spent == 0` ⇒ 自动不重复记（不加额外判据）。
+ * ============================================================================================
  */
 #include "sdk.h"
+#include "corruption_core.h"
 
 #define CORRUPTION_MAX_BOMBS 7          /* 原生上限（0x4428ed 等三处 mov [0x4ccd64],7）*/
 
 static void sync_hud(void) { ce_gui_update_bombs(); }
+
+/* 中弹窗口：`+0x10` 拍快照（corruption_death_window_open）、`on_tick_2` 消费。
+ * 纯逻辑与一手对位见 `corruption_core.h`；为什么需要它见文件头 2026-10-19 那一段。*/
+static corruption_death_window_t s_death_window;
 
 static int ctor(ce_card_t *c)
 {
@@ -58,13 +91,46 @@ static void on_stage_start(ce_card_t *c)
     }
 }
 
-/* 撞了之后失效的根因（2026-09-09 用户实跑）：死亡/复活路径会写 CURRENT_BOMBS
- *（`0x40a3d0` 一带的碎片进位、`0x44278f` 的每关 min(3,上限) 补给），把不变式
- *「CURRENT == MAX = 剩余预算」打破 —— 之后 on_bomb_spent 的 +1 还原就落在错的基准上，
- * 预算显示与扣减全乱。每帧把不变式拉回来（这张卡的模型就是 CURRENT 恒等于 MAX）。*/
-static int on_tick_2(ce_card_t *c)
+/* ---- 中弹瞬间（虚表 `+0x10`，`Player__die` 末尾 `0x45d574`）----
+ * 这里只**记账**，不"救场"（返回值本来就被引擎忽略）：
+ *   拍下中弹那一刻的残机 + 开一个 24 帧的窗口 ⇒ 给下面 `on_tick_2` 判断「这一下是死亡回避
+ *   花的 1–2 发、还是真死（残机 −1）」用。见文件头 2026-10-19 那一段。*/
+static int on_death_before_deathbomb(ce_card_t *c)
 {
     (void)c;
+    corruption_death_window_open(&s_death_window, CE_CURRENT_LIVES(),
+                                 CORRUPTION_DEATH_WINDOW_FRAMES);
+    return 0;
+}
+
+/* 每帧：**先结算、再钉不变式**。
+ * ⚠ 2026-10-19 订正：这里原来写「`0x40a3d0` 一带的**碎片进位**」——**错**。`0x40a3d0` 是
+ * 死亡回避 `0x40a2a0` 的**第 1 次扣炸弹**（`a1 58 cd 4c 00` = `mov eax,[0x4ccd58]` …
+ * `0x40a3ed mov [0x4ccd58],edx`），第 2 次在 `0x40a418`–`0x40a42c`；碎片是另一个全局
+ * `0x4ccd5c`（复活那条 `0x45d1aa` 读它刷 HUD），跟这里无关。
+ * 真正会打破不变式「CURRENT == MAX = 剩余预算」的：① 死亡回避扣 CURRENT（`0x40a3ed` / `0x40a42c`，
+ * 由上面的窗口结算记账）；② 每关 `CURRENT = min(3, MAX)` 补给（`0x44278f`，由 on_stage_start 抵消）。
+ * ⇒ 每帧仍然要把不变式拉回来，但**必须排在结算之后**。*/
+static int on_tick_2(ce_card_t *c)
+{
+    corruption_budget_t b;
+    int32_t spent = 0;
+
+    (void)c;
+    /* ① 结算（窗口内、残机没变小）：把死亡回避漏记的 1–2 发记进预算 */
+    b.max_bombs = CE_MAX_BOMBS();
+    b.current_bombs = CE_CURRENT_BOMBS();
+    b.lives = CE_CURRENT_LIVES();
+    if (corruption_death_window_tick(&b, &s_death_window, &spent) == CORRUPTION_SETTLED) {
+        CE_MAX_BOMBS() = b.max_bombs;
+        CE_CURRENT_BOMBS() = b.current_bombs;
+        /* ★ 必须自己刷 HUD：结算后 CURRENT == MAX，下面那条"不相等才刷"的判据不会触发。*/
+        sync_hud();
+        ce_log("corruption: death save cost %d of the cap — bombs %d/%d left",
+               spent, CE_CURRENT_BOMBS(), CE_MAX_BOMBS());
+    }
+
+    /* ② 再钉不变式（这张卡的模型就是 CURRENT 恒等于 MAX）*/
     if (CE_CURRENT_BOMBS() != CE_MAX_BOMBS()) {
         CE_CURRENT_BOMBS() = CE_MAX_BOMBS();
         sync_hud();
@@ -102,4 +168,5 @@ static void on_delete(ce_card_t *c)
 }
 
 CE_CARD(70, .ctor = ctor, .on_bomb_spent = on_bomb_spent, .on_stage_start = on_stage_start,
+            .on_death_before_deathbomb = on_death_before_deathbomb,
             .on_tick_2 = on_tick_2, .on_delete = on_delete);
