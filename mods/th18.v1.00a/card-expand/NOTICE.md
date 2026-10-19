@@ -105,9 +105,15 @@ thcrap 生态的通行做法就是分发「替换后的整文件」，玩家需�
 | **Noita**（Nolla Games）`sampo.png` | 卡 92 伟大之作 |
 | **Slay the Spire**（Mega Crit）`largeRelics/iceCream.png`、送死亡整卡 | 卡 90 冰淇淋、86 东尼的悲恸 |
 | **UNO**（Mattel）反转牌图 | 卡 64 REVERSE |
-| **Plants vs. Zombies**（PopCap / EA）的 reanim + 零件图（取自公开复刻项目 `ruslan831/PlantsVsZombies-decompilation`、`BhavyaC16/Plants-Vs-Zombies`） | 卡 77 豌豆射手、向日葵、金盏花（场上实体 + 卡面）—— 见 [`peashooter/_src/README.md`](assets/ability/peashooter/_src/README.md)、[`sunflower/_src/README.md`](assets/ability/sunflower/_src/README.md)、[`marigold/_src/README.md`](assets/ability/marigold/_src/README.md) |
+| **Plants vs. Zombies**（PopCap / EA）的 reanim + 零件图 | 卡 77 豌豆射手 / 向日葵 / 金盏花（场上实体 + 卡面）；来源见下注 |
 | **Wikimedia Commons**，Dmitry Fomin，**CC0** | 黑桃 10/J/Q/K/A（58–62）牌面 |
 | **用户提供 / 用户原创** | 强欲之壶、神之宣告、青眼白龙、破损核心、炎魔、古锭刀、旋风斩、衔尾蛇、杰拉等 |
+
+★ **PvZ 的逐文件来源**：reanim 与零件图取自公开复刻项目
+`ruslan831/PlantsVsZombies-decompilation`、`BhavyaC16/Plants-Vs-Zombies`；三张卡的明细分别在
+[`peashooter/_src/README.md`](assets/ability/peashooter/_src/README.md)、
+[`sunflower/_src/README.md`](assets/ability/sunflower/_src/README.md)、
+[`marigold/_src/README.md`](assets/ability/marigold/_src/README.md)。
 
 ⚠ 上面 Terraria / Minecraft / Noita / StS / UNO 同样**有版权瑕疵**（比东方素材更"硬"），
 只是 owner 口径是「致敬 + 小体量 + 不商用」；★ 权利方要求即移除。
@@ -143,19 +149,105 @@ thcrap 生态的通行做法就是分发「替换后的整文件」，玩家需�
 - **性质**：**程序生成的重编曲**（不是采样；也不是原曲直接复制）。
 - **输入素材**：第三方同人 **MIDI 合集** ——
   `https://github.com/AyHa1810/touhou-midi-collection`
-  （路径 `1 - Shooter Games/18 - Unconnected Marketeers/`）
-- **生成工具**：本仓库 [`tools/make_trance_rearr.py`](tools/make_trance_rearr.py)（SMF 解析 → 判主旋律 → 重配器 → 与原曲等长对齐）
+  （clone commit `5a11a0a184102aa28ea85605e20a678fe68ea42e`，路径 `1 - Shooter Games/18 - Unconnected Marketeers/`）
+- **生成工具**：本仓库 [`tools/make_trance_rearr.py`](tools/make_trance_rearr.py)
+  （SMF 解析 → 判主旋律 → 改 velocity → **SoundFont 渲染** → 与原曲等长对齐；`--render=naive` 保留旧的自写合成器）
 - **生成口径**：压低主旋律（×0.35）、抬伴奏、贝斯 ×1.6；与 TH13 原版"灵界版"同向
   （一手：TH13 `NN`/`NNb` 时长严格相等、时间轴零延迟；AUDIT CS-6）
 - **MIDI 与生成物均不入库**（只在 `local/`，gitignored）；★ 本仓库**不含任何 MIDI 文件**（已核：`git ls-files` 里 0 个 `.mid/.midi`）
 - **版权**：MIDI 版权属**原作者**（该合集作者）；东方原曲版权属 **上海アリス幻樂団 / ZUN**；
   本 mod 不主张这些权利，若权利方要求将立即移除对应生成物。
-- ⚠ **待补**：逐文件 md5 清单原记在 `local/th18.v1.00a/midi/MANIFEST.tsv`，该目录在 2026-10-16/17
-  两次 `local/` 事故中丢失 ⇒ 如需逐曲溯源，须按上面仓库重新获取并重算 md5。
 
-★ **发布包里带的是生成物**：`thcrap/bin/bgm/` 35 个 wav（**383 MB**，`mode.txt` = `rearr`）全部是
+### 6.1 来源与编号口径
+
+- **编号口径**：MIDI 文件名里的 `N.` = **音乐室编号**（合集按此命名），内部曲名（`th18_NN`）与之**不等**：
+  `th18_01, 03…14, 15, 16, 17, 18` ↔ No.`1,2…13,16,17,14,15`（一手表 = 游戏自带 `dat/musiccmt.txt`；
+  `midi_index_for()` 就查这张表）。
+- **逐文件清单**：`local/th18.v1.00a/midi/MANIFEST.tsv`（2026-10-19 重建：17 个文件 + 编曲者 + 内部曲名 + md5；
+  该文件在 `local/`，不入库）；逐曲 md5 已抄进 §6.3 的表。
+- **许可状态**：该合集**没有 LICENSE 文件**，只有 §6.3 引的那段 Usage Policy ——
+  **不要**把它转述成"没有许可所以不能用"。
+
+### 6.2 音色库（SoundFont）—— 2026-10-19 起
+
+**目标音色**：ZUN 自 TH06 起用的是 **Roland Edirol SD-90**（2001，已停产、无 VST）。
+社区常见替代是 **THfont**，但 THfont 的采样是从 Roland 硬件/软音源 rip 出来的（ShrineMaiden 上
+2016 年那帖被版主以"分发采样合成器的采样非法"为由锁掉），**没有官方下载页、也没有可核对的哈希**；
+2026-10-19 实测可达的转存（musical-artifacts #2451 → Google Drive）被 Cloudflare 挡住（HTTP 403）
+⇒ **拿不到可核验的字节，不硬凑**。
+
+★ **旁证（可复核）**：Karl Zuñiga 这 17 个 MIDI 的**轨名**里有 **18 处**直接写着 `SD-90 (…)`
+（如 `SD-90 (Romantic Tp)`、`SD-90 (Sop. Sax vib)`、`SD-90 (St.ChoirAahs)`）—— 编曲者自己就是
+**按 SD-90 的音色**写的。我们只能用 GM 程序号 + GeneralUser GS 近似，**不是** SD-90 原声。
+
+**实际采用**：
+
+| 项 | 值 |
+| --- | --- |
+| 音色库 | **GeneralUser GS v2.0.3**（GM/GS 兼容，Roland GS 家族的声音取向） |
+| 文件 | `GeneralUser-GS.sf2`（只落在 `local/th18.v1.00a/sf2/`，gitignored；**发布包不带 sf2**） |
+| 大小 / sha256 | 32,319,396 B / `9575028c7a1f589f5770fccc8cff2734566af40cd26ed836944e9a5152688cfe` |
+| 来源 URL | <https://github.com/mrbumpy409/GeneralUser-GS>（作者 S. Christian Collins 本人的官方仓库）→ `GeneralUser-GS.sf2`；主页 <https://schristiancollins.com/generaluser.php> |
+| 取回时间 | 2026-10-19 |
+| 许可 | **GeneralUser GS License v2.0**（仓库 `documentation/LICENSE.txt`）：可自由用于音乐制作（含商业）、可再分发、可修改；库内采样声明为可自由使用的公开 SoundFont 采样，**作者声明没有一个来自商业 SoundFont 或采样 CD**，但极少数早期来源无法 100% 追溯 |
+| 瑕疵口径 | 与上面的东方素材**同一口径**：社区惯例使用、**存在瑕疵**、权利方要求即移除 |
+| 渲染器 | `fluidsynth 2.2.5`（Ubuntu 22.04 `apt-get download` + `dpkg-deb -x` 解到 `local/vendor/fluidsynth-2.2.5/`，**不动系统、不需要 root**；LGPL） |
+
+★ **换音源只改一处**：把任意 GM/GS `.sf2` 丢进 `local/th18.v1.00a/sf2/`（`find_sf2()` 优先挑文件名
+带 `thfont` 的）。换库后**必须**重跑试点重新确认听感，并把新库的 URL + sha256 补进本表。
+来源与 sha256 的原始登记：`local/th18.v1.00a/sf2/SOURCE.txt`（本机，不入库）。
+
+### 6.3 MIDI 署名（Usage Policy 原文 + 17 首逐曲清单）
+
+合集 README 的 **Usage Policy** 原文（2026-10-19 读，`github.com/AyHa1810/touhou-midi-collection`）：
+
+> Rules similar to Creative Commons apply for most of the part. You can use the MIDIs and modify it,
+> **but you must credit the original creator, which is marked with brackets in the MIDI collection.**
+> **Except, you CANNOT use MIDIs made by ZUN in fangames** due to ZUN's new policies.
+
+⇒ 我们照它做三件事（**每一条都实测过，不是照抄承诺**）：
+
+1. **署名编曲者**。本批 **17 首全部是 Karl Zuñiga 的编曲**（唯一覆盖音乐室 No.1–17 全集的编曲者）。
+   不是只看文件名：**17 个 MIDI 的 meta 文本里都有编曲者署名 `MIDI by:` / `MIDI By: Karl Zuñiga`**
+   （前 12 首小写 `by:`、后 5 首大写 `By:`；`ñ` 存成单字节 `0xf1` = Latin-1。2026-10-19 实测 17/17）。
+   同曲另有的 KR.Palto47 / TouhouMIDICreator / EpreTroll / Dekyo ongen / Tybone 版本**均未被采用**
+   （逐曲「同曲其它版本」列见 `MANIFEST.tsv`）。
+2. **不碰 ZUN 本家的 MIDI**。这 17 首都是同人编曲（ZUN 不发行 MIDI）；对 17 个文件的 meta 文本
+   检索 `ZUN` **命中 0**（2026-10-19 实测）⇒ **本批无 ZUN 本家**。
+3. **可修改 / 可再分发**按 CC-like 理解（合集没有 LICENSE 文件，只有上面这段原文）；
+   我们分发的是**生成物**，MIDI 原文件只在 `local/`（gitignored，不入库）。
+
+逐曲对照（md5 与 `MANIFEST.tsv` **逐行核对，0 处不符**；内部曲名 `th18_NN` → 发布物 `th18_NNb_rearr.wav`）：
+
+| No. | MIDI 文件 | 内部曲名 | 曲名（musiccmt） | md5 |
+| --- | --- | --- | --- | --- |
+| 1 | `th18_01.mid` | `th18_01` | 虹の架かる幻想郷 | `b735206f44bb4fa12eb7959d9c6ca9c0` |
+| 2 | `th18_02.mid` | `th18_03` | 妖異達の通り雨 | `22ce8c3461e5b85d26ebb4ebb9874284` |
+| 3 | `th18_03.mid` | `th18_04` | 大吉キトゥン | `5be29c1bd52f7ed9f733c3657b0167de` |
+| 4 | `th18_04.mid` | `th18_05` | 深緑に隠された断崖 | `0cf1965c442e797b2a41615978612197` |
+| 5 | `th18_05.mid` | `th18_06` | バンデットリィテクノロジー | `c234eb2f2ae1af6b3550b3c7f92212e7` |
+| 6 | `th18_06.mid` | `th18_07` | 駒草咲くパーペチュアルスノー | `fcec5d3417a136c0aca9d1d6cb34b843` |
+| 7 | `th18_07.mid` | `th18_08` | スモーキングドラゴン | `dc0f1a6978b9c2565ae82ff647356d6c` |
+| 8 | `th18_08.mid` | `th18_09` | 廃れゆく産業遺構 | `d950145821fc34a32d18d924a1678baf` |
+| 9 | `th18_09.mid` | `th18_10` | 神代鉱石 | `1d8bce2b4bcf9bf177ba35fdc7e70f2c` |
+| 10 | `th18_10.mid` | `th18_11` | 待ちわびた逢魔が時 | `9b00bf8e6fd603ada57e589f53c19b29` |
+| 11 | `th18_11.mid` | `th18_12` | 星降る天魔の山 | `e7338b714fbbd707a7887371e4f3ee5e` |
+| 12 | `th18_12.mid` | `th18_13` | ルナレインボー | `7a16f95c78d859d93f38b3d9868e10d9` |
+| 13 | `th18_13.mid` | `th18_14` | あの賑やかな市場は今どこに ～ Immemorial Marketeers | `41b1dfcadb7ad384e9503dfab227b5ad` |
+| 14 | `th18_14.mid` | `th18_17` | 幻想の地下大線路網 | `2898fa78d9b42426ac783b05cffabf3b` |
+| 15 | `th18_15.mid` | `th18_18` | 龍王殺しのプリンセス | `83315a505f0018d4309a7cc60e1cf91d` |
+| 16 | `th18_16.mid` | `th18_15` | 嵐の後の日曜日 | `dbc5f3b392a4083262641cd8d63bbea0` |
+| 17 | `th18_17.mid` | `th18_16` | 虹色の世界 | `3f0b8953e22f2041ec25f7c57650c1c1` |
+
+★ **发布包里带的是生成物**：`thcrap/bin/bgm/` 35 个 wav（**382 MiB**，`mode.txt` = `rearr`）全部是
 `make_trance_rearr.py` 的输出（`th18_01b_rearr` … `th18_18b_rearr`，含少数 `_both` / `_se` 变体）——
-它们是**衍生作品**（同人 MIDI 重编曲），不是 ZUN 的原始音频；分发它们仍受上面第 3 条约束。
+它们是**衍生作品**（同人 MIDI 重编曲 + 第三方 SoundFont 渲染），不是 ZUN 的原始音频；
+分发它们仍受上面第 1/3 条约束。
+
+**2026-10-19 全量批**：17 首 `_rearr` **全部**换成 GeneralUser GS 渲染版（`--render sf2`，已设为默认）。
+旧的自写合成器（`--render naive`）版 17 个留在 `<modkit>\thcrap\bin\bgm\*.wav.naive.bak`
+（`thcrap/bin/bgm/` 同目录、共 191.5 MB，覆盖前逐字节复制并核对 md5）。两版**帧数逐首相等**
+（= `thbgm.fmt` 的循环体长度）⇒ 循环点 / 同时间点 seek 的口径不变。
 
 ---
 
