@@ -6589,7 +6589,11 @@ static void pofv_c4m_tick(void)
                                              CE_ANM_ABILITY_SCRIPT_POFV109_C4M_LASER, POFV_C3M_VM_LAYER);
                 if (s_c4m_st.laser_vm[li]) {
                     ce_anm_set_pos((uint32_t)s_c4m_st.laser_vm[li], dxb, POFV_FIELD_H * 0.5f, 0.0f);   /* 2026-10-18: 焦点只给 x, y 固定场地中心 224 */   /* ★ 交点 ✓ */
-                    ce_anm_set_scale((uint32_t)s_c4m_st.laser_vm[li], 1.0f, 1.0f);   /* 同上 */
+                    /* ★ 2026-10-19 owner：「★ 激光长度可能不够 ✗ —— ★ 极限是**从左上角射到右下角**」✗
+                     *   ⇒ ★ 长度取**场地对角线**✗：√(384²+448²) = **590.3** ⇒ Y = 590.3/448 = **1.317** ✓；
+                     *   ★ 再按方向**旋转**（锚点居中 ⇒ 光束穿过该点 ✓）。*/
+                    ce_anm_set_scale((uint32_t)s_c4m_st.laser_vm[li], 1.0f, 1.317f);
+                    ce_anm_set_rotation((uint32_t)s_c4m_st.laser_vm[li], 0.0f, 0.0f, ang_b);
                     ce_anm_set_color((uint32_t)s_c4m_st.laser_vm[li], 0xFF57EC4Eu);
                 }
                 s_c4m_st.laser_timer[li] = (s_c4m_st.level >= 4) ? POFV_C4M_LASER_LIFE_HI
