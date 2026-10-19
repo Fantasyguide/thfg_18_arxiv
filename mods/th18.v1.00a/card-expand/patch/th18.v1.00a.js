@@ -1411,6 +1411,12 @@
       "expected": "a1c0f24c00",
       "title": "行为 SDK → BP_ce_bomb_spent：do_bomb 里 consume_bomb(0x4574d0) **刚返回**那一条：mov eax,ds:0x4cf2c0，5 字节绝对寻址无相对量。0x4574d0 全库只有 0x4203b7 一个调用方，所以这里不多不少覆盖每一次炸弹消耗；沿卡链表调 on_bomb_spent()"
     },
+    "ce_death_save_spent": {
+      "addr": "0x40a44b",
+      "cavesize": 6,
+      "expected": "8b8684770400",
+      "title": "行为 SDK → BP_ce_death_save_spent：Card__death_save_bomb_revive 0x40a2a0 两处扣 B（0x40a3ed / 0x40a42c）之后的汇合点：mov eax,[esi+0x47784]（6 字节、无相对寻址）。此刻 MAX_BOMBS(0x4ccd64) 未动、CURRENT_BOMBS(0x4ccd58) 已扣完 ⇒ spent = MAX − CURRENT = 这次死亡回避真正花掉的 B 数；沿卡链表调 on_death_save_spent(spent)。★ 这条路不走 consume_bomb ⇒ ce_bomb_spent 抓不到；不单独记账时「腐化」会让每次死亡免费"
+    },
     "ce_enemy_drop": {
       "addr": "0x430510",
       "cavesize": 6,

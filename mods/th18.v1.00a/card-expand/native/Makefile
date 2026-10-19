@@ -218,6 +218,11 @@ test-host:
 ##   以及「快照只在正常态采、同一次 miss 只写一遍」。
 	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_ice_cream_core tests/test_ice_cream_core.c cards/ice_cream_core.c
 	./tests/build/test_ice_cream_core
+## ★ 2026-10-19（70 腐化 × 原生 23 死秽回避）：**「死亡消耗了 B」记进预算**的纯逻辑 ——
+##   MAX −= spent（钳 ≥0）+ CURRENT = MAX（"B 还是满的"）；连撞 7/7→5/5→3/3→1/1→0/0；
+##   没有事件（按 B 自救 / 救场卡）时一个数都不动。语义见 cards/corruption_core.h 头注。
+	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_corruption_core tests/test_corruption_core.c cards/corruption_core.c
+	./tests/build/test_corruption_core
 ## ★ 2026-10-03（92 伟大之作）：血量 → 金钱枚数（至少 1 / 至多上限）与「转换量 → 冷却帧数」
 ##   （底价 + 弹幕数·单价 + 血量·单价，钳上下限）。
 	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_great_work_core tests/test_great_work_core.c cards/great_work_core.c
