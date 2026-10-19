@@ -6331,7 +6331,7 @@ static const uint8_t *pofv_c4_target_boss(float *out_cos)
     uint8_t *em = CE_ENEMY_MGR();
     const float *pp = ce_player_pos();
     const uint8_t *best_e = 0;
-    float best_num = -1.0f, best_d2 = 1.0f;
+    float best_num = -1.0f, best_d2 = 1.0f, best_h2 = 1.0f;
     int bi;
     if (out_cos) *out_cos = 0.0f;
     if (!em || !pp) return 0;
@@ -6352,10 +6352,16 @@ static const uint8_t *pofv_c4_target_boss(float *out_cos)
              *   （★ 交叉相乘 ✓：`a_dy^2 * b_d2` vs `b_dy^2 * a_d2` ✓）。*/
             {
                 const float d2 = dx * dx + dy * dy;
-                const float num = dy * dy;                 /* ★ (-dy)^2 ✓ */
+                const float num = dy * dy;                 /* ★ (-dy)^2 ✓ = 竖直分量的平方 ✓ */
+                /* ★ 2026-10-19 owner：★ 分数字段用 `zEnemyData.life.current`✗
+                 *   （★ `enemy + **0x6220**` ✓ = `CE_ENEMY_DATA + 0x4ff4` ✓，★ 源头 `cards/youkai.c:74` ✓）
+                 *   ★ 排序口径 ★ **`cos²θ × HP²`**✗（★ 不开方 ✓，★ 与 `|cos|×HP` **等价**✓）。
+                 *   ★ 交叉相乘比较 ✓：`num·hp² / d2` 比大小 ⇒ `num_a·hp_a²·d2_b > num_b·hp_b²·d2_a` ✓。*/
+                const float hp = (float)*(const int32_t *)(e + 0x6220);
+                const float h2 = hp * hp;
                 if (d2 > 1e-6f) {
-                    if (best_e == 0 || num * best_d2 > best_num * d2) {
-                        best_e = e; best_num = num; best_d2 = d2;
+                    if (best_e == 0 || num * h2 * best_d2 > best_num * best_h2 * d2) {
+                        best_e = e; best_num = num; best_d2 = d2; best_h2 = h2;
                     }
                 }
             }
