@@ -32,6 +32,19 @@ TH13 的 `NN`/`NNb` 对**时长严格相等、时间轴零延迟对齐**（能�
    给每首**改版前的起点**（不再跑 `fine_align`）⇒ 除这次改的音色外，其它乐器**逐采样不变**、
    A/B 可以在同一秒直接切换。`--peak-report` / `--start-report` 把本次的值写出来，供下一轮用。
    两项都不给 ⇒ 照旧：逐文件峰值归一 + 每次重新 fine_align。
+   ★★ **母带按响度匹配（2026-10-19 owner 口径）**：峰值归一不是响度 —— 同一峰值下两首的
+   积分响度能差 6 LU。`--loudness-match original` = **逐曲**把 `_rearr` 的积分响度
+   （LUFS，ITU-R BS.1770-4 / EBU R128）顶到**该曲原曲循环体**的响度；`lufs:<值>` /
+   `peak:<dBFS>` 是另外两种目标。超过 `--peak-ceiling`（默认 **−0.3 dBFS**）时走
+   **lookahead 软限幅**（`soft_limit`：±5 ms 窗取所需衰减、dB 域释放 60 dB/s、**不加延时**），
+   不是简单缩放。量测用同目录 `measure_loudness.py`（自带 BS.1770，不依赖 ffmpeg）。
+   ★★ **母带 EQ（2026-10-20 owner 第三轮口径）**：`--eq master` 才生效（**默认 off ⇒ 既有 17 首
+   逐采样不变**）。表在文件头 `EQ_GLOBAL` / `PER_TRACK_EQ`：全曲**低架 +4 dB @100 Hz**（补 SF2
+   重编曲链的下潜不足）；`th18_12` 低架 **−4 dB**（它 60–120 过量 +10.8 dB）；
+   `th18_13` **高架 −3 dB @4 kHz + 20 Hz 高通**（压高频 + 治直流偏移）。处理顺序
+   **高通 → 低架 → 高架 → 响度匹配**（EQ 在限幅器前 = 正常母带链；因果滤波 ⇒ 不加预响、
+   不改帧数/时间轴）。临时试：`--low-shelf -4@100` / `--high-shelf -3@4000` / `--highpass 20`
+   / `--eq-json '{"th18_13": {"high_shelf_db": -5}}'`。
 3. **渲染**（`--render`）：
    - **`sf2`（默认）** = **GM SoundFont 真采样渲染**（2026-10-19 起）：把调音表写进 MIDI 的
      **note-on velocity**（每音按"鼓 / melody / program / 倍斯 / 低音区"取一条增益，
@@ -96,6 +109,8 @@ import wave
 import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+if HERE not in sys.path:                          # 响度模式要 import 同目录的 measure_loudness
+    sys.path.insert(0, HERE)
 MOD = os.path.dirname(HERE)
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(MOD)))
 MIDI_DIR = os.path.join(REPO, "local", "th18.v1.00a", "midi")
@@ -196,6 +211,33 @@ PER_TRACK = {
 # 默认 melody / 倍斯（历史口径的线性增益换算成 dB：0.35 / 1.6）
 DB_MELODY = 20 * math.log10(0.35)      # −9.1 dB
 DB_BASS = 20 * math.log10(1.6)         # +4.1 dB
+
+
+# ---------------------------------------------------------------- 母带 EQ 表（逐曲，2026-10-20 owner 第三轮口径）
+# ★ owner 2026-10-20 拍板（原话「响度 4db，th18_12 可以小修 −4db，th18_13 得压高频」）：
+#   · **全曲统一低架 +4 dB @100 Hz** —— 试点实测把 th18_14 的 sub<60 与原曲之差
+#     −5.0 → −1.5 dB（60–120 只多 1 dB）；这是对整条 SF2 重编曲链下潜不足的补偿。
+#   · **th18_12（5 面 boss）低架 −4 dB** —— 它 60–120 在同响度下**过量 +10.8 dB**
+#     （低频被压扁，crest 8.8 vs 原曲 12.7）⇒ 覆盖全局 +4，低架取绝对 −4。
+#   · **th18_13（6 面道中）高架 −3 dB @4 kHz + 20 Hz 高通** —— owner「压高频」；
+#     20 Hz 高通顺手治它实测的**直流偏移**（均值 −0.0272 / <20 Hz −16.4 dB，其余三首 −28…−35）。
+# 口径：
+#   · **默认关**（`--eq off`）⇒ 不给开关时 17 首的既有参数与产物**逐采样不变**（向后兼容）。
+#   · 只有 `--eq master` 才套 EQ_GLOBAL + PER_TRACK_EQ；`--eq-json` / `--low-shelf` /
+#     `--high-shelf` / `--highpass` 可临时覆盖（A/B 用）。
+#   · 处理顺序 **高通 → 低架 → 高架**，在**响度匹配之前**（正常母带链：EQ 在限幅器前）。
+#   · 键：low_shelf_db / low_shelf_hz / high_shelf_db / high_shelf_hz / highpass_hz。
+EQ_GLOBAL = {"low_shelf_db": +4.0, "low_shelf_hz": 100.0}
+
+PER_TRACK_EQ = {
+    # 5 面 boss：低频过量（60–120 +10.8 dB）⇒ 低架**绝对 −4 dB**（不是 +4 再 −4）。
+    "th18_12": {"low_shelf_db": -4.0},
+    # 6 面道中：压高频（高架 −3 dB @4 kHz，f0 处 ≈ −1.5 dB、>8 kHz ≈ −3 dB）
+    # + 20 Hz 高通（治直流偏移，不吃音乐频段）。
+    "th18_13": {"high_shelf_db": -3.0, "high_shelf_hz": 4000.0, "highpass_hz": 20.0},
+}
+
+EQ_KEYS = ("highpass_hz", "low_shelf_db", "low_shelf_hz", "high_shelf_db", "high_shelf_hz")
 
 
 # ---------------------------------------------------------------- 鼓 kit / ZUN 号覆盖表
@@ -1064,6 +1106,226 @@ def write_wav(path, pcm_bytes, rate=SR, channels=2):
         w.writeframes(pcm_bytes)
 
 
+# ---------------------------------------------------------------- 母带：响度匹配（2026-10-19）
+# 口径：**峰值归一 ≠ 响度**。`--peak 0.92` 只钉住"最高的一个采样"，crest factor 不同的两首
+# 在同一峰值下积分响度能差 6 LU（本批实测 th18_14 −6.28 LU / th18_05 −6.14 / th18_06 −6.13）。
+# 游戏里原曲（44.1 kHz 全带宽）↔ 灵界版（22.05 kHz）切换时耳朵听到的是**响度**，所以要对齐
+# **LUFS**（ITU-R BS.1770-4 / EBU R128），且**逐曲**对齐各自原曲（原曲之间本来就不一样，
+# 从 −13.0 到 −9.9 LUFS）。
+def soft_limit(x, sr, ceiling_db=-0.3, lookahead_ms=5.0, release_db_per_sec=60.0, loop=True):
+    """离线**软限幅器**（lookahead 峰值限幅）→ (y, stats)。
+
+    - 需要的衰减 `a[i] = 20log10(|x[i]|/C)`（C = 10^(ceiling_db/20)）；
+    - 在 **±lookahead** 窗内取**最大值**（离线 ⇒ 可以同时看未来，**不引入延时**，
+      时间轴与原曲/其它 A/B 版本逐采样对齐）；
+    - 释放用 dB 域线性回收 `ar[i] = max(m[i], ar[i-1] − step)`，可向量化成
+      `ar = max.accumulate(m + step·i) − step·i`（等价，无 Python 循环）；
+    - 因为 `ar[i] ≥ m[i] ≥ a[i]`，**保证** `|y[i]| ≤ C`（峰值上限是硬的，不需要再 clip）。
+    - `loop=True`（默认）：素材是**循环体** ⇒ 前后各接 1 s 的"卷回"副本再限幅、
+      取中段 ⇒ 循环点两侧的增益包络/释放状态连续（否则文件头尾各算各的，
+      卷回时会有一次电平跳变）。
+    """
+    from scipy.ndimage import maximum_filter1d
+    n = len(x)
+    pad = min(max(1, n // 4), int(1.0 * sr)) if loop else 0
+    xp = np.concatenate([x[-pad:], x, x[:pad]]) if pad else x
+    C = 10.0 ** (ceiling_db / 20.0)
+    p = np.abs(xp).max(axis=1)
+    a = np.where(p > C, 20.0 * np.log10(np.maximum(p, 1e-12) / C), 0.0)
+    La = max(1, int(round(lookahead_ms * sr / 1000.0)))
+    m = maximum_filter1d(a, size=2 * La + 1, mode="nearest")
+    step = release_db_per_sec / sr
+    idx = np.arange(len(m), dtype=np.float64)
+    ar = np.maximum.accumulate(m + step * idx) - step * idx
+    y = (xp * (10.0 ** (-ar / 20.0))[:, None]).astype(np.float32)[pad:pad + n]
+    ar = ar[pad:pad + n]
+    return y, {"max_gr": float(ar.max()), "mean_gr": float(ar.mean()),
+               "frac": float((ar > 0.1).mean()), "lookahead_ms": lookahead_ms,
+               "release_db_s": release_db_per_sec}
+
+
+def match_loudness(x, sr, target_lufs, ceiling_db=-0.3, max_iter=6, tol=0.02, **kw):
+    """把 `x` 的**积分响度**顶到 `target_lufs`，峰值不超过 `ceiling_db`。→ (y, stats)
+
+    线性增益 + 限幅器；限幅会吃掉一点响度 ⇒ 迭代（`g += target − LUFS(y)`），
+    通常 1–4 次收敛到 ±0.02 LU。返回的 stats 里 `gain_db` 是**相对输入**的总增益。
+    """
+    import measure_loudness as ML                      # 同目录；只在响度模式下才需要 scipy
+    g = target_lufs - ML.integrated_lufs(x, sr)
+    st = {}
+    for it in range(max_iter):
+        y, st = soft_limit(x * (10.0 ** (g / 20.0)), sr, ceiling_db, **kw)
+        l = ML.integrated_lufs(y, sr)
+        err = target_lufs - l
+        if abs(err) <= tol:
+            break
+        g += err
+    st.update(gain_db=g, lufs=l, peak_db=20.0 * np.log10(max(float(np.abs(y).max()), 1e-12)),
+              iters=it + 1, target=target_lufs)
+    return y, st
+
+
+def resolve_loudness_target(spec, stem, loop, ssr, ml):
+    """`--loudness-match` → (kind, value)。kind ∈ {lufs, peak}。
+
+    - `original`      ：逐曲目标 = **原曲循环体**的积分响度（44100 Hz 全带宽，游戏里真正听到的）
+    - `lufs:-11.0`    ：统一目标
+    - `peak:-0.3`     ：按**采样峰**（dBFS；>0 且 ≤1 视作线性 FS，兼容老的 `--peak 0.92` 口径）
+    """
+    s = (spec or "").strip()
+    if s == "original":
+        return "lufs", ml.integrated_lufs(loop, ssr)
+    if s.startswith("lufs:"):
+        return "lufs", float(s.split(":", 1)[1])
+    if s.startswith("peak:"):
+        v = float(s.split(":", 1)[1])
+        return "peak", (10.0 ** (v / 20.0) if v <= 0 else v)
+    raise SystemExit(f"--loudness-match 只认 original / lufs:<值> / peak:<dBFS|0-1>，收到 {spec!r}")
+
+
+# ---------------------------------------------------------------- 母带 EQ：RBJ 双二阶（因果，不改时间轴）
+# 全部用 audio-EQ-cookbook（RBJ）的**双二阶**：一阶高通/架式在 22.05 kHz 上做，系数稳定。
+# 素材是**循环体** ⇒ 前后各接 0.25 s 的"卷回"副本再滤、取中段（与 `soft_limit(loop=True)` 同一手法）：
+# 循环点两侧滤波器状态连续，不会在文件头尾各起一次瞬态。**因果滤波 ⇒ 不加预响、不引入延时**，
+# 输出与输入**逐帧同长**（试点可以原地替换、同一秒 A/B）。
+def _sos_apply(x, sos, sr, loop=True):
+    """单级双二阶（sos 一行）；循环体边界用卷回副本保温。"""
+    from scipy.signal import sosfilt
+    n = len(x)
+    pad = min(max(1, n // 8), int(0.25 * sr)) if loop else 0
+    xp = np.concatenate([x[-pad:], x, x[:pad]]) if pad else x
+    y = sosfilt(sos, xp.astype(np.float64), axis=0)[pad:pad + n]
+    return y.astype(np.float32)
+
+
+def _low_shelf_sos(sr, f0, gain_db, S=1.0):
+    """RBJ low shelf：DC 处 +gain_db，f0 处 ≈ 一半，2·f0 以上 ≈ 0（S=1）。"""
+    A = 10.0 ** (gain_db / 40.0)
+    w0 = 2.0 * np.pi * min(f0, sr * 0.49) / sr
+    cw, sw = np.cos(w0), np.sin(w0)
+    alpha = sw / 2.0 * np.sqrt((A + 1.0 / A) * (1.0 / S - 1.0) + 2.0)
+    sA = np.sqrt(A)
+    b0 = A * ((A + 1) - (A - 1) * cw + 2 * sA * alpha)
+    b1 = 2 * A * ((A - 1) - (A + 1) * cw)
+    b2 = A * ((A + 1) - (A - 1) * cw - 2 * sA * alpha)
+    a0 = (A + 1) + (A - 1) * cw + 2 * sA * alpha
+    a1 = -2 * ((A - 1) + (A + 1) * cw)
+    a2 = (A + 1) + (A - 1) * cw - 2 * sA * alpha
+    return np.array([[b0 / a0, b1 / a0, b2 / a0, 1.0, a1 / a0, a2 / a0]])
+
+
+def _high_shelf_sos(sr, f0, gain_db, S=1.0):
+    """RBJ high shelf：高频处 +gain_db，f0 处 ≈ 一半，f0/2 以下 ≈ 0（S=1）。"""
+    A = 10.0 ** (gain_db / 40.0)
+    w0 = 2.0 * np.pi * min(f0, sr * 0.49) / sr
+    cw, sw = np.cos(w0), np.sin(w0)
+    alpha = sw / 2.0 * np.sqrt((A + 1.0 / A) * (1.0 / S - 1.0) + 2.0)
+    sA = np.sqrt(A)
+    b0 = A * ((A + 1) + (A - 1) * cw + 2 * sA * alpha)
+    b1 = -2 * A * ((A - 1) + (A + 1) * cw)
+    b2 = A * ((A + 1) + (A - 1) * cw - 2 * sA * alpha)
+    a0 = (A + 1) - (A - 1) * cw + 2 * sA * alpha
+    a1 = 2 * ((A - 1) - (A + 1) * cw)
+    a2 = (A + 1) - (A - 1) * cw - 2 * sA * alpha
+    return np.array([[b0 / a0, b1 / a0, b2 / a0, 1.0, a1 / a0, a2 / a0]])
+
+
+def _highpass_sos(sr, f0, Q=0.7071067811865476):
+    """RBJ 二阶高通（巴特沃斯 Q=1/√2）：20 Hz 用来去直流/次声，不碰音乐频段。"""
+    w0 = 2.0 * np.pi * min(f0, sr * 0.49) / sr
+    cw, sw = np.cos(w0), np.sin(w0)
+    alpha = sw / (2.0 * Q)
+    b0, b1, b2 = (1.0 + cw) / 2.0, -(1.0 + cw), (1.0 + cw) / 2.0
+    a0, a1, a2 = 1.0 + alpha, -2.0 * cw, 1.0 - alpha
+    return np.array([[b0 / a0, b1 / a0, b2 / a0, 1.0, a1 / a0, a2 / a0]])
+
+
+def apply_eq(x, sr, eq, loop=True):
+    """按表套母带 EQ → float32（**同帧**）。顺序 高通 → 低架 → 高架。
+
+    线性/因果滤波器，级联顺序对稳态传递函数没有影响；这样排只是让直流先被拿掉，
+    架式滤波器不必去处理 DC 偏置。
+    """
+    if not eq:
+        return x
+    y = x
+    if float(eq.get("highpass_hz") or 0.0) > 0:
+        y = _sos_apply(y, _highpass_sos(sr, float(eq["highpass_hz"])), sr, loop)
+    if float(eq.get("low_shelf_db") or 0.0) != 0.0:
+        y = _sos_apply(y, _low_shelf_sos(sr, float(eq.get("low_shelf_hz") or 100.0),
+                                         float(eq["low_shelf_db"])), sr, loop)
+    if float(eq.get("high_shelf_db") or 0.0) != 0.0:
+        y = _sos_apply(y, _high_shelf_sos(sr, float(eq.get("high_shelf_hz") or 4000.0),
+                                          float(eq["high_shelf_db"])), sr, loop)
+    return y
+
+
+def resolve_eq(stem, a):
+    """`--eq` / `--eq-json` / `--low-shelf` / `--high-shelf` / `--highpass` → EQ 字典。
+
+    优先级：`--eq master` 的表（EQ_GLOBAL → PER_TRACK_EQ）→ `--eq-json`（按内部曲名）→ CLI。
+    **默认（`--eq off`）返回 `{}`** ⇒ 一个采样都不动。
+    """
+    eq = {}
+    if a.eq == "master":
+        eq.update(EQ_GLOBAL)
+        eq.update(PER_TRACK_EQ.get(stem) or {})
+    if a.eq_json:
+        try:
+            with open(a.eq_json, encoding="utf-8") as f:
+                cfg = json.load(f)
+        except (OSError, json.JSONDecodeError) as e:
+            raise SystemExit(f"--eq-json 读不了：{e}")
+        cfg = cfg.get(stem, cfg) if isinstance(cfg, dict) else {}
+        for k, v in cfg.items():
+            if k not in EQ_KEYS:
+                raise SystemExit(f"--eq-json 的键只认 {EQ_KEYS}，收到 {k!r}")
+            eq[k] = float(v)
+    for spec, key, hzkey, hzdef in (
+            (a.low_shelf, "low_shelf_db", "low_shelf_hz", 100.0),
+            (a.high_shelf, "high_shelf_db", "high_shelf_hz", 4000.0)):
+        if spec is not None:
+            db, hz = _parse_db_hz(spec, key)
+            eq[key] = db
+            if hz is not None:
+                eq[hzkey] = hz
+            elif hzkey not in eq:
+                eq[hzkey] = hzdef
+    if a.highpass is not None:
+        eq["highpass_hz"] = float(a.highpass)
+    # 全零 = 等价于关；顺手清掉，避免打印 "EQ 0 dB"
+    return {k: v for k, v in eq.items() if float(v or 0.0) != 0.0}
+
+
+def _parse_db_hz(spec, name):
+    """`+4` / `-4@100` / `-3@4000` → (dB, hz|None)。"""
+    s = str(spec).strip()
+    db_s, sep, hz_s = s.partition("@")
+    try:
+        db = float(db_s)
+        hz = float(hz_s) if sep else None
+    except ValueError:
+        raise SystemExit(f"--{name.replace('_db', '').replace('_', '-')} 要写成 DB 或 DB@HZ"
+                         f"（例 -4@100），收到：{spec!r}")
+    if hz is not None and hz <= 0:
+        raise SystemExit(f"频率必须 > 0，收到：{spec!r}")
+    return db, hz
+
+
+def eq_knobs(eq):
+    """一行 EQ 摘要（印在逐曲报表/JSON 里，便于事后对账）。"""
+    if not eq:
+        return "EQ off"
+    parts = []
+    if float(eq.get("highpass_hz") or 0.0) > 0:
+        parts.append(f"HP {float(eq['highpass_hz']):g} Hz")
+    if float(eq.get("low_shelf_db") or 0.0) != 0.0:
+        parts.append(f"低架 {float(eq['low_shelf_db']):+.1f} dB @{float(eq.get('low_shelf_hz') or 100):g} Hz")
+    if float(eq.get("high_shelf_db") or 0.0) != 0.0:
+        parts.append(f"高架 {float(eq['high_shelf_db']):+.1f} dB @{float(eq.get('high_shelf_hz') or 4000):g} Hz")
+    return " / ".join(parts)
+
+
 def _parse_prog_spec(spec):
     """`56=-4.4` / `56-58=-3` / `40-47=-3` → {56: -4.4} / {56,57,58: -3}。"""
     k, sep, v = spec.partition("=")
@@ -1157,7 +1419,33 @@ def main(argv=None):
     ap.add_argument("--track-config", default=None, metavar="JSON",
                     help='逐曲覆盖（JSON，按内部曲名键）：\'{"th18_07": {"prog_db": {"25": -1.5}}}\'')
     ap.add_argument("--out", default=OUT_DIR)
-    ap.add_argument("--peak", type=float, default=0.92, help="峰值归一目标")
+    ap.add_argument("--peak", type=float, default=0.92, help="峰值归一目标（老的线性口径；响度模式下不用）")
+    ap.add_argument("--loudness-match", default=None, metavar="original|lufs:<值>|peak:<值>",
+                    help="★ 母带按**响度**匹配（替代 --peak 峰值归一）："
+                         "`original` = 逐曲匹配**原曲循环体**的积分响度（LUFS，BS.1770-4）；"
+                         "`lufs:-11.0` = 统一目标；`peak:-0.3` = 按采样峰（dBFS）。"
+                         "需要 scipy。超峰值上限时走 lookahead 软限幅（不引入延时）。")
+    ap.add_argument("--peak-ceiling", type=float, default=-0.3, metavar="DBFS",
+                    help="响度匹配后的**硬**峰值上限（dBFS，默认 -0.3；只有响度模式用）")
+    ap.add_argument("--limit-release", type=float, default=60.0, metavar="DB/S",
+                    help="限幅器释放速率（dB/秒，默认 60 = 6 dB/100 ms；越小越平滑、越吃瞬态）")
+    ap.add_argument("--loudness-report", default=None, metavar="JSON",
+                    help="把每首的响度匹配结果（目标/增益/限幅量/最终 LUFS+peak）写进 JSON")
+    ap.add_argument("--eq", choices=("off", "master"), default="off",
+                    help="★ 母带 EQ（默认 **off** = 17 首既有产物逐采样不变）："
+                         "`master` = 套 EQ_GLOBAL（全曲低架 +4 dB @100 Hz）+ PER_TRACK_EQ"
+                         "（th18_12 低架 −4 / th18_13 高架 −3 @4 kHz + 20 Hz 高通）；"
+                         "在响度匹配**之前**、限幅器之前处理，不改帧数/时间轴")
+    ap.add_argument("--eq-json", default=None, metavar="JSON",
+                    help='逐曲 EQ 覆盖（JSON，按内部曲名键，可只给一首）：'
+                         '\'{"th18_13": {"high_shelf_db": -5}}\'；键 = '
+                         'highpass_hz/low_shelf_db/low_shelf_hz/high_shelf_db/high_shelf_hz')
+    ap.add_argument("--low-shelf", default=None, metavar="DB[@HZ]",
+                    help="临时低架（例 `--low-shelf=-4@100`；只给 dB 用 100 Hz）——负值要带 `=`，试 A/B 用")
+    ap.add_argument("--high-shelf", default=None, metavar="DB[@HZ]",
+                    help="临时高架（例 `--high-shelf=-3@4000`；只给 dB 用 4 kHz）——负值要带 `=`")
+    ap.add_argument("--highpass", type=float, default=None, metavar="HZ",
+                    help="临时高通（例 `20`）")
     ap.add_argument("--dry-run", action="store_true", help="只解析 + 报表，不渲染")
     ap.add_argument("--no-align", action="store_true",
                     help="不做细对齐（默认**做**：小节线 ±1 小节三条锚点各搜 ±0.8 s，取 chroma 相关最高者）")
@@ -1225,6 +1513,9 @@ def main(argv=None):
         with open(a.master_peaks, encoding="utf-8") as f:
             master_peaks = json.load(f)
         print(f"母带锚定：{len(master_peaks)} 首用 --master-peaks 的改版前峰值（其余照旧归一）")
+        if a.loudness_match:
+            print("  ★ --master-peaks 与 --loudness-match 同时给：**响度模式优先**，"
+                  "固定增益不参与（响度模式自己算增益）")
     # 起点锚定（A/B 口径）：`--starts` 里有的曲目直接用改版前的起点（不再跑 fine_align）
     forced_starts = {}
     if a.starts:
@@ -1233,6 +1524,7 @@ def main(argv=None):
         print(f"起点锚定：{len(forced_starts)} 首用 --starts 的改版前起点（换音色不动时间轴）")
     peak_report = {}
     start_report = {}
+    loud_report = {}
     env_cache = {}
     print(f"{'曲':<9}{'轨':>4}{'音符':>7}{'主旋律轨':>9}{'MIDI 时长':>10}{'循环体':>9}{'起点':>9}{'r':>7}  文件")
     wrote = 0
@@ -1243,6 +1535,7 @@ def main(argv=None):
             print(f"  ★ 跳过 {stem}：dat/musiccmt.txt 里没有这个内部曲名（不是本作曲目）")
             continue
         tune, mel_gain, bass_gain = resolve_tune(stem, a)
+        eq = resolve_eq(stem, a)                     # 先解析：坏 JSON 在渲染前就停
         mid = os.path.join(MIDI_DIR, f"th18_{mi:02d}.mid")
         if not os.path.exists(mid):
             print(f"  ★ 跳过 {stem}：没有 {os.path.relpath(mid, REPO)}（音乐室 No.{mi}）")
@@ -1343,7 +1636,38 @@ def main(argv=None):
             seg[:xf] = seg[:xf] * w + seg[-xf:] * (1 - w)
         peak = float(np.abs(seg).max()) or 1.0
         peak_report[stem] = peak
-        if stem in master_peaks:
+        # ★ 母带 EQ（2026-10-20 owner 第三轮）：先 EQ、后响度匹配（限幅器最后）。
+        #   默认 `--eq off` ⇒ eq 为空 ⇒ 一个采样都不动（17 首既有产物向后兼容）。
+        #   放在 peak_report 之后：`--peak-report` / `--master-peaks` 的口径仍然是
+        #   **EQ 前的渲染峰值**（A/B 锚定语义不变）。
+        if eq:
+            seg = apply_eq(seg, SR, eq)
+            print(f"    [eq] {stem}: {eq_knobs(eq)}（响度匹配前；同帧）")
+        if a.loudness_match:
+            # ★ 响度匹配（2026-10-19）：目标逐曲 = 原曲循环体的 LUFS；峰值上限 -0.3 dBFS；
+            #   超上限走 lookahead 软限幅。`--master-peaks` 的固定增益在这里**不参与**
+            #   （响度模式自己算增益），两者同时给会提示。
+            import measure_loudness as ML
+            kind, val = resolve_loudness_target(a.loudness_match, stem, loop, ssr, ML)
+            if kind == "peak":
+                seg *= (val / peak)
+                loud_report[stem] = {"mode": "peak", "target": val,
+                                     "peak_out": peak * (val / peak), "gain_db": 20 * np.log10(val / peak)}
+                print(f"    [loud] {stem}: 峰值目标 {val:.6f}（{20*np.log10(val):.2f} dBFS）"
+                      f" → 增益 {20*np.log10(val/peak):+.2f} dB")
+            else:
+                seg, st = match_loudness(seg, SR, val, a.peak_ceiling,
+                                         release_db_per_sec=a.limit_release)
+                st.update(mode=("original" if a.loudness_match == "original" else "lufs"),
+                          pre_norm_peak=peak, eq=(dict(eq) if eq else None))
+                loud_report[stem] = st
+                tag = "原曲" if a.loudness_match == "original" else "目标"
+                lim = (f"限幅 −{st['max_gr']:.2f} dB（{st['frac']*100:.1f}% 采样）"
+                       if st["max_gr"] > 0.01 else "未触发限幅")
+                print(f"    [loud] {stem}: {tag} {st['target']:.2f} LUFS → 增益 {st['gain_db']:+.2f} dB"
+                      f"；{lim}；结果 {st['lufs']:.2f} LUFS / peak {st['peak_db']:.2f} dBFS"
+                      f"（{st['iters']} 次迭代）")
+        elif stem in master_peaks:
             gain = a.peak / float(master_peaks[stem])
             seg *= gain
             print(f"    [master] {stem}: 改版前 pre-norm peak {float(master_peaks[stem]):.6f} "
@@ -1366,7 +1690,8 @@ def main(argv=None):
               f"   [{a.render} | {tune_knobs(tune)} | BPM "
               f"{midi_bpm(tempos, tick_at_intro):.1f} 主旋律能量占比 "
               f"{share(mel_ch)*100:.0f}%→"
-              f"{share(mel_ch)*100*mel_gain**2/(1-share(mel_ch)+share(mel_ch)*mel_gain**2):.0f}%]")
+              f"{share(mel_ch)*100*mel_gain**2/(1-share(mel_ch)+share(mel_ch)*mel_gain**2):.0f}%"
+              f"{'' if not eq else ' | ' + eq_knobs(eq)}]")
     if a.peak_report and peak_report:
         with open(a.peak_report, "w", encoding="utf-8") as f:
             json.dump(peak_report, f, ensure_ascii=False, indent=1, sort_keys=True)
@@ -1375,6 +1700,10 @@ def main(argv=None):
         with open(a.start_report, "w", encoding="utf-8") as f:
             json.dump(start_report, f, ensure_ascii=False, indent=1, sort_keys=True)
         print(f"起点 → {a.start_report}（{len(start_report)} 首；下次给 --starts 用）")
+    if a.loudness_report and loud_report:
+        with open(a.loudness_report, "w", encoding="utf-8") as f:
+            json.dump(loud_report, f, ensure_ascii=False, indent=1, sort_keys=True)
+        print(f"响度匹配结果 → {a.loudness_report}（{len(loud_report)} 首）")
     print(f"\n写出 {wrote} 个文件 → {os.path.relpath(a.out, REPO)}"
           f"（切模式：mode.txt 写 `rearr`；同步：bash local/sync_modkit_dll.sh）")
     return 0 if wrote or a.dry_run else 2
