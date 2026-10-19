@@ -6565,7 +6565,9 @@ static void pofv_c4m_emit(float ang)
                  *   ★ 每颗**随机挑一张**✗ ✓（★ 换贴图 ✓，★ **不是** `set_color` 染色 ✗）。*/
                 const int cd_i = (int)(ce_rand() % 16u);
                 s_c4m[k2] = s_c4m[k];
-                s_c4m[k2].ang = ang + ((float)(ce_rand() % 62832u) * 0.0001f);
+                /* 2026-10-19 对齐一手: ins_604($C, %B, **0.05235988**) => 方向 %B 加**随机 +-3 度**
+                 *   (原来这里是随机整圈 0..2pi, 与一手不符 ✗) */
+                s_c4m[k2].ang = ang + ((float)(ce_rand() % 10001u) * 0.0001f) * 0.05235988f;
                 s_c4m[k2].spd = s_c4m[k].spd * 0.7f;
                 s_c4m[k2].vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
                                      CE_ANM_ABILITY_SCRIPT_POFV109_C4M_STAR, POFV_C4_VM_LAYER);
