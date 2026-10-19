@@ -155,7 +155,9 @@ thcrap 生态的通行做法就是分发「替换后的整文件」，玩家需�
 - **生成口径**：压低主旋律（×0.35）、抬伴奏、贝斯 ×1.6；与 TH13 原版"灵界版"同向
   （一手：TH13 `NN`/`NNb` 时长严格相等、时间轴零延迟；AUDIT CS-6）
 - **MIDI 与生成物均不入库**（只在 `local/`，gitignored）；★ 本仓库**不含任何 MIDI 文件**（已核：`git ls-files` 里 0 个 `.mid/.midi`）
-- **版权**：MIDI 版权属**原作者**（该合集作者）；东方原曲版权属 **上海アリス幻樂団 / ZUN**；
+- **版权**：MIDI 版权属**各 MIDI 的编曲者**（本批 = Karl Zuñiga；该合集本身是 **reupload**，
+  README 自述原托管在 Gamebanana —— 合集作者不是编曲者，署名要认音轨 meta 的 `MIDI by:`）；
+  东方原曲版权属 **上海アリス幻樂団 / ZUN**；
   本 mod 不主张这些权利，若权利方要求将立即移除对应生成物。
 
 ### 6.1 来源与编号口径
@@ -202,8 +204,8 @@ thcrap 生态的通行做法就是分发「替换后的整文件」，玩家需�
 合集 README 的 **Usage Policy** 原文（2026-10-19 读，`github.com/AyHa1810/touhou-midi-collection`）：
 
 > Rules similar to Creative Commons apply for most of the part. You can use the MIDIs and modify it,
-> **but you must credit the original creator, which is marked with brackets in the MIDI collection.**
-> **Except, you CANNOT use MIDIs made by ZUN in fangames** due to ZUN's new policies.
+> but you must credit the original creator, which is marked with brackets in the MIDI collection.
+> **Except,** you **CANNOT** use MIDIs made by ZUN in fangames due to ZUN's new policies.
 
 ⇒ 我们照它做三件事（**每一条都实测过，不是照抄承诺**）：
 
