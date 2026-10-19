@@ -430,42 +430,16 @@ static int yk_roar_active(void)  { return ce_card_flag_any(CE_CARD_FLAG_ROAR); }
  *
  * 偏移出处 = `local/vendor/th-re-data/data/th18.v1.00a/type-structs-own.json` 的 `zEnemyData` ✓
  * （`anm_slot_0_script` +0x26c / `anm_main` +0x270 / `__probably_cur_subscript_for_anm_main` +0x274 /
- *  `ecl_int_vars` +0x28c / `ecl_float_vars` +0x29c / `time_in_ecl` +0x2bc（`zTimer`：cur = +4）/ `own_boss_id` +0x5140 ✓）。
- *
- * ★★★ 2026-10-18（**基址订正** ✗→✓，一手）：上面这些偏移都是 **`zEnemyData` 相对**的，而本探针与
- *   下面 `yk_le_boss_sub_index()` 手里的 `e` **是 `zEnemy*`** —— 证据（三条互相独立、都一手）：
- *     ① `ce_enemy_by_id()` / `CE_ENEMY_FOREACH` 返回的是链表结点里的 `entry`（`sdk.h:667`），
- *        而它们用 `*(int32_t *)(e + CE_ENEMY_ID 0x6830)` 认人，`CE_ENEMY_ID` = **`zEnemy.enemy_id`**
- *        （`engine.h:195` / `engine.h:687`，一手 `Enemy__constructor` `0x42e3f0`）；
- *     ② `CE_ENEMY_DATA 0x122c` = **`zEnemyData` 在 `zEnemy` 里的偏移**（`engine.h:200`，步进
- *        `0x42ed40` 三处交叉核对）⇒ `zEnemyData = zEnemy + 0x122c`（vendor `zEnemy` 表：
- *        `+0x0 = struct zEclVm`、`+0x122c = struct zEnemyData` ✓）；
- *     ③ 同一族偏移在 `engine.h` 里早就有 zEnemy 绝对版：`CE_ENEMY_ECL_I0 = 0x14b8`
- *        （= `0x122c + 0x28c`）、`CE_ENEMY_ANM_SCRIPT = 0x1498`（= `0x122c + 0x26c`）✓。
- *   ⇒ 原先这些字段**少加了 0x122c** ⇒ 读到的是 `zEnemy` 头部（ECL VM 区）而不是 `zEnemyData`；
- *     这既解释了旧日志里「anm 全是 0」（那两格在 VM 的栈区），也是下面 `+0x270` / `+0x28c`
- *     「实测没有区分度」的**真实原因**（读错格了 ✗）。下面把偏移一律写成 `CE_ENEMY_DATA + …`。*/
-/* ★★ B1/B2（2026-10-18）：**leveledit 使魔标记** `$I3` = `ecl_int_vars[3]` ⇒ `zEnemyData + 0x298`
- *   （= `zEnemy + 0x14c4` = `CE_ENEMY_ECL_I0 + 12`）。一手（对方仓库，这机器上就有）：
- *   `/home/nipporita/th18-leveledit/mods/stage02-mystia/translate.py:207-217` —— 每个
- *   `MystiaChild<n>()` 的第一行就是 `$I3 = 997;`，注释逐字写着
- *   「marks every generated familiar so the 108 card can recognise it from
- *    zEnemyData+ecl_int_vars[3] (+0x14c4, i.e. EnemyData+0x298)」✓；
- *   同一段还说明 TH18 的敌人只有 `$I0–$I3`、且没有任何可达的 sub 读写 `$I3` ⇒ 标记活到敌人死亡 ✓。
- *   ⇒ 探针打 `iv3=`（**正确基址**）与 `iv3z=`（老口径：直接把 0x298 加在 `zEnemy*` 上）两格，
- *     实跑一看两个数就能证明基址（997 只会出现在 `iv3` 上 ✓）。
- *   ⚠ 这两条宏在 `#if YK_LE_PROBE` **外面**：`yk_le_iv3()` 在 B2 的接管线里也要用（探针关掉后照样要判 ✓）。*/
-#define YK_E_ECL_IVARS3       (CE_ENEMY_DATA + 0x298)  /* = ecl_int_vars[3] = `$I3` ✓ */
-#define YK_E_ECL_IVARS3_RAW   0x298                    /* 对照：直接加在 zEnemy* 上的老口径 ✗ */
+ *  `ecl_int_vars` +0x28c / `ecl_float_vars` +0x29c / `time_in_ecl` +0x2bc（`zTimer`：cur = +4）/ `own_boss_id` +0x5140 ✓）。*/
 #define YK_LE_PROBE 1
 #if YK_LE_PROBE
-#define YK_E_ANM_SLOT0_SCRIPT (CE_ENEMY_DATA + 0x26c)
-#define YK_E_ANM_MAIN         (CE_ENEMY_DATA + 0x270)
-#define YK_E_SUB274           (CE_ENEMY_DATA + 0x274)
-#define YK_E_TIN_ECL_CUR      (CE_ENEMY_DATA + 0x2c0)  /* zTimer @+0x2bc：prev(+0)/current(+4)/current_f(+8) ✓ */
-#define YK_E_ECL_IVARS        (CE_ENEMY_DATA + 0x28c)
-#define YK_E_ECL_FVARS        (CE_ENEMY_DATA + 0x29c)
-#define YK_E_OWN_BOSS         (CE_ENEMY_DATA + 0x5140)
+#define YK_E_ANM_SLOT0_SCRIPT 0x26c
+#define YK_E_ANM_MAIN        0x270
+#define YK_E_SUB274          0x274
+#define YK_E_TIN_ECL_CUR     0x2c0      /* zTimer @+0x2bc：prev(+0)/current(+4)/current_f(+8) ✓ */
+#define YK_E_ECL_IVARS       0x28c
+#define YK_E_ECL_FVARS       0x29c
+#define YK_E_OWN_BOSS        0x5140
 static void __attribute__((noinline)) yk_le_probe(void)
 {
     static uint32_t s_probe_n;
@@ -496,14 +470,12 @@ static void __attribute__((noinline)) yk_le_probe(void)
     CE_ENEMY_FOREACH(em, e) {
         if (shown >= 8) break;
         if (!ce_enemy_lockable(e)) continue;
-        ce_log("le-probe(enemy): id=%d anmMain=%d slot0=%d sub274=%d tin=%d iv3=%d iv3z=%d",
+        ce_log("le-probe(enemy): id=%d anmMain=%d slot0=%d sub274=%d tin=%d",
                (int)*(const int32_t *)(e + CE_ENEMY_ID),
                (int)*(const int32_t *)(e + YK_E_ANM_MAIN),
                (int)*(const int32_t *)(e + YK_E_ANM_SLOT0_SCRIPT),
                (int)*(const int32_t *)(e + YK_E_SUB274),
-               (int)*(const int32_t *)(e + YK_E_TIN_ECL_CUR),
-               (int)*(const int32_t *)(e + YK_E_ECL_IVARS3),
-               (int)*(const int32_t *)(e + YK_E_ECL_IVARS3_RAW));
+               (int)*(const int32_t *)(e + YK_E_TIN_ECL_CUR));
         ++shown;
     }
     ce_log("le-probe: live=%d", (int)*(const int32_t *)(em + CE_EM_ENEMY_COUNT));
@@ -1290,62 +1262,21 @@ static int yk_boss_active(void)
  *   ② 把**他们的**使魔当我们的使魔接管 ✓（下一批：喂进使魔台账 ⇒ **1/2 转伤** + 参与**人妖切换** ✓）；
  *   ③ **没装 108 时，绝不对它们做形态切换** ✗ —— 由"形态切换全部挂在本卡上"天然保证 ✓。
  *
- * ★★ 2026-10-17（老 goal 卡住的那半**收口** ✓）：判据已由**两份 dump 实测**钉死 ✓ ⇒ `YK_LE_TRUSTED = 1` ✓
- *   本门**不再恒惰性** ✗ —— 命中条件 = **boss ECL VM 的 `subroutine_index >= 24`** ✓
- *   （零售 `st02bs.ecl` 只有 **24 个 sub**、最大索引 23 ✓；leveledit 那份 **62 个** ✓ —— 详见头文件那段 ✓）。
- *   ⚠ `+0x270` / `+0x28c` 实测**没有区分度** ✗ ⇒ 仍读出来只为留探针旁证 ✓。
- *     ★★ 2026-10-18 **订正**：那两个「没有区分度」的结论建立在**基址读错**之上 ✗ —— 它们是
- *     `zEnemyData` 相对偏移，当时却直接加在 `zEnemy*` 上（少 0x122c，见上面探针那段的一手证据 ✓）。
- *     现在改成 `CE_ENEMY_DATA + …` ⇒ 下一份实跑日志才是这两格的**真值**（仍**不作判据** ✓）。
- * 读的都是 boss 敌机上的**只读字段** ✓，偏移出处 = vendor `zEnemyData` / `zEnemy`（与探针同源 ✓）。*/
-#define YK_LE_B_SUB274        (CE_ENEMY_DATA + 0x274)   /* __probably_cur_subscript_for_anm_main（★ 不作判据 ✗）*/
-#define YK_LE_B_ANM_MAIN      (CE_ENEMY_DATA + 0x270)
-#define YK_LE_B_IV0           (CE_ENEMY_DATA + 0x28c)   /* ecl_int_vars[0] ✓ */
-/* ★ ECL VM 链（**全在 th18 的 vendor 里有一手** ✓）：
- *   `zEnemy+0x0 = struct zEclVm`（内嵌 ✓）→ `+0xc = zEclRunContextHolder`（内嵌 ✓）
- *   → `holder+0x0 = current_context`（`zEclRunContext*` ✓）→ `+0x4 = cur_location`（内嵌 `zEclLocation` ✓）
- *   → `+0x0 = subroutine_index`（int32 ✓）
- *   ⚠ 起点订正（2026-10-18）：vendor 的 `zEnemy` 表写着 `+0x0 = struct zEclVm`、`+0x122c = struct
- *     zEnemyData` ⇒ **`zEnemyData = zEnemy + CE_ENEMY_DATA(0x122c)`**。本函数的实参 `b` 来自
- *     `yk_boss()` = `ce_enemy_by_id()` ⇒ **是 `zEnemy*`** ⇒ `zEclVm` 就在 `b` 上，
- *     **不要再减 0x122c**（旧代码 `vm = b - 0x122c` 是反的 ✗：它把 `b` 当成 `zEnemyData*`，
- *     结果读到堆上 `zEnemy` 之前 0x122c 字节的随机内存 —— 那正是「判据看似有值、实为噪声」的来源）。
- *     这条与上面探针段的一手证据同一套（`CE_ENEMY_ID` = `zEnemy.enemy_id` / `CE_ENEMY_DATA` =
- *     `zEnemyData` 在 `zEnemy` 里的偏移 / `CE_ENEMY_ECL_I0 0x14b8 = 0x122c+0x28c` 的三重旁证 ✓）。*/
-#define YK_LE_ENEMY_DATA_OFF  0x122c  /* = CE_ENEMY_DATA ✓（只用于想要 zEnemyData 时**加**它 ✓）*/
-#define YK_LE_VM_CTX_HOLDER   0x0c    /* zEclVm.context ✓ */
-#define YK_LE_HOLDER_CUR      0x00    /* zEclRunContextHolder.current_context ✓ */
-#define YK_LE_CTX_CURLOC      0x04    /* zEclRunContext.cur_location ✓ */
-#define YK_LE_LOC_SUBIDX      0x00    /* zEclLocation.subroutine_index ✓ */
-static int yk_le_boss_sub_index(const uint8_t *b)
-{
-    const uint8_t *vm, *holder;
-    const uint8_t *ctx;
-    if (!b) return -1;
-    vm     = b;                                            /* `b` 已是 zEnemy*（zEclVm 内嵌在 +0x0）✓ */
-    holder = vm + YK_LE_VM_CTX_HOLDER;                     /* zEclRunContextHolder（内嵌）✓ */
-    ctx    = *(const uint8_t *const *)holder;              /* current_context ✓ */
-    if (!ctx) return -1;                                   /* 没在跑 ⇒ 不命中 ✓ */
-    return *(const int32_t *)(ctx + YK_LE_CTX_CURLOC + YK_LE_LOC_SUBIDX);
-}
+ * ★ 本函数现在**恒返回 0** ✓：`yk_le_mode()` 内 `YK_LE_TRUSTED` 仍为 0（判别常量**必须**由 P113 探针的
+ *   实跑日志钉死 ✓，不许猜 ✗）⇒ 这道门**完全惰性** ✓，行为与今天一致 ✓。
+ * 读的都是 boss 敌机上的**只读字段** ✓，偏移出处 = vendor `zEnemyData`（与探针同源 ✓）。*/
+#define YK_LE_B_SUB274        0x274   /* __probably_cur_subscript_for_anm_main ✓ */
+#define YK_LE_B_ANM_MAIN      0x270
+#define YK_LE_B_IV0           0x28c   /* ecl_int_vars[0] ✓ */
 static int yk_le_here(void)
 {
     uint8_t *b = yk_boss();
     if (!b) return 0;
     return yk_le_mode(1 /* 本卡在场 ✓ */,
-                      yk_le_boss_sub_index(b),             /* ★ 判据 = ECL subroutine_index ✓ */
+                      *(const int32_t *)(b + YK_LE_B_SUB274),
                       *(const int32_t *)(b + YK_LE_B_ANM_MAIN),
                       *(const int32_t *)(b + YK_LE_B_IV0));
 }
-
-/* ★★ B2（2026-10-18）：读一只敌机的 **`$I3`**（= `zEnemyData.ecl_int_vars[3]` = `zEnemy+0x14c4`）。
- *   只读 ✓；偏移/一手出处见 `YK_E_ECL_IVARS3` 那段（leveledit `translate.py:207-217` ✓）。
- *   唯一消费点 = `yk_transfer_tick()` 的接管判据（`yk_le_is_their_familiar(yk_le_iv3(e))` ✓）。*/
-static int32_t yk_le_iv3(const uint8_t *e)
-{
-    return e ? *(const int32_t *)(e + YK_E_ECL_IVARS3) : 0;
-}
-
 
 /* ★★★ 2026-09-22（P3 第二批）：「射击中」的判据（TH18 侧）。
  * TH08 是 `Player::shotActive`（一个 999 帧的射击周期标志，`th08:0x17d6ed4`）；TH18 没有同一个
@@ -3327,10 +3258,6 @@ static void yk_leave_youkai(yk_card_t *s)
     if (s) s->tr.pending = 0;
 }
 
-/* ★ 2026-10-18：外部使魔（leveledit）的妖侧外观表——定义在 §3.7b（文件后半）。
- *   撤使魔的五条路都过 `yk_drop_all()` ⇒ 这里必须把本体原色还回去（否则删卡后那批使魔永远隐形）。*/
-static void yk_xfam_vm_kill_all(void);
-
 static void yk_drop_all(yk_card_t *s, const char *why)
 {
     yk_action_t acts[YK_FAM_MAX];
@@ -3347,10 +3274,6 @@ static void yk_drop_all(yk_card_t *s, const char *why)
      *   `yk_withdraw_all` 撤不到它）—— 删卡 / 换关 / 局末 / 自机没了 / 世界没了五条路**都过这里**
      *   ⇒ 这一句就是「删卡后一只不留」的落点（`METHOD.md` 铁律二）。*/
     yk_orbit_kill_all();
-    /* ★ 2026-10-18（leveledit 接管）：他们那批使魔是**别人的敌人**，我们只是把本体藏了 + 起了环
-     *   ⇒ 撤的时候必须**把本体原色还回去**（否则删卡 / 换关之后它们永远隐形）。
-     *   五条退休路都过这里（见上面那段长注）；句柄幂等、拿不到就 no-op。*/
-    yk_xfam_vm_kill_all();
     yk_zone_clear_all();                  /* ★ 死亡点吸收区：所有退休路都过这里 ⇒ 不留游荡的区 */
     if (had && why) ce_log("youkai: withdrew %u familiar(s) (%s)", had, why);
     if (s) s->tr.pending = 0;
@@ -3914,29 +3837,9 @@ static uint32_t s_ledger_frame;   /* 前向声明（定义在后面；这里只�
  *   ⚠ 自激守卫：我们打在母机上的源若擦到子敌人，会让它掉血又被当成新伤害转一次
  *     ⇒ 照 `youkai.c` 既有的 `yk_in_transfer_zone(...)` 做法把「落在转嫁盒里」的条目**只采样不喂**。*/
 #define YK_XFAM_MAX 32
-/* ★★★ 2026-10-18（owner：「**1/2 转伤搞不清楚，你得上 log**」+「使魔切换还得有音效」）：
- *   `le` = 这一条是**接管的 leveledit 使魔**（`$I3 == 997`）⇒ 只有它们走妖侧外观切换 + 详细日志。
- *   绕转使魔也进这张表（见下面那条支），但它们的人妖外观由 `s_orbit[]` 自己那套管 ⇒ `le = 0`。
- *   日志节流字段就放这里（表只有 32 格，多开一张平行表不值）。*/
-typedef struct {
-    uint32_t id;
-    int32_t  life;
-    uint8_t  seen;
-    uint8_t  le;               /* 1 = leveledit 接管来的外部使魔 */
-    uint16_t _pad;
-    uint32_t last_log_frame;   /* 上一次 hit 日志的帧（节流 `YK_XFAM_LOG_EVERY`）*/
-    uint16_t log_hits;         /* 这只使魔已经打过几条 hit 日志（上限 `YK_XFAM_LOG_MAX`）*/
-    uint16_t _pad2;
-} yk_xfam_t;
+typedef struct { uint32_t id; int32_t life; uint8_t seen; } yk_xfam_t;
 static yk_xfam_t s_xfam[YK_XFAM_MAX];
 static unsigned  s_xfam_fed;      /* 本局喂过多少次外部/绕转使魔（日志用）*/
-/* 日志节流（owner：日志已 8 MB+ ⇒ 别刷爆）：
- *   · `YK_XFAM_LOG_EVERY` = **每只使魔每 30 帧最多一条** hit / side 日志；
- *   · `YK_XFAM_LOG_MAX`   = 每只使魔整局的 hit 日志上限（一局长 boss 战 ≈ 16 × 64 行 ≈ 140 KB，可接受）；
- *   · `YK_XFAM_SIDE_LOG_MAX` = 切侧日志上限（玩家狂按 Shift 也不会刷屏）。*/
-#define YK_XFAM_LOG_EVERY    30u
-#define YK_XFAM_LOG_MAX      64u
-#define YK_XFAM_SIDE_LOG_MAX 32u
 /* ★★★ 2026-10-01（owner：「体感 1/2 伤害转移没有生效…敌人本身没死」+ 日志 `0 transfer damage`）：
  *   **转嫁链路的逐段诊断**（只加计数，行为零变化）—— 把「喂料 → 累加器 → 落点」每一段都数出来：
  *   `s_xfer_mapped_feed/_delta`（映射使魔那一支）、`s_xfer_orbit_feed/_delta`（绕转）、
@@ -3944,10 +3847,6 @@ static unsigned  s_xfam_fed;      /* 本局喂过多少次外部/绕转使魔（
  *   `ce_damage_rect`**）、`s_xfer_noboss`（因为**没有 boss** 而把转嫁量丢进 `dropped` 的次数）。*/
 static unsigned s_xfer_mapped_feed, s_xfer_orbit_feed, s_xfer_ext_feed;
 static int32_t  s_xfer_mapped_delta, s_xfer_orbit_delta, s_xfer_ext_delta;
-static int32_t  s_xfer_ext_amount;   /* ★ 2026-10-18：本 tick **外部使魔**真正加进 pending 的量（日志用）*/
-static int32_t  s_xfer_ext_le_amount;/* ★ 同上，但只算**接管的 leveledit 使魔**那一部分
-                                      *   —— `transfer applied` 那行只用它做门，免得在普通关卡
-                                      *   （boss 的普通子敌人也走 ext 支）里刷出 `leveledit:` 日志 */
 static unsigned s_xfer_rect, s_xfer_rect_fail, s_xfer_noboss, s_xfer_noparent;
 /* ★★★ 2026-10-01（owner 实跑：`xfer[tick 5706 map 0/0 orb 538/11391 ext 0/0 rect 0 … noboss 275]`
  *   ⇒ **11391 点伤害全被 `noboss` 丢掉**）—— **落点改成「这只使魔自己的母机（parent）」**：
@@ -3996,245 +3895,6 @@ static yk_xfam_t *yk_xfam_find(uint32_t id)
     unsigned i;
     for (i = 0; i < YK_XFAM_MAX; ++i) if (s_xfam[i].id == id) return &s_xfam[i];
     return 0;
-}
-
-/* ======================= §3.7b 外部使魔（leveledit）的**妖侧外观** =======================
- * ★★★ 2026-10-18 owner 口径：「**除了人侧外观，其他都得跟我们的使魔一致**」。
- *
- * 我们**自建**使魔的切侧（`yk_fam_vm_follow()` / `yk_orbit_vm_sync()`，同一套口径）：
- *   · **人侧**：画本体（跟随 VM，四色原生切图）；
- *   · **妖侧**：本体**不可见** = `ce_anm_set_color(id, 0x00ffffff)`（alpha 置 0，VM 不删 ⇒
- *     切回来一帧就恢复）+ 一支**常驻魔法阵环**（脚本 `CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_RING`
- *     = 309，layer `YK_FAM_ANM_LAYER` = 7，`interrupt 2` = 妖侧蓝）。
- *
- * 对外部敌机要**等价**地做，唯一的差别是：它们的本体 VM 不是我们起的，句柄在
- * `zEnemyData.anm_vm_ids[0]` = **`zEnemy + CE_ENEMY_DATA(0x122c) + 0x124` = `zEnemy + 0x1350`**
- * （= `CE_ENEMY_ANM_VM0` ✓；一手读法同 117 `cards/animal.c` 的 `animal_enemy_sprite_size()` /
- * `ufo.c` 换皮的「每帧写宿主 `anm_vm_ids[k]` 的 color_1」✓）。
- *
- * ⚠ **安全兜底（做错会让妖侧使魔整批消失）**：拿不到本体 VM 句柄（还没建 / 引擎刚撤）⇒
- *   **什么都不做**（不写颜色、不起环、不留半状态），只按节流打一行 WARN ⇒ 下一帧重试。
- * ⚠ **绝不改它们的 ECL / 碰撞盒 / 血量**：这里只碰 `color_1`（可见性）与我们自己起的环 VM。
- * ⚠ 删卡 / 换关 / 那批使魔消失 ⇒ `yk_xfam_vm_kill()` 把本体原色还回去（不留隐形的敌人）。*/
-typedef struct {
-    uint32_t fam_id;       /* 0 = 空槽 */
-    uint32_t body_vm;      /* 本体 VM **id**（`anm_vm_ids[0]`）—— 0 = 还没拿到 */
-    uint32_t body_color;   /* 本体 `color_1` 原值（只存一次；人侧 / 收尾还回去）*/
-    uint32_t ring_vm;      /* 我们自己起的常驻环 VM（只在妖侧存在）*/
-    uint32_t last_side_log;
-    uint32_t last_warn;
-    uint16_t side_logs;
-    uint16_t warn_n;
-    int8_t   side;         /* 上一次同步的侧：0 人 / 1 妖 / -1 = 还没同步过 */
-    int8_t   body_saved;   /* 1 = `body_color` 有效 */
-    int8_t   body_hidden;  /* 1 = 本体现在被我们置了 alpha 0（人侧只还原**一次**，别每帧钉色）*/
-} yk_xfam_vm_t;
-static yk_xfam_vm_t s_xfam_vm[YK_XFAM_MAX];
-static int8_t s_xfam_side = -1;      /* 上一帧的全局侧（切换音只在**边沿**响一次）*/
-static unsigned s_xfam_ring_fail;    /* 环 VM 建失败的累计次数（日志节流用）*/
-static unsigned s_xfam_vm_full;      /* 外观表满的次数（= 台账满；日志只打第一次）*/
-
-static yk_xfam_vm_t *yk_xfam_vm_find(uint32_t fam_id)
-{
-    unsigned i;
-    if (!fam_id) return 0;
-    for (i = 0; i < YK_XFAM_MAX; ++i) if (s_xfam_vm[i].fam_id == fam_id) return &s_xfam_vm[i];
-    return 0;
-}
-
-/* 收一条：本体原色还回去（若句柄还有效）+ 环发 `interrupt 3` 淡出（脚本自删，我们不等它）。
- * 幂等；删卡 / 换关 / 那只使魔消失三条路都过这里。*/
-static void yk_xfam_vm_kill(yk_xfam_vm_t *v)
-{
-    if (!v) return;
-    if (v->body_vm && v->body_saved && v->body_hidden)
-        ce_anm_set_color(v->body_vm, v->body_color);
-    if (v->ring_vm) { ce_anm_interrupt(v->ring_vm, 3); v->ring_vm = 0; }
-    __builtin_memset(v, 0, sizeof *v);
-    v->side = -1;
-}
-
-static void yk_xfam_vm_kill_id(uint32_t fam_id) { yk_xfam_vm_kill(yk_xfam_vm_find(fam_id)); }
-
-static void yk_xfam_vm_kill_all(void)
-{
-    unsigned i;
-    for (i = 0; i < YK_XFAM_MAX; ++i) if (s_xfam_vm[i].fam_id) yk_xfam_vm_kill(&s_xfam_vm[i]);
-}
-
-/* 每帧：把**接管的 leveledit 使魔**按当前侧切外观（人：本体可见；妖：本体 alpha=0 + 环）。
- * 调用点 = `yk_transfer_tick()` 最前面（那一支每帧都跑，且不在任何 `return` 之后）。
- * `noinline` 的理由同 `yk_fam_vm_check()`：别把活值塞进内联着 `ce_damage_rect` 汇编的函数。*/
-static void __attribute__((noinline)) yk_xfam_vm_tick(void)
-{
-    unsigned i, live = 0;
-    int side = yk_focused() ? 1 : 0;
-
-    for (i = 0; i < YK_XFAM_MAX; ++i) {
-        yk_xfam_t *x = &s_xfam[i];
-        yk_xfam_vm_t *v;
-        uint8_t *f, *vm;
-        uint32_t vid;
-        const float *pp;
-
-        if (!x->id || !x->le) continue;                    /* 只看接管的 leveledit 使魔 */
-        f = yk_familiar_by_id(x->id);
-        if (!f) continue;                                  /* 实体没了 ⇒ 台账那一支会删条目 → kill */
-        ++live;
-
-        v = yk_xfam_vm_find(x->id);
-        if (!v) {
-            unsigned k;
-            for (k = 0; k < YK_XFAM_MAX; ++k) if (!s_xfam_vm[k].fam_id) break;
-            if (k >= YK_XFAM_MAX) {                        /* 表满（= 台账满）⇒ 本帧跳过，下次再试 */
-                if (s_xfam_vm_full++ == 0u)
-                    ce_log("youkai/leveledit: WARN appearance table FULL (%d) - external familiars keep "
-                           "their human-side look (no half state)", (int)YK_XFAM_MAX);
-                continue;
-            }
-            v = &s_xfam_vm[k];
-            __builtin_memset(v, 0, sizeof *v);
-            v->fam_id = x->id;
-            v->side = -1;
-        }
-
-        pp = ce_enemy_pos(f);
-        vid = *(const uint32_t *)(f + CE_ENEMY_ANM_VM0);   /* `zEnemyData.anm_vm_ids[0]` ✓ */
-        vm = vid ? (uint8_t *)ce_anm_get_vm(vid) : 0;
-        if (!vm || IsBadReadPtr((const void *)(vm + CE_ANM_VM_COLOR1), 4)) {
-            /* ★ 兜底：拿不到本体 VM ⇒ **什么都不做**（只记一句），绝不留半状态。*/
-            v->body_vm = 0; v->body_color = 0; v->body_saved = 0; v->body_hidden = 0;
-            if (v->warn_n < 3u && (v->last_warn == 0u || s_ledger_frame - v->last_warn >= 300u)) {
-                v->last_warn = s_ledger_frame;
-                ++v->warn_n;
-                ce_log("youkai/leveledit: WARN familiar id=%u has no usable body anm VM "
-                       "(anm_vm_ids[0]=%u) - side switch SKIPPED this frame, nothing touched",
-                       x->id, vid);
-            }
-            continue;
-        }
-
-        if (vid != v->body_vm) {                           /* 第一次 / 引擎重建了本体 VM */
-            v->body_vm = vid;
-            v->body_color = *(const uint32_t *)(vm + CE_ANM_VM_COLOR1);
-            v->body_saved = 1;
-            v->body_hidden = 0;                            /* 新 VM 还没被我们藏过 */
-        }
-
-        if (side) {
-            /* 妖侧：本体 alpha = 0（**照抄自建那条路径** `yk_fam_vm_follow()` 的写法 */
-            ce_anm_set_color(vid, 0x00ffffffu);
-            v->body_hidden = 1;
-            if (!v->ring_vm || !ce_anm_get_vm(v->ring_vm)) {
-                v->ring_vm = yk_vm_spawn(CE_ABILITY_ANM(),
-                                         CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_RING,
-                                         YK_FAM_ANM_LAYER);
-                if (v->ring_vm) {
-                    if (pp) ce_anm_set_pos(v->ring_vm, pp[0], pp[1], 0.0f);
-                    ce_anm_interrupt(v->ring_vm, 2);       /* 2 = 妖侧蓝（一手 `0x41b04e`）*/
-                } else if ((++s_xfam_ring_fail == 1u) || (s_xfam_ring_fail % 300u) == 0u) {
-                    ce_log("youkai/leveledit: ring VM spawn FAILED %u time(s) (familiar id=%u, script %d, "
-                           "layer %d) - body is hidden but the ring retries next frame",
-                           s_xfam_ring_fail, x->id,
-                           (int)CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_RING, (int)YK_FAM_ANM_LAYER);
-                }
-            } else if (pp && !ce_anm_set_pos(v->ring_vm, pp[0], pp[1], 0.0f)) {
-                v->ring_vm = 0;                            /* 句柄作废 ⇒ 下一帧自愈重起 */
-            }
-        } else {
-            /* 人侧：本体原样可见 + 环收掉（发 interrupt 3 淡出）。
-             * ⚠ 原色**只在从妖侧切回来那一次**写回（`body_hidden` 门）—— 每帧写会把他们的
-             *   anm 脚本自己的受击闪白 / 淡入淡出钉死在这个快照色上。*/
-            if (v->body_saved && v->body_hidden) {
-                ce_anm_set_color(vid, v->body_color);
-                v->body_hidden = 0;
-            }
-            if (v->ring_vm) { ce_anm_interrupt(v->ring_vm, 3); v->ring_vm = 0; }
-        }
-
-        if (v->side != (int8_t)side) {
-            if (v->side >= 0 &&
-                v->side_logs < YK_XFAM_SIDE_LOG_MAX &&
-                (v->last_side_log == 0u || s_ledger_frame - v->last_side_log >= YK_XFAM_LOG_EVERY)) {
-                v->last_side_log = s_ledger_frame;
-                ++v->side_logs;
-                ce_log("youkai/leveledit: side -> %s (fam id=%u)", side ? "YOUKAI" : "HUMAN", x->id);
-            }
-            v->side = (int8_t)side;
-        }
-    }
-
-    /* ★ 切换音：**只在全局侧的边沿**、且场上真的有接管的使魔时响**一次**（跟自建使魔同一枚
-     * `YOUKAI_FAM_SHIFT` = 扩表 0x5d；资源 `assets/voice/YOUKAI_FAM_SHIFT.wav`）。
-     * 两个方向都响（owner 2026-10-18：「使魔切换还得有音效」）；自建那条路（`se_fam_press`）
-     * 一字未改 ⇒ 两个方向的差异不影响现有卡的行为。*/
-    if (s_xfam_side >= 0 && side != (int)s_xfam_side && live)
-        ce_play_voice(YOUKAI_FAM_SHIFT, ce_player_x());
-    s_xfam_side = (int8_t)side;
-}
-
-/* ★★★ 2026-10-18（owner：「**1/2 转伤搞不清楚**」）：**每一次命中的可读日志**。
- *   格式逐字（owner 给的）：
- *     `youkai/leveledit: xfam hit id=<fam> dmg=<实际打出的伤害> -> boss id=<boss> transfer=<转给 boss 的伤害> (1/2)`
- *   `dmg` = 这只使魔这一笔**真实掉的血**（`life.current` 差分；扫描每 2 帧 ⇒ 是这两帧的合计）；
- *   `transfer` = 真正加进累加器 `s->tr.pending` 的量（`yk_half_with_carry()` 的半整数进位，
- *     不是简单的 `dmg/2` ⇒ 老实读 `pending` 的前后差）。
- *   节流：每只使魔每 `YK_XFAM_LOG_EVERY`(30) 帧最多一条、整局最多 `YK_XFAM_LOG_MAX`(64) 条。
- *   `in_box` = 落在转嫁盒里 ⇒ 自激守卫**只采样不喂**（日志里标出来，免得 owner 以为吞了）。*/
-static void __attribute__((noinline)) yk_xfam_hit_log(uint32_t fam_id, int32_t dmg,
-                                                      uint32_t boss_id, int32_t fed, int in_box)
-{
-    yk_xfam_t *x = yk_xfam_find(fam_id);
-    if (!x || !x->le) return;
-    if (x->log_hits >= YK_XFAM_LOG_MAX) return;
-    if (x->last_log_frame && s_ledger_frame - x->last_log_frame < YK_XFAM_LOG_EVERY) return;
-    x->last_log_frame = s_ledger_frame;
-    ++x->log_hits;
-    ce_log("youkai/leveledit: xfam hit id=%u dmg=%d -> boss id=%u transfer=%d (1/2)%s",
-           fam_id, dmg, boss_id, fed,
-           in_box ? " [in transfer box: sampled only, NOT fed]" : "");
-}
-
-/* ★★★ 2026-10-18（owner：「1/2 转伤搞不清楚」）：**转伤落地**的收尾日志。
- *   `ce_damage_rect` 建的是**伤害源**（敌人侧 `enm_compute_damage_sources` 0x45f0f0 下一次结算，
- *   `+0x74` = 每次结算的伤害）⇒ **建源那一帧读目标 HP 是读不到变化的** ⇒
- *   这里记下 (目标 id, 建源前 HP, 那一笔 amount)，**下一个 tick** 再读一次 HP 打一行：
- *     `youkai/leveledit: transfer applied boss=<id> hp_before=<x> hp_after=<y> …`
- *   `hp_after - hp_before` 里也含同一帧自机弹的伤害 ⇒ 它是「这段窗口里 boss 掉了多少」，
- *   不是「只有我们这一笔」；把 amount / ext 一起打出来就能对账。
- *   只有「本帧有**接管的 leveledit 使魔**喂过料」才记（`s_xfer_ext_le_amount > 0`）
- *   ⇒ 不把自建那条路刷爆，也不在普通关卡（boss 的普通子敌也走 ext 支）里刷 `leveledit:` 行。
- *   HP 拿不到（目标已死/查不到）⇒ `hp_after=?`，只打转伤值（照 owner 口径）。*/
-static uint32_t s_xfer_obs_id;
-static int32_t  s_xfer_obs_amount, s_xfer_obs_ext, s_xfer_obs_hp;
-static uint8_t  s_xfer_obs_wait;
-static uint32_t s_xfer_obs_log_frame;
-static unsigned s_xfer_obs_skipped;
-
-static void __attribute__((noinline)) yk_xfer_applied_tick(void)
-{
-    uint8_t *te;
-    int32_t hp_after;
-    if (!s_xfer_obs_wait) return;
-    s_xfer_obs_wait = 0;
-    te = s_xfer_obs_id ? ce_enemy_by_id(CE_ENEMY_MGR(), (int32_t)s_xfer_obs_id) : 0;
-    hp_after = te ? *(const int32_t *)(te + YK_ED_LIFE_CUR) : -1;
-    if (s_xfer_obs_log_frame && s_ledger_frame - s_xfer_obs_log_frame < YK_XFAM_LOG_EVERY) {
-        ++s_xfer_obs_skipped;                          /* 节流：< 30 帧就攒着，下一行带 skipped */
-        return;
-    }
-    s_xfer_obs_log_frame = s_ledger_frame;
-    if (hp_after >= 0)
-        ce_log("youkai/leveledit: transfer applied boss=%u hp_before=%d hp_after=%d (hp_delta=%d; "
-               "amount=%d, ext=%d from their familiars, 1/2; skipped %u under %u-frame throttle)",
-               s_xfer_obs_id, (int)s_xfer_obs_hp, (int)hp_after, (int)(s_xfer_obs_hp - hp_after),
-               (int)s_xfer_obs_amount, (int)s_xfer_obs_ext, s_xfer_obs_skipped, YK_XFAM_LOG_EVERY);
-    else
-        ce_log("youkai/leveledit: transfer applied boss=%u hp_before=%d hp_after=? (target gone; "
-               "amount=%d, ext=%d from their familiars, 1/2; skipped %u)",
-               s_xfer_obs_id, (int)s_xfer_obs_hp, (int)s_xfer_obs_amount, (int)s_xfer_obs_ext,
-               s_xfer_obs_skipped);
-    s_xfer_obs_skipped = 0;
 }
 
 /* ★★★★ 2026-10-01（**owner 硬约束 ②**）：**时符期间，使魔受到的伤害不得转嫁**。
@@ -4297,18 +3957,9 @@ static void yk_xfer_suppress_log(int reason)
 static void __attribute__((noinline)) yk_transfer_tick(yk_card_t *s)
 {
     ++s_xfer_tick_calls;                   /* ★ 诊断：这一支本局跑了几次 */
-    /* ★ 2026-10-18（owner：转伤要可观测 + 妖侧外观要切换）：
-     *   ① `yk_xfer_applied_tick()` 收上一 tick 那笔转伤的 HP 尾巴（**必须在所有 return 之前**）；
-     *   ② `yk_xfam_vm_tick()` 每帧同步接管使魔的外观（同上 —— 不能放在本函数中段的早退之后）；
-     *   ③ 本 tick 的「外部使魔喂料量」清零后重新累计。*/
-    yk_xfer_applied_tick();
-    yk_xfam_vm_tick();
-    s_xfer_ext_amount = 0;
-    s_xfer_ext_le_amount = 0;
     unsigned i;
     uint8_t *boss = yk_boss();                      /* 每帧只解析一次（链表走 4 个 id）*/
     const float *bp = boss ? ce_enemy_pos(boss) : 0;
-    uint8_t *tgt = 0;                               /* 这一笔转伤的落点（母机 / boss 兜底）*/
     int32_t amount;
 
     for (i = 0; i < YK_FAM_MAX; ++i) {
@@ -4354,28 +4005,17 @@ static void __attribute__((noinline)) yk_transfer_tick(yk_card_t *s)
             yk_transfer_feed(&s->tr, d, YK_TRANSFER_PCT_MAP); }   /* ★ P59：映射（发弹口）使魔 ⇒ 1/2 ✓ */
     }
 
-    /* ===== ★ 第二遍：**绕转 + 外部子敌人 + leveledit 使魔**的同一套 1/2 转嫁 =====
-     * （owner 2026-09-30 口径；★ 2026-10-18 B2 加「他们的使魔」那一类 ✓）
+    /* ===== ★ 第二遍：**绕转 + 外部子敌人**的同一套 1/2 转嫁（owner 2026-09-30 口径）=====
      * 每 2 帧扫一次（代价减半；一手的转嫁本身就是每帧结算，2 帧的量化误差 ≤1 帧掉血）。*/
     {
         uint8_t *em = CE_ENEMY_MGR();
         uint8_t *e;
         unsigned i;
-        /* ★★ 2026-10-18（B2 接管）：**那场**判据只在扫描那一帧算一次 ✓（`yk_le_here()` = boss ECL
-         *   `subroutine_index ≥ 24`，见上面那段）。没装 108 ⇒ 本 tick 根本不跑 ⇒ 恒 0 ✓。
-         *   他们那批使魔（`MystiaChild*`）是 `enmCreate(..., 0, 0)` 建的 ⇒ `parent_enemy_id` = 0
-         *   ⇒ 原来那条「外部子敌人」判定**够不到它们** ✗；接管 = 让它们进**同一张**外部使魔台账
-         *   `s_xfam`（落点 = boss）⇒ 1/2 转伤走的就是现成那条 ext 支 ✓，不新建第二套台账 ✓。*/
-        int      le_here = 0;
-        uint8_t *le_boss = 0;
         if (em && (s_ledger_frame % 2u) == 0u) {
-            le_here = yk_le_here();
-            le_boss = le_here ? yk_boss() : 0;
             for (i = 0; i < YK_XFAM_MAX; ++i) s_xfam[i].seen = 0;
             CE_ENEMY_FOREACH(em, e) {
                 uint32_t id, parent;
                 int32_t life;
-                int le_fam = 0;
                 const float *cp;
                 uint8_t *pe;
                 yk_xfam_t *x;
@@ -4387,23 +4027,13 @@ static void __attribute__((noinline)) yk_transfer_tick(yk_card_t *s)
                  *   变量恰好等于某个 boss id 时才喂一次）⇒ 「外部子敌人」那条转嫁源实际是死的
                  *   （实跑台账 `xfer[... ext 0/0 ...]`）。修对之后 = 真的按「谁是 boss 的孩子」喂。*/
                 parent = (uint32_t)*(const int32_t *)(e + YK_ENEMY_PARENT_ID);
-                /* ★★ B2：**他们的使魔** = `$I3 == 997`（`yk_le_is_their_familiar`）+ **那场**（`le_here`）。
-                 *   两个条件缺一不可（防误伤：零售局 `le_here` 恒 0 ✓；他们那场里别的敌机没有 997 ✓）；
-                 *   没有 parent 时把落点设成**当前 boss**（一手语义 = 「打使魔 ⇒ 转给它的主人」✓）。*/
-                if (!parent && le_here && le_boss &&
-                    yk_le_is_their_familiar((int)yk_le_iv3(e))) {
-                    parent = *(const uint32_t *)(le_boss + CE_ENEMY_ID);
-                    le_fam = 1;
-                }
-                if (!parent) continue;                             /* 只看子敌人 / 接管的使魔 */
+                if (!parent) continue;                             /* 只看子敌人 */
                 if (yk_map_has_id(&s_map, id)) continue;            /* 已在映射层 ⇒ 那边已喂，别重复 */
                 if (yk_orbit_find_id(id)) continue;                 /* 绕转使魔走下面那条支 */
                 pe = ce_enemy_by_id(em, (int32_t)parent);
                 if (!pe) continue;
-                /* 判据：母机是 boss 系（`CE_EM_BOSS_IDS[4]` **或** 母机自己的 `own_boss_id != 0`）。
-                 * ★ 接管的使魔例外：落点就是 `yk_boss()` 本人 ⇒ 天然满足，不必再走这条（也不该
-                 *   因为它们没有 parent 而被它挡掉 ✓）。*/
-                if (!le_fam && !yk_parent_is_boss(em, pe)) continue;
+                /* 判据：母机是 boss 系（`CE_EM_BOSS_IDS[4]` **或** 母机自己的 `own_boss_id != 0`）。*/
+                if (!yk_parent_is_boss(em, pe)) continue;
                 life = *(const int32_t *)(e + YK_ED_LIFE_CUR);
                 cp = ce_enemy_pos(e);
                 x = yk_xfam_find(id);
@@ -4413,51 +4043,24 @@ static void __attribute__((noinline)) yk_transfer_tick(yk_card_t *s)
                     for (k = 0; k < YK_XFAM_MAX; ++k) if (!s_xfam[k].id) break;
                     if (k >= YK_XFAM_MAX) continue;
                     x = &s_xfam[k];
-                    __builtin_memset(x, 0, sizeof *x);
-                    x->id = id;
-                    x->le = (uint8_t)le_fam;
-                    /* 第一次掉血就要能打出来 ⇒ 把「上次日志帧」预置成 30 帧之前。*/
-                    x->last_log_frame = s_ledger_frame - YK_XFAM_LOG_EVERY;
+                    s_xfam[k].id = id;
                     ++s_xfam_used;
-                    if (le_fam)                                    /* ★ 一次一条：实跑里能数出接管了几只 */
-                        ce_log("youkai/leveledit: TAKEOVER familiar id=%u ($I3=%d, iv3@+0x14c4) -> "
-                               "external-familiar ledger (1/2 transfer to boss id=%u)",
-                               id, (int)yk_le_iv3(e), parent);
                 } else if (x->life > life) {
-                    /* 掉血 ⇒ 转 1/2（`yk_transfer_feed` 内部按比例）；自激盒内只采样不喂。
-                     * ★ 2026-10-18：`fed` = **真正加进累加器**的量（半整数进位器 ⇒ 不是死板的 d/2），
-                     *   它就是 `xfam hit … transfer=<fed>` 那个数。*/
-                    {   int32_t d = x->life - life;
-                        int in_box = (!cp || !bp) ? 0 :
-                                     yk_in_transfer_zone(cp[0], cp[1], bp[0], bp[1],
-                                                         YK_TRANSFER_BOX_W, YK_TRANSFER_BOX_H);
-                        int32_t fed = 0;
-                        if (!in_box) {
-                            int32_t before = s->tr.pending;
+                    /* 掉血 ⇒ 转 1/2（`yk_transfer_feed` 内部按比例）；自激盒内只采样不喂。*/
+                    if (!cp || !bp || !yk_in_transfer_zone(cp[0], cp[1], bp[0], bp[1],
+                                                          YK_TRANSFER_BOX_W, YK_TRANSFER_BOX_H)) {
+                        {   int32_t d = x->life - life;
                             ++s_xfer_ext_feed; s_xfer_ext_delta += d;
                             s_xfer_parent = parent;              /* ★ 落点 = 外部子敌人的母机 */
-                            yk_transfer_feed(&s->tr, d, YK_TRANSFER_PCT_MAP);   /* ★ P59：1/2 ✓ */
-                            fed = s->tr.pending - before;
-                            if (fed < 0) fed = 0;                /* pending 上限钳回时可能变小 */
-                            s_xfer_ext_amount += fed;            /* ★ 本 tick 外部使魔的贡献 */
-                            if (le_fam) s_xfer_ext_le_amount += fed;   /* 其中「接管的」那一部分 */
-                            ++s_xfam_fed;
-                        }
-                        if (le_fam) yk_xfam_hit_log(id, d, parent, fed, in_box);
+                            yk_transfer_feed(&s->tr, d, YK_TRANSFER_PCT_MAP); }   /* ★ P59：映射（发弹口）使魔 ⇒ 1/2 ✓ */
+                        ++s_xfam_fed;
                     }
                 }
-                /* ★ 2026-10-18：接管的标记按**本帧判据**维护；判据掉了（`le_here` 变 0）就把外观还回去。*/
-                if (!le_fam && x->le) { yk_xfam_vm_kill_id(id); x->le = 0; }
-                else if (le_fam) x->le = 1;
                 x->life = life;
                 x->seen = 1;
             }
             for (i = 0; i < YK_XFAM_MAX; ++i) {                    /* 查不到 ⇒ 删（不因血量没变删）*/
-                if (s_xfam[i].id && !s_xfam[i].seen) {
-                    if (s_xfam[i].le) yk_xfam_vm_kill_id(s_xfam[i].id);   /* 妖侧外观先还回去 */
-                    __builtin_memset(&s_xfam[i], 0, sizeof s_xfam[i]);
-                    --s_xfam_used;
-                }
+                if (s_xfam[i].id && !s_xfam[i].seen) { s_xfam[i].id = 0; --s_xfam_used; }
             }
         }
         /* ★ 绕转使魔（`s_orbit[]`）：它们不进 `s_map` 但也必须转（一手：1/2 对使魔成立）。
@@ -4475,7 +4078,6 @@ static void __attribute__((noinline)) yk_transfer_tick(yk_card_t *s)
                     unsigned k;
                     if (s_xfam_used < YK_XFAM_MAX)
                         for (k = 0; k < YK_XFAM_MAX; ++k) if (!s_xfam[k].id) {
-                            __builtin_memset(&s_xfam[k], 0, sizeof s_xfam[k]);  /* le = 0：不是接管的 */
                             s_xfam[k].id = o->fam_id; s_xfam[k].life = lc; s_xfam[k].seen = 1;
                             ++s_xfam_used; break;
                         }
@@ -4510,7 +4112,7 @@ static void __attribute__((noinline)) yk_transfer_tick(yk_card_t *s)
         uint8_t *em2 = CE_ENEMY_MGR();
         uint8_t *pe = (em2 && s_xfer_parent) ? ce_enemy_by_id(em2, (int32_t)s_xfer_parent) : 0;
         const float *pp2 = pe ? ce_enemy_pos(pe) : 0;
-        if (pp2) { bp = pp2; tgt = pe; }
+        if (pp2) { bp = pp2; }
         else {
             if (s_xfer_parent) ++s_xfer_noparent;             /* ★ 诊断：母机查不到 */
             if (!bp) {
@@ -4519,7 +4121,6 @@ static void __attribute__((noinline)) yk_transfer_tick(yk_card_t *s)
                 s->tr.pending = 0;
                 return;
             }
-            tgt = boss;
         }
     }
     amount = yk_transfer_clamp(s->tr.pending, YK_TRANSFER_CAP_PER_FRAME);
@@ -4530,17 +4131,6 @@ static void __attribute__((noinline)) yk_transfer_tick(yk_card_t *s)
     if (!YK_ENABLE_TRANSFER) {                                /* ★ 二分开关 ⑥：不建伤害源、不抬上限 */
         s->dropped += (uint32_t)amount;
         return;
-    }
-    /* ★ 2026-10-18（owner：转伤要可观测）：建源**之前**读一次目标 HP，下一个 tick 再读一次
-     *   ⇒ `transfer applied boss=… hp_before=… hp_after=…` 那行。
-     *   门 = 本 tick 有**接管的 leveledit 使魔**喂过料（`s_xfer_ext_le_amount`）—— 别用更宽的
-     *   `s_xfer_ext_amount`：普通关卡 boss 的普通子敌人也走 ext 支，那会在零售局里刷 `leveledit:` 日志。*/
-    if (s_xfer_ext_le_amount > 0 && tgt) {
-        s_xfer_obs_id     = *(const uint32_t *)(tgt + CE_ENEMY_ID);
-        s_xfer_obs_hp     = *(const int32_t *)(tgt + YK_ED_LIFE_CUR);
-        s_xfer_obs_amount = amount;
-        s_xfer_obs_ext    = s_xfer_ext_le_amount;
-        s_xfer_obs_wait   = 1;
     }
     ++s_xfer_rect;                                           /* ★ 诊断：真的调了几次伤害源 */
     ce_raise_damage_cap(yk_base_damage_cap() + amount);
@@ -7318,10 +6908,7 @@ static int on_ctor(ce_card_t *c)
     yk_transfer_reset(&s->tr);
     {   /* ★ 2026-09-30：外部/绕转使魔的转嫁采样表也随卡重来一起清（文件级静态）。*/
         unsigned xi;
-        /* ★ 2026-10-18：清台账之前先把接管来的使魔**还原**（本体原色 + 收环）—— 否则换关后
-         *   它们永久隐形（它们不是我们的实体，`yk_orbit_kill_all` 管不到）。*/
-        yk_xfam_vm_kill_all();
-        for (xi = 0; xi < YK_XFAM_MAX; ++xi) __builtin_memset(&s_xfam[xi], 0, sizeof s_xfam[xi]);
+        for (xi = 0; xi < YK_XFAM_MAX; ++xi) s_xfam[xi].id = 0;
         s_xfam_used = 0;
     }
     __builtin_memset(s->opt, 0, sizeof s->opt);
@@ -7452,7 +7039,6 @@ static int on_ctor(ce_card_t *c)
  *   本卡原来只在 `on_load`（每关一次）认领；而**纪元清表**（十二合一中盘发卡那批 / 换关竞争）
  *   之后表里就没有我们了 ⇒ 原来会整关停在兜底常量、不进系统（117 的实跑日志
  *   `wba_wc: hud geom … path=fallback` 就是同一现象）。*/
-static int s_hud_sel_seen = -1;   /* ★ 2026-10-15：货架诊断限频（结论变化才打一行 ✓）*/
 static void yk_hud_claim(ce_card_t *c, yk_card_t *s)
 {
     ce_hud_block_t blk;
@@ -7463,27 +7049,6 @@ static void yk_hud_claim(ce_card_t *c, yk_card_t *s)
     blk.side = CE_HUD_SIDE_PINNED;                 /* 非 pinned 会被 pinned 入口拒掉 */
     s->hud_ready = (uint8_t)(ce_hud_slot_claim_pinned_card(
         ce_card_id(c), &blk, YK_HUD_PIN_X, YK_HUD_PIN_Y, &s->hud) ? 1 : 0);
-    /* ★ 2026-10-15（owner 报「108 + 77 + 71 同装 ⇒ 左下角**留出了主动卡的位置**」✗ 的**只读**诊断 ✓）：
-     *   打一行「引擎判据 `mgr+0x38` vs 货架剩余宽」——有卡面 ⇒ 起点 124 ⇒ 宽 **700** ✓；
-     *   没有 ⇒ 起点 68 ⇒ 宽 **756** ✓（底边右端 `CE_HUD_X_MAX` = 824 ✓，算式见 `sdk_core.h` 的让位段 ✓）。
-     *   A/B 一眼分清：
-     *     · `+0x38 == NULL` 而宽是 700 ⇒ **陈旧** ✓（已由 `sdk.c` 帧初的每帧 `ce_hud_card_refresh()` 修掉 ✓）；
-     *     · `+0x38 != NULL` ⇒ **判据语义**问题（引擎对"非主动卡"也留了对象 ✗）⇒ 那就要换成
-     *       读当前卡的 `category == 0` ✓（`cards_def.c:93` 把 category 写在表行 `+0x0c` ✓，
-     *       卡对象 `+0x4c` 指向表行 ✓ —— 一手 `engine/card/th18/15-selected-card-hud.md:74` ✓）。
-     *   ⚠ 本段只读 ✗、不写引擎 ✓；定位完成后可整段删掉 ✗（它不进卡面文案 ✓）。*/
-    {
-        void *sel = CE_PLAYER()
-            ? *(void *const *)(CE_ABILITY_MGR() + CE_MGR_SELECTED_ACTIVE) : 0;
-        float rw = 0.0f;
-        int present = hud_card_present(sel) ? 1 : 0;
-        ce_hud_row_remaining_w(&rw);
-        if (present != s_hud_sel_seen) {
-            s_hud_sel_seen = present;
-            ce_log("youkai: 货架诊断 · mgr+0x38=%p present=%d 剩余宽=%.0f（700=让位 / 756=不让位）",
-                   sel, present, rw);
-        }
-    }
 }
 
 /* ============ ★★★ 2026-09-22（owner #26 · **风味选项**）决死窗口里全屏**敌弹**变红 =============

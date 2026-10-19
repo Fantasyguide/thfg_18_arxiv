@@ -24,24 +24,12 @@ static const float k_rad[SEASON_SUB_COUNT][SEASON_LEVEL_MAX + 1] = {
     /* 土用 */ { 0.0f, 50.0f, 52.0f, 54.0f, 56.0f, 58.0f, 60.0f },
 };
 
-/* 半径2 `RELEASE_LEVEL_RADIUS_2_*`（th16 `0x491ef0` 秋 / `0x491e8c` 土用，一手字节）：秋/土用释放圈从 RADIUS 缩到它；
- * 春/夏/冬的表 th-re-data 未命名、脚本也不用第二个终值 → 0 */
-static const float k_rad2[SEASON_SUB_COUNT][SEASON_LEVEL_MAX + 1] = {
-    /* 春 */ { 0 },
-    /* 夏 */ { 0 },
-    /* 秋 */ { 0.0f, 40.0f, 40.0f, 40.0f, 40.0f, 40.0f, 40.0f },
-    /* 冬 */ { 0 },
-    /* 土用 */ { 0.0f, 30.0f, 30.0f, 30.0f, 30.0f, 30.0f, 30.0f },
-};
-
 /* 每帧伤害：春/夏/土用 100、秋 30、冬 9（`BombSub*__on_tick` 的 create_damage_source 第 4 参）✅ */
 static const int32_t k_dmg[SEASON_SUB_COUNT] = { 100, 100, 30, 9, 100 };
 
-/* 无敌帧：春 = 持续 + 50（一手：`BombSubSpring__on_tick` 每帧把 `+0x1663c` 刷到 50，效果结束后自然剩 50 帧；
- * 攻略写 60，按 METHOD 一手优先）；夏 / 土用 = 10（一手：`begin` 置 `+0x1663c = 10`；攻略写夏 9）；
- * 秋 / 冬 = 30（攻略口径，🟡 未逐条反编译）*/
-#define SEASON_SPRING_TAIL_INVULN 50
-static const int32_t k_invuln[SEASON_SUB_COUNT] = { -1, 10, 30, 30, 10 };   /* -1 = 用 duration + 50 */
+/* 无敌帧：春 = 持续 + 60（攻略口径），其余固定（夏 9 / 秋 30 / 冬 30 / 土用 10）*/
+#define SEASON_SPRING_TAIL_INVULN 60
+static const int32_t k_invuln[SEASON_SUB_COUNT] = { -1, 9, 30, 30, 10 };   /* -1 = 用 duration + 60 */
 
 /* 只给 HUD / 日志用：游戏 ASCII 字体是 ASCII/SJIS，**别在这里放 UTF-8 中文**（会画成乱码）*/
 static const char *k_name[SEASON_SUB_COUNT] = { "Spring", "Summer", "Fall", "Winter", "Doyou" };
@@ -85,7 +73,6 @@ void season_profile(int subseason, int level, season_profile_t *out)
 
     out->duration = k_dur[sub][level];
     out->radius = k_rad[sub][level];
-    out->radius2 = k_rad2[sub][level];
     out->damage = k_dmg[sub];
     out->consume_one_level = (sub == SEASON_SUB_SUMMER || sub == SEASON_SUB_DOYOU) ? 1 : 0;
     out->invuln = (k_invuln[sub] < 0) ? out->duration + SEASON_SPRING_TAIL_INVULN : k_invuln[sub];

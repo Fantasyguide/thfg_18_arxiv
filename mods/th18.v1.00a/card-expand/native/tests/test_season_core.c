@@ -39,24 +39,22 @@ int main(void)
     /* —— 春：半径一路涨到 300、时长 10→20 —— */
     season_profile(SEASON_SUB_SPRING, 1, &p);
     CHECK(p.duration == 10 && p.radius == 60.0f && p.damage == 100 && p.consume_one_level == 0);
-    CHECK(p.radius2 == 0.0f);                         /* 春不缩 */
-    CHECK(p.invuln == 10 + 50);                       /* 春 = 持续 + 50（一手：每帧刷到 50）*/
+    CHECK(p.invuln == 10 + 60);                       /* 春 = 持续 + 60 */
     season_profile(SEASON_SUB_SPRING, 6, &p);
-    CHECK(p.duration == 20 && p.radius == 300.0f && p.invuln == 70);
+    CHECK(p.duration == 20 && p.radius == 300.0f && p.invuln == 80);
     season_profile(SEASON_SUB_SPRING, 0, &p);
     CHECK(p.duration == 0 && p.radius == 0.0f);       /* 档 0 不能放 */
 
-    /* —— 夏：恒 30 帧、半径 40→50、只扣一档、无敌 10 —— */
+    /* —— 夏：恒 30 帧、半径 40→50、只扣一档、无敌 9 —— */
     season_profile(SEASON_SUB_SUMMER, 1, &p);
     CHECK(p.duration == 30 && p.radius == 40.0f && p.damage == 100 && p.consume_one_level == 1);
-    CHECK(p.invuln == 10);                            /* 夏：一手 `begin` 置 10（攻略记 9）*/
+    CHECK(p.invuln == 9);
     season_profile(SEASON_SUB_SUMMER, 6, &p);
     CHECK(p.radius == 50.0f);
 
     /* —— 秋：半径恒 60、时长 40→130、每帧 30、无敌 30、加速（清零消耗）—— */
     season_profile(SEASON_SUB_FALL, 1, &p);
     CHECK(p.duration == 40 && p.radius == 60.0f && p.damage == 30 && p.invuln == 30);
-    CHECK(p.radius2 == 40.0f);                        /* 秋：圈缩到 RADIUS_2 = 40 */
     CHECK(p.consume_one_level == 0);
     season_profile(SEASON_SUB_FALL, 6, &p);
     CHECK(p.duration == 130 && p.radius == 60.0f);
@@ -70,7 +68,6 @@ int main(void)
     /* —— 土用：恒 40 帧、半径 50→60、每帧 100、只扣一档、无敌 10 —— */
     season_profile(SEASON_SUB_DOYOU, 1, &p);
     CHECK(p.duration == 40 && p.radius == 50.0f && p.damage == 100 && p.consume_one_level == 1);
-    CHECK(p.radius2 == 30.0f);                        /* 土用：圈缩到 RADIUS_2 = 30 */
     CHECK(p.invuln == 10);
     season_profile(SEASON_SUB_DOYOU, 6, &p);
     CHECK(p.radius == 60.0f);

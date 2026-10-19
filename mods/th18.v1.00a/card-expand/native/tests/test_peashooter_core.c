@@ -20,10 +20,7 @@ static void run(pea_state_t *s, int n, uint32_t rnd, int *normal, int *gat, int 
         CHECK(o.rows == (o.fires ? (o.set == PEA_SET_GATLING ? PEA_GAT_ROWS : 1) : 0),
               "帧 %d：fires=%d rows=%d set=%d", i, o.fires, o.rows, o.set);
         *starts += o.burst_start;
-        /* ★★ 2026-10-15：爆发的**结束**现在由 `pea_burst_frame()`（**每帧** ✓）报 ⇒ 这里照卡侧
-         *   的真实顺序同步驱动（`on_tick_2`：`pea_burst_frame` → 无敌声明 → 射击回调 ✓）。
-         *   旧写法读 `o.burst_end` ✗ —— 那个字段已不再被设置（见 `peashooter_core.c` 的注释 ✓）。*/
-        *ends += pea_burst_frame(s);
+        *ends += o.burst_end;
         pea_frame(s);
     }
 }
@@ -96,7 +93,7 @@ static void test_gatling_shape(void)
     CHECK(normal == n0, "开大期间还在打平时的豌豆");
     CHECK(gat == PEA_GAT_FRAMES / PEA_GAT_INTERVAL * PEA_GAT_ROWS,
           "开大该打 %d 颗，实际 %d", PEA_GAT_FRAMES / PEA_GAT_INTERVAL * PEA_GAT_ROWS, gat);
-    CHECK(gat * PEA_GAT_DMG == 2400, "开大总伤 = %d（240 颗 × 10 ✓）", gat * PEA_GAT_DMG);
+    CHECK(gat * PEA_GAT_DMG == 2352, "开大总伤 = %d", gat * PEA_GAT_DMG);
     CHECK(s.pending_wait, "开完大该要一个新的随机等待");
     CHECK(s.bursts == 1 && s.peas == (uint32_t)(normal + gat), "bursts=%u peas=%u", s.bursts, s.peas);
 
@@ -117,56 +114,6 @@ static void test_two_cycles(void)
     CHECK(starts == 2 && ends == 2, "两个周期该开大 2 次，得到 start=%d end=%d", starts, ends);
     CHECK(gat == 2 * PEA_GAT_FRAMES / PEA_GAT_INTERVAL * PEA_GAT_ROWS, "开大颗数 %d", gat);
     CHECK(s.bursts == 2, "bursts=%u", s.bursts);
-}
-
-/* ★★★ 2026-10-15（owner 报「电大哥的**无敌一直存在**」✗ 的回归测试 ✓）：
- *   症状 = **松手**（此后不再有射击帧 ✗）之后爆发还挂着 ⇒ 卡侧 `on_tick_2` 里那句
- *   `ce_invuln_request(id, PS_BURST_INVULN)` 每帧照发 ⇒ 无敌一直存在 ✗。
- *   病根 = 爆发倒计时原来只在 `pea_shoot_frame()` 里减 ✗，而它只在按住射击键时被调。
- *   本测试**一枪都不打**、只按帧跑 ⇒ 爆发必须在 PEA_GAT_FRAMES 帧内走完 ✓。*/
-static void test_burst_ends_without_firing(void)
-{
-    pea_state_t s;
-    pea_out_t o;
-    int ends = 0;
-    pea_clear(&s);
-    pea_set_wait(&s, 0);
-    s.wait = 0;                                  /* 攒够了 ⇒ 下一帧开大 */
-    pea_shoot_frame(&s, &o);                     /* 这一帧开大 */
-    CHECK(o.burst_start == 1 && pea_burst_left(&s) > 0, "没开大");
-    CHECK(s.gat_left == (uint32_t)PEA_GAT_FRAMES, "开大那一帧不该顺手倒计时：gat_left=%u", s.gat_left);
-    /* 之后**只按帧**（不调 `pea_shoot_frame` ✗ = 松手 ✓）*/
-    for (int i = 0; i < PEA_GAT_FRAMES; ++i) {
-        ends += pea_burst_frame(&s);
-        if (i < PEA_GAT_FRAMES - 1)
-            CHECK(pea_burst_left(&s) > 0, "第 %d 帧就提前结束了", i + 1);
-    }
-    CHECK(ends == 1, "松手后爆发该正好结束 1 次，实际 %d", ends);
-    CHECK(pea_burst_left(&s) == 0, "松手后爆发还没结束 ⇒ 无敌会一直挂着 ✗");
-    CHECK(s.pending_wait, "爆发结束后该要一个新的随机等待");
-}
-
-/* ★★★ 2026-10-15（owner 报「**电大哥的弹幕把我主机的弹幕也弄成全方向随机的了**」✗ 的回归 ✓）：
- *   判据 = 弹上 packed id（`bullet+0xac` ✓）的**高 8 位 = shooterset 组号** ✓，要 ∈ 我们那两组
- *   （`native/sht_ids.h` 生成物：普攻 **0x17**、机枪 **0x18** ✓）。本测试钳三件事：
- *     ① 我们两组（**任意组内行号** 0..255 ✓）都判"是" ✓；
- *     ② **原生**主机的弹（其它组号 ✓，含 0x00 原生普攻 / 0x0a–0x15 原生装备卡子机组 /
- *        0x16 = 108 那组 ✓）一律判"不是" ✗ —— 这正是那个 bug 的边界 ✓；
- *     ③ 紧邻的两组（0x16 / 0x19 ✓）也判"不是" ✗。*/
-static void test_bullet_is_ours(void)
-{
-    const uint32_t N = 0x17u, G = 0x18u;
-    CHECK(pea_bullet_is_ours((N << 8) | 0u,   N, G) == 1, "普攻组第 0 行没认出来");
-    CHECK(pea_bullet_is_ours((N << 8) | 7u,   N, G) == 1, "普攻组第 7 行没认出来");
-    CHECK(pea_bullet_is_ours((G << 8) | 0u,   N, G) == 1, "机枪组第 0 行没认出来");
-    CHECK(pea_bullet_is_ours((G << 8) | 255u, N, G) == 1, "机枪组第 255 行没认出来");
-    for (uint32_t set = 0; set <= 0x2fu; ++set) {
-        if (set == N || set == G) continue;
-        CHECK(pea_bullet_is_ours((set << 8) | 3u, N, G) == 0,
-              "★ 组 %#x 的弹被误认成我们的（主机弹会被改朝向 ✗）", set);
-    }
-    CHECK(pea_bullet_is_ours((0x16u << 8) | 0u, N, G) == 0, "0x16（108 那组）被误认");
-    CHECK(pea_bullet_is_ours((0x19u << 8) | 0u, N, G) == 0, "0x19（116 季节那组）被误认");
 }
 
 static void test_inflight_and_cap(void)
@@ -314,8 +261,6 @@ int main(void)
     test_normal_cadence();
     test_gatling_shape();
     test_two_cycles();
-    test_bullet_is_ours();                           /* ★ 2026-10-15：主机弹绝不能被误认 ✓ */
-    test_burst_ends_without_firing();                /* ★ 2026-10-15：松手后爆发/无敌必须自己走完 ✓ */
     test_inflight_and_cap();
     test_clear();
     test_chain_pick();

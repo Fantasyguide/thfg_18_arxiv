@@ -776,7 +776,7 @@ APPEND_PLAN = {
             dict(macro="PL03_109_SNAKE", spec_kind="card", spec_file=444, new_sid=50,
                  sprite_names={"POFV109_C1S_F0": 148, "POFV109_C1S_F1": 149,
                                 "POFV109_C1S_F2": 150, "POFV109_C1S_F3": 151}),
-            dict(macro="PL03_109_FROG", spec_kind="card", spec_file=448, new_sid=51,
+            dict(macro="PL03_109_FROG", spec_kind="card", spec_file=447, new_sid=51,
                  sprite_names={"POFV109_C2S_FROG": 152}),
         ],
 }

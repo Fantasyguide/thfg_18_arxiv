@@ -2426,25 +2426,18 @@ int yk_orbit_offset(unsigned step, float radius, float *dx, float *dy)
  * 常量一填好，就把 `YK_LE_TRUSTED` 改 1 ✓（并把 `youkai.c` 的探针 `YK_LE_PROBE` 关掉 ✓）。*/
 int yk_le_is_levelledit_fight(int boss_sub274, int boss_anm_main, int iv0)
 {
-    if (!YK_LE_TRUSTED) return 0;                    /* 保守回退（常量未钉死时）✓ */
-    (void)boss_anm_main; (void)iv0;                  /* 这两项实测**没有区分度** ✗ ⇒ 不用 ✓ */
-    /* ★★ 2026-10-17 钉死：`boss_sub274` 这个参数现在接的是 **boss ECL VM 的 `subroutine_index`** ✓
-     *   （参数名是历史遗留 ✗，链路与出处见头文件那段 ✓）。
-     *   判据 = `subroutine_index >= 24` ✓ —— 零售那份 ECL 只有 **24 个 sub**（最大索引 23 ✓），
-     *   而 leveledit 那份有 **62 个**（第 24 个之后全是米斯蒂娅专用段 ✓）⇒ 这条**只有他们能满足** ✓。*/
-    return boss_sub274 >= YK_LE_SUB_INDEX_MIN && boss_sub274 <= YK_LE_SUB_INDEX_MAX;
+    if (!YK_LE_TRUSTED) return 0;                    /* ❓常量未实测 ⇒ 保守回退 ✓ */
+    (void)boss_anm_main; (void)iv0;                  /* 实测后按日志里真正有区分度的那几项启用 ✓ */
+    if (YK_LE_BOSS_SUB274_MIN == YK_LE_BOSS_SUB274_MAX) return 0;   /* 未填 ⇒ 不命中 ✓ */
+    return boss_sub274 >= YK_LE_BOSS_SUB274_MIN && boss_sub274 <= YK_LE_BOSS_SUB274_MAX;
 }
 
-int yk_le_is_their_familiar(int mark)
+int yk_le_is_their_familiar(int enemy_id, int anm_main, int anm_slot0)
 {
-    if (!YK_LE_TRUSTED) return 0;
-    /* ★★ 2026-10-18（B2）：判据 = 那只敌机的 `$I3`（`ecl_int_vars[3]`）**恰等于** `YK_LE_FAM_MARK`。
-     *   一手：leveledit 的 `translate.py:207-217` —— 每个 `MystiaChild<n>()` 第一行 `$I3 = 997;`，
-     *   注释明写这是给 108 的识别标记 ✓（详见头文件那段）。
-     *   ⚠ 只认这一个值（不做区间/模糊匹配 ✗）：他们 ECL 里没有别的 sub 写 `$I3` ✓ ⇒
-     *     「997」在**他们那场**之外没有语义；而零售局连 `yk_le_here()` 都过不了 ✓。
-     *   ⚠ 调用侧**必须**再与 `yk_le_here()`（= 那场）取与 —— 本函数只看标记，不看场地 ✓。*/
-    return mark == YK_LE_FAM_MARK;
+    if (!YK_LE_TRUSTED) return 0;                    /* ❓同上 ✓ */
+    (void)anm_main; (void)anm_slot0;
+    if (YK_LE_FAM_ID_FIRST == YK_LE_FAM_ID_LAST) return 0;
+    return enemy_id >= YK_LE_FAM_ID_FIRST && enemy_id <= YK_LE_FAM_ID_LAST;
 }
 
 int yk_le_mode(int has_108, int boss_sub274, int boss_anm_main, int iv0)

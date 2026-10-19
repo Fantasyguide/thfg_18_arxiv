@@ -13,6 +13,10 @@ script script79 {
     scriptNew(script85);
 +8: // 24
     scriptNew(script85);
-+21: // 45
++8: // 32
+    scriptNew(script85);
++8: // 40
+    scriptNew(script85);
++20: // 60
     delete();
 }

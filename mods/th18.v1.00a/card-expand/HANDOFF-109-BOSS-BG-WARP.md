@@ -91,7 +91,7 @@ C 要碰的是**新设施 + 渲染时机**（§5.4）。两者可以同时开工
 | 原生数值 | 见下方「§3.2a 原生 script105 全文」| 
 | 汇编可行性 | `rotationMode`(437)/`angleVel`(415)/`zWriteDisable`(305)/`nop`(0) **都在** `local/vendor/eclmap/anmmap/v8.anmm` ✓ ⇒ thanm 能汇编 |
 
-**草案已在**：[`461_pofv109_magicsquare.anm.txt`](assets/ability/scripts/461_pofv109_magicsquare.anm.txt)（逐行复刻；★ 2026-10-15 已**从 `_draft_109/` 转正到 `scripts/`** ✓）。
+**草案已在**：[`460_pofv109_magicsquare.anm.txt`](assets/ability/scripts/460_pofv109_magicsquare.anm.txt)（逐行复刻；★ 2026-10-15 已**从 `_draft_109/` 转正到 `scripts/`** ✓）。
 
 #### §3.2a 原生 script105 全文（照抄源；`th18` `effect.anm`）
 
@@ -149,7 +149,7 @@ boss 身上挂一圈**边缘不硬的红色翻动光雾**（8 帧轮播，加算
 | 同色另两档 | **script125** = `scale 1.2/1.32`、**script143** = `1.5/1.65`（想更大就照抄这两个数）|
 | 减算红 | `color(255,0,0)` + `blendMode(2)`：scripts 121／139／157 |
 
-**草案已在**：[`462_pofv109_boss_aura_red.anm.txt`](assets/ability/scripts/462_pofv109_boss_aura_red.anm.txt)（★ 2026-10-15 已**从 `_draft_109/` 转正到 `scripts/`** ✓）。
+**草案已在**：[`461_pofv109_boss_aura_red.anm.txt`](assets/ability/scripts/461_pofv109_boss_aura_red.anm.txt)（★ 2026-10-15 已**从 `_draft_109/` 转正到 `scripts/`** ✓）。
 
 ### 4.3 步骤（与 §3.3 同，只有图那步不同）
 

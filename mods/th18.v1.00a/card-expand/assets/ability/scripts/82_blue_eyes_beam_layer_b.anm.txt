@@ -14,9 +14,9 @@ script script82 {
     rotateTime(15, 9, 0.0f, 0.0f, -1.6198837f);
 +15: // 15
     rotateTime(15, 9, 0.0f, 0.0f, -1.5217091f);
-+15: // 30
++30: // 45
     scaleTime(10, 4, 1.6f, 0.0f);
     alphaTime(10, 0, 0);
-+10: // 40
++10: // 55
     delete();
 }

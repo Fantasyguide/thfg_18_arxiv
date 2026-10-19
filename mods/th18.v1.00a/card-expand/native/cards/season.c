@@ -348,7 +348,6 @@ typedef struct {
     int32_t     rel_frames;                /* 剩余帧 */
     int32_t     rel_total;                 /* 总帧（日志）*/
     float       rel_radius;
-    float       rel_radius2;               /* RADIUS_2：秋/土用圈的收缩终值，其余 0（见 ring_tick）*/
     int32_t     rel_dmg;
     int32_t     rel_sub;                   /* 释放时的副季节（快照）*/
     int32_t     rel_cancelled;             /* 本次消弹总数 */
@@ -1185,8 +1184,6 @@ static void ring_tick(season_card_t *s, const float *pp)
     elapsed = s->rel_total - s->rel_frames;             /* 已经放了多久 */
     remain = s->rel_frames;
     grow = (elapsed >= 10) ? 1.0f : (float)elapsed / 10.0f;
-    /* ❓ 自定：下面这条 alpha 衰减曲线（250 帧从 255 降到 64）在 TH16 的释放脚本里**没有**
-     * ——原版 alpha 恒定（外 255 / 内 128），只在结束时淡出。保留是为了长释放（冬 190 帧）不糊屏。*/
     a = 255.0f - 191.0f * ((float)elapsed / 250.0f);
     if (a < 64.0f) a = 64.0f;
     if (remain <= 20) a = a * (float)remain / 20.0f;    /* 最后 20 帧淡出 */
@@ -1194,25 +1191,7 @@ static void ring_tick(season_card_t *s, const float *pp)
     {
         season_ring_t stl;
         uint32_t ai = (uint32_t)a & 0xffu;
-        /* ★ 圈的尺寸曲线 —— 一手 TH16 各副季节的释放脚本（`pl0Xsub.anm` script3/4、冬 `pl01sub` 20/21；
-         * `%F0/%F1` = `vm+0x4b0/+0x4b4` = RADIUS / RADIUS_2，读点 `th16:0x40e0f0`）：
-         *   春/夏/冬：`scaleTime(10, 4, %F0, %F1)` = 10 帧长到 RADIUS，之后不变；
-         *   秋：`scaleTime(10,4,%F0,%F0); scaleTime($I3,4,%F1,%F1)` = 10 帧长到 RADIUS，再用整个持续时间缩到 RADIUS_2(40)；
-         *   土用：`scale(%F0); scaleTime(50,0,%F1,%F1)` = 一出生就是 RADIUS，50 帧线性缩到 RADIUS_2(30)。
-         * 这就是 engine/season/th16/01 §3 里 RADIUS_2 那个 🟡 的答案：它是圈的**收缩终值**。
-         * 缓动（mode 4）这里按线性近似 🟡；清弹/伤害半径仍用 RADIUS（TH16 的 on_tick 是否跟着圈缩 🟡 未反）。*/
-        float sc;
-        if (s->rel_sub == SEASON_SUB_DOYOU && s->rel_radius2 > 0.0f) {
-            float t = (elapsed < 50) ? (float)elapsed / 50.0f : 1.0f;
-            sc = s->rel_radius + (s->rel_radius2 - s->rel_radius) * t;
-        } else {
-            sc = s->rel_radius * grow;
-            if (s->rel_sub == SEASON_SUB_FALL && s->rel_radius2 > 0.0f && elapsed >= 10 && s->rel_total > 10) {
-                float t = (float)(elapsed - 10) / (float)(s->rel_total - 10);
-                if (t > 1.0f) t = 1.0f;
-                sc = s->rel_radius + (s->rel_radius2 - s->rel_radius) * t;
-            }
-        }
+        float sc = s->rel_radius * grow;
         /* 土用 `posTime(60, 1, 0, 48, 0)`：60 帧线性上浮 48 px（其余季节 drift_y = 0）*/
         float dy = 0.0f;
 
@@ -1339,7 +1318,6 @@ static void release(ce_card_t *c, season_card_t *s)
     s->rel_frames = pr.duration;
     s->rel_total = pr.duration;
     s->rel_radius = pr.radius;
-    s->rel_radius2 = pr.radius2;
     s->rel_dmg = pr.damage;
     s->rel_cancelled = 0;
     s->rel_acc = 0;

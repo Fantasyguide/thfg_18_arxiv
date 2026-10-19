@@ -40,12 +40,11 @@ void pea_shoot_frame(pea_state_t *s, pea_out_t *o)
         o->fires = (s->timer % (uint32_t)PEA_GAT_INTERVAL) == 0;
         o->rows = o->fires ? PEA_GAT_ROWS : 0;
         s->timer++;
-        /* ★★★ 2026-10-15：**爆发的倒计时搬走了** ✗ —— 原来在这里 `--s->gat_left` ✓，
-         *   而本函数**只在 `on_tick_shooters`（+0x1c，**只在按住射击键时广播** ✗）里被调** ✓
-         *   ⇒ 松手 ⇒ 爆发冻结 ⇒ `pea_burst_left() > 0` 永远成立 ⇒ 卡侧每帧那句
-         *   `ce_invuln_request(id, 10)` 一直挂着 ⇒ owner 实跑看到「无敌一直存在」✗。
-         *   ⇒ 倒计时与收尾都改由下面的 `pea_burst_frame()`（**每帧** ✓）负责 ✓，
-         *     本函数**只留"这一帧打什么"** ✓（不再 `--`，避免双跑 ✗）。*/
+        if (--s->gat_left == 0) {                /* 这是开大的最后一帧 */
+            o->burst_end = 1;
+            s->timer = 0;
+            s->pending_wait = 1;                 /* 下一帧之前要一个新的随机等待 */
+        }
     } else {
         o->set = PEA_SET_NORMAL;
         o->timer = s->timer;
@@ -59,21 +58,6 @@ void pea_shoot_frame(pea_state_t *s, pea_out_t *o)
         s->peas += (uint32_t)o->rows;
         s->inflight = PEA_INFLIGHT;
     }
-}
-
-/* ★★★ 2026-10-15（owner 报「电大哥的**无敌一直存在**」✗ 的修）：**爆发倒计时 = 每帧推进** ✓。
- *   调用方：卡侧的 `on_tick_2`（**每帧** ✓，含不射击的帧 ✓）⇒ 松手也照减 ✓
- *   ⇒ 无敌（`ce_invuln_request(id, PS_BURST_INVULN)`）与爆发**同生同灭** ✓。
- *   返回 1 = 开大在本帧结束（卡侧据此打日志 ✓；原来那个 `pea_out_t.burst_end` 字段随之退役 ✗）。*/
-int pea_burst_frame(pea_state_t *s)
-{
-    if (!s || s->gat_left == 0) return 0;
-    if (--s->gat_left == 0) {
-        s->timer = 0;
-        s->pending_wait = 1;                     /* 下一次开大之前要一个新的随机等待 ✓ */
-        return 1;
-    }
-    return 0;
 }
 
 void pea_frame(pea_state_t *s)
@@ -194,13 +178,4 @@ int pea_burst_left(const pea_state_t *s)
 {
     if (!s) return 0;
     return (s->gat_left > 0) ? (int)s->gat_left : 0;
-}
-
-/* ★★ 2026-10-15（owner 报「电大哥的弹幕把我主机的弹幕也弄成全方向随机的了」✗ 的判据 ✓）：
- *   见头文件注释的一手出处 ✓。这里只做一件事：**`packed_id >> 8` 落在不在我们那两组里** ✓。
- *   ⚠ 组号是 `sht_ids.h` 的 `0x17`/`0x18` ✓（生成物 ✓），由调用方传参 ✓（本函数不写死 ✗）。*/
-int pea_bullet_is_ours(uint32_t packed_id, uint32_t set_normal, uint32_t set_gatling)
-{
-    uint32_t set = packed_id >> 8;
-    return (set == set_normal || set == set_gatling) ? 1 : 0;
 }

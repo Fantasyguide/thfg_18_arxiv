@@ -1,0 +1,13 @@
+script script470 {
+    /* ★ 2026-10-18 owner 定稿：tip = **`th19/ANM/effect/eff_base.png` 第一行**随便选一格 ✓、**要转**✗
+     *   —— ★ 取第一行第 1 格 = `(0, 0, 16, 16)` ✓。
+     *   ★ 自转照一手 `script4` 的写法：★ `angleVel(0, 0, 0.5067085f)`✗（★ ≈29°/帧 ✓）。*/
+    layer(13);                  /* ★ 一手 ✓ script4 也在 13 ✓ */
+    sprite(@POFV109_TIP_EFF);
+    type(1);
+    scale(2.0f, 2.0f);          /* 2026-10-18 owner: 改成 2 => 16x16 放成约 32x32 */
+    angleVel(0.0f, 0.0f, 0.5067085f);   /* ★ 自转 ✓（一手同值 ✓）*/
+    alpha(224);                 /* ★ 一手 ✓ */
+    blendMode(1);               /* ★ 加算 ✓ 一手同款 */
+    stop();
+}

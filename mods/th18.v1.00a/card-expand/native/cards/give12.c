@@ -1,5 +1,4 @@
 /* 118「挑战：十二合一」—— 主动卡（D 切到本卡后按 C 发动）：一次把 106–117 十二张系统卡发到手上。
- * ⚠ 109（花映塚）本版整体摘除 ⇒ 实际发的是**除 109 外的十一张**（见 on_activate 里的显式跳过）。
  *
  * 定位（用户 2026-09-17 口径）：正式构建也带，它是一个**挑战**卡 —— 挑战来自你自己决定
  * 把哪些系统机制叠在一起打。它同时是"106–117 全装"的总验收载体。
@@ -44,10 +43,6 @@ static int on_activate(ce_card_t *c)
     }
     s_given_run = s_epoch;
     for (id = GIVE12_FIRST; id <= GIVE12_LAST; ++id) {
-        /* ★ 2026-10-18（owner 口径：「118 别摘掉，是只摘掉里面的 109」）：
-         *   109（花映塚）本版整体摘除（cards.js 里 deck_visible=0 + weight=0），
-         *   而本卡（118）的发放范围 106–117 含 109 ✗ ⇒ 这里显式跳过，避免"用 118 绕过摘除"✗。*/
-        if (id == 109u) continue;
         int r = ce_give_card(id, CE_MODE_SHOP, 0);
         if (r) ++ok; else ++fail;
         ce_log("give12: gave card %u -> %d", id, r);

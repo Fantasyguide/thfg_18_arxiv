@@ -12,9 +12,9 @@ script script80 {
     alpha(0);
     alphaTime(8, 0, 255);
     color(255, 255, 255);
-+30: // 30
++45: // 45
     scaleTime(10, 4, 1.6f, 0.0f);
     alphaTime(10, 0, 0);
-+10: // 40
++10: // 55
     delete();
 }

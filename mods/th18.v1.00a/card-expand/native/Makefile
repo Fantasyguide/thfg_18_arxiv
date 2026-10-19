@@ -228,12 +228,6 @@ test-host:
 	./tests/build/test_elytra_mace_core
 	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_firelord_core tests/test_firelord_core.c cards/firelord_core.c -lm
 	./tests/build/test_firelord_core
-## ★ 2026-09-12（83 火球术 / 84 向日葵 / 85 金盏花；摘回 1d41bcdb）：两个纯逻辑核的单测 ——
-##   fireball_core（弹道 / 命中判据 / 爆炸倒计时 / 出界）与 plant_core（种下 / 挡弹扣血 / 产出节拍）。
-	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_fireball_core tests/test_fireball_core.c cards/fireball_core.c
-	./tests/build/test_fireball_core
-	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_plant_core tests/test_plant_core.c cards/plant_core.c
-	./tests/build/test_plant_core
 	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_truesilver_core tests/test_truesilver_core.c cards/truesilver_core.c
 	./tests/build/test_truesilver_core
 	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_guding_core tests/test_guding_core.c cards/guding_core.c

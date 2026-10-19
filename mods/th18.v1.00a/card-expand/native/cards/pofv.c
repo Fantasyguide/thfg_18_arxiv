@@ -162,6 +162,20 @@ typedef void (__attribute__((thiscall)) *pofv_fn_bullet_cancel_t)(void *bullet, 
 #define POFV_SPIRIT_X_CLAMP      140.0f
 #define POFV_FIELD_H             448.0f
 
+/* ★★★★★ 2026-10-16 **180° 翻转共用件**（owner：「★ **难点在于翻转 180°**」✓）
+ *   ★ 背景：★ 一手 TH19 的 ECL 是 **boss 视角**（★ 弹从**版底**往上/往下打 ✓、★ 角 `−π/2` 表示"朝下" ✓），
+ *     ★ 我们这张卡是**自机侧**（★ `y` 同样向下增 ✓、★ 但"底"在我们看来是**顶** ✓）
+ *     ⇒ ★ **位置与角度要成体系地镜像** ✓（★ 不许每一处各写一遍常数 ✗ —— 之前就是那样 ✓）。
+ *   ★ 规则（★ 已由魔理沙 C3／早苗 C4 两处一手原文坐实 ✓）：
+ *     · ★ 位置：★ 一手 `ins_400(x, 448)`（= 版底 ✓）⇒ ★ 本卡 **`(x, 0)`**（= 版顶 ✓）
+ *       ⇒ ★ 一般式 = ★ **`POFV_FLIP_Y(y) = POFV_FIELD_H − y`** ✓（★ 448↔0 正好互换 ✓）。
+ *     · ★ 角度：★ 一手 `−π/2`（朝下 ✓）⇒ ★ 本卡 **`+π/2`**（朝下 ✓，因为参考系翻了 ✓）
+ *       ⇒ ★ 一般式 = ★ **`POFV_FLIP_ANG(a) = −a`** ✓（★ 竖直互换 ✓、★ 水平分量取反 ✓、★ 自转/扫向取反 ✓）。
+ *     · ★ 墙位：★ 一手 `EX_BOUNCE` 的 walls 里"上"↔ 本卡的"上"要按翻转换 ✓（★ 掩码见各处用法 ✓）。
+ *   ★ 用法：★ **新档位照抄一手的常数时，一律走这两个宏** ✓ ⇒ ★ 不再散落魔法数 ✓。*/
+#define POFV_FLIP_Y(y)   (POFV_FIELD_H - (y))
+#define POFV_FLIP_ANG(a) (-(a))
+
 /* ============================================================ 池（文件级） */
 
 /* ⚠ 池是**文件级静态**（不是 `ce_state`）—— 一张卡的 `ce_state` 只有 496 B，装不下 16 个场
@@ -2142,13 +2156,17 @@ typedef struct { float x, y; int dmg; float ang, spd; } pofv_c1_shot_t;
 
 /* ★ 数据表：第 0 组 = **灵梦**（一手 ✓）；第 1/2 组 = **魔理沙 / 早苗：待补 ❓**（一手数值未取）。*/
 #define POFV_C1_SHOTS_PER_GROUP 26   /* ★ 取三组里的最大者 = 早苗一手 26 行 ✓ */
-#define POFV_C1_GROUPS          3
+#define POFV_C1_GROUPS          4
 #define POFV_C1_MAX             (POFV_C1_SHOTS_PER_GROUP * POFV_C1_GROUPS)
 #define POFV_C1_GROUP_REI       0        /* 灵梦 */
 #define POFV_C1_GROUP_MARISA    1        /* 魔理沙：待补 ❓ */
 #define POFV_C1_GROUP_SANA      2        /* 早苗 */
-/* ★ 每组**实际发几发**（一手：灵梦 4 ✓ / 魔理沙 1 ✓ / 早苗 26 ✓）*/
-static const int s_c1_rows[POFV_C1_GROUPS] = { 4, 1, 26 };
+/* ★★ 2026-10-17（owner：「★ 咲夜C1-C4是一点没做啊」✓ ＋「★ 只做 C1 和 C4 **本身**」✓）：
+ *   ★ 咲夜的 C1 之前**根本不存在** ✗ —— ★ 她（`s_aura_kind == 2` ✓）落到了 `POFV_C1_GROUP_REI` ✓
+ *   ⇒ ★ 她松手放的是**灵梦那四发** ✗。★ 本组 = 她自己的 ✓。*/
+#define POFV_C1_GROUP_SAKUYA    3        /* 咲夜（TH09 `pl02.sht` ✓）*/
+/* ★ 每组**实际发几发**（一手：灵梦 4 ✓ / 魔理沙 1 ✓ / 早苗 26 ✓ / **咲夜 8** ✓）*/
+static const int s_c1_rows[POFV_C1_GROUPS] = { 4, 1, 26, 8 };
 /* ★★ 2026-10-11 照一手（子 agent 核实 ✓）：★ **早苗 C2 不建对象** ✓ —— 她做的是
  *   「把弹表**切到 `set11`** ✓ + 开 **60 帧**窗口 ✓」（`EX+0xd8 = 11`、`EX+0xdc = 1` ✓）。
  *   ★ set11 = 26 行、**dmg 22 / 速度 3 / `class 5`（子机槽）/ anm 9** ✓、角度与 set10 相同
@@ -2218,6 +2236,38 @@ static const pofv_c1_shot_t s_c1_table[POFV_C1_GROUPS][POFV_C1_SHOTS_PER_GROUP] 
         { 0.0f, 0.0f, 22, 8.9012f, 16.0f },   /* 510° ✓ */
         { 0.0f, 0.0f, 22, 9.4248f, 16.0f },   /* 540° ✓ */
         { 0.0f, 0.0f, 22, 9.9484f, 16.0f },   /* 570° ✓ */
+    },
+    /* ---------------- 第 3 组：**咲夜**（一手 TH09 `pl02.sht` 的 **CA 列 = 选择子 1**：**8 行** ✓）----------------
+     *   ★ 一手出处（★ 施工单 §116 把这一列**落到了字节** ✓，★ 我核过 §116/§115 的原文 ✓）：
+     *     ★ 列起点 ≈ `pl02.sht + 0x59c` ✓、★ **8 行** ✓、★ 行首 = **速度 48.0** ✓、
+     *     ★ 行内 ★ `+0x04 = 0`（**角 0** ✓）、★ `+0x14 = 3`（**每 3 帧** ✓）；
+     *     ★ 行数还与仓里一手文档 ★ `engine/card/th09/04-player-shot-sequences.md:132`
+     *       ★「★ 选择子 1 = 8 行」**逐字对上** ✓。
+     *   ⚠ ❓ ★ 三处**我如实标**（★ 都已进 `TUNING.md` ✓，★ 不冒充一手 ✗）：
+     *     ① ★ **伤害 12** ✗ —— ★ CA 列的字段名 §116 明说"**还没定**"✓ ⇒ ★ 我**借用**
+     *        ★ 同文件**选择子 0**（普通射击）那列的 `+0x08 = 12.00` ✓；
+     *     ② ★ **8 行"会叠在一起"** ✗ —— ★ 这一条**已两头坐实** ✓✓：
+     *        ★ (a) ★ 我自己 dump 过 `pl02.sht` ✓（★ 但当时用的是 `0x59c` ✗ —— ★ **比真行首多算 12 字节** ✗）；
+     *        ★ (b) ★ 施工单 **§120／§121** 把它**彻底解出** ✓：★ CA 列 = ★ **8 行 × 56 字节** ✓、
+     *            ★ 行首 ★ **`0x590`** ✓（★ 行距 `0x38` ✓）、★ float 段 `0,0,0,48.0,48.0,0` ✓
+     *            ＋ ★ int 段 `10,0,2,2,**3**,0,0` ✓；★ 且 ★ 全文件字节算术自洽 ✓
+     *            （★ `6×56 ＋ 4 ＋ 8×56 ＋ 4 = 1876` ✓ = 文件大小 ✓）。
+     *        ⇒ ★ **"8 行同值"不是我的简化** ✗、★ **文件本来就全同形** ✓（★ §121.1 标题就是"★ 全部同形"✓）
+     *        ⇒ ★ 本表与一手**逐项一致** ✓（★ 8 行 ✓／速 48 ✓／角 0 ✓／"每 3 帧" = 那个 int `3` ✓）。
+     *        ★ 真正未解的**只剩** ★ "★ 一手的"散开"发生在哪儿** ✗（★ 运行时？★ 还是
+     *        ★ `10,0,2,2,3` 那组另有含义 ✗）★ ⇒ ★ 这一层**没建模** ✓；
+     *     ③ ★ **"每 3 帧"的节奏未建模** ✗ —— ★ 本卡 `pofv_c1_fire()` 是"★ 一次释放、★ 该组各行同帧发" ✓
+     *        （★ 与灵梦/魔理沙/早苗三组同款 ✓）⇒ ★ 一手的"8 条**每 3 帧**"若指"逐条错开 3 帧"✗，
+     *        ★ 那这一层**没做** ✗（★ 要做得给 `pofv_c1_fire()` 加逐行延迟 ✗，★ 那是**别的机制** ✓）。*/
+    {
+        { 0.0f, 0.0f, 12, 0.0f, 48.0f },   /* ★ 一手 ✓ 速 48 ／ 角 0 ／（伤害 12 ❓ 借用）*/
+        { 0.0f, 0.0f, 12, 0.0f, 48.0f },   /* ★ 第 2 条（一手 8 行中的一行 ✓）*/
+        { 0.0f, 0.0f, 12, 0.0f, 48.0f },   /* ★ 第 3 条 ✓ */
+        { 0.0f, 0.0f, 12, 0.0f, 48.0f },   /* ★ 第 4 条 ✓ */
+        { 0.0f, 0.0f, 12, 0.0f, 48.0f },   /* ★ 第 5 条 ✓ */
+        { 0.0f, 0.0f, 12, 0.0f, 48.0f },   /* ★ 第 6 条 ✓ */
+        { 0.0f, 0.0f, 12, 0.0f, 48.0f },   /* ★ 第 7 条 ✓ */
+        { 0.0f, 0.0f, 12, 0.0f, 48.0f },   /* ★ 第 8 条 ✓ */
     }
 };
 
@@ -2394,10 +2444,10 @@ static void c3_dir5(int idx5, float *dx, float *dy);
  *   ⚠ 代价：★ `136` 选 25 原是为了"折到组 38 = 与**暂停模糊罩**同桩 ⇒ 字被罩住" ✓；
  *   ★ 切 20 后**暂停时的模糊表现会变** ✓（已登记 TUNING/AUDIT ✓）。
  *   ⚠ 只**新增**了 442 脚本、★ **没有改共享的 `136`** ✓ ⇒ 别家卡不受影响 ✓。*/
-#define POFV109_HUD_GLYPH_SCRIPT  136   /* ★★★★★ 2026-10-13 **退回 136** ✗（★ 撤回我那次换 456 的改动 ✗）——
-                                          *   ★ owner 实跑（换 456 之后）：★「★ **你是怎么把 UI 调到整个屏幕
+#define POFV109_HUD_GLYPH_SCRIPT  136   /* ★★★★★ 2026-10-13 **退回 136** ✗（★ 撤回我那次换 455 的改动 ✗）——
+                                          *   ★ owner 实跑（换 455 之后）：★「★ **你是怎么把 UI 调到整个屏幕
                                           *   的最右侧，然后 x 还是固定，只动 y 的？**」✗ ⇒ ★ 换到层 20 的
-                                          *   456 **明显更糟** ✓（★ 从"偏右一点"变成"贴到最右" ✗）
+                                          *   455 **明显更糟** ✓（★ 从"偏右一点"变成"贴到最右" ✗）
                                           *   ⇒ ★ 按 owner 的实跑**立刻退** ✓，★ 回到 136（= 我改之前的原状 ✓）。
                                           *   ★ 教训：★ "★ 照能正确显示的卡写"这条**我执行错了** ✗ —— ★ 117 的
                                           *   脚本是对的 ✗，★ 但 ★ 它所属的**列表/相机**与本卡不同 ✓ ⇒
@@ -2796,7 +2846,7 @@ static void pofv_eb_ring_sync(int32_t *vm, float r)
          *   改动的**回退漏网** ✗（同脚本另一处 spawn 已回 6 ✓、★ 脚本 432 自己也写 `layer(6)` ✓）
          *   ⇒ ★ 现在补回 **6** ✓，与脚本一致 ✓。
          *   ★ 注：★ 一手的依据**当时被否掉了** ✓（★ owner 实跑见过**层 6** 的红环 ✓ —— 见
-         *   `assets/ability/scripts/450_pofv109_ca_ring_l1.anm.txt` 的头注释 ✓）。*/
+         *   `assets/ability/scripts/449_pofv109_ca_ring_l1.anm.txt` 的头注释 ✓）。*/
         const uint32_t id = ce_anm_spawn(CE_ABILITY_ANM(),
                             CE_ANM_ABILITY_SCRIPT_POFV109_C_RING_ARC, 6);
         if (!id) return;
@@ -2952,7 +3002,7 @@ static void pofv_ca_ring_tick(void)
              *   ⚠ 修掉的**真 bug**：原来这里的三元式**没有 `kind == 1` 分支** ✗ ⇒ C1 会**落到 L3**
              *     ⇒ **画出 448 的大环** ✗✗（正是 owner 说"C1 不该有"的那个 ✗）。*/
             if (!R->vm && R->kind >= 2) {   /* ★ kind 1 = C1 ⇒ 只消弹、不画环 ✓ */
-                /* ★ 2026-10-12：★ 按档选一手环脚本 ✓ —— 450/451/452 =
+                /* ★ 2026-10-12：★ 按档选一手环脚本 ✓ —— 449/450/451 =
                  *   TH09 `etama.anm` **script91/92/93** 的等效 ✓（一手正文见各脚本头注释 ✓）。
                  *   ★ 半径动画**交给脚本** ✓（一手如此 ✓）⇒ ★ 卡侧**不再写 `scale`** ✗
                  *   （否则会盖掉脚本的 `scaleTime` ✗）⇒ ★ 也一并收掉了 432 头注释里那条「**有意不同 ②**」✓：
@@ -3007,7 +3057,7 @@ static void pofv_ca_ring_tick(void)
         R->r += R->dr;                 /* ★ 一手 `fadd [eax+0x8]` ✓ 线性 ✓ */
         if (--R->life <= 0) {          /* ★ 一手 `dec [eax+0x24]` ✓ 到 0 释放 ✓ */
             if (R->vm) {   /* ★★★★★ 2026-10-13（★ owner 实跑："★ **持续时间无限**" ✗）：
-                            *   ★ ★ **病根** ✗：★ 450/451/452（CA 环那三支 ✓）★ **有 `stop();` 与 `delete();`
+                            *   ★ ★ **病根** ✗：★ 449/450/451（CA 环那三支 ✓）★ **有 `stop();` 与 `delete();`
                             *   ★ 但★没有 `interruptLabel`** ✗✗ ⇒ ★ `stop()` 把时间线**冻住** ✓ ⇒
                             *   ★ 脚本**永远走不到自己那句 `delete()`** ✗；★ 而 ★ `pofv_eb_ring_close()`
                             *   ★ 发的是 ★ **`ce_anm_interrupt(vm, 1)`** ✗ ⇒ ★ **空操作**（没有 1 号处理器 ✓）
@@ -3407,7 +3457,7 @@ static float s_c1_rot[POFV_C1_SHOTS_PER_GROUP];
  *     伪追踪那次"拍水平"时改成 `−π / 0` ✓ = 一手 ✓），★ 最终朝向 = `运动方向 + 自转累积` ✓。*/
 static float s_c1_ang[POFV_C1_SHOTS_PER_GROUP];
 /* ★★★ 2026-10-11 goal-ef8cac23 ②：★ 一手"停住自转"期间的**闪白** ✓ = 一手 `pl00.anm` **script12** ✓
- *   （源脚本 script10 里 `scriptNewRoot(script12)` ✓）⇒ ★ 逐字抄成 449 ✓（同贴图 ✓、`blendMode(1)` ✓、
+ *   （源脚本 script10 里 `scriptNewRoot(script12)` ✓）⇒ ★ 逐字抄成 448 ✓（同贴图 ✓、`blendMode(1)` ✓、
  *   `alpha(64)` ✓、`color(255,64,64)` ✓、`alphaTime(20,0,0)` ✓ = α 渐隐 20 帧后**自删** ✓）。
  *   ★ 卡侧 spawn ✓（不用 `scriptNewRoot` ✗ —— TH18 里它不建子 VM ✓）；★ 它自己 20 帧后 delete ✓。*/
 /* ★★ 2026-10-11 owner 实跑：「灵梦的 **C1 还有残影**」✗ ⇒ ★ 一手是靠 script10 里的
@@ -3552,10 +3602,16 @@ static void pofv_c1_fire_range(int grp, int from, int cnt)
                       /* ★★ 2026-10-11 owner 记忆核对 ✓：「早苗 C2 是放一堆青蛙爆炸弹幕」——
                        *   ★ 一手 set11 的 `anm9` 就是**青蛙**（`pl02.anm` script9 ✓）⇒
                        *   ★ 而原来 set11 也走 `POFV109_C1S_SHOT`（= C1 那条龙 ✗）⇒ **这里是缺口** ✓。
-                       *   ⇒ ★ 用 `s_c1_set_sel`（1 = 早苗 C2 的 set11 ✓）来选 **448（青蛙）** ✓。*/
+                       *   ⇒ ★ 用 `s_c1_set_sel`（1 = 早苗 C2 的 set11 ✓）来选 **447（青蛙）** ✓。*/
                       : (s_c1_grp[t] == POFV_C1_GROUP_SANA)
                           ? (s_c1_set_sel ? CE_ANM_ABILITY_SCRIPT_POFV109_C2S_FROG
                                           : CE_ANM_ABILITY_SCRIPT_POFV109_C1S_SHOT)
+                      /* ★★ 2026-10-17（owner：「★ 只做 C1 和 C4 本身」✓）：★ **咲夜的弹 = 蓝飞刀** ✓ ——
+                       *   ★ 脚本 **469** ✓（切自一手 TH09 `pl02.png` 的 `(0,160,32,16)` ✓；
+                       *   ★ 那行**不是**一手 anm 声明的 sprite ✗ ⇒ 已在 469 头注与 `TUNING.md` 登记 ❓ ✓）。
+                       *   ★ 脚本本体照一手 `pl02.anm` 的 `script5` ✓（★ `alpha(128)` ✓、★ 无自转 ✓）。*/
+                      : (s_c1_grp[t] == POFV_C1_GROUP_SAKUYA)
+                          ? CE_ANM_ABILITY_SCRIPT_POFV109_C1K_KNIFE
                                             : CE_ANM_ABILITY_SCRIPT_POFV109_C1_BULLET,
                         POFV_C1_VM_LAYER);
         /* 2026-10-11 仪表：★ 出生现场（SPIN 日志三次全 0 行 ⇒ 怀疑这些弹"一出生就在场外"
@@ -3584,6 +3640,10 @@ static void pofv_c1_fire(void)
 {
     const int grp = (s_aura_kind == 1) ? POFV_C1_GROUP_MARISA
                   : (s_aura_kind == 3) ? POFV_C1_GROUP_SANA
+                  /* ★★ 2026-10-17（owner：「★ 只做 C1 和 C4 本身」✓）：★ **咲夜走她自己的组** ✗ ——
+                   *   ★ 在这之前她（kind 2 ✓）**掉进了灵梦那一支** ✗ ⇒ ★ 放的是灵梦那 4 发 ✗。
+                   *   ★ 组里的 8 行来自一手 TH09 `pl02.sht` 的 CA 列 ✓（★ 见 `s_c1_table` 第 3 组 ✓）。*/
+                  : (s_aura_kind == 2) ? POFV_C1_GROUP_SAKUYA
                   : POFV_C1_GROUP_REI;
     /* ★★★ 2026-10-12 **修"释放那一帧双份"** ✗：★ 原来先 `fire_range` 再置 `s_c1_win_left` ✓
      *   ⇒ ★ 那么"**只有 C1** 的那次释放"里，★ 早退判据在那一刻还**为假** ✗（窗口还没开 ✓）
@@ -3591,7 +3651,13 @@ static void pofv_c1_fire(void)
      *   ⇒ ★ 改成：★ **先把窗口开好** ✓（= 认领的前提 ✓），★ **再**判"要不要手写" ✓
      *   （★ 后面那个早退于是必然命中 ✓ ⇒ 一份都不多发 ✓）。*/
     s_c1_win_age = 0; s_c1_sanae_half = 0;
-    s_c1_win_left = (grp == POFV_C1_GROUP_SANA) ? 30               /* ★ 一手 ✓ 早苗 30 帧 */
+    /* ⚠ 2026-10-18：★ 早苗的窗口按 set 分 ✓ —— `set10`(蛇)=30 ✓、`set11`(青蛙)=**60** ✓
+     *   （owner：「4 环青蛙」✓ ＋ 一手 `rate=16` ✓）；★ 原来一律 30 ⇒ 青蛙只放 2 圈 ✗。*/
+    s_c1_win_left = (grp == POFV_C1_GROUP_SANA) ? (s_c1_set_sel ? 60 : 30)   /* 青蛙 60 / 蛇 30 */
+                  /* ★★ 2026-10-17：★ **咲夜 55 帧** ✓ —— ★ 一手 `pl02.sht + 0x28 = 55.0` ✓
+                   *   （★ 施工单 §115／§116 把"★ 蓄力弹表跑 **55** 帧"落到了那个字节 ✓）★ ⇒
+                   *   ★ 这是**从一手文件读来的数** ✓，★ 不是手感值 ✗。*/
+                  : (grp == POFV_C1_GROUP_SAKUYA) ? 55
                   : ((grp == POFV_C1_GROUP_MARISA) ? 1 : 21);      /* ★ 一手 ✓ 1 / 21 帧 */
     /* ★ 2026-10-12 诊断（owner 报「放完一次 C1 后再也放不出任何 C1/C2」✗ ⇒ 分清断在哪一环）：
      *   每次释放都打这行 ⇒ ★ 若某次释放没有 [C1SET] ⇒ 连 `pofv_c1_fire` 都没被调到；
@@ -3643,7 +3709,7 @@ static void pofv_c1_fire(void)
          *     **不是** `type` 漏抄 ✗，而是**旋转来源不同** ✓：
          *   | 脚本 | 旋转靠谁 | 卡侧该写吗 |
          *   | 427 灵梦 C1 | ★ `angleVel`（**引擎自己积分** ✓）| ★ **不该** ✗（写了就是双倍转速 ✓）|
-         *   | 442/444/448 光束/蛇/青蛙 | ★ `rotateAuto`（**要靠速度向量** ✗，而卡侧写坐标 ⇒ 引擎没有 ✗）| ★ **该写** ✓ |
+         *   | 442/444/447 光束/蛇/青蛙 | ★ `rotateAuto`（**要靠速度向量** ✗，而卡侧写坐标 ⇒ 引擎没有 ✗）| ★ **该写** ✓ |
          *   ⇒ ★ 所以这里**只对非灵梦组**写朝向 ✓（朝它真正的运动方向 ✓ = 让 `rotateAuto` 有东西可依 ✓）。*/
         if (s_c1_vm[t] && s_c1_grp[t] != POFV_C1_GROUP_REI) {
             float fang = 0.0f;
@@ -3708,6 +3774,11 @@ static void pofv_emit_group(int set, int from)
            (unsigned)set, from, from + 12, n);
 }
 
+/* ★ 2026-10-18（owner 定案）：C2 的青蛙改走**引擎原生子机**（set 0x0e = SANAE_OP）*/
+static ce_option_t s_c2s_opt;
+static ce_card_t  *s_c2s_card;
+#define POFV109_SHT_SET_SANAE_OP  0x0e   /* 一手 engine/sht/th18/01-...-index.md §4：SANAE_OP，组内 2 条 */
+
 static void pofv_c1_window_tick(void)
 {
     pofv_stage_set(13);   /* ★ 窗口 tick ✓ */
@@ -3722,6 +3793,12 @@ static void pofv_c1_window_tick(void)
     if (s_c2s_win > 0) {                       /* ★ 早苗 C2 的 60 帧窗口 ✓（一手 ✓）*/
         if (--s_c2s_win == 0) {                /* ★ 窗口尽 ⇒ 切回 set10 ✓ */
             s_c1_set_sel = 0;
+            /* ★ 2026-10-18 重验修：★ 这里**必须收子机** ✗ —— 否则那只原生子机会**常驻**自机中心 ✓、
+             *   永久占 12 槽之一 ✓，★ 直到换关/删卡才回收 ✗（重验第 4 条 ✓）。
+             *   ★ 用 `o->ptr` 判空 ✓，不依赖 `s_c2s_card` 是否陈旧 ✓（`sdk.c:668` 自己不判 c ✓）。*/
+            { int had = s_c2s_opt.ptr ? 1 : 0;
+              if (s_c2s_opt.ptr) ce_option_drop(s_c2s_card, &s_c2s_opt);
+              ce_log("pofv: [C2N] window end -> drop (had_opt=%d)", had); }
             ce_log("pofv: C2 窗口尽 ⇒ 切回 set10（下一次问认领会回 none）");
         }
     }
@@ -3734,10 +3811,32 @@ static void pofv_c1_window_tick(void)
      *   set11（青蛙）60 帧 ⇒ 8 组 ×13 = **4 圈** ✓（★ 原来写死 `< 30` 会让 C2 只发一半 ✗）。*/
     {
         const int win_n = s_c1_set_sel ? 60 : 30;
-        if (s_c1_win_age % 8 == 0 && s_c1_win_age < win_n) {
+        /* ⚠ 2026-10-18 重验修 bug：`s_c1_win_age` 在**这一行之前已自增** ✗（`:3787`）⇒
+         *   原来 `% 8 == 0` 命中的是 **8/16/…/56** 共 **7 个**半圈 = 3.5 圈 ✗（≠ owner 的 4 环 ✗）；
+         *   ⇒ 改成 `% 8 == 1`（= age 1/9/…/57）⇒ **8 个**半圈 = **4 圈** ✓ ✓
+         *   （★ 蛇 30 帧同理：1/9/17/25 = 4 个半圈 = **2 圈** ✓，与上面注释一致 ✓）。*/
+        if (s_c1_win_age % 8 == 1 && s_c1_win_age < win_n) {
             s_c1_sanae_half ^= 1;
-            pofv_emit_group(s_c1_set_sel ? CE_SHT_SET_POFV109_FROG : CE_SHT_SET_POFV109_SNAKE,
-                            s_c1_sanae_half ? 13 : 0);
+            if (s_c1_set_sel) {
+                /* set 0x0e 的两行 fire_rate2 = 40（反汇编 0x40aa40/0x40aa56）=> 引擎只看 long % 40
+                 * => 必须传 long = 0（peashooter.c:532 / season.c:1626 / signal.c:2698 同款）；short 用不到。
+                 * ❓ 113/117 的 option 闸（sdk.c:2132）只在它们自己激活时否决 0x0a..0x15 => 同卡组才可能吞。*/
+                uint8_t *opt = ce_option_get(s_c2s_card, &s_c2s_opt, 0,
+                                             CE_ANM_ABILITY_SCRIPT_POFV109_C2S_FROG, 30, "pofv109");
+                if (opt) {
+                    ce_tick_shooters_for_card(opt, 0, 0, POFV109_SHT_SET_SANAE_OP);
+                    /* ★ debug：只在状态变化时打一行 ✓（每 8 帧一行会刷屏 ✗）*/
+                    if (s_c1_win_age == 1)   /* ★ 每个窗口的第一圈打一次 ✓（不用静态 ✗）*/
+                        ce_log("pofv: [C2N] native tick ok set=0x%02x opt=%p age=%d win=%d",
+                               (unsigned)POFV109_SHT_SET_SANAE_OP, (void*)opt, s_c1_win_age, s_c2s_win);
+                } else {
+                    if (s_c1_win_age == 1)
+                        ce_log("pofv: [C2N] option NULL (card=%p slot 满或未就绪) age=%d win=%d",
+                               (void*)s_c2s_card, s_c1_win_age, s_c2s_win);
+                }
+            } else {
+                pofv_emit_group(CE_SHT_SET_POFV109_SNAKE, s_c1_sanae_half ? 13 : 0);
+            }
         }
     }
 }
@@ -4000,17 +4099,24 @@ static int pofv_dmg_laser(int ch, int move, int lv)
 #define POFV_C3_HIT_H             30.0f
 #define POFV_C3_VM_LAYER             6     /* ★ 2026-10-13 回退 ✗：层 6 可用（见 `POFV_STORM_VM_LAYER` 注释 ✓）*/
 /* ★★★★★ 2026-10-13（★ owner：「★ C3/C4 的 VM 都得用**敌方弹幕的 VM**」✓）：
- *   ★ 弹体改用 ★ **一手原生的敌方弹幕弹体** ✓（脚本 `457` = `457_pofv109_bball.anm.txt` ✓，
+ *   ★ 弹体改用 ★ **一手原生的敌方弹幕弹体** ✓（脚本 `456` = `456_pofv109_bball.anm.txt` ✓，
  *   ★ 三帧来自 TH19 `bullet/bullet1.png` 的 `sprite1/sprite0/sprite2` ✓，★ 8×8 小球 ✓）。
  *   ★ 层 = **8** ✓（★ owner：「★ 层数最好在**敌方弹幕层数的下面**」✓ —— ★ 桩 `0x1c` = 层 13 = 子弹那趟 ✓
  *   ★ ⇒ 8 同列表内先画 ✓ 被敌弹盖住 ✓；★ ❓跨列表次序未核 ⇒ 这是**旋钮** ✓）。
  *   ★ 不再用 `POFV_C3_VM_LAYER`(6) + STORM 脚本 ✗（★ 那是 TH19 `ghost.anm` 的**可见圈** ✓，
  *   ★ 圆心 `alpha(1)` 全透 + 边缘黑 ⇒ ★ 就是"**有伤害、零视觉**"的原因 ✓）。*/
-#define POFV109_C3_ORB_SCRIPT     458    /* ★ C3 阴阳玉 ✓（一手 script329/330 的等价 ✓：62×62 大红玉 ✓、
+#define POFV109_C3_ORB_SCRIPT     457    /* ★ C3 阴阳玉 ✓（一手 script329/330 的等价 ✓：62×62 大红玉 ✓、
                                           *   scale 3→1 ✓、t=48 稳定 ✓、中断后 12 帧淡出缩掉 ✓）*/
-#define POFV109_C4_ORB_SCRIPT     459    /* ★ C4 阴阳玉 ✓（一手 script327 的等价 ✓：30×30 淡蓝→实蓝 ✓、
-                                          *   scale 5→1 ✓、t=63 换实心 ✓、中断后 14 帧加算放大淡出 ✓）*/
-#define POFV109_BBALL_SCRIPT      457    /* ★ 8×8 彩弹 ✓ —— ★ C4 **第二发射口**用（一手 `etSprite(1,1,2)` = type1 → script38 ✓）
+#define POFV109_C4_ORB_SCRIPT     458    /* ★ C4 阴阳玉 ✓（一手 script327 的等价 ✓：30×30 淡蓝→实蓝 ✓、
+                                          *   scale 5→1 ✓、t=63 换实心 ✓、中断后 14 帧加算放大淡出 ✓）
+                                          *   ⇒ ★ 这是 **color3**（低档 ✓）*/
+/* ★★★★ 2026-10-17（施工单 §14 ＋ §10 第 6 项 ＋ §12①-6 ✓）：★ **高档的玉 = color2 变体** ✗ ——
+ *   ★ 一手高低档的 `etSprite(0, 44, color)` 取**不同 color** ✓（★ 低 3 ✓／★ 高 **2** ✓）；
+ *   ★ color2 的两张图 = ★ 淡 `sprite325`（`bullet1.png (65,209,30,30)` ✓）＋ ★ 实心 `sprite582`
+ *   ★（`bullet6.png (65,1,30,30)` ✓）⇒ ★ 与 color3 **只有配色不同、时序/自转逐字相同** ✓
+ *   ⇒ ★ 故只加这一份变体脚本（468 ✓），★ 由发射处按档取 ✓。*/
+#define POFV109_C4_ORB2_SCRIPT    468    /* ★ C4 阴阳玉 · **color2**（高档 ✓，与 458 只差两个 sprite ✓）*/
+#define POFV109_BBALL_SCRIPT      456    /* ★ 8×8 彩弹 ✓ —— ★ C4 **第二发射口**用（一手 `etSprite(1,1,2)` = type1 → script38 ✓）
                                           *   ⇒ ★ 待接（owner：「★ **小彩弹也发**」✓）*/
 #define POFV109_BBALL_LAYER         8    /* ★ owner：层在敌弹下面 ✓（两个阴阳玉脚本里也各自写了 `layer(8)` ✓）*/
 #define POFV_C3_VM_SCALE_EVEN     0.25f    /* ❓⑤：偶波（一手 `etSprite(46)`）*/
@@ -4104,7 +4210,7 @@ static void c3_fire_wave(void)
      *   ★（★ 504/505 只在 `Boss00Boss`/`Boss00BossCard1(H)`/`BossCard2/3` 与 default.ecl 的
      *   ★ `BossEscape`/`BossInterval` ✓）★ ⇒ ★ 本条**不必**做"放开" ✗ ✓。（★ 一手解说 = 载体
      *   ★ 从没被移动过 ✓ + ★ 最后随 `delete` 一起结束 ✓。）*/
-    const float p[3] = { 0.0f, POFV_FIELD_H - 128.0f, 0.0f };
+    const float p[3] = { 0.0f, POFV_FIELD_H - 200.0f, 0.0f };
     const int n = (int)s_c3_count[s_c3.level];
     /* ★★★★★ 2026-10-13 **owner 模型「翻转 180°」** ✓（模型与四条自检 = `HANDOFF-VERSUS-TO-SINGLE-MODEL.md` ✓）：
      *   ★ C3 的弹在对面是"**从那个 boss 本体朝我扇开**" ✓ ⇒ ★ 拉回本侧后中心 = **我自机** ✓
@@ -4142,7 +4248,7 @@ static void c3_fire_wave(void)
              *   ★ `(0.0f, POFV_FIELD_H − 128.0f)` ✓ = ★ 一手 `ins_400(0,128)` 绕场心 180° ✓，
              *   ★ 依据 = 复核 `264d680e` ✓）。*/
             b->x = 0.0f;
-            b->y = POFV_FIELD_H - 128.0f;
+            b->y = POFV_FIELD_H - 200.0f;
         }
         b->spd = POFV_C3_SPEED;
         b->age = 0; b->bounces = 0; b->live = 1;
@@ -4152,8 +4258,8 @@ static void c3_fire_wave(void)
          *   ★（★ `bullet.anm.txt:10729` = `angleVel(+0.05235988, 0, +0.05235988)` ✓ = 329 ✓；
          *   ★   `:10771` = `angleVel(-0.05235988, 0, -0.05235988)` ✓ = 330 ✓）
          *   ⇒ ★ 卡侧 ★ **按波奇偶（`b->spin` ✓，上一行刚定 ✓）挑脚本** ✓：
-         *   ★ `spin == 0` ⇒ ★ `458`（★ 正号 ✓ = 一手 329 ✓）；
-         *   ★ `spin == 1` ⇒ ★ `460`（★ 负号 ✓ = 一手 330 ✓，★ 文件 = `460_pofv109_c3_orb_neg.anm.txt` ✓）。
+         *   ★ `spin == 0` ⇒ ★ `457`（★ 正号 ✓ = 一手 329 ✓）；
+         *   ★ `spin == 1` ⇒ ★ `459`（★ 负号 ✓ = 一手 330 ✓，★ 文件 = `459_pofv109_c3_orb_neg.anm.txt` ✓）。
          *   ⚠ ★ 哪一支配哪一奇偶**没有一手依据** ✗（★ 一手只保证"两支交替"✓）★ ⇒ ★ 这里**任选** ✓，
          *   ★ 观感等价 ✓（★ 两支都是 3°/帧、方向相反 ✓）。*/
         b->vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
@@ -4307,7 +4413,7 @@ static void pofv_c3_tick(void)
                                                           *   （★ 原来写的是 `b->y > POFV_FIELD_H + …` ✗
                                                           *   = 从**版底**漏走 ✗ ⇒ ★ 与 owner 的定案相反 ✓）*/
             /* ★ 只是给一个"远远出界就收"的兜底 ✓（★ 不是反弹 ✓）。
-             * ★ 2026-10-13（★ owner 口径 4 ✓）：★ 改用 `ce_anm_interrupt` ✓ ⇒ ★ 走脚本 457 的**消失支**
+             * ★ 2026-10-13（★ owner 口径 4 ✓）：★ 改用 `ce_anm_interrupt` ✓ ⇒ ★ 走脚本 456 的**消失支**
              *   （★ 消失帧 `sprite2` + 加算 + 淡出 ✓）= ★ owner 要的"★ **敌方弹碰到自机的消失动画**" ✓
              *   （★ 原来 `ce_anm_delete` = **直接抹掉、没有动画** ✗）。*/
             if (b->vm) { ce_anm_interrupt((uint32_t)b->vm, 1); b->vm = 0; }
@@ -4337,7 +4443,7 @@ static void pofv_c3_tick(void)
          *   （★ 招 = 3 表示 C3 ✓；★ 等级 = `s_c3.level` ✓，★ 同一等级下**所有弹一个值** ✓）；
          *   ★ 表里没有的 ⇒ ★ **默认 1** ✓。★ 激光走 `pofv_dmg_laser` ✓（魔理沙专用 ✓）。*/
         /* ★ 2026-10-13（★ owner 口径 4 ✓）：★ **碰到敌方就正常消失** ✓ —— ★ 卡侧自己判一次距离 ✓
-         *   （★ 判到 ⇒ ★ **立刻走"敌弹消失动画"**：★ `ce_anm_interrupt(vm, 1)` ✓ ⇒ ★ 脚本 458 的消失支 ✓，
+         *   （★ 判到 ⇒ ★ **立刻走"敌弹消失动画"**：★ `ce_anm_interrupt(vm, 1)` ✓ ⇒ ★ 脚本 457 的消失支 ✓，
          *   ★ 且这颗**不再发伤害** ✓、★ 不再走后面的生命周期 ✓）。
          *   ★ 遍历用 SDK 现成的 ✓（`CE_ENEMY_FOREACH` ✓ / `ce_enemy_pos` ✓ / `ce_enemy_lockable` ✓）。*/
         {
@@ -4369,7 +4475,7 @@ static void pofv_c3_tick(void)
                      *   ★ 火花**保留** ✓（★ 命中视觉 ✓），★ 但 ★ **也放到 10 帧节拍** ✓ ——
                      *   ★ 否则在半径里**每帧喷火花** ✗（★ 先例的节拍就是 10 ✓）。
                      *   ★ ⚠ ★ 本锚点**同时命中 C3 与 C4 两处** ✓（★ 两段代码相同 ✓）⇒ ★ 一次改齐 ✓，
-                     *   ★ 与 owner「★ C4 也改一样的」✓ 一致 ✓；★ **彩弹（457/459）不在本锚点内** ✗ ✓。*/
+                     *   ★ 与 owner「★ C4 也改一样的」✓ 一致 ✓；★ **彩弹（456/458）不在本锚点内** ✗ ✓。*/
                     /* ★★★★★ 2026-10-16（★ owner：「★ **C4 的弹幕碰到敌方**会出现一帧像"敌弹碰自机消弹"的特效 ⇒
                      *   ★ **那个不想要了**」✓）：★ 本行**停用** ✗ —— ★ 原为 `pofv_spark_spawn(b->x, b->y)` ✓
                      *   （★ = 本卡脚本 431 ✓，★ 一手 `bullet.anm` **script163** 的 `effect/etbreak.png` ✓
@@ -4415,8 +4521,8 @@ static void pofv_c3_tick(void)
 #define POFV_C3_THRESH          1700.0f
 /* ★★ 一手 ✓ C4 门槛 = **2500**（= `S+0x38` × 10 ✓）—— ★ 它**恰好等于灵力满值** ✓ ⇒
  *   ★ 只有**灵力吸满**才够得着 C4 ✓（这正是 owner 定的「**灵力 = 蓄力上限**」的字面意思 ✓）。*/
-/* ★ 2026-10-15：★ C4 期间挂在**自机身上**的两件 boss 观感件（脚本 461 = 原生 `effect.anm` script105
- *   的魔法阵 ✓ / 脚本 462 = 原生 `enemy.anm` script107 的红雾 ✓）★ —— ★ 句柄放**文件作用域** ✗
+/* ★ 2026-10-15：★ C4 期间挂在**自机身上**的两件 boss 观感件（脚本 460 = 原生 `effect.anm` script105
+ *   的魔法阵 ✓ / 脚本 461 = 原生 `enemy.anm` script107 的红雾 ✓）★ —— ★ 句柄放**文件作用域** ✗
  *   （不是函数内静态 ✗）：★ 铁律要求删卡/换局那条路（`pofv_c4_clear()` ⇒ `on_delete`）也能收干净 ✓。*/
 static int32_t s_c4_magic_vm, s_c4_aura_vm, s_c4_fog_vm;
 /* ★ 2026-10-16：★ C4 剩余时间计时器那台**文字 VM** 的句柄也提到文件作用域 ✓ ——
@@ -4468,7 +4574,7 @@ static int32_t s_barrier_vm_disc;        /* ★ 内层：白圆（脚本 428）*
 static int s_barrier_grant_pending;
 static int32_t s_barrier_vm_glow;        /* ★ 外层：黄外发光（脚本 429）*/
 static int   s_barrier_on;               /* 盾在不在 */
-static int32_t s_barrier_break_vm[3];    /* ★ 2026-10-13：破罩的三台爆发 VM（脚本 453/454/455 ✓，一手 §4.3 ✓）*/
+static int32_t s_barrier_break_vm[3];    /* ★ 2026-10-13：破罩的三台爆发 VM（脚本 452/453/454 ✓，一手 §4.3 ✓）*/
 static int   s_barrier_log_pending;      /* ★ 2026-10-12：发放后等视觉起完再打日志 ✓ */
 static int   s_barrier_brk;              /* 破罩计时（>0 = 禁移 + 位移中）*/
 static float s_barrier_dx, s_barrier_dy; /* ❓自定：位移方向（先取正下）*/
@@ -4738,7 +4844,15 @@ static void pofv_barrier_tick(void)
  *   ⇒ ★ 本卡用 `s_c4_lv_n`（0..7 ✓）当索引 ✓，★ 与一手那张表**逐项同** ✓。
  *   ★ 而★ "扫描前的 `ins_23(60)`"（`pl00:342` ✓）也补上了 ✓（见 `POFV_C4_PRE_WAIT` ✓）。*/
 #define POFV_C4_PRE_WAIT         60       /* ★ 一手 ✓ `ins_23(60)`（扫之前先等 60 帧 ✓）*/
-static const int s_c4_d_tab[8] = { 13, 13, 13, 14, 15, 16, 17, 18 };
+/* ★★★★ 2026-10-17（施工单 §10 ＋ §12①-1 ＋ §57 ✓）：★ **`$D` 要两张表** ✗ ——
+ *   ★ 一手 `ins_570($D, …)` 低/高档**不同** ✓：
+ *     · ★ **低档**（`Boss00BossCard1()` ✓，`pl00:450` ✓）= ★ `13,13,13,14,15,16,17,18` ✓（**原样保留** ✗ 别替换 ✓）；
+ *     · ★ **高档**（`Boss00BossCard1H()` ✓）= ★ **`16,16,14,14,18,20,26,30`** ✓。
+ *   ★ ⚠ ★ §57 专门警告过：★ **把低档表"替换"成高档表** ✗ ⇒ ★ 低档会跟着变 ✗ ——
+ *     ★ 而"光看高档表对不对"**抓不到这个错** ✗ ⇒ ★ 故**两张并存** ✓、★ 由 `pofv_c4_d()` 按档取 ✓。
+ *   ★ 分叉判据同 §0.2：★ `pofv_c4_rank() >= 4` ✓（★ 灵梦/魔理沙 = 4 ✓，★ 早苗 = 6 ✓）。*/
+static const int s_c4_d_tab[8]    = { 13, 13, 13, 14, 15, 16, 17, 18 };   /* ★ 低档 ✓（原样 ✓）*/
+static const int s_c4_d_tab_hi[8] = { 16, 16, 14, 14, 18, 20, 26, 30 };   /* ★ 高档 ✓（一手 ✓）*/
 /* ★★★★★ 2026-10-13（owner 口径 ✓）：★ **C4 从 lv3 起算** ✓。
  *   ★ 一手依据（`pl00.txt` `Boss00Boss()`，21 行起 ✓，**亲读** ✓）：★ 那三行 `!01` / `!23` / `!4567`
  *     是**难度掩码** ✓ ⇒ ★ **rank 0/1（= lv1/2）⇒ `Boss00Boss1()` = 非符** ✗、
@@ -4753,9 +4867,22 @@ static int pofv_c4_rank(void)
     if (r > 7) r = 7;
     return r;
 }
-static int pofv_c4_d(void) { return s_c4_d_tab[pofv_c4_rank()]; }
+/* ★ 2026-10-17（§12①-1 ✓）：★ 按档取 `$D` —— ★ 低 `s_c4_d_tab` ✓／★ 高 `s_c4_d_tab_hi` ✓。
+ *   ★ ⚠ ★ 这个函数**同时是 `di` 的分母**（`pofv_c4_emit()` 里 ✓）⇒ ★ 它**必须返回"表项"** ✗，
+ *     ★ **不能**改成"一轮总数"（★ 那是 `2×$D` ✓，见波循环那处 ✓）★ —— 详见 §55／§12①-4 ✓。*/
+static int pofv_c4_d(void) {
+    const int r = pofv_c4_rank();
+    return (r >= 4) ? s_c4_d_tab_hi[r] : s_c4_d_tab[r];
+}
 /* ★ 一手 ✓ `pl00:346–347` 的 `!234567` ⇒ ★ **rank 2..7 要再补第三条 +2π** ✓。*/
-static int pofv_c4_nsweep(void) { return (pofv_c4_rank() >= 2) ? 3 : 2; }
+/* ★ 2026-10-17（施工单 §10 #3 ＋ §12①-3 ＋ §64 ✓）：★ 扫数**按档** ——
+ *   ★ **高档 = 2** ✓（★ 一手高档**没有**第三次 `+2π` ✗ ✓）；★ **低档 = 3** ✓（★ `rank >= 2` 那支**要留着** ✗）。
+ *   ★ ⚠ ★ §64 警告：★ 只把返回值改成 2 ✗ ⇒ ★ **低档也变 2** ✗ ⇒ ★ 故写成两档分支 ✓。*/
+static int pofv_c4_nsweep(void) {
+    const int r = pofv_c4_rank();
+    if (r >= 4) return 2;      /* ★ 高档 ✓ */
+    return (r >= 2) ? 3 : 2;   /* ★ 低档（原样 ✓）*/
+}
 #define POFV_C4_EMIT_EVERY        2       /* ★ 一手 ✓ `ins_23(2)` */
 /* ★★★★★ 2026-10-13（★ owner：「★ **你就开一个计时即可** —— 在这大概 20s（★ 得完全看一手数值）
  *   的时间里面，★ 按 C4 规定的间隔**一波一波发弹**；★ 目前的 C4 只有一波」✗
@@ -4781,12 +4908,62 @@ typedef struct {
     int     bounced;      /* ★ 2026-10-13 模型 ③：★ 版顶已反弹过否 —— ★ **一手本来就有反弹** ✓
                            *   （`etEx(type=64 = EX_BOUNCE, 4 次, walls=13 = 上|左|右 ✓)` ✓，`pl00.txt:434` 那支 ✓）
                            *   ⇒ ★ 本卡只做"**一次版顶反弹**" = 对一手的**简化** ✗（★ 一手是 4 次、含左右 ✓）。*/
+    int     nobounce;     /* ★ 2026-10-18（IMPL §4 #4 ✓，TH19 反编译定案）：★ **本卡这张不反弹** ✗
+                           *   ★ 一手早苗 C4 的 `Boss00BossCard1_at()` **没有** `ins_611` 段 ✓
+                           *   （`pl02:181-189` 只有 `2 / 256 / 4` 三组配置 ✓）⇒ ★ 她的弹不反弹 ✓；
+                           *   ★ 灵梦 C4 那支**照旧反弹** ✓（本字段默认 0 = 会反弹 ✓）。*/
     float   x, y, ang, spd;
     int32_t vm;
 } pofv_c4_bullet_t;
 
 static pofv_c4_bullet_t s_c4_b[POFV_C4_MAX_BULLETS];
 static struct { int timer, emitted, dir, live, sweep; float base; int eb, ring_vm; } s_c4;   /* sweep: 0 = +2pi 扫描 / 1 = -2pi（③ 顺序）*/
+
+/* ★★★★★ 2026-10-17 咲夜 C4（owner：「★ 只做 C1 和 C4 本身」✓）——
+ *   ★ 类型与常量**必须声明在这里** ✗（★ `pofv_c4_clear()` 要复位这个状态机 ✓）；
+ *   ★ 她的**外壳/五招的逐参出处**写在下面实现那一大段注释里 ✓（★ 一手 = TH09 `pl02` ✓）。*/
+typedef struct {
+    int   active;
+    int   timer;        /* ★ 从 `fire` 起的帧数 ✓ */
+    int   loops;        /* ★ `$I11` = 5..9 ✓ */
+    int   done;         /* ★ `$I7` ✓ */
+    int   sub;          /* ★ 当前子招 3..7 ✓（-1 = 还没选 ✓）*/
+    int   sub_age;      /* ★ 本子招已跑帧数 ✓ */
+    int   sub_step;     /* ★ 本子招已发次数 ✓ */
+    float ox, oy;       /* ★ 中心（= 自机位置 ✓，`fire` 时锁定 ✓）*/
+    float sx, sy;       /* ★ 发射器当前位置（`Sub2` 那条 `movePosTime` 用 ✓）*/
+} pofv_c4k_t;
+static pofv_c4k_t s_c4k_st;
+/* ★ 2026-10-17（★ 修"★ 退出游玩再进还下雨"✗）：★ **早苗 C4 的状态体也挪到 `pofv_c4_clear()` 之前** ✓ ——
+ *   ★ 因为 `pofv_c4_clear()` 现在要复位它 ✓（★ 它原先只在自己 `timer > 3600` 时被清 ✗
+ *     ⇒ ★ 清卡/新局的路**从没清过它** ✗ ⇒ ★ 上一局的雨一直留着 ✓）。*/
+static struct { int active, timer, wait; float tgt; float theta, px; } s_c4s;   /* 2026-10-18 重验: 删掉只写不读的 aim */
+/* ★ 2026-10-18（IMPL §4 #2 ✓，TH19 反编译定案）：★ `theta` = **全局单一朝向** ✗
+ *   ★ 一手 `Boss00BossCard1_at()` 的发弹是 ★ `ins_604($A, **%D**, 0.0f)` ✓（`pl02:219` ✓）——
+ *   ★ **同一个 `%D` 发给当帧所有弹** ✓、★ 且 `dif = **0**` ⇒ ★ **没有逐颗抖动** ✗；
+ *   ★ `%D` 起 `π/2` ✓（`pl02:200-217` ✓），按自机横移量 `[-9977]` 的符号 **±1°/帧** ✓，
+ *   ★ 死区（`|[-9977]| ≤ 0.01` ✓）内按 **±2°/帧** 回中 ✓ ⇒ ★ 观感 = "像下雨一样，雨丝方向慢慢摆" ✓。
+ *   ★ `px` = 上一帧自机 x ✓（算横移量用 ✓）。*/
+/* ★ 2026-10-17：★ 魔理沙 C4 的状态体也挪到这里 ✓（★ 三件仲裁要读 `s_c4m_st.active/timer` ✓）。*/
+/* ★ 2026-10-18（IMPL §2 #2 ✓）：★ `laser_vm` / `laser_timer` 改成 **3 条** ✗ ——
+ *   ⚠ ★ 2026-10-18 重验更正 ✗：★ **魔理沙**的一手在 `pl01.txt` —— `Boss00BossCard1()` :229 起 ✓、
+ *   `Boss00BossCard1_at()` :368 起 ✓；★ 高档的 `!67` 里是 `Boss00BossCard1H_at(3, …)`/`(6, …)`（`:301/:306`）✓、
+ *   低档只有 `:262` 的单次无参 `@Boss00BossCard1_at();` ✓ ⇒ ★ 魔理沙 **低档 1 台 / 高档 3 台** ✓。
+ *   ★ 我原来这里引的 `_at(0,11,8)/(1,8)/(18,1)` 与 `pl02:163-166` 是 **早苗**的一手 ✗（★ 张冠李戴 ✓）。
+ *   ★ 本笔只做**数组化**（★ 行为不变：仍只 spawn 一条 ✓，用 `[0]` ✓）⇒ ★ 下一笔再把 spawn/tick 改成循环 ✗。*/
+static struct { int active, timer, laser_vm[3], laser_timer[3], laser_delay[3], level, total; float laser_dx[3]; float base; float ox, oy; } s_c4m_st;   /* 2026-10-18 重验: 删只写不读的 emitted */
+
+/* ★ 前置声明 ✓（★ 定义在本文件**下面** ✓，★ 而咲夜的 tick 要调它 ✓ —— ★ 这是本文件第四次"先用后定义" ✓）。*/
+/* ★ 前置声明 ✓（★ 定义在下面 ✓；★ 2026-10-17 起改成**带参的通用版** ✓ ＋ 一个每帧仲裁 ✓）。*/
+static void pofv_c4_decor_tick(int active, int elapsed, int total);
+static void pofv_c4_decor_arbitrate(void);
+
+#define POFV_C4K_PRE_FRAMES   60       /* ★ 一手 ✓ `ins_23(60)`／`movePosTime(60,…)` */
+#define POFV_C4K_SUB_FRAMES   60       /* ★ 一手 ✓ 每轮 60 帧（`$I4 = 60` ✓）*/
+#define POFV_C4K_LOOP_MIN      5       /* ★ 一手 ✓ `rand%5 + 5` ⇒ 5..9 */
+#define POFV_C4K_MAX_LANES    32       /* ★ 自定上限（防呆 ✓，一手最大 10 路 ✓）*/
+/* ❓ ★ 弹色：★ 洋红（一手贴图里没有 ⇒ 染色 ✓）；★ **具体数值一手取不到** ✗ ⇒ 取一个洋红 ✓。*/
+#define POFV_C4K_COLOR   0xE060C0FFu
 
 static void pofv_c4_clear(void)
 {
@@ -4797,7 +4974,31 @@ static void pofv_c4_clear(void)
         if (s_c4_b[k].vm) { ce_anm_delete((uint32_t)s_c4_b[k].vm); s_c4_b[k].vm = 0; }
         s_c4_b[k].live = 0; s_c4_b[k].age = 0;
     }
-    /* ★ 2026-10-15（铁律）：★ C4 期间挂在自机身上的两件 boss 观感件（脚本 461/462 ✓）**也必须在这里收** ✗
+    /* ★★★★ 2026-10-17（★ **铁律**：长持续效果必须交代"被删掉会怎样"✓）：
+     *   ★ 咲夜 C4 的**状态机**（`s_c4k_st` ✓）也要在这里**收干净** ✗ ——
+     *   ★ 删卡 / 换局走的就是 `on_delete` → 本函数 ✓（★ 那一刻卡的 tick 全停 ✓，★ 只有这里跑得到 ✓）。
+     *   ★ 她**没有**自己的 VM ✗（★ 弹走共用的 `s_c4_b[]` ✓ —— 上面那个循环已经收了 ✓；
+     *   ★ 观感那三件（460/461/462）与计时器也在下面收 ✓）⇒ ★ 这里只需**复位状态机** ✓，
+     *   ★ 否则下次放 C4 会从上一局的 `done/sub` 接着跑 ✗。*/
+    s_c4k_st.active   = 0;
+    s_c4k_st.timer    = 0;
+    s_c4k_st.loops    = 0;
+    s_c4k_st.done     = 0;
+    s_c4k_st.sub      = -1;
+    s_c4k_st.sub_age  = 0;
+    s_c4k_st.sub_step = 0;
+    /* ★★★★★ 2026-10-17（owner 实跑：「★ **我怎么退出之后…再进还是下雨啊**」✗）——
+     *   ★ **真凶就是这一处** ✗：★ `s_c4s.active` **只在** `pofv_c4s_tick()` 里
+     *   ★ `timer > 3600` 时被清 ✗ —— ★ `clear_card()`／`pofv_c4_clear()`／★ `pofv_c3s_clear()`
+     *   ★ **都没有清它** ✗✗ ⇒ ★ 退出游玩再进，它**还是 1** ⇒ ★ `pofv_c4s_tick()` 继续发雨 ✗ ✓
+     *   ★ 对照 ✓：★ 魔理沙那套在 `pofv_c4m_clear()` 里**清了** `s_c4m_st.active` ✓（6019 ✓），
+     *     ★ 灵梦在下面清 ✓，★ 咲夜在上一段清 ✓ —— ★ **只有早苗漏了** ✗。
+     *   ⇒ ★ 本段补上 ✓（★ 与 `pofv_c4s_fire()` 的置位对称 ✓，★ 铁律：长持续效果必须交代"被删掉会怎样"✓）。*/
+    s_c4s.active = 0;
+    s_c4s.timer  = 0;
+    s_c4s.wait   = 0;
+    s_c4s.tgt    = 0.0f;
+    /* ★ 2026-10-15（铁律）：★ C4 期间挂在自机身上的两件 boss 观感件（脚本 460/461 ✓）**也必须在这里收** ✗
      *   —— 删卡 / 换局走 `pofv_c4_clear()` ✓（AbilityManager 冻住时只有 `on_delete` 跑得到 ✓）★ ⇒
      *   ★ 无条件探活再删 ✓（脚本可能已自删 ⇒ 不能盲删 ✓）。*/
     if (s_c4_magic_vm) { if (ce_anm_get_vm((uint32_t)s_c4_magic_vm)) ce_anm_delete((uint32_t)s_c4_magic_vm); s_c4_magic_vm = 0; }
@@ -4843,6 +5044,8 @@ static void pofv_c4_emit(int dir)
     }
     s_c4_b[k].live = 1; s_c4_b[k].age = 0;
     s_c4_b[k].bounced = 0;                       /* ★ 2026-10-13：★ 新弹的"已反弹"位清零 ✓ */
+    s_c4_b[k].nobounce = 0;                      /* ★ 2026-10-18：★ 共用池 ✗ ⇒ 灵梦借到早苗用过的槽位时
+                                                  *   必须**清 0** ✗（★ 否则会继承"不反弹"✗ —— 灵梦照旧反弹 ✓）*/
     ang += 3.14159265f;                          /* ★ 翻 180° ✓（朝对面打、不朝我 ✓）*/
     s_c4_b[k].ang = ang;
     s_c4_b[k].spd = POFV_C4_SPEED;
@@ -4850,16 +5053,20 @@ static void pofv_c4_emit(int dir)
      *   —— ★ 它的唯一作用是"算了个 `a5` 却没用" ✓（★ 旧版那两句"把位置写回 `(0,128)`"**早已删掉** ✓，
      *   见上一提交 ✓）⇒ ★ **整块删除** ✓（★ 纯死码 ✓）。*/
     /* ★★★★★ 2026-10-13（★ owner：「★ C3/C4 的 VM 都得用**敌方弹幕的 VM**」✓）：★ 换成一手弹体 ✓
-     *   （★ 脚本 `457` ✓ = TH19 `bullet/bullet1.png` 的 8×8 三帧 ✓；★ 层 `8` ✓ —— ★ 层 13 是子弹那趟 ✓
+     *   （★ 脚本 `456` ✓ = TH19 `bullet/bullet1.png` 的 8×8 三帧 ✓；★ 层 `8` ✓ —— ★ 层 13 是子弹那趟 ✓
      *   ⇒ 8 在同列表内先画 ⇒ 被敌弹盖住 ✓）；★ **去掉 `set_color`** ✗（★ 它会连 `alpha` 一起覆盖 ✓
      *   ⇒ ★ 会顶掉脚本里 owner 要的 `alpha ≤ 128` ✓）、★ **去掉 `set_scale(0.5)`** ✗
      *   （★ 一手弹体是 **8×8 原尺寸** ✓）。★ C4 两个槽（一手 type44/type1 ✓）在**弹体**上同形 ✓
      *   —— ★ 差别只在**粒子颜色**（★ 槽0 蓝 / 槽1 粉 ✓），★ 那部分在命中表现里做 ✓。*/
     /* ★ 2026-10-13（★ owner：「★ **小彩弹也发**」✓）：★ 一手两个槽**交替** ✓ ⇒ ★ 本卡按发射奇偶交替 ✓：
-     *   ★ 偶数发 = **阴阳玉**（脚本 459 = 一手槽 0 / type44 ✓）；
-     *   ★ 奇数发 = **8×8 彩弹**（脚本 457 = 一手槽 1 / type1 → 脚本 38 ✓）。*/
+     *   ★ 偶数发 = **阴阳玉**（脚本 458 = 一手槽 0 / type44 ✓）；
+     *   ★ 奇数发 = **8×8 彩弹**（脚本 456 = 一手槽 1 / type1 → 脚本 38 ✓）。*/
     s_c4_b[k].vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
-                                         (s_c4_emit_parity++ & 1) ? POFV109_BBALL_SCRIPT : POFV109_C4_ORB_SCRIPT,
+                                         /* ★ 2026-10-17（§12①-6 ✓）：★ 阴阳玉**按档取配色变体** ——
+                                          *   ★ 低档 color3（458 ✓）／★ 高档 **color2**（468 ✓）。*/
+                                         (s_c4_emit_parity++ & 1) ? POFV109_BBALL_SCRIPT
+                                         : ((pofv_c4_rank() >= 4) ? POFV109_C4_ORB2_SCRIPT
+                                                                  : POFV109_C4_ORB_SCRIPT),
                                          POFV109_BBALL_LAYER);
     if (s_c4_b[k].vm) {
         ce_anm_set_pos((uint32_t)s_c4_b[k].vm, s_c4_b[k].x, s_c4_b[k].y, 0.0f);
@@ -4871,7 +5078,9 @@ static void pofv_c4_emit(int dir)
  * ★★★★★ 模型（owner 2026-10-13 ✓，全文 = `HANDOFF-VERSUS-TO-SINGLE-MODEL.md` ✓）：
  *   ★ 一手那套是"**对面那个 boss（= 我在对面的表现）** 朝我打" ✓ ⇒ ★ **拉回本侧 + 整体转 180°** ✓：
  *   ★ ① 中心 = **我自机的位置** ✓（★ 一手中心是 boss 本体 ✓）；★ ② 方向 **+180°** ✓；
- *   ★ ③ **版顶反弹、版底出去** ✓ —— ★ 本档**复用 C4 的池与运动** ✓ ⇒ 反弹/加速/绘制/伤害**全部同款** ✓。
+ *   ★ ③ ⚠ **2026-10-18 重验更正** ✗：★ 本档**不反弹** ✗ —— ★ 代码里是 `s_c4_b[k].nobounce = 1;` ✓、
+ *       ★ 反弹守卫是 `if (b->y > POFV_FIELD_H && !b->bounced && !b->nobounce)` ✓ ⇒ ★ 永不反弹 ✓。
+ *       ★ 原来这句写「版顶反弹、版底出去…全部同款」✗ **与代码相反** ✓（★ 一手 `pl02` 那支也没有 `ins_611` ✓）。
  * ★ 一手出处（`local/th19.v1.10c/_ext/ecl/pl02.txt` ✓；★ 前置换算 agent `87daea23` 的转写 ✓）：
  *   · ★ 外壳 `Boss00BossCard1`（`:125–176`）：★ **三个发射口** `@…_at(0, 11, 8)`(`:163`) ✓ /
  *     `(1, 1, 8)`(`:164`) ✓ / ★ `!67` 才 `(2, 18, 1)`(`:166`) ✓ ⇒ ★ 实参 = ★ **（槽号, 弹型, 颜色）** ✓
@@ -4892,62 +5101,140 @@ static void pofv_c4_emit(int dir)
 #define POFV_C4S_STEER_TIGHT  0.0349066f   /* ★ 一手 ✓ ±2°（`0.034906585`）= ★ **2°/帧**的判据（死区 ✓）*/
 static const int   s_c4s_wait_tab[8] = { 8, 8, 6, 5, 4, 3, 4, 3 };   /* ★ 一手 ✓ 8 档 wait（帧 ✓）*/
 static const float s_c4s_spd_tab[8]  = { 2.0f, 2.0f, 2.0f, 2.4f, 2.8f, 3.0f, 3.0f, 3.2f };  /* ★ 一手 ✓ `ins_571` ✓ */
-static struct { int active, timer, wait; float aim, tgt; } s_c4s;
+/* ★ 2026-10-17：★ `s_c4s` 的**声明已挪到 `pofv_c4_clear()` 之前** ✓ ——
+ *   ★ 因为清卡那条路现在要复位它 ✓（★ 修"★ 退出再进还下雨"✗ ✓）★ ⇒ 本处**不再重复声明** ✗。*/
 
-static void pofv_c4s_emit(float ang, float spd)
+/* ★ 2026-10-18（IMPL §4 #1 ✓）：★ 本文件没有 `<math.h>`（★ 也不用 `-lm` ✓）⇒ 自带一对小 sin/cos ✓
+ *   ★ 先把角度折到 [−π, π] ✓，★ 再用 **6 项**泰勒（★ 到 a¹¹ ✓）：
+ *   ★ 实测误差（★ 2026-10-18 实测 ✓）：★ 90° 处 **5.6e-8** ✓、★ 150° 处 **4.2e-5** ✓、
+ *     ★ 180° 处 **4.5e-4**（最坏 ✓）★ —— ★ 5 项时 180° 是 **6.9e-3** ✗（已修 ✓）。*/
+static float pofv_c4s_sinf(float a)
+{
+    const float PI = 3.14159265f, TAU = 6.28318531f;
+    while (a >  PI) a -= TAU;
+    while (a < -PI) a += TAU;
+    { const float a2 = a * a;
+      return a * (1.0f - a2 / 6.0f * (1.0f - a2 / 20.0f * (1.0f - a2 / 42.0f
+                   * (1.0f - a2 / 72.0f * (1.0f - a2 / 110.0f))))); }
+}
+static float pofv_c4s_cosf(float a) { return pofv_c4s_sinf(a + 1.5707963f); }
+
+/* ★ 早苗 C4 的弹发射器（`Boss00BossCard1_at()` ✓ `pl02:178`）—— 注释 2026-10-18 **重写** ✓
+ *
+ *  一手的做法（逐句）：
+ *    `ins_620($A, 0.0f, 96.0f)`                 基准点 (0,96)
+ *    `ins_618($A, r×π/2 − π/2, 192.0f)`         ★ 偏移：半径 192、方向逐颗随机（`r` = 引擎随机 ✓）
+ *    `ins_604($A, %D, 0.0f)`                    飞行方向 = 全局 `%D`（★ `dif = 0` ⇒ **无逐颗抖动** ✓）
+ *    `ins_605($A, %E + rand×0.5, 0)`            速度
+ *    `ins_601($A)` ＋ `ins_23([-1])`             发 ＋ 等 1 帧
+ *
+ *  卡侧（★ owner：镜像是与一手的唯一差异 ✓）：
+ *    ① **出生点**：`y` 固定 `FIELD_H − 96`（= 352，下半场的一条**水平带** ❓），`x` 在 **±192 内均匀** ❓
+ *       —— ★ 这就是"发弹点遍布整个 x 轴" ✓；★ 原来两版都错 ✗（一版拿漂移 θ 当偏移角、
+ *          一版用 `[±π/4]` 极坐标导致 y 落在中线以上 ✓）。
+ *    ② **飞行方向**：`s_c4s.theta`（全局单变量 ✓，起 **−π/2 朝上** ✓ —— 出生在下半场 ⇒ 往上 ✓）
+ *       ⚠❓ 重验：★ 「同一变量 / +180°」有 `pl02:198` 的 `[-9987.0f]` 支撑 ✓，
+ *       ★ 但「慢漂 ±1°/帧、死区 ±2°」**是卡侧自定** ❓（`pl02` 那两句里没有速率/死区）。
+ *       ＋ **不反弹** ✓（`nobounce = 1` —— 一手这支没有 `ins_611` ✓）
+ *    ③ **贴图/配色**：脚本 466 × 8×8；★ 三台按编号 `602($A, 11/1/18, 8/8/1)` ⇒ 现在用染色近似
+ *       （★ 实测三格本色 ≈ 三个染色值 ⇒ 观感等价 ✓，见 `TUNING`）。
+ *
+ *  ❓ 仍存疑（不冒充复刻）：
+ *    · `ins_618` 的偏移**方向**是逐颗随机还是别的量 —— 反编译只定到"偏移向量"，卡侧按"逐颗随机"实现 ✓；
+ *    · `ins_605` 的速度上下限与 8 档表的关系（卡侧用 8 档 + `rand×0.5` ✓）。
+ */
+static void pofv_c4s_emit(float ang, float spd, uint32_t color)
 {
     int k;
     for (k = 0; k < POFV_C4_MAX_BULLETS; ++k) if (!s_c4_b[k].live) break;
     if (k >= POFV_C4_MAX_BULLETS) return;
-    {
-        const float *pp = ce_player_pos();
-        /* ★★★★★ 2026-10-13（★ owner 定 ✓）：「★ **早苗不涉及任何 boss 位置** ✓，★ 是**从'天上'下来** ✓，
-         *    ★ 对应咱们这里就是**得从版底往上发**」✓
-         *    ⇒ ★ 出生点 = ★ **版底** ✓（★ 本卡 y 向下增 ✓：★ `y = 0` 是顶 ✓、★ `y = POFV_FIELD_H` 是底 ✓
-         *    —— ★ 依据 = 本文件里"飞出下边界就收"用的就是 `b->y > POFV_FIELD_H + …` ✓）。
-         *    ★ 横向位置仍取自机 x ✓（★ 一手是"从天上某处下来"✓ ⇒ ★ 翻 180° 后是"从版底某处上去"✓；
-         *    ★ 那个"某处"一手取的是**自机位置**的那一维 ✓ —— ★ 若复核/实跑说该固定，再调 ✓）。
-         *    ⚠ 方向那半**还没改** ✗：★ 现在仍由调用者 `pofv_c4s_fire()` 传进来的 `ang` 决定 ✓，
-         *    ★ 下一轮翻成"向上" ✓（★ 一次一样 ✓，★ 账里已写 ✓）。*/
-        s_c4_b[k].x = pp ? pp[0] : 0.0f;
-        /* ★★★★★ 2026-10-16 **按 owner 最新口径翻正**（一级证据 ✓）：
-         *   ★「★ **早苗 C4 是从天上下雨，全部 x 范围都在"顺溜"地往下下雨**」✓
-         *   ⇒ ★ 出生点 = ★ **"天"上方** ✓：★ 本卡 y 向下增（`y=0` 是顶 ✓、`y=POFV_FIELD_H` 是底 ✓）
-         *     ⇒ ★ 取 **顶外一点负值** ✓，让它**从顶外落进来** ✓（★ 不是原来的版底 ✗）。
-         *   ⚠ ★ 旧口径「从版底往上发」✗ ★ **作废** ✓（★ 那是镜像前的写法 ✓，★ 现已按 owner 口述翻正 ✓）。*/
-        s_c4_b[k].y = -16.0f;
-    }
+
+    /* ① 出生点：下半场一条水平带（y 固定），x 均匀铺满 ±192 ✓ */
+    s_c4_b[k].x = 192.0f * (((float)(ce_rand() % 10000u) / 5000.0f) - 1.0f);
+    s_c4_b[k].y = POFV_FIELD_H - 96.0f;
+
+    /* ② 状态：不反弹 ✓（一手这支没有 `ins_611` ✓） */
     s_c4_b[k].live = 1; s_c4_b[k].age = 0; s_c4_b[k].bounced = 0;
+    s_c4_b[k].nobounce = 1;
     s_c4_b[k].ang = ang; s_c4_b[k].spd = spd;
-    /* ★★★★★ 2026-10-16 **owner：「必须核出来早苗 C3 和 C4 的外观」✓ —— 她 C4 的外观在这里收口 ✓**：
-     *   ★ 一手：`_ext/ecl/pl02.txt:178 Boss00BossCard1_at()` 的 `ins_602($A, $B, $C)` ✓
-     *   ★ ⇒ 按"**全局 sprite 序号**"读法（★ 已由 `sprite38`／`sprite351` 两次互证 ✓）：
-     *     ★ `sprite16` = `bullet.anm.txt:33` `{ x: 0, y: 192, w: 8, h: 8 }` ✓（8×8 点 ✓）
-     *     ⇒ ★ 素材 `assets/ability/POFV109_C4S_BULLET.png` ✓ ＋ 脚本 **467** ✓（已生成宏 ✓）。
-     *   ★ 本行 = ★ **这台 VM 是"早苗 C4 专用"** ✓（★ `s_c4_b[]` 全卡只有 `pofv_c4s_fire()` 在用 ✓，
-     *   即紧随本块之后的那个函数 ✓）⇒ ★ 所以**直接换掉**即可、**不需要按角色分岔** ✓。
-     *   ⚠ ★ 未改的（如实标 ✗）：★ 出生点/方向的"翻正"（本块上面那段注释的 ❓ 项 ✓）——
-     *   那属于**另一个口径**（旧口述"从版底往上"✗ vs 现口述"从天下雨"✓），★ **本笔不动** ✗，
-     *   ★ 留待与 owner 对口径后单独一笔 ✓（一次一样 ✓）。*/
+
+    /* ③ 外观：脚本 466（8×8）× 染色 */
     s_c4_b[k].vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
                                          CE_ANM_ABILITY_SCRIPT_POFV109_C4S_BULLET,
                                          POFV_C4_VM_LAYER);
     if (s_c4_b[k].vm) {
-        ce_anm_set_color((uint32_t)s_c4_b[k].vm, 0xffffffffu);
+        ce_anm_set_color((uint32_t)s_c4_b[k].vm, color);
         ce_anm_set_scale((uint32_t)s_c4_b[k].vm, 0.5f, 0.5f);
     }
 }
 
 static void pofv_c4s_fire(void)
 {
+    /* ★★★★ 2026-10-17（施工单 §12②-5 ＋ §89 ✓）：★ **高档的符卡名** ✗ ——
+     *   ★ 一手 `pl02.txt:148`：★ `ins_522(0, 1800, 0, "風符「ウィンドマスター」")` ✓（★ 掩码 `!67` ⇒ `rank ≥ 6` ✓）
+     *   ⇒ ★ 在"★ **邀请 boss／符卡开始那一刻**"把名字写进 ★ **`CE_SPELLCARD() + 0x34`** ✓。
+     *   ★ 出处（§89.1 ✓）：★ `youkai.c:3920／3941` 把 ★ `(const uint8_t *)(sc + 0x34)` 当名字读 ✓
+     *     （★ 宽 **64 字节含结尾** ✓）；★ 符卡对象/标志 = ★ `native/sdk.h:625-626` ✓（★ 115 卡已有先例 ✓）。
+     *   ★ 这段本来**一处都没有** ✗（§89.2 把 `pofv.c` 里所有 `+0x34` 都查过 ✓：★ 全是别的东西 ✓）
+     *     ⇒ ★ 所以这是"★ **还没有**"✗、★ 不是"改错"✗ ✓。
+     *   ⚠ ❓ ★ 两处**待实跑确认**（★ §89.3 ✓，★ 都登记进 `TUNING.md` ✓）：
+     *     ① ★ §89.3 说 ★ 本卡 C4 是"★ **召唤 boss**"✓ ⇒ ★ 名字**也可能**该由**被召唤 boss 自己的数据**带 ✓
+     *        ⇒ ★ 若那样，★ 本行是多余的（★ 会被覆盖或覆盖它 ✗）⇒ ★ 判据 = ★ 游戏里 C4 高档显示的
+     *        ★ 符卡名是不是「風符「ウィンドマスター」」✓ —— ★ 若本来就对 ⇒ **删掉本段**即可 ✓；
+     *     ② ★ **编码** ✗ —— ★ 本行按 §89 用**源文件字面量**（UTF-8 ✓）写；★ 而引擎/其它卡读它时
+     *        ★ 按什么编码比 ✗ 未坐实 ✓（★ `youkai.c` 是交 `yk_spell_name_is_time(…, 64)` 判的 ✓）
+     *        ⇒ ★ 若实跑显示乱码，★ 改写成 Shift-JIS 字节串即可 ✓。*/
+    if (pofv_c4_rank() >= 6) {
+        uint8_t *sc = CE_SPELLCARD();
+        if (sc) {
+            static const char c4s_name[] = "風符「ウィンドマスター」";
+            size_t ln = sizeof(c4s_name);        /* ★ 含结尾 NUL ✓ */
+            if (ln > 64u) ln = 64u;              /* ★ 字段宽 64 ✓ ⇒ 截断保护 ✓ */
+            /* ★ 不用 `memcpy` ✗ —— ★ 本文件没引 `<string.h>` ✓（★ 编译报错 `undeclared memcpy` ✓）
+             *   ⇒ ★ 逐字节拷贝 ✓（★ 更小改动、★ 不新增依赖 ✓）。*/
+            {
+                size_t i;
+                for (i = 0; i + 1u < ln; ++i) sc[0x34 + i] = (uint8_t)c4s_name[i];
+                sc[0x34 + ln - 1u] = 0;          /* ★ 补 NUL ✓ */
+            }
+        }
+    }
     s_c4s.active = 1;
     s_c4s.timer = -POFV_C4_PRE_WAIT;                 /* ★ 一手 ✓ `ins_23(60)`：先等 60 帧再发 ✓ */
-    s_c4s.wait  = s_c4s_wait_tab[pofv_c4_rank()];    /* ★ 一手 ✓ 8 档 wait ✓ */
-    /* ★ 2026-10-16 **按 owner 最新口径翻正** ✓：★「早苗 C4 是从天上下雨…顺溜地往下」✓
-     *   ⇒ ★ 目标角 = **+π/2 = 朝下（朝我）** ✓（★ 原来 −π/2 = 朝上 ✗ = 镜像前的口径 ✓）*/
-    s_c4s.tgt   = 1.5707963f;
-    /* ★ 初始角 = ★ **向下半圈内的随机** ✓（★ 镜像：原来 `π/2 + (π/2)·rand` ∈ [π/2, π] ✗）*/
-    s_c4s.aim   = 1.5707963f - 1.5707963f * ((float)(ce_rand() % 1024u) / 1024.0f);
+    /* ★★★★ 2026-10-17（施工单 §51 ＋ §94 #1 ＋ §98 ✓）：★ **逐发间隔 = 恒定 2 帧** ✗ ——
+     *   ★ 一手（★ `pl02.txt` 的 `Boss00BossCard1_at()` ✓，交接 §35.2 ✓）：★ 发弹循环里是
+     *     ★ **`ins_23(2)`** ⇒ ★ **恒定 2 帧** ✓（★ 施工单 §51 专门查过：★ **没有** 8 档 wait 表 ✗
+     *     ⇒ ★ 那 8 档是**卡侧自造的手感曲线** ✗ ⇒ ★ 已按纪律标 ❓自定 ✓）。
+     *   ★ ⚠ **2026-10-18 重验更正** ✗：★ 代码是 `s_c4s.wait = 1;`（**1 帧** ✗）—— ★ 原来这句
+     *     「本行改成恒定 2」✗ **与代码相反** ✓。★ 原来的 8 档表 `s_c4s_wait_tab`
+     *     ★ **保留不再使用** ✓（★ 留作对照 ✓；★ 若哪天要恢复手感曲线，★ 把本行换回那支即可 ✓）。*/
+    /* ★ 2026-10-17（C 组 ② ✓）：★ 一手 `Boss00BossCard1_at()` 每帧发一轮、**等 1 帧** ✓
+     *   （`ins_601($A)` 发 + `ins_23([-1])` ✓）⇒ ★ 间隔 = **1** ✓，★ 不是 2 ✗。
+     *   ❓ ★ 每帧**发几颗**按档 = `8/8/8/6/5/4/5/4` ✓ —— ★ ⚠ **2026-10-18 重验更正** ✗：
+     *     ★ 颗数表**已经接了** ✓（`c4s_cnt_tab` ＋ `for (m < cnt)` ✗）—— ★ 原来写「还没接」✗ **已过期** ✓。*/
+    s_c4s.theta = POFV_FLIP_ANG(1.5707963f);           /* ★ 2026-10-18 订正（对抗性复核 I4 抓出 ✓）：★ 镜像后的**朝上** ✗
+                                                        *   ★ 一手是 −π/2（朝下）＋ 出生距顶 96 ✓；★ 卡侧把出生点镜像到下半场 ✓
+                                                        *   （`FIELD_H − (96+…)` ✓）⇒ ★ **方向也必须镜像** ✗ —— ★ 原来这里是
+                                                        *   `FLIP(−π/2)` = **+π/2 朝下** ✗ ⇒ ★ 弹一出生就掉出底边 ✗ ✓。
+                                                        *   ★ 全局单一朝向 ✗
+                                                        *   ⚠ 重验更正 ✗：旧句「起 π/2 系（镜像后 = `FLIP(-π/2)`）」自相矛盾 ——
+                                                        *   代码是 `POFV_FLIP_ANG(1.5707963f)` = **−π/2** ✓；而 `FLIP(−π/2)` = **+π/2** ✗。
+                                                        *   ★ 实际起始角 = **−π/2(朝上)** ✓（正是下面 5183 说的"+π/2 会掉出底边"的反面 ✓）。
+                                                        *   旧句、当帧所有弹共用 ✓ */
+    { const float *pp0 = ce_player_pos(); s_c4s.px = pp0 ? pp0[0] : 0.0f; }   /* 上一帧自机 x ✓ */
+    s_c4s.wait  = 1;                                  /* ★ 一手 ✓ `ins_23([-1])` = 等 1 帧 ✓ */
+    /* ★ 2026-10-18 订正（对抗性复核 G4 ✓）：★ 目标角 = **−π/2 = 朝上** ✗ ——
+     *   ★ 因为**出生点已镜像**到下半场（`FIELD_H − 96` ✓ = 352 ✓）⇒ ★ 飞行方向也必须镜像 ✓；
+     *   ★ 这里原来写「目标角 = +π/2 = 朝下」✗ 是"出生点在顶部"那版的口径 ✓ ⇒ ★ 与出生成对不起来 ✗。*/
+    s_c4s.tgt   = POFV_FLIP_ANG(1.5707963f);    /* ★ 2026-10-18 订正（见本函数上面 theta 那几行 ✓）：★ 镜像后朝上 ✗
+                                                 *   ★ 回中的目标也必须是它 ✗（原来是 `FLIP(−π/2)`=+π/2 朝下 ✗）
+                                                 * ★ 一手 ✓ 一手的 `ins_604` 是 −π/2 系（朝下 ✓）
+                                                 *   ⇒ ★ 走翻转宏 ✓ —— ⚠ 重验更正 ✗：★ `POFV_FLIP_ANG(1.5707963f)`
+                                                 *   = **−1.5707963f**（`FLIP_ANG(a) = -a` ✓），★ **不等于** +1.5707963f ✗；
+                                                 *   ★ 但**这正是要的**：★ 回中目标是 **−π/2 朝上** ✓（★ 旧句写"等价"✗ 是措辞错 ✓）。*/
+    /* ⚠ **2026-10-18 重验**：★ 这里原来是 `s_c4s.aim = …rand…`（★ "初始角 = 向下半圈内的随机" ✗），
+     *   ★ 但 `aim` **全文件只写不读** ✗ —— ★ 每颗弹实际用的是 `s_c4s.theta`（`s_c4s_tick` 里 ✓）
+     *   ⇒ ★ 按重验"每颗各自掷初始角"**无一手依据** ✗ ⇒ ★ **删除该字段** ✓（不再写、不再存）。*/
 }
 
 static void pofv_c4s_tick(void)
@@ -4959,23 +5246,100 @@ static void pofv_c4s_tick(void)
          * ★ 一手（`pl02.txt:200–217` ✓）是**三分支**：★ ① `> +0.01` ⇒ 朝 **π/2 − 10°** 以 **1°/帧** 靠 ✓；
          *   ★ ② `< −0.01` ⇒ 朝 **π/2 + 10°** 以 1°/帧 靠 ✓；★ ③ 死区（`|FINAL_X| ≤ 0.01`）⇒ 朝
          *   **π/2 ± 2°** 以 **2°/帧** 靠 ✓。
-         * ★ 本卡**简化**（登记 ❓ ✓）：★ 只取**一个**目标 `s_c4s.tgt`（= 翻 180° 后的 −π/2 ✓）
-         *   + ★ **两档速率**（★ 距目标 > 2° ⇒ **1°/帧** ✓；★ ≤ 2° ⇒ **2°/帧** ✓）——
+         * ★ ⚠ **2026-10-18 重验：下面「本卡简化…距目标 > 2° ⇒ 1°/帧；≤ 2° ⇒ 2°/帧」已作废** ✗ ——
+         *   ★ 那是**旧实现**（按"距目标角"分档）✓；★ 现在按**自机横移量**分三支 ✓（见本节末尾 5214–5220 ✓）。
          *   ★ 即"±10° 那个窗"在本实现里体现为**速率切换点仍是 ±2°** ✗（★ 一手那 ±10° 是
          *   **分支目标**的边界 ✓，不是速率切换点 ✓）⇒ ★ 已按审计 **R15** 如实登记 ✓。
          * ★ （原 `POFV_C4S_WIN_WIDE` 定义了却 `(void)` 未用 ✗ —— ★ 本轮**删掉** ✓。）*/
-        const float d  = s_c4s.aim - s_c4s.tgt;
-        const float ad = (d < 0.0f) ? -d : d;
-        const float s  = (ad > POFV_C4S_STEER_TIGHT) ? POFV_C4S_STEER_SLOW : POFV_C4S_STEER_FAST;
-        if (ad > 0.0f) s_c4s.aim += (d > 0.0f) ? -s : s;
+        /* ★ 2026-10-18（IMPL §4 #2 ✓）：★ 改成一手那**三分支** ✗ —— ★ 更新的对象是**全局 `theta`** ✓，
+         *   判据是**自机横移量**（`[-9977]` ✓），★ 不是"距某个目标角的距离" ✗：
+         *     ★ ① 横移 `> +0.01` ⇒ `theta` 以 **−1°/帧**（朝 `π/2 − 10°` 那侧 ✓）
+         *     ★ ② 横移 `< −0.01` ⇒ `theta` 以 **+1°/帧**（朝 `π/2 + 10°` 那侧 ✓）
+         *     ★ ③ 死区 `|dx| ≤ 0.01` ⇒ `theta` 以 **2°/帧** 回中到 `π/2` 系 ✓
+         *   ❓ ±10° 的**软限**（一手是"朝 π/2∓10° 靠，靠到就停"✓）本卡未夹限 ✗ —— 标 ❓（IMPL §4.3 只给到
+         *      "符号 → ±1°/±2°" ✓）。*/
+        {
+            const float *ppn = ce_player_pos();
+            const float pxn = ppn ? ppn[0] : 0.0f;
+            const float dx  = pxn - s_c4s.px;
+            const float one = 3.14159265f / 180.0f;      /* 1° ✓ */
+            s_c4s.px = pxn;
+            /* ⚠ 2026-10-18 重验修 bug：**左右两支原来是接反的** ✗ ——
+             *   一手：`dx > +0.01` ⇒ 朝 `π/2 − 10°`（镜像后 = **−80°**）✓ ⇒ 从 −90° 出发应 **增大** ✓；
+             *   ★ 原码 `dx > 0 ⇒ theta -= one` 会走到 −100°（= 往**反**侧偏）✗。
+             *   ⇒ 两个分支的符号对调 ✓。*/
+            if (dx > 0.01f)       s_c4s.theta += one;
+            else if (dx < -0.01f) s_c4s.theta -= one;
+            else {
+                const float d0 = s_c4s.theta - s_c4s.tgt;
+                const float s0 = 2.0f * one;
+                if (d0 >  s0) s_c4s.theta -= s0;
+                else if (d0 < -s0) s_c4s.theta += s0;
+                else s_c4s.theta = s_c4s.tgt;
+            }
+        }
     }
-    if (s_c4s.timer % s_c4s.wait == 0) {             /* ★ 每 wait 帧发一颗 ✓（一手 8 档 ✓）*/
-        /* ★ 一手 ✓ `etAngle($A, π/2, **0.034906585f = 2°**)`（`pl02.txt:186` ✓）⇒ ★ 抖动 = **±2°** ✓
-         *   （★ 审计 **R15** 抓到：原来 `(rand%201−100) × 0.0002f` 只有 **±1.15°** ✗ ⇒ 已对齐 ✓）。*/
-        const float jitter = ((float)(ce_rand() % 201u) - 100.0f) * (0.0349066f / 100.0f);
-        pofv_c4s_emit(s_c4s.aim + jitter, s_c4s_spd_tab[pofv_c4_rank()]);     /* ★ 一手 ✓ 8 档速度表 ✓ */
+    if (s_c4s.timer % s_c4s.wait == 0) {             /* ⚠ 2026-10-18 重验更正 ✗：不是"每 wait 帧发一颗"✗ ——
+                                                      * 每 wait 帧发 **lanes × cnt** 颗（`lanes` = rank>=6?3:2 ✓、
+                                                      * `cnt` = `c4s_cnt_tab` 4-8 ✓）✓。*/
+        /* ★★★★ 2026-10-17（施工单 §8 ＋ §25 ＋ §12②-1 ＋ §65 ✓）：★ **路数按档** ✗ ——
+         *   ★ 一手 `Boss00BossCard1()`（`pl02.txt:125` ✓）共**三路发射口** ✓：
+         *     `@Boss00BossCard1_at(0, 11, 8) async` ✓／`@Boss00BossCard1_at(1, 1, 8) async` ✓
+         *     ＋ ★ **`!67` 才有的** `@Boss00BossCard1_at(2, 18, 1) async` ✓
+         *   ⇒ ★ **rank ≥ 6 ⇒ 3 路** ✓；★ **rank ≤ 5 ⇒ 2 路** ✓。
+         *   ★ ⚠ ★ §65 的警告：★ **低档也必须是 2** ✗ —— ★ 只"加第三路"（低档仍 1 路）⇒ 错 ✗；
+         *     ★ 把低档也一起改掉 ⇒ 也错 ✗ ⇒ ★ 故写成 **2／3 两个明确值** ✓。
+         *   ★ ⚠ ★ 一手三路的 `_at` 实参**只有 `(槽, A, B)` 不同** ✓ ⇒ ★ **角度/速度相同** ✓
+         *     ⇒ ★ 本卡照此**同角同速发 N 发** ✓。★ 视觉上它们会**叠在一起** ✗ ——
+         *     ★ 因为一手靠"**三个独立发射器的位置差**"分开 ✓，★ 而卡侧**没有发射器对象** ✗
+         *     ⇒ ★ **这一层未建模** ✓（★ 已登记 ❓ ✓，★ 不当成一手 ✗）。*/
+        const int lanes = (pofv_c4_rank() >= 6) ? 3 : 2;
+        int li;
+        for (li = 0; li < lanes; ++li) {
+            /* ⚠ **2026-10-18 重验更正** ✗：★ 下面这句「抖动 = ±2°、每路各自掷一次」**与代码相反** ——
+             *   ★ 代码只把**速度**逐颗随机（`+ (rand%100)*0.005f` ✓），★ **角度没有抖动** ✗
+             *   ★ （三路用的是**同一个** `s_c4s.theta` ✓）。★ 旧句说的一手 `etAngle(...2°)` 是**一手原文** ✓，
+             *   （★ 审计 **R15** 抓到：原来 `(rand%201−100) × 0.0002f` 只有 **±1.15°** ✗ ⇒ 已对齐 ✓）。
+             *   ★ 每路**各自掷一次** ✓（★ 一手是三台独立发射器 ✓，★ 各摇各的 ✓）。*/
+            /* ★ 2026-10-17（C 组 ③ ✓）：★ 一手每帧**发几颗**按档 = ★ `8/8/8/6/5/4/5/4` ✓
+             *   （★ `Boss00BossCard1_at()` 里 `!0..!7` 那段 ✓）⇒ ★ 原来每台每帧 **1 颗** ✗
+             *   ★ 现在按档发 `cnt` 颗 ✓；⚠ 重验更正 ✗：★ 只有**速度**逐颗随机 ✓（`+ (rand%100)*0.005f` ✓），
+             *   ★ **角度不随机** ✗（★ 一律 `s_c4s.theta` ✓，`aim` 字段已删 ✓）。*/
+            static const int c4s_cnt_tab[8] = { 8, 8, 8, 6, 5, 4, 5, 4 };
+            int m;
+            const int cnt = c4s_cnt_tab[pofv_c4_rank() & 7];
+            /* ★ 2026-10-18（IMPL §4 #2 ✓）：★ 当帧的 `theta` 已于函数开头按自机横移量更新 ✓
+             *   ⇒ ★ **所有弹共用同一个 `theta`** ✗（★ 不再逐颗掷 `jit2` ✗ —— 一手 `604($A,%D,0)` 的 `dif=0` ✓）*/
+            for (m = 0; m < cnt; ++m) {
+                pofv_c4s_emit(s_c4s.theta,
+                              s_c4s_spd_tab[pofv_c4_rank()] + (float)(ce_rand() % 100u) * 0.005f,
+                              (li == 2) ? 0xFFD95D5Du : ((li == 1) ? 0xFFEFADADu : 0xFFD5EFAEu));
+            }
+            /* ★ 2026-10-17（施工单 §12②-2 ＋ §56 ＋ §8 ✓）：★ **每路各自的配色** ✓ ——
+             *   ★ 一手的 `_at(0, **11**, 8)`／`_at(1, **1**, 8)`／`_at(2, **18**, 1)` ✓ ⇒ ★ 观感差别**只在配色** ✓
+             *     （★ 三个 rect 全是 8×8 ✓）；★ 色值 = ★ 我在本机量 `bullet1.png` 那三格得到的均色 ✓：
+             *     ★ `sprite11 (24,248,8,8)` = **(213,239,174) 淡绿** ✓ ⇒ ★ 路 1 ✓；
+             *     ★ `sprite1 (8,240,8,8)` = **(239,173,173) 粉红** ✓ ⇒ ★ 路 2 ✓；
+             *     ★ `sprite18 (16,192,8,8)` = **(217,93,93) 红** ✓ ⇒ ★ 路 3（只有高档有 ✓）✓。
+             *   ★ ⚠ ⚠ 格式**不是** `0xRRGGBBAA` ✗ —— 是 `0xAARRGGBB` ✓（`:1044` ✓） —— ★ 依卡里既有口径（`:1206`：★ "`0xFFFFFF80` 写 α=128" ✓）
+             *     ★ 原注释「α 放低字节」**是错的** ✗（它把 A 变成了 D5/EF/D9 ⇒ 蓝紫色）⇒ ★ 已改成 `0xFFD5EFAE` 等（A=FF、RGB 不变）✓。
+             *   ★ ⚠ ★ 低档（2 路）★ 只用**前两色** ✓（★ 绿 ＋ 粉 ✓）；★ 红那色**只在高档**出现 ✓。*/
+            static const uint32_t c4s_lane_col[3] = {
+                0xFFD5EFAEu,   /* ★ 路 1 = sprite11 = 淡绿 (213,239,174) ✓ */
+                0xFFEFADADu,   /* ★ 路 2 = sprite1  = 粉红 (239,173,173) ✓ */
+                0xFFD95D5Du,   /* ★ 路 3 = sprite18 = 红   (217,93,93) ✓（仅高档 ✓）*/
+            };
+            /* ★ 2026-10-17：★ 单发那段已并入上面的 `cnt` 循环 ✓（★ C 组 ③ ✓）——
+             *   ⚠ 重验更正 ✗：★ 只有**速度**的 `+ rand×0.5` 逐颗掷 ✓；★ **`±2°` 抖动不逐颗** ✗
+             *   —— ★ 每颗用的都是**全局同一个** `s_c4s.theta` ✓（见上面的 5264–5267 ✓）。*/
+        }
     }
-    if (s_c4s.timer > 3600) s_c4s.active = 0;        /* ★ 一手是无限循环 ✓；本卡给个上限 ❓ ✓ */
+    /* ★★★★★ 2026-10-17（对抗性验证抓出 ✗）：★ 上限原来是 **3600** ✗，★ 而
+     *   `pofv_c4_decor_arbitrate()` 给早苗的 `total` 是 ★ **1800** ✓（一手 `Boss00BossCard1()` 的
+     *   `ins_514(0, 0, **1800**, "BossDead")` ✓ = 那段符卡的时限 ✓）⇒ ★ 过了 1800 帧后
+     *   ★ decor 每帧都"先建 460/461/462、再同帧删掉"✗ ⇒ ★ 那段（~1800→3600）她**一件观感都没有** ✗。
+     *   ★ 改回 **1800** ✓（★ 与一手一致 ✓，★ 与 decor 的 total 对齐 ✓）。*/
+    if (s_c4s.timer >= 1800) s_c4s.active = 0;
 }
 
 /* ★★★★★ 2026-10-16 ★★★ **C4 通用件（owner 明确要求"务必抽出一个通用函数"✓）** ★★★
@@ -4984,33 +5348,349 @@ static void pofv_c4s_tick(void)
  *            ＋「★ **请务必抽出一个通用函数**」✓
  *
  *   ★ 本函数 = ★ **全角色 C4 共用的一套装饰**（★ 与角色无关 ✓：跟的是**自机位置** ✓、层固定 6 ✓）：
- *     · ★ **红色魔法阵**（脚本 461 `POFV109_MAGICSQUARE` ✓，句柄 `s_c4_magic_vm` ✓）
- *     · ★ **霸气**（脚本 462 `POFV109_BOSS_AURA_RED` ✓，句柄 `s_c4_aura_vm` ✓）
- *     · ★ **羽化圆**（脚本 463 ✓，句柄 `s_c4_fog_vm` ✓，本函数只负责按 C4 结束同帧收掉 ✓）
+ *     · ★ **红色魔法阵**（脚本 460 `POFV109_MAGICSQUARE` ✓，句柄 `s_c4_magic_vm` ✓）
+ *     · ★ **霸气**（脚本 461 `POFV109_BOSS_AURA_RED` ✓，句柄 `s_c4_aura_vm` ✓）
+ *     · ★ **羽化圆**（脚本 462 ✓，句柄 `s_c4_fog_vm` ✓，本函数只负责按 C4 结束同帧收掉 ✓）
  *     · ★ **计时**由 `s_c4.timer` / `POFV_C4_DURATION` 给出（★ 计时文字 VM `s_c4_timer_txt` ✓
  *       是 HUD 列表的另一支，句柄已在**文件作用域** ✓ ⇒ `pofv_c4_clear()` 也看得到 ✓，铁律满足 ✓）。
  *   ★ **咲夜将来的 C4 只要走 `pofv_c4_tick()` 就自动有这三件** ✓ —— ★ 不需要各写一遍 ✓。
  *   ★ 收尾三条路都覆盖 ✓：★ ① C4 末帧（本函数内 `ce_anm_delete` ✓）② 删卡/换局（`pofv_c4_clear()` ✓）
  *     ★ ③ 角色被换（同一支 `pofv_c4_clear()` ✓）。
  *   ⚠ ★ 行为与抽出前**一字不改** ✓（★ 只是把原来那个匿名块命名 ✓）。*/
-static void pofv_c4_common_decor_tick(void)
+/* ★★★★★ 2026-10-17（owner：「★ **咲夜C1-C4是一点没做啊**」✓ ＋「★ **只做 C1 和 C4 本身**」✓）：
+ *   ★ **咲夜的 C4** ✗ —— 一手 = TH09 `pl02` 的 `Boss00BossCard1` 那套 ✓（★ 逐参见
+ *     `HANDOFF-109-REFACTOR.md` §14／§22／§31.3 ✓，★ 九参语义见 `engine/ecl/th09/01-et-family-args.md` §7.1 ✓）。
+ *   ★ 外壳 `Sub2`（一手逐字 ✓）：★ `$I6 = [10101]`（★ **等级全局** ⇒ 卡的等级轴 `pofv_c4_rank()` ✓）、
+ *     ★ `$I11 = rand%5 + 5`（★ 循环 **5..9** 次 ✓）、★ `movePos(-144,-80)` ⇒ ★ `movePosTime(60,4, 0,128)`
+ *     （★ 60 帧进场 ✓）、★ 每轮 ★ `$I0 = rand%4 ⇒ call(Sub3..Sub7)`（★ **5 选 1** ✓）、
+ *     ★ `moveRandTime(60,4,1.5)` ✓、★ `$I7++` / `if ($I7 < $I11) goto +60` ✓、
+ *     ★ 收尾 ★ `effCreate(19,1,#8080ffff); delete()` ✓。
+ *   ⚠ ★★ **一条要紧的实现事实**（★ 我 grep 过 ✓）：★ 卡里**没有** `etFan`/`etRing` 桥 ✗
+ *     （★ `etFan|etRing|et_fan|ce_et` = **0 处** ✓；★ 灵梦/早苗的 C4 **也不是**用 et 族做的 ✓）
+ *     ⇒ ★ 这五招**只能"等效复刻"** ✓ —— ★ 我把一手的"★ `etFan/etRing`（九参：路数 arg3 ✓、
+ *     ★ 波数 arg4 ✓、★ 速度 arg5/6 ✓、★ 基准角 arg7 ✓、★ 层间偏角 arg8 ✓）"译成
+ *     ★ "★ 按 `基准角 + i × 层间偏角` 逐颗 `pofv_c4k_emit()`"✓
+ *     ⇒ ★ 代码里**逐处标明**：★ 哪几个数是**一手逐字** ✓、★ 哪一步是**我译的 ❓** ✓。
+ *   ⚠ ★ 三处 ❓（★ 已进 `TUNING.md` ✓，★ 不冒充一手 ✗）：
+ *     ① ★ **弹色洋红的具体值** ✗ —— ★ 一手贴图里**没有洋红** ✓（§44.3 ✓）⇒ ★ "洋红"是 owner 口径 ✓；
+ *     ② ★ **`Sub6` 里"造一只 `Sub8` 小敌"没做** ✗ —— ★ 卡侧没有造敌机制 ✓（★ 只做它那一发扇 ✓）；
+ *     ③ ★ **中心/基准角** ✗ —— ★ 一手是 boss 自己为中心、`%ANGLE_PLAYER` 朝自机 ✓；
+ *        ★ 而卡侧是**玩家攻击** ✓ ⇒ ★ 中心取**自机位置** ✓（owner 口径 ✓），★ 基准角取"**朝前**"✓
+ *        （★ 与 C4S／C4M 的翻转口径同款 ✓），★ "朝自机"那一层**不适用** ✗。*/
+/* ★（类型 `pofv_c4k_t`／状态体 `s_c4k_st`／常量 `POFV_C4K_*` 都声明在**文件上方**
+ *   ★ `pofv_c4_clear()` 之前 ✓ —— ★ 因为清卡那条路要用到它们 ✓。）*/
+
+static void pofv_c4k_emit(float ang, float spd, float x, float y)
+{
+    int k;
+    for (k = 0; k < POFV_C4_MAX_BULLETS; ++k) if (!s_c4_b[k].live) break;
+    if (k >= POFV_C4_MAX_BULLETS) return;
+    s_c4_b[k].x = x; s_c4_b[k].y = y;
+    s_c4_b[k].live = 1; s_c4_b[k].age = 0; s_c4_b[k].bounced = 0;
+    s_c4_b[k].nobounce = 0;                     /* ★ 2026-10-18：★ 这里（第三处 spawn ✓）是**会反弹**的那支 ✓
+                                                 *   ⇒ ★ 显式清 0 ✗（★ 共用池借到早苗用过的槽位时不能残留 ✓）*/
+    s_c4_b[k].ang = ang; s_c4_b[k].spd = spd;
+    s_c4_b[k].vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
+                     CE_ANM_ABILITY_SCRIPT_POFV109_C4S_BULLET, POFV_C4_VM_LAYER);
+    if (s_c4_b[k].vm) {
+        ce_anm_set_color((uint32_t)s_c4_b[k].vm, POFV_C4K_COLOR);   /* ❓ 洋红 */
+        ce_anm_set_scale((uint32_t)s_c4_b[k].vm, 0.5f, 0.5f);       /* ★ 与 C4S 同尺度 ✓ */
+    }
+}
+
+/* ★ `etFan`/`etRing` 的**等效**：★ 发 `lanes` 颗，第 `i` 颗的角 = `base + i × dv` ✓
+ *   （★ 一手 arg7 = 基准角 ✓、arg8 = 层间偏角 ✓ ⇒ `(i×2π)/路数 + wave×a8 + a7` ✓ 的同形近似 ✓）。
+ *   ⚠ ★ 这是**我译的** ❓（★ 一手那套在卡里没有对应物 ✓）。*/
+static void pofv_c4k_fan(float base, int lanes, float dv, float spd, float x, float y)
+{
+    int i;
+    if (lanes < 1) lanes = 1;
+    if (lanes > POFV_C4K_MAX_LANES) lanes = POFV_C4K_MAX_LANES;
+    for (i = 0; i < lanes; ++i)
+        pofv_c4k_emit(base + dv * (float)i, spd, x, y);
+}
+
+static void pofv_c4k_fire(void)
+{
+    const float *pp = ce_player_pos();
+    s_c4k_st.active   = 1;
+    s_c4k_st.timer    = 0;
+    s_c4k_st.loops    = POFV_C4K_LOOP_MIN + (int)(ce_rand() % 5u);   /* ★ 一手 ✓ 5..9 */
+    s_c4k_st.done     = 0;
+    s_c4k_st.sub      = -1;
+    s_c4k_st.sub_age  = 0;
+    s_c4k_st.sub_step = 0;
+    s_c4k_st.ox = pp ? pp[0] : 320.0f;   /* ★ 中心 = 自机 ✓（★ 拿不到时的兜底 = 640/2 ✓）*/
+    s_c4k_st.oy = pp ? pp[1] : 128.0f;
+    s_c4k_st.sx = s_c4k_st.ox - 144.0f;                    /* ★ 一手 ✓ `movePos(-144,-80)` */
+    s_c4k_st.sy = s_c4k_st.oy -  80.0f;
+}
+
+static void pofv_c4k_tick(void)
+{
+    const int lvl = pofv_c4_rank();          /* ★ `$I6 = [10101]` = 等级全局 ✓ ⇒ 卡的等级轴 ✓ */
+    if (!s_c4k_st.active) return;
+    /* ★ 2026-10-17：★ 三件现在由 `pofv_c4_decor_arbitrate()` **每帧统一调** ✓
+     *   （★ 四个角色都有 ✓；★ 本处**不再单独调** ✗ —— ★ 否则会与仲裁那条打架 ✗）。*/
+    ++s_c4k_st.timer;
+
+    /* ★★★ 进场 60 帧（★ 一手 ✓ `movePosTime(60,4, 0.0, 128.0)`）——
+     *   ★ 我按"★ 从 `中心+(-144,-80)` 线性移到 `中心+(0,128)`"译 ✓（★ `movePos` 那两数是
+     *   **相对量** ✓；★ 一手是 boss 自己为原点 ✓ ⇒ 卡侧以**自机**为原点 ✓，owner 口径 ✓）。*/
+    if (s_c4k_st.timer <= POFV_C4K_PRE_FRAMES) {
+        const float f = (float)s_c4k_st.timer / (float)POFV_C4K_PRE_FRAMES;
+        s_c4k_st.sx = (s_c4k_st.ox - 144.0f) + 144.0f * f;
+        s_c4k_st.sy = (s_c4k_st.oy -  80.0f) + 208.0f * f;
+        return;
+    }
+
+    /* ★ 之后每 `POFV_C4K_SUB_FRAMES` 帧换一支子招 ✓（★ 一手 ✓ `moveRandTime(60,4,1.5)` ＋ `$I7++` ✓）。*/
+    if (s_c4k_st.sub < 0 || s_c4k_st.sub_age >= POFV_C4K_SUB_FRAMES) {
+        if (s_c4k_st.sub >= 0) ++s_c4k_st.done;
+        if (s_c4k_st.done >= s_c4k_st.loops) {          /* ★ 一手 ✓ `if ($I7 < $I11) goto` */
+            s_c4k_st.active = 0;                        /* ★ 一手收尾是 `effCreate + delete` ✓ */
+            s_c4k_st.loops  = 0;
+            return;
+        }
+        /* ★ 一手 ✓ `$I0 = rand%4 ⇒ call(Sub3..Sub7)` —— ★ 五支里随机一支 ✓。*/
+        s_c4k_st.sub      = 3 + (int)(ce_rand() % 5u);
+        s_c4k_st.sub_age  = 0;
+        s_c4k_st.sub_step = 0;
+    }
+    ++s_c4k_st.sub_age;
+
+    /* ★ 基准角 ❓：★ 一手是 `%ANGLE_PLAYER`（朝自机 ✓）；★ 卡侧是**玩家攻击** ⇒ ★ 取"**朝前**"✓
+     *   （★ 与 `pofv_c4s_fire()` 同款：走 `POFV_FLIP_ANG(-π/2)` ✓）。*/
+    {
+        const float fwd = POFV_FLIP_ANG(-1.5707963f);
+        switch (s_c4k_st.sub) {
+        case 3:   /* ★ `Sub3` ✓：`etRing(20, 2, **7**, 1, %F0, 2.0f, %RANDRAD, 0.0f, 18946)` ✓
+                   *   ⇒ ★ **7 路**（一手逐字 ✓）＋ ★ 速度 `%F0 = $I6×0.04 + 1.2`（一手逐字 ✓）
+                   *   ＋ ★ `$I4 = $I6/2 + 10` 次、每 `$I5 = 60/$I4` 帧（一手逐字 ✓）
+                   *   ＋ ★ 起点 `etOffset(rand±64)`（一手逐字 ✓）。*/
+            {
+                const int   n_lane  = 7;                          /* ★ 一手 ✓ */
+                const float spd     = (float)lvl * 0.04f + 1.2f;  /* ★ 一手 ✓ */
+                const int   shots   = lvl / 2 + 10;               /* ★ 一手 ✓ */
+                const int   every   = (shots > 0) ? (60 / shots) : 60;
+                const float off     = ((float)(ce_rand() % 129u) - 64.0f);   /* ★ 一手 ✓ `rand±64` */
+                /* ★★ 2026-10-17 订正（★ 自己核一手参数时抓到 ✓）：★ 那一支的**基准角是 `%RANDRAD`** ✓
+                 *   —— ★ 一手逐字 = ★ `etRing(20, 2, **7**, 1, %F0, 2.0f, **%RANDRAD**, 0.0f, 18946)` ✓
+                 *   （★ `%RANDRAD` = 一个随机弧度 ✓）。★ 我上一版写的是**"朝前"** ✗ ⇒ ★ 那不是一手 ✓。
+                 *   ⇒ ★ 改成**每次发射取一个 0…2π 的随机基准角** ✓（★ 卡里其它随机角同款写法 ✓）。*/
+                const float base    = (float)(ce_rand() % 6283u) * 0.001f;   /* ★ 一手 ✓ 0…2π 随机 */
+                if (every > 0 && (s_c4k_st.sub_age % every) == 0)
+                    pofv_c4k_fan(base, n_lane, 6.2831853f / (float)n_lane,
+                                 spd, s_c4k_st.sx + off, s_c4k_st.sy + off);
+            }
+            break;
+        case 4:   /* ★ `Sub4` ✓：`movePosTime(40,4, ±128,192)` → `effCreate` → `movePosTime(50,4, ∓128,96)` ✓
+                   *   ＋ `etFan(20, 3, **$I6/4+2**, 1, %F0=$I6×0.05+1.5, 2.0f, %F1, %F2=∓0.0359, 514)` ✓
+                   *   ⇒ ★ **路数 = $I6/4+2**（一手逐字 ✓）、★ 速度（一手逐字 ✓）、★ 13 次每 4 帧（一手逐字 ✓）。
+                   *   ⚠ ★ 那两条 `movePosTime`（左右来回）**未建模** ❓ —— ★ 卡侧发射器位置
+                   *     ★ 仍取 `sx/sy` ✓（★ 那会需要给 `s_c4k_st` 加"左右相位"✗，★ 待实跑看是否必要 ✓）。*/
+            {
+                const int   n_lane = lvl / 4 + 2;                 /* ★ 一手 ✓ */
+                const float spd    = (float)lvl * 0.05f + 1.5f;   /* ★ 一手 ✓ */
+                if ((s_c4k_st.sub_age % 4) == 0 && s_c4k_st.sub_step < 13) {
+                    pofv_c4k_fan(fwd, n_lane, 6.2831853f / (float)n_lane,
+                                 spd, s_c4k_st.sx, s_c4k_st.sy);
+                    ++s_c4k_st.sub_step;
+                }
+            }
+            break;
+        case 5:   /* ★ `Sub5` ✓：`etFan(20, 6, **2**, 1, %F0=$I6×0.1+2.0, 2.0f, %F1=%ANGLE_PLAYER,
+                   *   %F3=**π**, 514)` ✓、★ 每次 `%F3 -= 0.1848`（≈10.6° ✓）、★ 16 次每 8 帧（一手逐字 ✓）
+                   *   ⇒ ★ **2 路**（一手 ✓）、★ 层间偏角 **π**（一手 ✓）⇒ ★ 一对**对穿**的弹 ✓
+                   *   ＋ ★ 每发把基准角**减 0.1848** ✓ ⇒ ★ 旋转的双向流 ✓。*/
+            {
+                const float spd = (float)lvl * 0.1f + 2.0f;       /* ★ 一手 ✓ */
+                if ((s_c4k_st.sub_age % 8) == 0 && s_c4k_st.sub_step < 16) {
+                    const float base = fwd - 0.1848f * (float)s_c4k_st.sub_step;   /* ★ 一手 ✓ */
+                    pofv_c4k_fan(base, 2, 3.1415927f, spd, s_c4k_st.sx, s_c4k_st.sy);
+                    ++s_c4k_st.sub_step;
+                }
+            }
+            break;
+        case 6:   /* ★ `Sub6` ✓：`enmCreateA("Sub8", …)` ✗（★ **没做** ❓ —— 卡侧没有造敌机制 ✓）
+                   *   ＋ `etFan(20, 4, **1**, 1, 2.0f, 2.0f, %F0=%ANGLE_PLAYER, %F3, 512)` ✓
+                   *   ⇒ ★ **1 路**（一手 ✓）、★ 速度 **2.0**（一手 ✓）、★ 等 100 帧（一手 ✓）。*/
+            {
+                if (s_c4k_st.sub_age == 1)
+                    pofv_c4k_fan(fwd, 1, 0.0f, 2.0f, s_c4k_st.sx, s_c4k_st.sy);
+            }
+            break;
+        default:  /* ★ `Sub7` ✓：`%F1 = ±0.0785` ＋ `%F1 += $I6×0.1 + 1.8` ✓、`%F0 = −π/2` ✓、
+                   *   `$I1 = $I6/4 + 2` ✓；按 `$I0 = $I4 % 4`（`$I4 = 60` ✓）轮换四种 `etFan` ✓：
+                   *     `(0, **6**, $I1, 1, %F1, 0.5f, %F0, **0.2094**, 514)` ✓
+                   *     `(12, **6**, $I1, …)` ✓／`(0, **10**, $I1, …)` ✓／`(13, **10**, $I1, …)` ✓
+                   *   ⇒ ★ 路数与**层间偏角 0.2094**（≈12° ✓）都是一手逐字 ✓；★ 共 41 帧、每帧 `%F0 += %F1` ✓。*/
+            {
+                /* ★ 一手 ✓ 四种 `etFan` 是按 `$I0 = $I4 % 4` **轮换**的 ✓ ⇒ ★ 路数的次序是
+                 *   ★ **6 / 6 / 10 / 10**（★ `(0,6)`／`(12,6)`／`(0,10)`／`(13,10)` ✓）。
+                 *   ⚠ ★ 我上一版写成"6/10 交替" ✗ —— ★ **次序不对** ✓（★ 那会让观感变成
+                 *   ★ "粗-细-粗-细"✗，★ 而一手是"两轮细、两轮粗"✓）⇒ ★ 本笔改正 ✓。*/
+                const int   n_lane = (((s_c4k_st.sub_age / 10) % 4) < 2) ? 6 : 10;
+                const float spd    = (float)lvl * 0.1f + 1.8f + 0.0785f;            /* ★ 一手 ✓ */
+                const float base   = POFV_FLIP_ANG(-1.5707963f)
+                                   + 0.0785f * (float)s_c4k_st.sub_age;             /* ★ 一手 ✓ 每帧 += %F1 */
+                if (s_c4k_st.sub_age <= 41)                                          /* ★ 一手 ✓ 共 41 帧 */
+                    pofv_c4k_fan(base, n_lane, 0.2094f, spd, s_c4k_st.sx, s_c4k_st.sy);
+            }
+            break;
+        }
+    }
+}
+
+/* ★★★★★ 2026-10-17（owner：「★ **所有人** C4 的魔法阵、变红、计时必须抽成通用函数」✓）：
+ *   ★ **第三件 462 羽化圆也抽出来** ✓ —— 原来它**整段**在 `pofv_c4_tick()` 的 `if (s_c4.live)` 里 ✗
+ *   ⇒ ★ 只有灵梦的 C4 有它 ✗（对抗性验证抓出 ✓）。
+ *   ★ 一手 ✓：ECL opcode **629 `fog`** 的那个羽化圆 ✓；★ 半径/颜色每帧从当前 boss 读
+ *     `enemy+0x5594`／`+0x559c` ✓（★ 道中深蓝 128 ✓／★ 关底深红 160 ✓ = owner 的"按所处状态"✓）。
+ *   ★ 读不到 ⇒ 退回**上次读到的值** ✓；★ 再没有 ⇒ 关底那套兜底 ✓（行为与抽取前**一字不改** ✓）。
+ *   ⚠ ★ 本函数只负责 **建／跟随／缩放／染色** ✓ —— ★ **删除统一由 `pofv_c4_decor_tick()` 的出口做** ✗
+ *     （判活 ＋ 末帧只删不建 ✓，见那边 ✓）。*/
+static void pofv_c4_fog_tick(void)
+{
+    static float s_fog_r_last;
+    static uint32_t s_fog_c_last;
+    float best_r = 0.0f;
+    uint32_t best_c = 0;
+    /* ★ 2026-10-16 **崩溃修复** ✗：★ 原来用 `CE_ENEMY_FOREACH` 全场遍历读 `enemy+0x5594` ✗
+     *   ⇒ ★ 实跑崩了 ✓（全场结点并非都够长 ⇒ 越界读 ✗）⇒ ★ 改成只对**引擎认定的 boss** 读 ✓：
+     *   `CE_ENEMY_MGR() + CE_EM_BOSS_IDS`（`int[4]` ✓）＋ `ce_enemy_by_id()`（`sdk.h:617` ✓）。*/
+    {
+        uint8_t *em3 = CE_ENEMY_MGR();
+        if (em3) {
+            const int32_t *bids = (const int32_t *)(em3 + CE_EM_BOSS_IDS);
+            int bi;
+            for (bi = 0; bi < 4; ++bi) {
+                uint8_t *e3;
+                if (bi == 0) {
+                    static int32_t s_fogid_t;
+                    if (++s_fogid_t >= 120) {
+                        s_fogid_t = 0;
+                        ce_log("pofv: [FOGID] slots=%d/%d/%d/%d",
+                               (int)bids[0], (int)bids[1], (int)bids[2], (int)bids[3]);
+                    }
+                }
+                if (bids[bi] <= 0) continue;
+                e3 = ce_enemy_by_id(em3, bids[bi]);
+                if (bi == 0 && e3) {
+                    static int32_t s_foghit_t;
+                    if (++s_foghit_t >= 120) {
+                        s_foghit_t = 0;
+                        ce_log("pofv: [FOGHIT] id=%d e=%p r=%.1f c=0x%06X",
+                               (int)bids[0], (void *)e3,
+                               (double)*(const float *)(e3 + POFV_C4_FOG_R_OFF),
+                               (unsigned)(*(const uint32_t *)(e3 + POFV_C4_FOG_C_OFF) & 0xFFFFFFu));
+                    }
+                }
+                if (!e3) continue;
+                {
+                    const float rr = *(const float *)(e3 + POFV_C4_FOG_R_OFF);
+                    if (rr > best_r) { best_r = rr; best_c = *(const uint32_t *)(e3 + POFV_C4_FOG_C_OFF); }
+                }
+            }
+        }
+    }
+    if (best_r > 0.0f) { s_fog_r_last = best_r; s_fog_c_last = best_c; }
+    else if (s_fog_r_last <= 0.0f) { s_fog_r_last = POFV_C4_FOG_FALLBACK_R; s_fog_c_last = POFV_C4_FOG_FALLBACK_C; }
+    {
+        static int32_t s_fog_log_t;
+        if (++s_fog_log_t >= 120) {
+            s_fog_log_t = 0;
+            ce_log("pofv: [FOG] best_r=%.1f best_c=0x%06X last_r=%.1f last_c=0x%06X",
+                   (double)best_r, (unsigned)(best_c & 0xFFFFFFu),
+                   (double)s_fog_r_last, (unsigned)(s_fog_c_last & 0xFFFFFFu));
+        }
+    }
+    if (!s_c4_fog_vm)
+        s_c4_fog_vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
+                          CE_ANM_ABILITY_SCRIPT_POFV109_FOG_CIRCLE, 6);
+    {
+        const float *pp6 = ce_player_pos();
+        if (s_c4_fog_vm && pp6) vm_set_world_pos((uint32_t)s_c4_fog_vm, pp6[0], pp6[1]);
+    }
+    if (s_c4_fog_vm) {
+        const float k6 = s_fog_r_last / POFV_C4_FOG_REF_R;
+        ce_anm_set_scale((uint32_t)s_c4_fog_vm, k6, k6);
+        ce_anm_set_color((uint32_t)s_c4_fog_vm, 0xFF000000u | (s_fog_c_last & 0x00FFFFFFu));
+    }
+}
+
+static void pofv_c4_decor_tick(int active, int elapsed, int total)
 {
     const float *pp4 = ce_player_pos();
+    /* ★★★★★ 2026-10-17（owner：「★ **所有人 C4 的魔法阵、变红、计时必须抽成通用函数**」✓）：
+     *   ★ 本函数 = ★ **四个角色 C4 共用**的唯一出口 ✓ —— ★ 参数化 ✓：
+     *     · ★ `active`：★ 0 ⇒ ★ **收干净后返回** ✗（不建 VM、不留残影 ✓）
+     *       ⇒ ★ 删卡／换角色／**新局复位**／C4 结束，**四条路走同一个出口** ✓（之前只有灵梦那条能跑到 ✗）
+     *     · ★ `elapsed / total`：★ 计时 ✓（`total > 0` 才倒数 ✓；`elapsed` 可以是负的预备期 ✓ 由调用方钳 ✓）
+     *   ★ 三件（★ 与角色无关 ✓）：★ 红色魔法阵 460 ✓／★ 红雾霸气 461 ✓／★ 羽化圆 462 ✓ ＋ ★ 计时文字 ✓。*/
+    if (!active || (total > 0 && elapsed >= total)) {
+        /* ★★★★★ 2026-10-17（对抗性验证抓出 3 条 ✗，一并修）：
+         *   ① ★ **末帧早一帧** ✗ —— ★ `elapsed` 是 tick 里**自增之后**的值 ✓ ⇒ 判据必须是
+         *        ★ `elapsed >= total` ✓（★ 原来是 `elapsed + 1 >= total` ✗ ⇒ 会提前一帧收 ✓）。
+         *   ② ★ **同帧建删** ✗ —— ★ 原来先 spawn（下面两行）再判断删除 ✓ ⇒ ★ total 已到的帧
+         *        ★ 会"建完立刻删"✗（早苗那段曾因此整段没有三件 ✓）★ ⇒ ★ **判断提到最前** ✓，
+         *        ★ 末帧**只删不建** ✓。
+         *   ③ ★ **删除没判活** ✗ —— ★ 同文件别处都是先 `ce_anm_get_vm` 再删 ✓ ⇒ ★ 这里补齐 ✓
+         *        （★ 脚本自己 delete 时句柄可能已悬空 ✓，盲删会误删被回收的 VM ✗）。*/
+        if (s_c4_magic_vm) { if (ce_anm_get_vm((uint32_t)s_c4_magic_vm)) ce_anm_delete((uint32_t)s_c4_magic_vm); s_c4_magic_vm = 0; }
+        if (s_c4_aura_vm)  { if (ce_anm_get_vm((uint32_t)s_c4_aura_vm))  ce_anm_delete((uint32_t)s_c4_aura_vm);  s_c4_aura_vm  = 0; }
+        if (s_c4_fog_vm)   { if (ce_anm_get_vm((uint32_t)s_c4_fog_vm))   ce_anm_delete((uint32_t)s_c4_fog_vm);   s_c4_fog_vm   = 0; }
+        return;
+    }
     if (!s_c4_magic_vm)
         s_c4_magic_vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
                             CE_ANM_ABILITY_SCRIPT_POFV109_MAGICSQUARE, 6);
     if (!s_c4_aura_vm)
         s_c4_aura_vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
                             CE_ANM_ABILITY_SCRIPT_POFV109_BOSS_AURA_RED, 6);
+    /* ★ 2026-10-17：★ **462 羽化圆**（★ owner 要的"所有人"第三件 ✓）—— 建/跟随/缩放/染色都在里面 ✓
+     *   ★（★ 半径/颜色每帧从 boss 读 ✓：★ 道中深蓝 128／★ 关底深红 160 ✓）★ ⇒ ★ 四个角色都有 ✓。*/
+    pofv_c4_fog_tick();
     if (pp4) {
         if (s_c4_magic_vm) vm_set_world_pos((uint32_t)s_c4_magic_vm, pp4[0], pp4[1]);
         if (s_c4_aura_vm)  vm_set_world_pos((uint32_t)s_c4_aura_vm,  pp4[0], pp4[1]);
     }
-    if (s_c4.timer + 1 >= POFV_C4_DURATION) {   /* ★ 最后一帧：同帧收掉三台 ✓ */
-        if (s_c4_magic_vm) { ce_anm_delete((uint32_t)s_c4_magic_vm); s_c4_magic_vm = 0; }
-        if (s_c4_aura_vm)  { ce_anm_delete((uint32_t)s_c4_aura_vm);  s_c4_aura_vm  = 0; }
-        if (s_c4_fog_vm)   { ce_anm_delete((uint32_t)s_c4_fog_vm);   s_c4_fog_vm   = 0; }
+}
+
+/* ★★★★★ 2026-10-17（owner：「★ **所有人 C4 的魔法阵、变红、计时必须抽成通用函数**」✓）：
+ *   ★ **每帧只调一次** ✓ —— ★ 同一时刻只可能有一个角色的 C4 活着 ✓ ⇒ 用它自己的状态驱动三件 ✓。
+ *   ★ 这样 ★ **四个角色都必然有那三件** ✓（之前只有灵梦那条能跑到 ✗：唯一调用点在 `if (s_c4.live)` 里 ✗），
+ *     且 ★ **活跃角色切换时旧的那份会被 `active==0` 分支收掉** ✓（不会两份同存 ✗）。
+ *   ⚠ ★ `total` 的取法 ✓：
+ *     · ★ 灵梦 ✓ 1800（`POFV_C4_DURATION` ✓ 一手 `[-9923]×60` ✓）
+ *     · ★ 早苗 ✓ 1800（★ 一手 `Boss00BossCard1()` 的 `ins_514(0,0,**1800**,"BossDead")` ✓ = 那段符卡的时限 ✓）
+ *     · ★ 咲夜 ✓ `POFV_C4K_PRE_FRAMES + loops × POFV_C4K_SUB_FRAMES` ✓（★ 一手是 5..9 轮 × 60 帧 ✓）
+ *     · ★ 魔理沙 ✓ **暂给 0**（= 只显示已过时间 ✓）—— ❓因为她的时长是"★ `60 + 30×(台数−1) + n×every`"✗，
+ *       ★ 而 `cnt/cnt_hi` 是 `pofv_c4m_tick()` 内的局部表 ✗ ⇒ 此处取不到 ✓；
+ *       ★ **E 组重做 C4M 时会连同时长一起收口** ✓（★ 本组不为此去搬表 ✗）。*/
+static int pofv_c4_decor_state(int *elapsed, int *total)
+{
+    int active = 0, el = 0, tt = 0;
+    if (s_c4.live) {                       /* ★ 灵梦 ✓ */
+        active = 1; el = s_c4.timer; tt = POFV_C4_DURATION;
+    } else if (s_c4s.active) {             /* ★ 早苗 ✓ */
+        active = 1; el = s_c4s.timer; tt = 1800;
+    } else if (s_c4k_st.active) {          /* ★ 咲夜 ✓ */
+        active = 1; el = s_c4k_st.timer;
+        tt = POFV_C4K_PRE_FRAMES + s_c4k_st.loops * POFV_C4K_SUB_FRAMES;
+    } else if (s_c4m_st.active) {          /* ★ 魔理沙 ✓（total=0 ⇒ 只显示已过 ✓，见上 ❓）*/
+        active = 1; el = s_c4m_st.timer; tt = s_c4m_st.total;
     }
+    if (elapsed) *elapsed = el;
+    if (total) *total = tt;
+    return active;
+}
+
+static void pofv_c4_decor_arbitrate(void)
+{
+    int el = 0, tt = 0;
+    const int active = pofv_c4_decor_state(&el, &tt);
+    pofv_c4_decor_tick(active, el, tt);
 }
 
 static void pofv_c4_tick(void)
@@ -5050,12 +5730,19 @@ static void pofv_c4_tick(void)
          *   （要核一手 ECL 的总体时长）=> 先保持 一轮 60 帧就收（已登记 TUNING）。*/
         const int d4 = pofv_c4_d();
         const int ns4 = pofv_c4_nsweep();
+        /* ★★★★ 2026-10-17（施工单 §10 #2 ＋ §12①-2 ＋ §66 ✓）：★ **一轮总数按档** ✗ ——
+         *   ★ 一手：★ `$F = $D * 2` ✓ ⇒ ★ **高档一轮发 `2 × $D` 颗** ✓（★ 低档仍是 `1 × $D` ✓）。
+         *   ★ ⚠ ★ **分母不能跟着变** ✗：★ `pofv_c4_emit()` 里的 `di = emitted / pofv_c4_d()` ✓ 仍必须是
+         *     **`$D`（表项）** ✓ —— ★ 若分母写成 `2×$D` ⇒ ★ **铺不满一圈** ✗（★ §55 给了验法：
+         *     ★ `$D` 次发射内应**恰好回绕 1 次** ✓）★ ⇒ ★ 所以这里只改**"一轮发多少"** ✓、
+         *     ★ **不碰** `pofv_c4_d()` 的返回值 ✓。*/
+        const int d4_total = (pofv_c4_rank() >= 4) ? (2 * d4) : d4;
         /* ★ 一手 ✓：★ `ins_23(60)` 之后**才开始扫** ✓（★ 原来从第 0 帧就扫 ✗）。*/
         if (s_c4.timer >= POFV_C4_PRE_WAIT && s_c4.timer % POFV_C4_EMIT_EVERY == 0) {
-            if (s_c4.emitted < d4)
+            if (s_c4.emitted < d4_total)
                 pofv_c4_emit((s_c4.sweep == 1) ? -1 : +1);   /* ★ 第三条是 **+2π** ✓ */
             ++s_c4.emitted;
-            if (s_c4.emitted >= d4) {
+            if (s_c4.emitted >= d4_total) {
                 s_c4.emitted = 0;
                 if (s_c4.sweep + 1 < ns4) ++s_c4.sweep;      /* ★ 还有下一条 ⇒ 接着扫 ✓ */
                 else {   /* ★★★★★ 2026-10-13（★ 一手复核 `f3030e41` ✓ **闭环**）：★ 原来是"★ **全扫完就收**"✗
@@ -5111,9 +5798,9 @@ static void pofv_c4_tick(void)
         /* ★★★★★ 2026-10-15（owner：「★ **在 C4 期间要模仿 boss**」✓ + 「★ **这个是 th18 自己就有的
          *   effect**」✓ + 「★ **我只是让你"复制粘贴"到自机身上**」✓）—— ★ **把 TH18 原生那两件原样
          *   挂到自机身上** ✓（只在 C4 期间 ✓）：
-         *   · ★ 红色旋转魔法阵 = ★ 脚本 **461**（= 原生 `effect.anm` **script105** 的 1:1 ✓，
+         *   · ★ 红色旋转魔法阵 = ★ 脚本 **460**（= 原生 `effect.anm` **script105** 的 1:1 ✓，
          *     贴图 = 原生 `effect/eff_magicsquare.png` 256×256 ✓）；
-         *   · ★ 那圈红雾/红光 = ★ 脚本 **462**（= 原生 `enemy.anm` **script107** 的 1:1 ✓，
+         *   · ★ 那圈红雾/红光 = ★ 脚本 **461**（= 原生 `enemy.anm` **script107** 的 1:1 ✓，
          *     sprite152–159 = `enemy/enemy_aura.png` 8 帧 ✓）。
          *   ★ 层：★ 走**原生 `layer(6)`** ✓（脚本自己写 ✓；本卡 layer 6 实测可用 ✓ ——
          *     罩子内层 `POFV_BARRIER_VM_LAYER_DISC`/暴风都用它 ✓）；★ 伴随 `script106`（炸开收尾）
@@ -5124,11 +5811,12 @@ static void pofv_c4_tick(void)
          *   ⚠ 句柄是**函数内静态**（持久 ✓，本轮不新增文件级声明 ✓）；★ 收尾：★ C4 最后一帧
          *     与本块同帧 `ce_anm_delete` ✓；★ 删卡 / 换局那条路另由 `pofv_c4_clear()` 收 ✓
          *     （句柄已在**文件作用域** ✓ ⇒ 那一侧看得到 ✓，铁律满足 ✓）。*/
-        pofv_c4_common_decor_tick();   /* ★ C4 通用件（计时/红魔法阵/霸气 ✓）—— 定义见本文件上方 ✓ */
+         /* ★ 2026-10-17：★ 三件已抽成通用 `pofv_c4_decor_arbitrate()` ✓（★ 每帧一次、★ 四角色都有 ✓）
+          *   ⇒ ★ 本处**不再调用** ✗ —— ★ 原来它只在这里跑 ⇒ ★ 只有灵梦的 C4 有三件 ✗（owner 点出的那个 bug ✓）。*/
         /* ★★★★★ 2026-10-15（owner：「★ 一手 boss 还有一个现在看清似乎是**深蓝色**的"**霸气**"，
          *   **大小跟魔法阵差不多**」✓ + 「★ **就是按照那个 ecl 来做，只做这个羽化的圆**」✓ +
          *   「★ **按照所处的状态，道中深蓝，boss 深红来做**」✓）—— ★ **第三件 = ECL opcode 629 `fog`
-         *   的那个羽化圆** ✓（脚本 463 ✓ = 一支自烤径向渐变的圆 ✓；一手出处与字段见上面那两个宏 ✓）。
+         *   的那个羽化圆** ✓（脚本 462 ✓ = 一支自烤径向渐变的圆 ✓；一手出处与字段见上面那两个宏 ✓）。
          *   ★ **半径与颜色不写死** ✗ —— ★ **每帧从当前敌机读** `enemy+0x5594`/`+0x559c` ✓
          *   ⇒ ★ 道中自动深蓝 128、关底自动深红 160 ✓（= owner 的"按所处状态" ✓）。
          *   ★ 取法：★ 遍历全场敌机、**取半径最大那台** ✓（关底在场时压过道中 ✓；多 boss 也稳 ✓）。
@@ -5136,91 +5824,8 @@ static void pofv_c4_tick(void)
          *   从 0 起 ⇒ 第一次就有值时就固定 ✓）；★ 再没有就用关底那套（深红 160 ✓）。
          *   ⚠ ❓ 待实跑校准（登记 TUNING）：VE 与贴图的**尺度关系**（`scale = R / 128` 是"贴图直径 256
          *   = fog 直径 256"的直读 ✓，但 VM 空间的倍率若与推测不同，就是这一个数要改 ✓）。*/
-        {
-            static float s_fog_r_last;
-            static uint32_t s_fog_c_last;
-            float best_r = 0.0f;
-            uint32_t best_c = 0;
-            uint8_t *em3;
-            uint8_t *e3;
-            /* ★ 2026-10-16 **崩溃修复** ✗：★ 原来在这里用 `CE_ENEMY_FOREACH` 全场遍历读
-             *   `enemy+0x5594` ✗ ⇒ ★ **实跑崩了** ✓（日志停在 `[REL] tier=4` 之后的 `[BARRIER]`
-             *   那几帧 ⇒ 崩点就是本块 ✓；全场结点并非都够长 ⇒ 越界读 ✗）。
-             *   ⇒ ★ 改成只对**引擎认定的 boss** 读 ✓：`CE_ENEMY_MGR() + CE_EM_BOSS_IDS`（`int[4]` ✓）
-             *   ＋ `ce_enemy_by_id()`（`sdk.h:617` ✓ —— 注释写明它照 `get_boss_enemy_full 0x4237f0`
-             *   且带 guard ✓）★ ⇒ 不再扫非 boss 结点 ✓。*/
-            {
-                uint8_t *em3 = CE_ENEMY_MGR();
-                if (em3) {
-                    const int32_t *bids = (const int32_t *)(em3 + CE_EM_BOSS_IDS);
-                    int bi;
-                    for (bi = 0; bi < 4; ++bi) {
-                        uint8_t *e3;
-                        /* ★ 2026-10-16 **只读诊断**（owner：「道中还是红的」✗ + 「ECL 应该有现在是什么的线索」✓）：
-                         *   `[FOG]` 恒读到 0 ⇒ 先分清"槽里本来就没 id / id 语义我猜错" ✓
-                         *   ⇒ ★ 每 120 帧打一次**四个槽的原始 id** ✓（只在 bi == 0 那一轮 ✓，不刷屏 ✓）。*/
-                        if (bi == 0) {
-                            static int32_t s_fogid_t;
-                            if (++s_fogid_t >= 120) {
-                                s_fogid_t = 0;
-                                ce_log("pofv: [FOGID] slots=%d/%d/%d/%d",
-                                       (int)bids[0], (int)bids[1], (int)bids[2], (int)bids[3]);
-                            }
-                        }
-                        if (bids[bi] <= 0) continue;
-                        e3 = ce_enemy_by_id(em3, bids[bi]);
-                        /* ★ 2026-10-16 只读诊断（`[FOGID] slots=177/0/0/0` ✓ 但 `[FOG] best_r=0` ✗）：
-                         *   ★ 有 id ⇒ 把这一步再切开：★ **查表有没有命中** ＋ **命中那台的字段值** ✓
-                         *   （★ 命中且 `r=128/160` ⇒ 那就通了 ✓；★ 命中但 `r=0` ⇒ 字段位置/时机不对 ✗；
-                         *    ★ 没命中 ⇒ `ce_enemy_by_id` 与 boss 槽的 id 语义不同 ✗ ⇒ 换查法 ✓）。*/
-                        if (bi == 0 && e3) {
-                            static int32_t s_foghit_t;
-                            if (++s_foghit_t >= 120) {
-                                s_foghit_t = 0;
-                                ce_log("pofv: [FOGHIT] id=%d e=%p r=%.1f c=0x%06X",
-                                       (int)bids[0], (void *)e3,
-                                       (double)*(const float *)(e3 + POFV_C4_FOG_R_OFF),
-                                       (unsigned)(*(const uint32_t *)(e3 + POFV_C4_FOG_C_OFF) & 0xFFFFFFu));
-                            }
-                        }
-                        if (!e3) continue;
-                        {
-                            const float rr = *(const float *)(e3 + POFV_C4_FOG_R_OFF);
-                            if (rr > best_r) { best_r = rr; best_c = *(const uint32_t *)(e3 + POFV_C4_FOG_C_OFF); }
-                        }
-                    }
-                }
-            }
-            if (best_r > 0.0f) { s_fog_r_last = best_r; s_fog_c_last = best_c; }
-            else if (s_fog_r_last <= 0.0f) { s_fog_r_last = POFV_C4_FOG_FALLBACK_R; s_fog_c_last = POFV_C4_FOG_FALLBACK_C; }
-            /* ★ 2026-10-16 **只读诊断**（owner：「道中是红的」✗ ⇒ 与一手"道中深蓝 128 / 关底深红 160"不符）：
-             *   ★ 每 120 帧打一行 ⇒ ★ 一次实跑就能分清是"**读到 0**（⇒ 走兜底 160 深红 ✓）"
-             *   还是"**读到红**（⇒ 我挑 boss 槽/挑目标的规则不对 ✓）"。★ 不改行为 ✓，定位完删 ✓。*/
-            {
-                static int32_t s_fog_log_t;
-                if (++s_fog_log_t >= 120) {
-                    s_fog_log_t = 0;
-                    ce_log("pofv: [FOG] best_r=%.1f best_c=0x%06X last_r=%.1f last_c=0x%06X",
-                           (double)best_r, (unsigned)(best_c & 0xFFFFFFu),
-                           (double)s_fog_r_last, (unsigned)(s_fog_c_last & 0xFFFFFFu));
-                }
-            }
-            if (!s_c4_fog_vm)
-                s_c4_fog_vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
-                                  CE_ANM_ABILITY_SCRIPT_POFV109_FOG_CIRCLE, 6);
-            {
-                const float *pp6 = ce_player_pos();
-                if (s_c4_fog_vm && pp6) vm_set_world_pos((uint32_t)s_c4_fog_vm, pp6[0], pp6[1]);
-            }
-            if (s_c4_fog_vm) {
-                const float k6 = s_fog_r_last / POFV_C4_FOG_REF_R;
-                ce_anm_set_scale((uint32_t)s_c4_fog_vm, k6, k6);
-                ce_anm_set_color((uint32_t)s_c4_fog_vm, 0xFF000000u | (s_fog_c_last & 0x00FFFFFFu));
-            }
-            if (s_c4.timer + 1 >= POFV_C4_DURATION) {   /* ★ 最后一帧：同帧收掉 ✓ */
-                if (s_c4_fog_vm) { ce_anm_delete((uint32_t)s_c4_fog_vm); s_c4_fog_vm = 0; }
-            }
-        }
+        /* ★ 2026-10-17：★ 462 羽化圆已抽成 `pofv_c4_fog_tick()` ✓（定义在 `pofv_c4_decor_tick` 之前 ✓）
+         *   由 `pofv_c4_decor_arbitrate()` 统一调 ✓ ⇒ ★ 这里**不再有那段代码** ✗（★ 四个角色都有 462 ✓）。*/
         /* ★★★★★ 2026-10-16 **新需求（owner）**：「★ **对话期间强制退出 C4，返还
          *   (C4−C1) × 未消耗时长 / C4总时长**」✓ —— ★ 复刻来源 = ★ **本仓 112 卡（飞碟 token）**
          *   已经在用的同一判据 ✓（`CE_GUI_MSG_ACTIVE()` ✓，`engine.h:386`：`zGui.msg`（`+0x1b0`）
@@ -5278,7 +5883,7 @@ static void pofv_c4_tick(void)
          *   ★ 出界那侧 ★ 本来就同时收两边 ✓（★ 下面那条 ✓）★ ⇒ ★ 改成版底弹之后 ✓，
          *   ★ 就只剩 ★ **版顶（`y < −margin`）漏走** ✓ = ★ 与 C3 同一套 ✓。
          *   ❓ ★ 一手的 **4 次上限 + 左右墙** 本卡还没做 ✗（★ 上面注释也记着 ✓）⇒ ★ 留作下一步 ✓。*/
-        if (b->y > POFV_FIELD_H && !b->bounced) {
+        if (b->y > POFV_FIELD_H && !b->bounced && !b->nobounce) {
             b->y = POFV_FIELD_H;
             b->ang = -b->ang;
             b->bounced = 1;
@@ -5292,7 +5897,7 @@ static void pofv_c4_tick(void)
              *   ★（★ owner 要的"★ **碰怪不消失**"✓）一致：★ **只在出界时收** ✓。
              *   ★（★ 依据 = ★ owner 的一级证据 ✓：★ 玉**不该在画面里凭空消失**✓。）*/
             b->y < -POFV_C1_OFF_MARGIN || b->y > (POFV_FIELD_H + POFV_C1_OFF_MARGIN)) {
-            /* ★ 2026-10-13（★ owner 口径 4 ✓）：★ 改用 `ce_anm_interrupt` ✓ ⇒ ★ 走脚本 457 的**消失支**
+            /* ★ 2026-10-13（★ owner 口径 4 ✓）：★ 改用 `ce_anm_interrupt` ✓ ⇒ ★ 走脚本 456 的**消失支**
              *   （★ 消失帧 + 加算 + 淡出 ✓）= ★ "★ **敌方弹碰到自机的消失动画**" ✓
              *   （★ 原来 `ce_anm_delete` = 直接抹掉、无动画 ✗）；★ 与 C3 那三处同形 ✓。*/
             if (b->vm) { ce_anm_interrupt((uint32_t)b->vm, 1); b->vm = 0; }
@@ -5308,7 +5913,7 @@ static void pofv_c4_tick(void)
              *   ⚠ ★ 基线本身（0.5）是卡侧早先定的 ❓ ⇒ ★ 若大小还要调 ✓，★ 你给个准值我改 ✓。*/
             /* ★★★★★ 2026-10-15（★ owner：「★ **C4 阴阳玉大小不对，得更大**」✓
              *   + ★「★ **会有大的阴阳玉的消失动画在跳**」✗）—— ★ ★ **两个现象同源，就是这一行** ✗：
-             *   ★ 脚本 `459_pofv109_c4_orb` 自己的时间线（★ 一手 ✓）是 ★
+             *   ★ 脚本 `458_pofv109_c4_orb` 自己的时间线（★ 一手 ✓）是 ★
              *   ★ **出生 `scale(5,5)`（30×30 × 5 = 150 px ✓）→ 稳定 `scale(1,1)`（30 px ✓）** ✓；
              *   ★ 消失态（★ `interruptLabel(1)` ✓）是 ★ `alphaTime(14,0,0); scaleTime(14,4,1.5,1.5)` ✓。
              *   ★ ⚠ ★ 而 ★ 本行**每帧**写 `0.5f` ✗ ⇒ ★ **把脚本的 scale 全部覆盖** ✗ ⇒
@@ -5328,7 +5933,7 @@ static void pofv_c4_tick(void)
          *   （★ 招 = 4 表示 C4 ✓；★ 等级 = `s_c4_lv_n` ✓ —— ★ C4 的档就是它 ✓）；
          *   ★ 原来硬编码 `14.0f` ✗ ⇒ ★ 表里没有 ⇒ **默认 1** ✓（★ 口径 5 ✓）。*/
         /* ★ 2026-10-13（★ owner 口径 4 ✓）：★ C4 的弹**同样**"碰到敌方就正常消失" ✓ —— ★ 与 C3 那处同形 ✓
-         *   （★ 判到 ⇒ ★ `ce_anm_interrupt(vm,1)` ✓ 走脚本 459 的消失支 ✓；★ 该颗不再发伤害 ✓）。
+         *   （★ 判到 ⇒ ★ `ce_anm_interrupt(vm,1)` ✓ 走脚本 458 的消失支 ✓；★ 该颗不再发伤害 ✓）。
          *   ⚠ 半径仍用 ★ `POFV_ORB_HIT_R`(20.0f ❓自定) ✓ —— ★ C4 的玉是 30×30 ✓（★ 比 C3 的 62×62 小 ✓）
          *   ⇒ ★ 严格说该更小 ✓；★ 先共用 ✓，★ **待实跑一起调** ✓（★ 已登记 ❓ ✓）。*/
         {
@@ -5360,7 +5965,7 @@ static void pofv_c4_tick(void)
                      *   ★ 火花**保留** ✓（★ 命中视觉 ✓），★ 但 ★ **也放到 10 帧节拍** ✓ ——
                      *   ★ 否则在半径里**每帧喷火花** ✗（★ 先例的节拍就是 10 ✓）。
                      *   ★ ⚠ ★ 本锚点**同时命中 C3 与 C4 两处** ✓（★ 两段代码相同 ✓）⇒ ★ 一次改齐 ✓，
-                     *   ★ 与 owner「★ C4 也改一样的」✓ 一致 ✓；★ **彩弹（457/459）不在本锚点内** ✗ ✓。*/
+                     *   ★ 与 owner「★ C4 也改一样的」✓ 一致 ✓；★ **彩弹（456/458）不在本锚点内** ✗ ✓。*/
                     /* ★★★★★ 2026-10-16（★ owner：「★ **C4 的弹幕碰到敌方**会出现一帧像"敌弹碰自机消弹"的特效 ⇒
                      *   ★ **那个不想要了**」✓）：★ 本行**停用** ✗ —— ★ 原为 `pofv_spark_spawn(b->x, b->y)` ✓
                      *   （★ = 本卡脚本 431 ✓，★ 一手 `bullet.anm` **script163** 的 `effect/etbreak.png` ✓
@@ -5387,160 +5992,6 @@ static void pofv_c4_tick(void)
     }
 }
 
-/* ================= ② C2 —— **魔理沙**分支：**6 束 ⇒ 视觉 3 条激光** =================
- * ★★ 2026-10-12 **owner 实跑定案（★ 这是本条的最终口径 ✓）**：
- *   ★「★ **魔理沙的 C2 就是发三条激光** ✓，★ 什么 ECL 敌人之类的**完全不对** ✗，
- *   ★ **现在做的就是对的** ✓。★ 我魔理沙 C2 松手后就是**看见了 3 条激光** ✓。」
- * ★ **本卡为什么"6 束"却看着是"3 条"** ✓（★ 算术 ✓）：★ 角度 = `−90° + k×60°`（`k = 0..5` ✓）
- *   ⇒ ★ `k` 与 `k+3` **正好相差 180°** ✓ ⇒ ★ **两两反向、共线** ✓
- *   ⇒ ★ 6 束在画面上就是 **3 条直线** ✓ —— ★ 与 owner 看到的"3 条"**完全一致** ✓。
- * ★ **⇒ 行为不动** ✗（★ owner 已判"现在做的就是对的"✓）；★ 本次只**改描述 + 删错话** ✓：
- *   ★ 删掉先前那句"一手是沿 `y=448` 横扫的双镜像…"✗ 与"到期召 ECL 敌人 + 样条"✗
- *     —— ★ 那两处**是错的** ✗（★ owner 原话："什么 ECL 敌人之类的完全不对"✓）。
- * ★ 仍留的一手事实 ✓：★ `EXMarisaInf` 槽 4 = `0x417b90` ⇒ ★ **new 6 × `EXLaserInf`**
- *   （`0x77c` ✓、vt `0x5a8b8c` ✓ —— ★ 与我追升档音时找到的 vt `0x5a8ca4` **同族** ✓，★ 相差 `0x118` ✓）；
- *   ★ 每条寿命 **60–159 帧随机** ✓（`FUN_0053d280`：`(rand&0xffff)%100+0x3c` ✓）；
- *   ★ 角度 = **`−90° + k·60°`** ✓。
- * ❓自定（已登记 TUNING ✓，★ 但 owner 已判"观感对"⇒ 不阻塞 ✓）：
- *   ① 每条的**位置**（一手在 `EXLaserInf` 的 init 里，★ 本卡未逐条核到 ⇒ 取"绕自机铺开"✓）；
- *   ② 寿命取 **60/80/100/120/140/159** ✓（★ 覆盖 60..159 ✓、★ 不用随机以利复现 ✓）；
- *   ③ 伤害沿用 C1 口径 ✓（★ 一手 `EXLaserInf` 的伤害未核到 ✓）；
- *   ④ 视觉用本卡现成的魔理沙竖带（脚本 403 = `AURA_MARISA`，`drawRectGrad(1.0f, 448)` ✓）。*/
-#define POFV_C2M_LASERS      6
-#define POFV_C2M_VM_LAYER    6
-#define POFV_C2M_HIT_LEW   12.0f     /* ❓：伤害源的宽（细）*/
-/* ★★ 2026-10-11 照一手订正（子 agent 核实 ✓）：★ 魔理沙 C2 = **6 条 `EXLaserInf`** ✓，
- *   ★ 每条**两端点 = 自机 + 半径 600 的偏移** ✓ ⇒ 长度取 **600**（原 420 是我猜的 ❓ ✗）。
- *   ★ 角度 = **−90° + k·60°** ✓（原来我从 0° 起等分 ✗，差 90°）。
- *   ★ 寿命 = **60 + rand()%100** ✓（60..159）；★ **无 anm**（一手是引擎原生激光 ✗，
- *     本卡没有那种原语 ⇒ 仍用脚本 403 画，观感属 ❓自定 ✓）。*/
-/* ★ C2-②（C2 审计 42acbab9 ✓）：★ 我先前写的"每条两端点 = 自机 + 半径 600"**被证伪** ✗ ——
- *   ★ 一手那 600 只进了两个 `600·u(theta)` **向量**（`+0xd0/+0xdc` ✓）；★ 真正的两点 = **自机位** ✓
- *   与 **(对面 x+320±156, 464)** ✓。⇒ ★ 本常量**没有一手依据** ⇒ 标 **❓自定** ✓，
- *   ★ 且待修：★ 盒心应改 `自机 + len/2·u(ang)` ✓、高度=绘制长 ✓（★ 现在以自机为心、只 600 ⇒
- *   只覆盖 [−300,+300] ✗，而绘制覆盖 [0,2048] ✗）。*/
-#define POFV_C2M_HIT_LEN     600.0f
-/* ★★ 2026-10-11 照抄 108 的两个常量（owner：完全参考 108 ✓）：
- *   ★ 108 `youkai.c:8163` = `scale.x = YK_LASER_LEN / YK_M_LASER_BEAM_SPRITE_W × grow`
- *     = 2048 / 768 = **2.6666667** ✓；★ 展开帧数 = `YK_M_LASER_BEAM_GROW_FRAMES` = **8** ✓。*/
-#define POFV_C2M_LEN_OVER_SPRITE  (2048.0f / 768.0f)
-#define POFV_C2M_GROW_FRAMES      8
-/* ★★ 审计 A ✓（108 `youkai.c:8163-8164`）：y 也用 `w_px / SPRITE_H` ✓ —— 108 的 `w_px`
- *   = `W_PX100[档] / 100` = 1600/100 = **16** ✓、`SPRITE_H` = **32** ✓ ⇒ 商 = **0.5** ✓；
- *   ★ 且**两轴都乘 grow** ✓。*/
-#define POFV_C2M_W_OVER_SPRITE     (16.0f / 32.0f)
-#define POFV_C2M_SETTLE           2      /* ★ 108 `YK_M_LASER_BEAM_SETTLE` = 2 ✓（伤害每 2 帧一次）*/
-
-typedef struct {
-    int     live, age, life;
-    float   ang;
-    float   x, y;
-    int32_t vm;
-} pofv_c2m_laser_t;
-
-static pofv_c2m_laser_t s_c2m[POFV_C2M_LASERS];
-
-static void pofv_c2m_clear(void)
-{
-    int k;
-    for (k = 0; k < POFV_C2M_LASERS; ++k) {
-        if (s_c2m[k].vm) { ce_anm_delete((uint32_t)s_c2m[k].vm); s_c2m[k].vm = 0; }
-        s_c2m[k].live = 0; s_c2m[k].age = 0;
-    }
-}
-
-static void pofv_c2m_fire(void)
-{
-    pofv_stage_set(17);   /* ★ 魔理沙 C2 fire ✓ */
-    s_c1_m_set11 = 1;   /* ★ 一手 ✓ `EX+0xd4 = 1`：下一份 C1 追加 set11 两发 ✓ */
-
-    const float *pp = ce_player_pos();
-    int k;
-    if (!pp) return;
-    for (k = 0; k < POFV_C2M_LASERS; ++k) {
-        pofv_c2m_laser_t *L = &s_c2m[k];
-        int di;
-        if (L->vm) { ce_anm_delete((uint32_t)L->vm); L->vm = 0; }
-        /* ★★ 一手 ✓：★ 每条寿命 = **`60 + rand() % 100`** ✓（60..159）—— 原来是固定表 ❓ 已删 ✓。*/
-        L->live = 1; L->age = 0; L->life = 60 + (int)(ce_rand() % 100u);
-        L->ang = -1.5707963f + 6.2831853f * (float)k / (float)POFV_C2M_LASERS;   /* ★ 一手 ✓ −90° + k·60° */
-        L->x = pp[0]; L->y = pp[1];
-        di = (int)(L->ang * (36.0f / 6.2831853f)) % 36;
-        if (di < 0) di += 36;
-        (void)di;
-        L->vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_POFV109_C2M_BEAM,
-                                      POFV_C2M_VM_LAYER);
-        if (L->vm) {
-            ce_anm_set_pos((uint32_t)L->vm, L->x, L->y, 0.0f);
-            ce_anm_set_scale((uint32_t)L->vm, 0.6f, 1.0f);
-        }
-    }
-}
-
-static void pofv_c2m_tick(void)
-{
-    int k;
-    for (k = 0; k < POFV_C2M_LASERS; ++k) {
-        pofv_c2m_laser_t *L = &s_c2m[k];
-        float pos[3];
-        if (!L->live) continue;
-        ++L->age;
-        if (L->age > L->life) {
-            if (L->vm) { ce_anm_delete((uint32_t)L->vm); L->vm = 0; }
-            L->live = 0;
-            continue;
-        }
-        if (L->vm) {
-            /* ★★★ 2026-10-11 照抄 108（owner：「完全参考 108…」✓）：
-             *   · ★ 长度 = `YK_LASER_LEN / SPRITE_W × grow`（108 `youkai.c:8163` ✓）
-             *     = **2048 / 768 × grow = 2.6667 × grow** ✓；grow 在 **8 帧**内 0→1 ✓
-             *     （108 `YK_M_LASER_BEAM_GROW_FRAMES = 8` ✓）；
-             *   · ★ 宽度用脚本给的 `scale(1.0, 0.5)` ✓ ⇒ 卡侧只写 x… ✗ 不行
-             *     （`set_scale` 两轴一起写 ✓）⇒ y 也照 0.5 写 ✓；
-             *   · ★ 角度：脚本初始 `rotate(-π/2)` = 朝上 ✓，`anchor(1,0)` 左端锚 ✓
-             *     ⇒ 要指向 `L->ang`（一手：-90° = 朝上 ✓）取 **`rz = L->ang + π/2`** ✓。*/
-            const float grow = (L->age >= POFV_C2M_GROW_FRAMES)
-                             ? 1.0f : (float)L->age / (float)POFV_C2M_GROW_FRAMES;
-            ce_anm_set_pos((uint32_t)L->vm, L->x, L->y, 0.0f);
-            /* ★★ 审计 A 订正 ✓（108 `youkai.c:8163-8164` 原文两轴都乘 grow ✓）：
-             *   `set_scale(id, LEN/SPRITE_W × grow, w_px/SPRITE_H × grow)` ✓
-             *   ⇒ ★ 我原来 y 写常数 0.5 ✗（少了 grow ✓）。`w_px = 1600/100 = 16` ✓、
-             *     `SPRITE_H = 32` ✓ ⇒ **y = 0.5 × grow** ✓。*/
-            ce_anm_set_scale((uint32_t)L->vm, POFV_C2M_LEN_OVER_SPRITE * grow,
-                             POFV_C2M_W_OVER_SPRITE * grow);
-            ce_anm_set_rotation((uint32_t)L->vm, 0.0f, 0.0f, L->ang);   /* ★ 审计 42acbab9：rz=θ（原写 ang+π/2 ⇒ 视觉/判定正交 90° ✗）*/
-        }
-        /* ★ 伤害源：绕自机、沿该角度铺一条长盒（`ce_damage_rect` 不转 ⇒ 用等分角度近似 ❓）*/
-        pos[0] = L->x; pos[1] = L->y; pos[2] = 0.0f;
-        /* ★ 审计 A ✓：108 是**每 `SETTLE`=2 帧**建一次源（`youkai.c:8399` ✓）⇒ 照做 ✓。*/
-        if ((L->age % POFV_C2M_SETTLE) == 0)
-            /* ★★★★ 2026-10-12：★ 我上一轮把贴图 `rz` 改成 `L->ang`（修"画歪 90°"✓）之后，
-             *   ★ **判定盒的角度必须同步改** ✗ —— ★ 否则变成"画对了、打歪了" ✓。
-             *   ★ 依据（两条独立互证 ✓）：
-             *     · ★ SDK：`ce_damage_rect` = 「宽 XMM2、**高** XMM3」✓ ⇒ ★ **h（高）轴 = angle + 90°** ✓；
-             *     · ★ 卡 108（已验证 ✓）：★ 竖直束却传 `angle = 0.0f` ✓ + 盒心 `y − H/2` ✓
-             *       ⇒ ★ 与"h 轴竖直 ⇔ angle = 0"一致 ✓；
-             *     · ★ 本卡**原来那对本来就是自洽的**（`rz = ang+90` ✓ + `angle = ang` ✓ ⇒ 轴 = `rz` ✓）
-             *       ⇒ ★ 所以贴图改成 `rz` 后，盒角应取 **`rz − 90°` = `L->ang − π/2`** ✓。*/
-            {
-                /* ★★ 盒心：★ 照**卡 117 的已验证版式**（`animal.c:2714-2718` ✓）——
-                 *   ★ 它写的是 `ce_polar_to_vel(dir, a, vis)` ✓ + `center = 膛口 + dir*0.5` ✓
-                 *   + `ce_damage_rect(center, a + π/2, …, HIT_W, vis)` ✓
-                 *   ⇒ ★ 即「★ 盒心 = 膛口 + **u(θ)·len/2** ✓、★ h = 长度 ✓、★ 角度 = θ ± 90° ✓」。
-                 *   ⚠ ★ 本卡此处的 **len = 600** 仍是 **❓自定**（★ 一手那个 600 已证**无出处** ✗）
-                 *   ⇒ ★ 本改**只动盒心** ✓：★ 从"以自机为心（★ 一半在身后 ✗）"改成"**从膛口向束伸出** ✓"；
-                 *   ★ **长度问题（600 vs 绘制长 2048）留给 owner 定** ✓（见 TUNING 的 C2-② 行为半 ✓）。*/
-                float dir3[3], ctr[3];
-                ce_polar_to_vel(dir3, L->ang, POFV_C2M_HIT_LEN * 0.5f);
-                ctr[0] = pos[0] + dir3[0];
-                ctr[1] = pos[1] + dir3[1];
-                ctr[2] = 0.0f;
-                (void)ce_damage_rect(ctr, L->ang - 1.5707964f, POFV_C2M_SETTLE, 14.0f,
-                                     POFV_C2M_HIT_LEW, POFV_C2M_HIT_LEN);
-            }
-    }
-}
-
 /* ================= ⑤ C3 —— **魔理沙**分支：沿 `y = 448` 横扫的双镜像激光 ====================
  * ★ 一手（`HANDOFF-109-C1-C4.md` §10.2）：`pl01.ecl` 的 `ExtraAttack` ★ **是纯激光** ✓
  *   —— ★ **没有 `etOn`、也没有任何 `etEx`** ✗，只有 `ins_700`（建激光）/`ins_701`（时机）/`ins_703`（开）✓。
@@ -5549,13 +6000,19 @@ static void pofv_c2m_tick(void)
  *   `$C`（每波步数）= `{3,3,5,4,3,3,4,5}`；`$D`（波数）= `{1,2,1,2,3,3,2,2}`；
  *   `$E`（每步 wait）= `{40,35,30,25,17,15,19,18}`；`%F`（收窄量）= `{8,16,8,8,16,12,24,24}` ✓。
  *   ★ 每波：`%G = 140 − $H×%F`；★ 每步：`%G −= 125/($C−1)` ✓。
- * ★ 视觉复用**脚本 403**（魔理沙竖带 ✓）；★ 激光从 `(±%G, 448)` **向上**打 ⇒ 一条长盒 ✓。
- * ❓自定：① 档位取 **1**（`$D=2, $C=3, $E=35, %F=16` ✓，一手多为 1/3）；② 激光寿命按 wait 近似 ✓；
+ * ⚠ 重验更正 ✗：★ 不是「复用脚本 403」✗ —— ★ 现在用的是 `POFV109_C3M_LASER`（**脚本 463** ✓）；
+ *   ★ 且不是「从 (±%G,448) 向上」✗ —— ★ 是 `y = POFV_C3M_Y`(=0, 版顶) **往下长** ✓。
+ * ❓自定：① ⚠ 重验更正 ✗：★ 不是「固定取 1」✗ —— ★ 代码按**运行档位** `s_c3_lv_n` 取 8 档表 ✓
+ *   （★ 只有默认/越界时才钳到 0..7 ✓）。
+ *   ⚠ 重验更正 ✗：② 不是"激光寿命按 wait 近似"✗ —— ★ 寿命是 **`s_c3m[k].life = 90`** ✓（一手 `ins_701` 的四个整数 ✓）；
  *         ③ 伤害沿用 C1 口径（一手 `ins_700/701` 的伤害未核到 ✓）。*/
 #define POFV_C3M_MAX_BEAMS   40
+#define POFV_C3M_TIP_ENABLE   1   /* 2026-10-18 owner: tip = eff_base.png 第一行(随便一格), 要转 */   /* 2026-10-18: owner 说"你这个不对" => 先关, 等他定 */   /* ★ 2026-10-18：tip 贴图待 owner 指定, 先关 ✓（sprite38 不许再当tip ✗）*/
 #define POFV_C3M_VM_LAYER     6
-#define POFV_C3M_X0       140.0f          /* ★ 一手 ✓ 起始 `%G = 140` */
-#define POFV_C3M_Y          0.0f          /* ★★ 2026-10-16 **镜像**（owner 口径 ✓）：
+#define POFV_C3M_X0       186.6667f       /* ★ 一手 `%G = 140` ✗ × **4/3** = 186.67 ✓
+                                          *   比例来源：一手活动区 **288 宽**（half 144）→ 本卡 `POFV_FIELD_HALF_W = 192`，
+                                          *   192/144 = 4/3 ✓。★ owner：「把 x **等比拉伸成现在的 x**，★ 只改分布」✗ */
+#define POFV_C3M_Y          POFV_FLIP_Y(POFV_FIELD_H)          /* ★★ 2026-10-16 **镜像**（owner 口径 ✓）：
                                           *   ★ 一手 = `pl01.txt:419` `ExtraAttack()` 里 `ins_400(%G, 448.0f)`
                                           *   ⇒ ★ **放在 y = 448（版底那一行）** ✓（原来这里就是 448 ✓，一字不差 ✓）；
                                           *   ★ 而 owner：「★ 一手 boss 是**从版底**爆菊的激光 ⇒ **咱们得从版顶往下**」✓
@@ -5563,14 +6020,14 @@ static void pofv_c2m_tick(void)
                                           *   （全场 384×448 ✓ ⇒ 上边 = 0 ✓、下边 = 448 ✓）。
                                           *   ⚠ 其余**一个字不动** ✗：`%G = 140` ✓、`125 / ($C−1)` 收窄 ✓、
                                           *   左右镜像 `±%G` ✓、`$C/$D/$E/%F` 四张表 ✓ 全部照一手 ✓。*/
-#define POFV_C3M_XSPAN    125.0f          /* ★ 一手 ✓ 每波收窄 125 */
+#define POFV_C3M_XSPAN    166.6667f       /* ★ 一手 `125` ✗ × **4/3** = 166.67 ✓（同上，等比 ✓）*/
 
 static const unsigned char s_c3m_steps[8] = { 3, 3, 5, 4, 3, 3, 4, 5 };   /* $C ✓ */
 static const unsigned char s_c3m_waves[8] = { 1, 2, 1, 2, 3, 3, 2, 2 };   /* $D ✓ */
 static const unsigned char s_c3m_wait [8] = { 40,35,30,25,17,15,19,18 };  /* $E ✓ */
 static const unsigned char s_c3m_shrink[8] = { 8,16,8,8,16,12,24,24 };    /* %F ✓ */
 
-typedef struct { int live, age, life; float x, y; int32_t vm; } pofv_c3m_beam_t;
+typedef struct { int live, age, life; float x, y; int32_t vm; int32_t tip_vm; } pofv_c3m_beam_t;   /* tip_vm = 发射口晕光 */
 static pofv_c3m_beam_t s_c3m[POFV_C3M_MAX_BEAMS];
 static struct { int active, wave, step, timer, level; float g; } s_c3m_st;
 
@@ -5585,15 +6042,36 @@ static void pofv_c3m_clear(void)
     s_c3m_st.timer = 0; s_c3m_st.g = 0.0f;
 }
 
-/* ★ 开一条激光在 `(x, 448)`，向上 ✓ */
+/* ⚠ 重验更正 ✗: 不是「在 (x,448) 向上」—— 实际 `y = POFV_C3M_Y`(= `POFV_FLIP_Y(448)` = **0**, 版顶),
+ * 光束**往下长** ✓（见 `pofv_c3m_beam` 的伤害盒 `pos[1] = b->y + 210` ✓）。*/
 static void pofv_c3m_beam(float x)
 {
     int k;
     for (k = 0; k < POFV_C3M_MAX_BEAMS; ++k) if (!s_c3m[k].live) break;
     if (k >= POFV_C3M_MAX_BEAMS) return;
-    s_c3m[k].live = 1; s_c3m[k].age = 0;
-    s_c3m[k].life = 90;                     /* ❓②：出屏/寿命上限 */
-    s_c3m[k].x = x; s_c3m[k].y = POFV_C3M_Y;
+    s_c3m[k].live = 1; s_c3m[k].age = 0; s_c3m[k].tip_vm = 0;
+    s_c3m[k].life = 90;                     /* 2026-10-18（整体验收 ①）：一手 ins_701(40,10,30,10) = 90 帧 ——
+                                              * 原来 80 会把第 4 段(淡出 10 帧)截掉 ✗。★ 一手 `ins_701($A, **40, 10, 30**, 10, 0)` ✓
+                                             *   ⇒ ★ 四段 40+10+30+**10** = **90 帧** ✓（旧句写「= 80」漏了末段 10 ✗）
+                                             *   ⚠ 重验更正：旧句「原来写的 90 是 ❓②自定 —— 现按一手 80」**与代码 `life = 90` 相反** ✗ ——
+                                              *   一手是**四个**整数（`pl01:439`）⇒ 四段和 = **90** ✓；「80」只加前三段 ✗。
+                                             *   ★ 出处：`HANDOFF-109-REFACTOR.md` §11 ✓（★ 我本轮已用 Ghidra
+                                             *   独立复核：★ 分派表 `0x505434[701] = 0x8e` ✓ ⇒ `caseD_8e` @`0x502c26` ✓）*/
+    /* ★ 2026-10-18：★ y 放**场地中心** 224 ✗ —— 原来放 `POFV_C3M_Y`(=0) 且 VM 居中 ⇒
+     *   ★ 只有下半截在画面里 ✗（★ owner：「★ 又只延申到一半」✓）。★ 高 448 ⇒ 0..448 全覆盖 ✓。*/
+    /* 2026-10-18: 贴图已是满高 16x448 => 位置放版顶 y=0, scale 的 Y 恒 1(不再拉伸) */
+    /* ★ 2026-10-18（实测第 4 次）: 贴图已是 16x448 满高、scale 恒 1 仍"半道" =>
+     *   唯一剩下的变量就是**锚点在正中** ✓ => ★ 位置放场地中心 224 ✓，覆盖 0..448 ✓。*/
+    /* ★ 2026-10-18（实测结论 ✓）：★ **默认锚点在底边**✗ ——
+     *   y=0 时只露上半(0..-448 ⇒ 只看到 −448..0 里落在画面内的部分) ✓、
+     *   y=224 时也"半道" ✓、★ y=**448** 才让 16x448 的图**从底往上**正好覆盖 0..448 ✓。
+     *   ★ 这条对**所有**"全高竖带"VM 都适用 ✓（★ 以后照抄 ✓）。*/
+    /* ★ 2026-10-18 **实测定标** ✓（★ 现在位置真的会生效 ✓）：
+     *   y=0   ⇒ 露**上半**（0..224 ✓）／★ y=448 ⇒ 露**下半**（224..448 ✓）
+     *   ⇒ ★ **锚点在正中**✗ ⇒ ★ y = **224**（场地中心 ✓）时 16x448 的图正好覆盖 0..448 ✓。*/
+    s_c3m[k].x = x; s_c3m[k].y = POFV_FIELD_H * 0.5f;
+    /* ★ 2026-10-18 owner："出现的那一帧是完全张开的, 然后才从 scale 0 开始" ✗
+     *   ⇒ ★ 出生就把 **X 设成 0** ✓（★ 别让脚本里的 scale 先露一帧 ✓）。*/
     s_c3m[k].vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
                          /* ★★★★★ 2026-10-16 **owner 报告修正**：「★ **魔理沙 C3 的激光很细，贴图不对**」✓
                           *   ★ 原来这里借的是 ★ `POFV109_AURA_MARISA`（= **结界的竖带** ✗，本来就是细带 ✓）
@@ -5601,15 +6079,28 @@ static void pofv_c3m_beam(float x)
                           *   ★ 一手（`local/th19.v1.10c/_ext/ecl/pl01.txt:427 ExtraAttack()` ✓）用
                           *   ★ `ins_602($A, 38, 6)` = ★ **`bullet.anm` 的 `sprite38`**（`bullet.anm.txt:55`
                           *   = `(48,240,8,8)` ✓）⇒ ★ 已照此切图（`thanm` 解 `bullet/bullet1.png` 后切 ✓）
-                          *   为 `assets/ability/POFV109_C3M_LASER.png`（8×8 ✓）＋ 脚本 **464** ✓。
+                          *   为 `assets/ability/POFV109_LASER.png`（★ 现为 **8×8** ✓ = sprite38 ✓ —— 旧注曾说 `POFV109_C3M_LASER` 是 16×14 ✗，2026-10-18 已按一手编号改回 8×8 ✓）＋ 脚本 **463** ✓。
                           *   ⚠ ★ **横向宽度仍标 ❓** ✗ —— 一手 `ins_700($A, 512,512,0,14)` 的**量纲未坐实**；
                           *   ★ 其中 "512" 已由本卡 C1 光束那支注释确认为"**长度**" ✓（`442_…anm.txt` ✓）
                           *   ⇒ ★ 宽度先按"同族同宽"的观感给 ✓，★ **不写成"一手"** ✗（已登记 `TUNING` ✓）。*/
                          CE_ANM_ABILITY_SCRIPT_POFV109_C3M_LASER,
                                         POFV_C3M_VM_LAYER);
     if (s_c3m[k].vm) {
-        ce_anm_set_pos((uint32_t)s_c3m[k].vm, x, POFV_C3M_Y, 0.0f);
-        ce_anm_set_scale((uint32_t)s_c3m[k].vm, 0.5f, 1.0f);
+        /* ★★★ 2026-10-18 **真凶** ✗：原来这里把 y 写死成 `POFV_C3M_Y`(=0) ✗ ⇒
+         *   ★ 我改 `s_c3m[k].y` **完全没用**✗ ✓（★ owner 反复说"没变"就是因为它 ✓）。
+         *   ⇒ ★ 改成用 `s_c3m[k].y` ✓（★ 它才是上面算好的那个位置 ✓）。*/
+        ce_anm_set_pos((uint32_t)s_c3m[k].vm, x, s_c3m[k].y, 0.0f);
+        ce_anm_set_scale((uint32_t)s_c3m[k].vm, 0.0f, 1.0f);   /* 首帧 X=0 ✓ */
+        /* ★ 2026-10-18：★ 发射口的**晕光（tip）**✗ —— owner：「★ 表明它从某处发射，
+         *   是因为在发射口有一圈晕光」✗ ⇒ ★ 在激光**起点（版顶 y=0）** 挂一小团光 ✓。*/
+        /* ★★ 2026-10-18 owner 断言：★ `sprite38`（8×8 圆点）**只能是最小的彩弹**✗，
+         *   ★ **不可能是别的** ✗ ⇒ ★ 我这版 tip 用了它 ⇒ **撤掉** ✓。
+         *   ★ tip 的贴图待 owner 指定 ✗（★ 不许再自己挑 ✗）⇒ ★ 先关掉 ✓。*/
+        #if POFV_C3M_TIP_ENABLE
+        s_c3m[k].tip_vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
+                             CE_ANM_ABILITY_SCRIPT_POFV109_C3M_TIP, POFV_C3M_VM_LAYER);
+        #endif
+        if (s_c3m[k].tip_vm) ce_anm_set_pos((uint32_t)s_c3m[k].tip_vm, x, 0.0f, 0.0f);
         /* ★ 2026-10-16 **只读对比诊断**（★ 定案"灵力道具看不见" ✓ —— 日志已证道具 VM 的
          *   `vm_draw(+0x30 绘制点) = (0,0)` ✗ 而 `vm_ent(0x5f0) = 写进去的值` ✓ ⇒ ★ 疑似绘制点没被维护 ✓）：
          *   ★ 这里对**能正常看见**的 C3 激光 VM 打同一组字段 ✓ ⇒ ★ 两者一比即分家 ✓：
@@ -5646,8 +6137,18 @@ static void pofv_c3m_tick(void)
         if (s_c3m_st.step < (int)T[lv]) {
             if (s_c3m_st.timer == 0) {
                 /* ★ 一手：`movePos(%G,448)` 开一发、`movePos(−%G,448)` **镜像**再开一发 ✓ */
+                /* ★★★ 2026-10-18 **实跑日志定位** ✗（`modkit/game/th18_card_expand.log` ✓）：
+                 *   lv=1 的 g 实测 ★ `140/77.5/15` ✓ 然后 ★ `124/61.5/**-1**`✗
+                 *   ⇒ ★ 第二波最后一步变成 **-1** ✗ ⇒ ★ 那一对**左右互换、叠在一起** ✗
+                 *     ★ 正是 owner 说的"★ 中心点 ±2px"✗ ✓（缝只剩 2 ✓）。
+                 *   ★ 一手最低档最内侧 = **15**（= 140 − 125 ✓）⇒ ★ **15 是下限**✗ ⇒
+                 *   ★ `g < 15` 的那一发**不发** ✓（否则会穿到对面 ✓）。*/
+                /* ★★ 2026-10-18 owner 订正：★ `±2px` 是**他自己核一手核错了**✗ ⇒
+                 *   ★ **按原版来**✗ ✓（★ 第二波最后一步 `g=-1` **保留** ✓，★ 那正是一手的形状 ✓）。
+                 *   ★ 只做一件事：★ **x 等比放大到本卡场地宽度**✗（见 `POFV_C3M_X0/XSPAN` 的注释 ✓）。*/
                 pofv_c3m_beam( s_c3m_st.g);
                 pofv_c3m_beam(-s_c3m_st.g);
+                ce_log("pofv: [C3M] emit step=%d wave=%d lv=%d g=%.1f", s_c3m_st.step, s_c3m_st.wave, lv, (double)s_c3m_st.g);
                 if (s_c3m_st.step + 1 < (int)T[lv])
                     s_c3m_st.g -= POFV_C3M_XSPAN / (float)((int)T[lv] - 1);   /* ★ 一手 ✓ */
             }
@@ -5668,14 +6169,50 @@ static void pofv_c3m_tick(void)
         ++b->age;
         if (b->age > b->life) {
             if (b->vm) { ce_anm_delete((uint32_t)b->vm); b->vm = 0; }
+            if (b->tip_vm) { ce_anm_delete((uint32_t)b->tip_vm); b->tip_vm = 0; }
             b->live = 0;
             continue;
+        }
+        /* ★★★★★ 2026-10-16 **三段长度**（★ §11 一手规格 ✓，★ 收口 `ins_701` ✓）
+         *   ★ 一手：★ `ExtraAttack()`（`pl01.txt:427` ✓）的 `ins_701($A, **40, 10, 30**, 10, 0)` ✓
+         *     ⇒ ★ 【张开 40 帧（0 → 满长）】→【保持 10 帧】→【收束 30 帧（满长 → 0）】✓
+         *     ⇒ ⚠❓ **2026-10-18 重验**：★ 段序**未定** ✗ —— ★ 本处按「张开40→保持10→收束30」，
+         *     ★ 而一手 exe（`LaserInfiniteInf`）的读取顺序像是「等待40→张开10→保持30→收束10」❓
+         *     （★ 强推断，非铁证）⇒ ★ 且代码 `life = 90` ✓（★ 不是 80 ✗）⇒ ★ 总寿命 = **90** ✓。
+         *   ★ 满长值 56 = `448 ÷ 8` ✓（★ 8 px 贴图拉满场地高 ✓ —— ★ 与脚本 463 的静态值**同值** ✓，
+         *     ★ 所以"保持段"的观感与改前一致 ✓，★ 只有张开/收束是新增 ✓）。
+         *   ★ 出处：`HANDOFF-109-REFACTOR.md` §11 ✓；★ 本轮另有 Ghidra 独立复核 ✓
+         *     （★ 分派表 `0x505434[701] = 0x8e` ⇒ `caseD_8e` @`0x502c26` ✓）。*/
+        if (b->vm) {
+            const float ag = (float)b->age;
+            float sy;
+            /* ★★ 2026-10-18 owner 定稿（★ 这是**咱们的卡**该怎么做 ✗，★ 不冒充一手 ✗）：
+             *   「★ tip 在**版顶** ✓，★ 激光本身**依旧是纵向的** ✓，
+             *     ★ 但是它的**出现和消失是 `xscale` 从 0 到 1 和 1 到 0**」✗ ✓
+             *   ⇒ ★ **Y 恒为满高**（32 ✓ = 448/14 ✓）、★ **X 从 0 长到 1、再从 1 收到 0** ✓。
+             *   ★ 原来的写法是动 **Y** ✗（★ 从中间往两头长 ✓）⇒ ★ 那是**错的** ✗ ✓。*/
+            /* ★ 2026-10-18：X 上限从 1.0 降到 **0.6** ✗ —— 理由是**算出来的**：
+             *   一手最低档 3 步 ⇒ 最里面一对 `±15`（中心距 30px）；贴图宽 16px ⇒ 一手净缝 **14px**。
+             *   ★ 若 `scaleX=1.0` 画出来比 16px 宽 ⇒ 就"贴着"了 ✗ ⇒ 取 0.6（≈9.6px，缝 ≈20px）✓。
+             *   ★ 再不够就 0.1 一档调，不再问 owner 尺寸。*/
+            /* ★ 2026-10-18：owner 实测"中心点 ±2px"✗ ⇒ 束宽没问题 ✗，是 g 算错 ⇒ 宽度恢复 1.0 */
+            if (ag <= 40.0f)      sy = 1.0f * (ag / 40.0f);
+            else if (ag <= 50.0f) sy = 1.0f;
+            else                  sy = 1.0f * (80.0f - ag) / 30.0f;
+            if (sy < 0.0f) sy = 0.0f;
+            ce_anm_set_scale((uint32_t)b->vm, sy, 1.0f);   /* X 动 / Y 恒 1(贴图本身满高) */   /* ★ X 动 ✓、★ Y 恒 32（满高 ✓）*/
         }
         /* ★★★ C3/C4 审计 60f3724f ⑥（中）✓：★ 一手这条是**向上**的激光 ✓（`ins_604($A,−π/2,−π/2)` ✓）
          *   ⇒ ★ 盒心必须**从那一行往上偏 h/2** ✓；★ 原来直接传 `b->y`（= 横扫行 448 ✓）✗
          *   ⇒ ★ 盒只覆盖 `y=[238,448]` ✓、★ **一半在屏外** ✗。
-         *   ★ 照**同卡 C4M** 的写法（`pp[1] − 210.0f` ✓，见本文件上面那处 ✓）⇒ ★ 改成 `b->y − h/2` ✓。*/
-        pos[0] = b->x; pos[1] = b->y - 210.0f; pos[2] = 0.0f;
+         *   ⚠ 重验更正 ✗：★ 同卡 C4M 现在**不是** `pp[1] − 210.0f` ✗ —— 它是 `pos[1] = 210.0f` ✓；
+         *   ★ 本处仍是「盒心 = `b->y + h/2`」✓（★ 因为 C3M 的光束是**往下长** ✓）⇒ ★ 改成 `b->y + h/2` ✓。*/
+        /* ★ 2026-10-17（D 组 X1 ✗，对抗性验证抓出 **实伤**）：★ 原来 `pos[1] = b->y − 210.0f` ✗
+         *   ★ 那是"★ 光束往上长"✗ 的取法 —— ★ 而 `b->y` 在本卡是**镜像后**的值（贴版顶 0 ✓）
+         *   ⇒ ★ 盒覆盖 `y ∈ [−420, 0]` ✗ ⇒ ★ **整条在屏外、激光打不到任何东西** ✗。
+         *   ★ 镜像后的光束是**往下长** ✓（★ 与"从底往上发"的弹相反方向 ✓，★ 与本卡"y 向下增"一致 ✓）
+         *   ⇒ ★ 盒心改 `b->y **+** 210.0f` ✓（★ 420 高不变 ✓）。*/
+        pos[0] = b->x; pos[1] = b->y + 210.0f; pos[2] = 0.0f;
         (void)ce_damage_rect(pos, 0.0f, 2, pofv_dmg_laser(1, 3, (int)s_c3m_st.level), 12.0f, 420.0f);   /* ★ 2026-10-13：★ **激光走激光表** ✓（owner 口径 7「魔理沙涉及到激光的伤害也得单独拎出来」✓；★ 角色 = 1 魔理沙 ✓、★ 招 = 3 ✓、★ 等级 = `s_c3m_st.level` ✓）；★ 原来硬编码 `14.0f` ✗ ⇒ ★ 表里没有 ⇒ **默认 1** ✓ */
     }
 }
@@ -5691,17 +6228,45 @@ static void pofv_c3m_tick(void)
  *   · **8 档表**：发数 `ins_570($G, **25,30,15,20,30,30,30,30**)` ✓、速度 `ins_571(%H, **4,4,3,4,4,4,4,4**)` ✓；
  *   · **循环**：★ 每 **2 帧**一发（`ins_23(2)` ✓）、角 `(%D + π) + [-9987]×π/2` ✓、速 `%H + [-9999]×1.0`
  *     （★ 末层 **0.1** ✓）；★ 外循环每 **60 帧**一轮（`ins_23(60)` ✓）。
- * ⇒ ★ 本卡落地：★ **一条向上的激光 + 一串绕圈扫射的弹** ✓（★ 每次 C4 = 一轮 60 帧的扫射 ✓）。
+ * ⇒ ⚠ 重验更正 ✗: 卡侧实际**不是**"一轮 60 帧"—— `span = start0 + gap*(groups-1) + n*every`
+ * ⇒ ★ 按档 active 期实为 **120-270 帧** ✓(`POFV_C4M_CYCLE` 只当 60 帧预备用) ✗。
+ *   旧句：★ **一条向上的激光 + 一串绕圈扫射的弹** ✓（★ 每次 C4 = 一轮 60 帧的扫射 ✓）。
  * ❓自定：① 档位取 **0**（`$G=25` 发 / `%H=4.0` ✓）；② `[-9987]`/`[-9989]`/`[-9999]` 未定位
  *          ⇒ ★ 本卡取 0（⇒ 激光角 = 正上 ✓、扫射基准角 = π ✓）；③ 伤害沿用 C1 口径 ✓。*/
 #define POFV_C4M_MAX        48
+#define POFV_C4M_DOTS        0   /* ★ 2026-10-18 owner：「一堆小点弹幕…行为本身和一手就不对」✗ => 关掉 ✓ */
 #define POFV_C4M_SPEED     4.0f      /* ★ 一手 ✓ `ins_571` 的档 0 = 4.0 */
+/* ★★ 2026-10-17（施工单 §12④-4 第 4 条 ＋ §63.3 #5 ✓）：★ 一手 `ins_571(%H, …)` 是**8 档速度表** ✓，
+ *   ★ 卡里原来只用**单值 4.0** ✗ ⇒ ★ 按档补两张表 ✓：
+ *     · ★ **低档**（`pl01:401` 那一段 ✓）：★ `{4, 4, 3, 4, 4, 4, 4, 4}` ✓；
+ *     · ★ **高档**（`Boss00BossCard1H_at` ✓）：★ **`{4, 4, 3, 4, 1, 1.5, 2, 2.3}`** ✓。
+ *   ★ ⚠ ★ 两表**同构**（★ 都是按 level 取 ✓），★ 判据同 §0.2：★ `s_c4m_st.level >= 4` ✓。*/
+static const float s_c4m_spd_tab[8]    = { 4.0f, 4.0f, 3.0f, 4.0f, 4.0f, 4.0f, 4.0f, 4.0f };      /* ★ 低档 ✓ */
+static const float s_c4m_spd_tab_hi[8] = { 4.0f, 4.0f, 3.0f, 4.0f, 1.0f, 1.5f, 2.0f, 2.3f };      /* ★ 高档 ✓ */
 #define POFV_C4M_LASER_SPD 8.0f      /* ★ 一手 ✓ */
 #define POFV_C4M_CYCLE       60      /* ★ 一手 ✓ 每 60 帧一轮 */
-#define POFV_C4M_EVERY        2      /* ★ 一手 ✓ `ins_23(2)` */
-#define POFV_C4M_LASER_LIFE  60      /* ❓：一手 `ins_701(60,…)` 的时机参数 */
-/* ★ ⑦ 补 ✓：★ 一手这条弹有 `EX_ACCEL`（`0.03/帧` ✓、共 **120 帧** ✓）—— ★ 卡原来**没有** ✗。*/
-#define POFV_C4M_ACCEL       0.03f
+#define POFV_C4M_EVERY        2      /* ★ 低档 ✓ 一手 `ins_23(2)` */
+#define POFV_C4M_EVERY_HI     3      /* ★ 高档 ✓ 一手逐发间隔 **3** ✓（施工单 §12④-4 第 5 条 ✓）*/
+/* ★★ 2026-10-17 按施工单 §7／§12④-1／§62 **订正**（★ 一手逐字 ✓）：
+ *   ★ 一手 `ins_701($A, 张开, 保持, 收束, …)` ⇒ ★ 总寿命 = 三者之和 ✓ ⇒ ★ 卡里**有且只有两档** ✓：
+ *     · ★ **低档**（`Boss00BossCard1_at` ✓、`pl01.txt:379` ✓）：★ `ins_701($A, 60, 10, 60, 10, 0)`
+ *       ⇒ ⚠❓ 重验：★ 「60+10+60 = 130」是**只加三段** ✓（★ 一手 `ins_701` 有**四个**整数 ✓，
+ *       ★ 若四段都算时长则 = **140** ❓ —— 见下方 `#define` 的 ❓ 说明 ✓）；
+ *     · ★ **高档**（`Boss00BossCard1**H**_at` ✓、`pl01.txt:329` ✓）：★ `ins_701($A, 60, 10, 30, 10, 0)`
+ *       ⇒ ⚠❓ 同源未定：★ 「60+10+30 = 100」也是三段 ✓（★ 四段则 = **110** ❓）。
+ *   ★ ⇒ ★ 原来那个**单值 60 既不是 130 也不是 100** ✗（★ 观感上"激光早没了"✓）⇒ ★ 按档分开 ✓。
+ *   ★ ⚠ ★ 两档的分叉判据与 §0.2 同源：★ **`pofv_c4_rank() >= 4`** ✓（★ 灵梦/魔理沙 = 4 ✓，★ 早苗 = 6 ✓）。*/
+#define POFV_C4M_LASER_LIFE      130   /* ⚠❓ 重验(2026-10-18)发现两个数并列, 未定:
+                                            * (a) 本值 130 = "60+10+60" 只按前**三段**相加 => **只有注释支撑** ❓;
+                                            * (b) 一手 exe `LaserInfiniteInf`(th19.exe 0x52b550 + 槽表 0x52b8c8
+                                            *     + 拷贝 0x52b8e0)有 **4 个时长槽** => 总寿应为 **140** ❓
+                                            *     (但"ins_701 四实参按序落到四槽"这一步未坐实, 属强推断) ❓。
+                                            * 铁律 ④: 冲突不二选一 => 保持 130 但标 ❓, 待实机/HANDOVER 定。*/
+#define POFV_C4M_LASER_LIFE_HI   100   /* ⚠❓ 同上（与低档同一未定项）: 100 = "60+10+30"(三段)
+                                            * vs exe 四槽 => 110 ❓ —— ★ 铁律 ④: 值不动, 只标 ❓。*/   /* 高档 = 三段和 100 ❓(四段则 110) */
+/* ★ ⑦ 补 ✓：★ 一手这条弹有 `EX_ACCEL`（★ 低档 `0.03/帧` ✓、★ **高档 `0.02/帧`** ✓ —— 施工单 §12④-4 第 1 条 ✓、★ 共 **120 帧** ✓）。*/
+#define POFV_C4M_ACCEL       0.03f   /* ★ 低档 ✓ */
+#define POFV_C4M_ACCEL_HI    0.02f   /* ★ 高档 ✓（一手 `ins_611` 高档取 `0.02` ✓）*/
 #define POFV_C4M_ACCEL_FRAMES  120
 
 typedef struct { int live, age, life, bounced; float x, y, ang, spd; int32_t vm; } pofv_c4m_t;
@@ -5714,7 +6279,7 @@ static pofv_c4m_t s_c4m[POFV_C4M_MAX];
  *   ★ owner：「★ 魔理沙的 C4 符卡，为了保证美观度，★ **同一波的三束激光发射位置是在第一支发射那一刻就确定的**」✓
  *   ★ 归属 ★ **❓自定（owner 定）** ✓：★ 一手那边之所以看起来一致，是因为"★ **此时 boss 魔理沙不动**"✓
  *   —— ★ 而那个机制 owner 说**不用核** ✓ ⇒ ★ **不包装成"复刻"** ✗（见 TUNING ✓）。*/
-static struct { int active, emitted, timer, laser_vm, laser_timer, level; float base; float ox, oy; } s_c4m_st;
+/* ★ 2026-10-17：★ `s_c4m_st` 的**声明已挪到 `pofv_c4_clear()` 之前** ✓（★ 三件仲裁要读它 ✓）。*/
 
 static void pofv_c4m_clear(void)
 {
@@ -5723,15 +6288,42 @@ static void pofv_c4m_clear(void)
         if (s_c4m[k].vm) { ce_anm_delete((uint32_t)s_c4m[k].vm); s_c4m[k].vm = 0; }
         s_c4m[k].live = 0; s_c4m[k].age = 0;
     }
-    if (s_c4m_st.laser_vm) { ce_anm_delete((uint32_t)s_c4m_st.laser_vm); s_c4m_st.laser_vm = 0; }
-    s_c4m_st.active = 0; s_c4m_st.emitted = 0; s_c4m_st.timer = 0;
-    s_c4m_st.laser_timer = 0; s_c4m_st.base = 0.0f;
+    { int li; for (li = 0; li < 3; ++li)
+        if (s_c4m_st.laser_vm[li]) { ce_anm_delete((uint32_t)s_c4m_st.laser_vm[li]); s_c4m_st.laser_vm[li] = 0; } }
+    s_c4m_st.active = 0; s_c4m_st.timer = 0;   /* 2026-10-18 重验: emitted 只写不读, 已删 */
+    { int li; for (li = 0; li < 3; ++li) { s_c4m_st.laser_timer[li] = 0; s_c4m_st.laser_dx[li] = 0.0f; s_c4m_st.laser_delay[li] = 0; } }
+    /* ★ 2026-10-18（对抗性验证 Q5/clear ✓）：★ **`laser_delay` 必须在这里复位** ✗ ——
+     *   ★ 否则删卡/C4 中断后残留的延迟会在**没有 C4**时凭空 spawn 出一条激光 ✗。*/
+    s_c4m_st.base = 0.0f;
+}
+
+/* ★ 2026-10-18（IMPL §2 #1 ✓ ＋ 交接 §2 的 `ins_569` ✓）：★ **射线 × 活动区求交** ✗ ——
+ *   ★ 一手 `ins_569(%E, %F, [-9997], [-9996], %D)` 的语义（反编译定案）：★
+ *     "与 **288×448、中心 (0,224)** 的活动区求交，两个 float 写回输出" ✓
+ *   ⇒ ★ 发射器的起点 = **该方向与场地边界的交点** ✓（★ 这就是"激光碰到板边、在碰壁点撒星"的来源 ✓）。
+ *   ★ 本函数求**出射点**；★ 卡侧 y 向下 ⇒ 角度用卡侧约定 ✓；★ 活动区 x ∈ [−144,144]、y ∈ [0,448] ✓。*/
+static void pofv_c4m_edge(float px, float py, float ang, float *ex, float *ey)
+{
+    const float hx = 144.0f;
+    const float cx = pofv_c4s_cosf(ang), cy = pofv_c4s_sinf(ang);
+    float t = 1e9f, t1;
+    if (cx >  1e-6f) { t1 = ( hx - px) / cx; if (t1 > 0.0f && t1 < t) t = t1; }
+    if (cx < -1e-6f) { t1 = (-hx - px) / cx; if (t1 > 0.0f && t1 < t) t = t1; }
+    if (cy >  1e-6f) { t1 = (POFV_FIELD_H - py) / cy; if (t1 > 0.0f && t1 < t) t = t1; }
+    if (cy < -1e-6f) { t1 = (0.0f - py) / cy;        if (t1 > 0.0f && t1 < t) t = t1; }
+    if (t >= 1e9f) t = 0.0f;
+    /* ★★★ 2026-10-18 **真 bug 修**✗：原来算完 `t` **根本没用**✗ ⇒ `*ex/*ey` 只是把**入参**夹了一下 ✓
+     *   ⇒ ★ 交点永远是 (0,0) ✗ ⇒ ★ 激光全画在**场地正中**✗ ⇒ ★ 就是 owner 说的"发弹点在版内"✗ ✓。*/
+    *ex = px + t * cx;    /* ★ 交点 = 原点 + t·方向 ✓ */
+    *ey = py + t * cy;
+    if (*ex < -hx) *ex = -hx; if (*ex > hx) *ex = hx;
+    if (*ey < 0.0f) *ey = 0.0f; if (*ey > POFV_FIELD_H) *ey = POFV_FIELD_H;
 }
 
 static void pofv_c4m_fire(void)
 {
     const float *pp = ce_player_pos();
-    s_c4m_st.active = 1; s_c4m_st.emitted = 0; s_c4m_st.timer = 0;
+    s_c4m_st.active = 1; s_c4m_st.timer = 0;
     /* ★ 2026-10-13（★ owner 定 ✓）：★ **第一束发射这一刻**把出发点**钉住** ✓ —— ★ 后两束只读它 ✓，
      *   ★ 不再各自读当时自机位 ✗（★ `pofv_c4m_emit()` 里原来就是那样 ✗）★ ⇒ ★ 三束同源 ✓。
      *   ★ 首次调用若拿不到自机位（`pp == 0` ✓）则保留上一次的值 ✓（★ 与"第一束在 `if (pp)` 里才起"一致 ✓）。*/
@@ -5743,35 +6335,119 @@ static void pofv_c4m_fire(void)
     /* ★★★★★ 2026-10-13（★ 独立审计 `48e1d2c8` **R3** ✓）：★ 这里原来是 **π** ✗ —— ★ 而调用点是
      *   `pofv_c4m_emit(s_c4m_st.base + 3.1415927f)` ✓ ⇒ ★ 合成 = **2π ≡ 0°** ⇒ ★ `dir36[0] = (1, 0)`
      *   = ★ **水平向右** ✗（★ 审计用 C 程序按表实测确认 ✓）—— ★ 而**同一档的激光是朝上的** ✓
-     *   （`pos[1] = pp[1] − 210.0f` + 高 420 ✓）⇒ ★ 两者**不一致** ✗。
+     *   ⚠ 重验更正 ✗：★ 现在代码是 `pos[1] = **210.0f**` ✓（高 420 ⇒ 覆盖 y∈[0,420] ✓），
+     *   ★ 不再是旧句写的 `pp[1] − 210.0f` ✗（★ 那条已随"判定跟交点"改掉 ✓）。
      *   ★ 一手：★ 调用点那个 `+π` 是**一手自己**的 ✓（`pl01.txt` 写 `ins_604($A, (%D + 3.1415927f)
      *   + ([-9987.0f]*1.5707964f), 0.0f)` ✓）⇒ ★ 它是**复刻** ✓、**不是**本轮的模型翻转 ✗
      *   ⇒ ★ 模型翻转要落在 **`base`** 上 ✓：★ 把 `base` 定为 ★ **π/2**（★ 一手 `%D` 的"**朝我**"角
      *   = 本卡 36 向表里的 π/2 = 正下 ✓）⇒ ★ 合成 **π/2 + π = 3π/2 = 正上** ✓
      *   ⇒ ★ **背对自机、且与同档激光同向** ✓（模型 ④ ✓）。*/
-    s_c4m_st.base = 1.5707963f;
-    /* ★ 槽 0：一条**向上的激光**（用魔理沙竖带当激光 ✓），寿命 = `ins_701` 的 60 ✓ */
-    if (s_c4m_st.laser_vm) { ce_anm_delete((uint32_t)s_c4m_st.laser_vm); s_c4m_st.laser_vm = 0; }
+    s_c4m_st.base = POFV_FLIP_ANG(-1.5707963f);   /* ★ 一手 ✓ 一手里 `ins_604` 给的是 −π/2 系（★ base + π 发射 ✓）
+                                                    *   ⇒ ★ 走翻转宏 ✓（★ 与写 `+1.5707963f` 数值等价 ✓）*/
+    /* ⚠ **2026-10-18 重验更正** ✗：★ 槽 0 现在**也走延迟 spawn** ✓（`laser_delay[0] = 60` ✓，
+     * 就地 spawn 已是 `if (0)` 死码 ✗）；★ 寿命 = `POFV_C4M_LASER_LIFE`(130 ❓) / `_HI`(100 ❓) ✓
+     * —— ★ 不是「`ins_701` 的 60」✗（★ 那只是**第 1 段**的时长 ✓）。*/
+    { int li; for (li = 0; li < 3; ++li)
+        if (s_c4m_st.laser_vm[li]) { ce_anm_delete((uint32_t)s_c4m_st.laser_vm[li]); s_c4m_st.laser_vm[li] = 0; } }
     if (pp) {
-        s_c4m_st.laser_vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
-                             CE_ANM_ABILITY_SCRIPT_POFV109_AURA_MARISA, POFV_C3M_VM_LAYER);
-        if (s_c4m_st.laser_vm) {
-            ce_anm_set_pos((uint32_t)s_c4m_st.laser_vm, pp[0], pp[1], 0.0f);
-            ce_anm_set_scale((uint32_t)s_c4m_st.laser_vm, 0.4f, 1.0f);
+        /* ★★ 2026-10-17（施工单 §48.2 第 3 条 ＋ §63.3 #8 ＋ §69 ✓）：★ **贴图换掉** ——
+         *   ★ 原来借的是 ★ `POFV109_AURA_MARISA`（= **结界那条竖带** ✗ ✓）⇒ ★ 现在用**专用变体** ✓：
+         *   ⚠ **2026-10-18 重验更正** ✗：★ 旧句说脚本 467 切自 `(16,248,8,8)` = `sprite42` —— **错了** ✗；
+         *   ★ 实际 `POFV109_LASER.png` **逐像素等于 `bullet1.png (48,240,8,8)`** ✓ = **`sprite38`** ✓
+         *   （★ 与一手 `pl01:375` 的 `ins_602($A, **38**, 10)` ✓ 一致 ✓）。
+         *   ★ 一手规则（§69 ✓）：★ `sprite 号 = 32 + 配色` ✓ ⇒ C3 配色 6 ⇒ `sprite38` ✓（蓝白 ✓）、
+         *     ★ C4 配色 10 ⇒ `sprite42` ✓（**淡绿** ✓）；★ 本机量均色 `(205,239,213)` ✓（对照 C3 `(203,208,239)` 偏蓝 ✓）。*/
+        s_c4m_st.laser_dx[0] = 0.0f;
+        s_c4m_st.laser_vm[0] = 0;   /* 2026-10-18（§2.4 #1）：不再在这里 spawn ✅（三条统一由 tick 的延迟路径建）*/
+        if (0) s_c4m_st.laser_vm[0] = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
+                             CE_ANM_ABILITY_SCRIPT_POFV109_C4M_LASER, POFV_C3M_VM_LAYER);
+        if (s_c4m_st.laser_vm[0]) {
+            if (0)   /* 2026-10-18（§2.4 #1）：立即 spawn 关掉 ✅ ⇒ 三条都走 laser_delay 的延迟路径 ✅ */
+        {   float ex0 = 0.0f, ey0 = 0.0f;   /* 2026-10-18（IMPL §2 #1）: 槽 0 也走交点 ——
+                                                  *   一手三条激光都从"方向与活动区的交点"出发（ins_569）；
+                                                  *   槽 0 原来在自机身上（错）=> 现改为从 boss 位 (0,248) 竖直向上求交。*/
+                /* 2026-10-18（最终验收 魔理沙C4 #1）：槽 0 = **第 1 台 = theta+30°** ✓（重验更正：原写 −30° ✗），
+                 * 射线原点回 **boss 的 x=0** ✓；竖直那条挪到第 3 台（延迟 spawn 里）✓。*/
+                /* 2026-10-18（最终验收 #1/#4）：高档第 1 台 = **+30°** ✓（§2.4 #1 的先后）；
+                 * 低档 = **竖直**（魔理沙一手 `pl01:262` 单次调用 ⇒ 低档 1 条、无 ±30°）*/
+                pofv_c4m_edge(0.0f, POFV_FIELD_H - 128.0f,
+                              (pofv_c4_rank() >= 4) ? (-1.5707963f + 0.5235988f) : -1.5707963f,
+                              &ex0, &ey0);
+                s_c4m_st.laser_dx[0] = ex0;      /* 记住交点 x（伤害盒要用）*/
+                ce_anm_set_pos((uint32_t)s_c4m_st.laser_vm[0], ex0, POFV_FIELD_H * 0.5f, 0.0f);   /* 2026-10-18: 焦点只给 x, y 固定场地中心 224 */
+                (void)pp; }
+            /* ⚠ **2026-10-18 重验更正** ✗：★ 这段「源格从 8 px 换到 **30 px**、观感约 30 px 宽」**与现状相反** ✗
+             *   —— ★ 现在贴图就是 **8×8**（`bullet1 (48,240,8,8)` = s38 ✓），★ X = 0.53 ⇒ ★ 实际宽 ≈ **4.2 px** ✓
+             *   （★ 细线 ✓）。★ 要不要 30 px 宽**无一手依据** ❓ ⇒ ★ 值不动，只把旧句改成事实。）。*/
+            ce_anm_set_scale((uint32_t)s_c4m_st.laser_vm[0], 1.0f, 1.0f);   /* 2026-10-18: 贴图已 16x448 满高, 不再拉伸 */
+            /* ★ 2026-10-18（IMPL §2 #3 ✓）：★ **补染色** ✗ —— ★ 一手 `ins_602($A, 38, **10**)` 的配色 10
+             *   ★ 就是那个**绿** ✓（★ 本机从旧的 30×30 素材量到 `(87,236,78)` ✓，★ 同一族的绿 ✓）。
+             *   ★ 贴图换成白色 8×8（s38 ✓）之后 ★ **不染就是白** ✗ ⇒ ★ 这里必须给色 ✓。
+             *   ❓ ★ 配色号 10 的**精确色值**没有反编译依据 ✓（★ 用的是旧素材的实测均色 ✓）⇒ 标 ❓。*/
+            ce_anm_set_color((uint32_t)s_c4m_st.laser_vm[0], 0xFF57EC4Eu);   /* (A=FF, R=57, G=EC, B=4E) = (87,236,78) 绿 ✓
+                                                                          * ⚠ ★ 参数是 **AARRGGBB** ✗ —— ★ 我第一版写成
+                                                                          *   `0x57EC4EFF` ✗（★ 那成了 34% 透明的紫 ✗），
+                                                                          *   ★ 被对抗性验证 C4 抓出 ✓。*/
+        }
+        /* ★ 2026-10-18（IMPL §2 #2/#4 ✓）：★ **另两条** ✗ —— 一手 `Boss00BossCard1()` 起 3 台发射器 ✓
+         *   ⚠ ★ 2026-10-18 重验更正（铁律 ②/③）✗：★ 上面引的 `_at(0,11,8)/(1,8)/(18,1)` 与 `pl02:163-166`
+         *   是 **早苗** 的一手 ✗ —— ★ 早苗那边 `!*` 覆盖 `_at(0)`/`_at(1)` ⇒ **低档 2 条** ✓；
+         *   ★ 而**魔理沙**的一手是 `pl01.txt:262` 的 `@Boss00BossCard1_at();`（**单次、无参**）✓
+         *   ⇒ ★ 魔理沙 **低档 1 条 / 高档 3 条** ✓（`pl01` 的 `!67` 才是第 2/3 台）✓。
+         *   ★ 两边的 `lanes` 由各自的一手定：早苗 `rank>=6?3:2` ✓、魔理沙 本处 1/3 ✓ —— ★ 别混用 ✗。
+         *   ★ ⚠ **已整段过期（重验）** ✗ —— ★ 下面的旧句「x 偏移 ±60 px / 卡侧还没做那个求交 / 先按观感取 ±60」
+         *     全部**与代码相反** ✓：★ 三条都走 `pofv_c4m_edge()` 求**射线×活动区的交点** ✓
+         *     （`ins_569` 语义 ✓，见 `pofv_c4m_fire` 与 tick 的延迟分支 ✓），★ 全段**没有** ±60 逻辑 ✗。
+         *   ★ 朝向：★ 激光贴图是竖条 ✓，方向差异体现在**起点**上 ✓（不旋转 VM ✓）。*/
+        if (pofv_c4_rank() >= 4) {          /* ★ 2026-10-18 订正（对抗性验证 K2 ✓）：★ 门槛 **4** ✗
+                                            *   原写 >= 6 ✗ ⇒ ★ 魔理沙 rank=4 ⇒ **3 条永远不出现** ✗；
+                                            *   本函数其它高档判据（寿命/速度表/台数）也用 >= 4 ✓ */
+            /* ⚠ **2026-10-18 重验更正** ✗：★ 下面这 3 行旧注释（"槽 0 已在上面就地 spawn ✓、
+             * 延迟 = 0/30/60 ✓"）**与代码相反** ✓ —— ★ 实际是 **三条都走延迟** ✓（`laser_delay[0..2] = 60/90/120` ✓，
+             * 就地 spawn 已被 `if (0)` 关成死码 ✗）。★ 一手的起始帧 = **60 / 90 / 120** ✓
+             * （★ 累计式：`pl01:299` 60 ＋ `:302` 20 ＋ `:304` 10 ✓）。★ 真正的 spawn 在
+             * `pofv_c4m_tick()` 里按 `laser_delay[li]` 倒计时执行 ✓。*/
+            /* 2026-10-18（§2.4 #1）：一手的起始帧是 **60/90/120** ✅ => 三条都走延迟 ✅
+             * （原来第 1 台在激活当帧就出 ✗ = 早 60 帧）。*/
+            s_c4m_st.laser_delay[0] = 60;
+            s_c4m_st.laser_delay[1] = 90;
+            s_c4m_st.laser_delay[2] = 120;
+            s_c4m_st.laser_vm[1] = 0; s_c4m_st.laser_vm[2] = 0;
+            s_c4m_st.laser_timer[1] = 0; s_c4m_st.laser_timer[2] = 0;
+        } else {
+            s_c4m_st.laser_delay[0] = 60;   /* 低档只有第 1 台（竖直），也在第 60 帧 */
+            s_c4m_st.laser_delay[1] = 0; s_c4m_st.laser_delay[2] = 0;
+            s_c4m_st.laser_vm[1] = 0; s_c4m_st.laser_vm[2] = 0;
+            s_c4m_st.laser_timer[1] = 0; s_c4m_st.laser_timer[2] = 0;
         }
     }
-    s_c4m_st.laser_timer = POFV_C4M_LASER_LIFE;
+    /* ★ 2026-10-17（施工单 §7／§12④-1／§62 ✓）：★ 激光寿命**按档**取 ——
+     *   ⚠❓ **2026-10-18 重验更正** ✗：★ 这两个数是**三段的加和** ✓（`60+10+60` ／ `60+10+30` ✗），
+     *     只有注释支撑 ✗ —— ★ 而一手 exe 的 `LaserInfiniteInf` 有 **4 个时长槽** ⇒ 应为 **140／110** ❓
+     *     （★ 但"四个实参按序落到四槽"未坐实 ✓）⇒ ★ 按铁律 ④ **值不动、标 ❓** ✓（见 `POFV_C4M_LASER_LIFE` 处 ✓）。
+     *   ★ 分叉判据与 §0.2 同源：★ `pofv_c4_rank() >= 4` ✓（★ 灵梦/魔理沙 = 4 ✓，★ 早苗 = 6 ✓）。*/
+    {   int li;
+        const int life = (s_c4m_st.level >= 4) ? POFV_C4M_LASER_LIFE_HI : POFV_C4M_LASER_LIFE;
+        for (li = 0; li < 3; ++li) s_c4m_st.laser_timer[li] = life;
+    }
 }
 
 static void pofv_c4m_emit(float ang)
 {
     int k;
-    if (s_c4m_st.laser_vm == 0 && 0) return;
+    /* ★ 2026-10-18（收尾 ✓）：★ 删掉 `if (laser_vm[0] == 0 && 0) return;` ✗ ——
+     *   ★ `&& 0` 恒假 ⇒ 那是个**死条件** ✓（★ 从来没拦过任何东西 ✓）；
+     *   ★ 它想表达的"★ 没有激光 VM 就不发射"✗ 也不成立 ✓ —— ★ 一手 `_at` 里弹丸那一路**本来就不依赖激光** ✓
+     *   （★ 两个发射器各发各的 ✓）。*/
     for (k = 0; k < POFV_C4M_MAX; ++k) if (!s_c4m[k].live) break;
     if (k >= POFV_C4M_MAX) return;
     s_c4m[k].live = 1; s_c4m[k].age = 0; s_c4m[k].life = 150;
     s_c4m[k].bounced = 0;                       /* ★ 2026-10-13（R2 ✓）：★ 新弹"已反弹"位清零 ✓ */
-    s_c4m[k].ang = ang; s_c4m[k].spd = POFV_C4M_SPEED;
+    /* ★ 2026-10-17（施工单 §63.3 #5 ✓）：★ 速度改**按档取 8 档表** —— ★ 低 `s_c4m_spd_tab` ✓／★ 高 `s_c4m_spd_tab_hi` ✓
+     *   （★ 原来是无条件 `POFV_C4M_SPEED` = 4.0 ✗，★ 连低档的"档 2 = 3.0"都没体现 ✗）。*/
+    s_c4m[k].ang = ang;
+    s_c4m[k].spd = (s_c4m_st.level >= 4) ? s_c4m_spd_tab_hi[s_c4m_st.level]
+                                          : s_c4m_spd_tab[s_c4m_st.level];
     /* ★ 2026-10-13（★ owner 定 ✓）：★ 出发点取 ★ **第一束发射那一刻钉住的那个** ✓
      *   （★ `s_c4m_st.ox/oy` ✓，★ 在 `pofv_c4m_fire()` 里写入 ✓）★ —— ★ 原来这里**每束各自读**
      *   `ce_player_pos()` ✗ ⇒ ★ 自机一动三束就散开 ✗（★ owner 说"★ 为了保证美观度"✓ 才要钉住 ✓）。
@@ -5785,20 +6461,34 @@ static void pofv_c4m_emit(float ang)
                           *   那些星星就是 `bullet.png` 里面应该是**第十一行**的星星」✓
                           *   ⇒ ★ `bullet/bullet1.png` 第 11 行 = ★ `sprite256..269`（`bullet.anm.txt:273` ✓，
                           *   `(1,177,14,14)` … 共 14 颗同排不同色 ✓）⇒ ★ 已切为
-                          *   `assets/ability/POFV109_C4M_STAR.png`（14×14 ✓）＋ 脚本 **465** ✓。
+                          *   ★ 2026-10-18（IMPL §2 #4 ✓）：★ 现为 **`POFV109_C4M_STAR16.png`（8×8，sprite16 = (0,192,8,8) ✓）** ＋ 脚本 **464** ✓
+                          *   （★ 旧的 `POFV109_C4M_STAR.png` 是 14×14 的彩色星 ✗，已按一手编号退役 ✓）。
                           *   ⚠ ★ 待补（未完成 ✗）：★ **"碰壁点撒一小簇星"**（反弹那一帧 ✓）—— 本笔只换**弹的外观** ✓。*/
                          CE_ANM_ABILITY_SCRIPT_POFV109_C4M_STAR,
                          POFV_C4_VM_LAYER);
     if (s_c4m[k].vm) {
-        ce_anm_set_color((uint32_t)s_c4m[k].vm, 0xffffffffu);
-        ce_anm_set_scale((uint32_t)s_c4m[k].vm, 0.4f, 0.4f);
+        /* ★ 2026-10-18（IMPL §2 #4 ✓）：★ 贴图换成 **s16（8×8）** 之后，★ 这里两行都要跟着改 ✗：
+         *   ★ ① **scale**：★ 原来是 `0.4` ✓（★ 给旧 14×14 用的 ⇒ 5.6 px ✓）★ —— 换 8×8 后只剩 **3.2 px** ✗
+         *     ⇒ ★ 取 **0.7** ✓（★ 8×0.7 = 5.6 px ✓，★ 与原来同尺寸 ✓）。
+         *   ★ ② **color**：★ 一手 `ins_602($A, 16, **13**)` ⇒ ★ 配色号 **13** ✓
+         *     ⇒ ★ 现在是 `0xffffffff`（★ 不染 ✓）⇒ ★ 星会是**纯灰** ✗（★ 贴图本色 (154,154,154) ✓）。
+         *     ⚠ ❓ ★ 配色号 13 的**精确色值**没有反编译依据 ✗（★ 本机无从取 ✓）⇒ ★ 先按一手那族的**淡黄**
+         *       （★ (255,237,120) 系 ✓ —— 与你截图里"★ 撞墙放出的黄星"一致 ✓）给一版 ✓，★ 标 ❓；
+         *       ★ 真正的色值待 `engine/ecl/th19` 的配色表补上后再定 ✓。*/
+        ce_anm_set_color((uint32_t)s_c4m[k].vm, 0xFFFFED78u);   /* ❓ 配色 13 近似为淡黄 (255,237,120) ✓ */
+        ce_anm_set_scale((uint32_t)s_c4m[k].vm, 0.7f, 0.7f);    /* 8 × 0.7 = 5.6 px ✓（与原来同尺寸 ✓）*/
     }
 }
 
 static void pofv_c4m_tick(void)
 {
     int k;
-    static const int cnt[8] = { 25, 30, 15, 20, 30, 30, 30, 30 };   /* ★ 一手 ✓ `ins_570` */
+    static const int cnt[8] = { 25, 30, 15, 20, 30, 30, 30, 30 };   /* ★ 一手 ✓ `ins_570`（**低档** ✓）*/
+    /* ★★ 2026-10-17（施工单 §12④-4 第 3 条 ＋ §63.3 #4 ✓）：★ 高档 `$G` 表**不一样** ✗ ——
+     *   ★ 低档（`pl01:401` ✓）= `{25,30,15,20,30,30,30,30}` ✓（= 上面那张 ✓）；
+     *   ★ 高档（`Boss00BossCard1H_at` ✓）= ★ **`{25,30,25,30,10,15,20,25}`** ✓。
+     *   ★ ⚠ ★ 档位判据同 §0.2：★ `s_c4m_st.level >= 4` ✓（★ 灵梦/魔理沙 = 4 ✓，★ 早苗 = 6 ✓）。*/
+    static const int cnt_hi[8] = { 25, 30, 25, 30, 10, 15, 20, 25 };   /* ★ 一手 ✓ 高档 ✓ */
     if (s_c4m_st.active) {
         /* ★★★ C3/C4 审计 60f3724f ⑦ + 复核审计 `251ad3c6`（Q2）✓：
          *   ★ 一手那一轮是 **两个槽**（A/B 各 `$G` 发 ✓，`pl01:408/412` ✓）⇒ ★ 总数 **2×$G** ✓；
@@ -5808,41 +6498,165 @@ static void pofv_c4m_tick(void)
          *     ★ **一对 = 4 帧** ✓ ⇒ ★ 卡现在"每 2 帧一发"**本来就是对的** ✓ ⇒ ★ **只差把总数乘 2** ✓。
          *   ❓ ★ `$G` 具体取表中哪一项 —— 一手**由运行时索引决定** ✗（★ 复核审计标"证据不足"✓）
          *     ⇒ ★ 卡沿用"按 level 取表" ✓（★ 与一手的 8 项表同构 ✓）。*/
-        const int n = 2 * cnt[s_c4m_st.level];
-        if (s_c4m_st.emitted < n) {
-            if (s_c4m_st.timer % POFV_C4M_EVERY == 0) {
-                /* ★★★ C3/C4 审计 60f3724f ⑦（中）✓：★ 一手是**逐发 `ins_604(..., 0.0f)`**
-                 *   ⇒ ★ **每一发角度完全相同** ✓（★ 只有 `base` 那一项 ✓）；★ 而卡原来给它加了
-                 *   `+ 0.2617994f × 已发数` ✗ = ★ **自造了一个 15°/发的扇形** ✗ ⇒ ★ **删掉** ✓。*/
-                pofv_c4m_emit(s_c4m_st.base + 3.1415927f
-                              /* ★★★★★ 2026-10-16 **owner 实跑反馈修正**：「★ **撞墙是弹回了，但怎么是
-                               *   【直上直下】的**」✗ ⇒ ★ 原来这里**逐发都用同一个固定角**（`base + π` = 3π/2 ✗）
-                               *   ⇒ ★ 所以整簇只朝一个方向走 ✓。
-                               *   ★ 一手（`pl01.txt:368-419` `Boss00BossCard1_at` ✓）：
-                               *   `%D = [-9989] + [-9987]×0.08726646f`（= 5° ✓）⇒ ★ 起手角**带随机** ✓；
-                               *   循环里逐发 `ins_604($A, (%D + 3.1415927f) + ([-9987]×1.5707964f), 0)`
-                               *   ⇒ ★ **每一发再叠加 `随机 × π/2`（0…90° ✓）** ✓ ⇒ ★ 这才是"铺开"的来源 ✓。
-                               *   ★ 本处照抄该式 ✓：★ `ce_rand()` 取 0..1 ⇒ 再乘 `π/2` ✓。
-                               *   ⚠ ★ 一手的随机是引擎的 RNG ✓，本卡用 `ce_rand()` ✓（同分布意图 ✓）。*/
-                              + ((float)(ce_rand() % 10001u) * 0.0001f) * 1.5707964f);
+        /* ★ 2026-10-17（施工单 §63.3 #4 ✓）：★ 按档取 `$G` 表 —— ★ 低档 `cnt` ✓／★ 高档 `cnt_hi` ✓。*/
+        const int n = 2 * ((s_c4m_st.level >= 4) ? cnt_hi[s_c4m_st.level] : cnt[s_c4m_st.level]);
+        /* ★★★★ 2026-10-17（施工单 §63.3 #7 ＋ §80 ＋ §12④-5 ✓）：★ **高档 = 3 台并发、错开 30 帧启动** ✗ ——
+         *   ★ 一手 `Boss00BossCard1H()`（`pl01.txt:270` 起 ✓，逐字 ✓）：
+         *     `ins_23(60)` ⇒ ★ 第 1 台 `_at(3, [-9989] + 30°)` ✓ ⇒ `ins_23(20)`＋`ins_23(10)`（★ 共 **30 帧** ✓）
+         *     ⇒ ★ 第 2 台 `_at(6, [-9989] − 30°)` ✓ ⇒ ★ 再 30 帧 ⇒ ★ 第 3 台 `_at(0, [-9989])`（★ 0° ✓）⇒ `ins_23(60)` ✓。
+         *   ★ 而 ★ 低档 `Boss00BossCard1()`（`:229` ✓）★ **只调 1 次** ✓ ⇒ ★ **1 台** ✓（★ §80.3：
+         *     ★「低档**先照一手取 1 台**」✓ ⇒ ★ 卡侧原来的"1 组"**正是** 1 台 ✓ ⇒ ★ **低档不动** ✓）。
+         *   ★ ⚠ ★ §12④-5 的三个判据（★ 现补全 ✓）：★ ① **3 台** ✓；★ ② **间隔 30 帧** ✓；★ ③ **角度 ±30／0** ✓。
+         *   ★ ⚠ ★ 我上一版是"★ 把一轮的 `n` 按**发数**均分三段、同帧起" ✗ ⇒ ★ **与一手的"错开 30 帧"不符** ✗
+         *     ⇒ ★ **本笔改成按【时间】分台** ✓：★ 台 g 的起点 = `60 + 30×g` ✓（★ 60 = 一手 `ins_23(60)` ✓）。
+         *   ❓ ★ 登记（★ `TUNING.md` ✓）：「★ 3 台」是否**也**意味着 ★ **3 条激光** ✗ ——
+         *     ★ §80 只写了 `_at(槽 3/6/0, 角度 ±30/0)` ✓（★ 那是**弹**的发射器 ✓），★ **没有**写激光台数 ✗
+         *     ★ ⚠ **2026-10-18 重验更正** ✗：★ 现在**高档已经是 3 条激光** ✓（`laser_delay` 60/90/120 ✓、
+         *     ★ 朝向 +30°／−30°／竖直 ✓）、★ 低档 1 条（竖直 ✓）✓ —— ★ 原来这句
+         *     ★「先照 1 条激光 ＋ 3 组弹」✗ **已过期** ✓。*/
+        const int groups = (s_c4m_st.level >= 4) ? 3 : 1;          /* ★ 台数 ✓：高 3／低 1 ✓ */
+        const int every  = (s_c4m_st.level >= 4) ? POFV_C4M_EVERY_HI : POFV_C4M_EVERY;
+        const int start0 = POFV_C4M_CYCLE;                         /* ★ = 60 ✓ = 一手 `ins_23(60)` ✓ */
+        const int gap    = (groups > 1) ? 30 : 0;                  /* ★ 台间错开 **30 帧** ✓ */
+        const int span   = start0 + gap * (groups - 1) + n * every; /* ★ 本轮结束时刻 ✓ */
+        /* ★★ 2026-10-18 owner 实测：「★ 不是会反弹，★ 是它会**放出来一堆小点弹幕** ✓、
+         *   ★ 在**水平方向**上无限反弹 ✗，★ 这个行为本身**和一手就不对**」✗
+         *   ⇒ ★ **接线去掉** ✓ —— ★ 这段就是那堆小点（★ `base + π + goff + rand×π/2` ✗ =
+         *   ★ 随机水平方向 ✓、★ 撞墙后靠 `bounced < 4` 反弹 ✓）。★ 置 0 保留代码备查 ✓，
+         *   ★ 本卡 C4 从此**只有那三条激光** ✓（★ 与一手一致 ✓）。*/
+        if (POFV_C4M_DOTS && s_c4m_st.timer >= start0 && s_c4m_st.timer < span) {
+            int g;
+            for (g = 0; g < groups; ++g) {
+                const int t0 = start0 + gap * g;                    /* ★ 台 g 的起点 ✓ */
+                if (s_c4m_st.timer >= t0 && ((s_c4m_st.timer - t0) % every) == 0) {
+                    /* ★ 台序角偏移（★ 与 §80.1 的次序一致 ✓）：★ 第 1 台 +30° ✓、★ 第 2 台 −30° ✓、★ 第 3 台 0° ✓。*/
+                    const float goff = (groups == 1) ? 0.0f
+                                     : (g == 0)      ?  0.5235988f
+                                     : (g == 1)      ? -0.5235988f
+                                     :                  0.0f;
+                    pofv_c4m_emit(s_c4m_st.base + 3.1415927f + goff
+                                  /* ★★★★★ 2026-10-16 **owner 实跑反馈修正**：「★ **撞墙是弹回了，但怎么是
+                                   *   【直上直下】的**」✗ ⇒ ★ 原来这里**逐发都用同一个固定角**（`base + π` = 3π/2 ✗）
+                                   *   ⇒ ★ 所以整簇只朝一个方向走 ✓。
+                                   *   ★ 一手（`pl01.txt:368-419` `Boss00BossCard1_at` ✓）：
+                                   *   `%D = [-9989] + [-9987]×0.08726646f`（= 5° ✓）⇒ ★ 起手角**带随机** ✓；
+                                   *   循环里逐发 `ins_604($A, (%D + 3.1415927f) + ([-9987]×1.5707964f), 0)`
+                                   *   ⇒ ★ **每一发再叠加 `随机 × π/2`（0…90° ✓）** ✓ ⇒ ★ 这才是"铺开"的来源 ✓。
+                                   *   ★ 本处照抄该式 ✓：★ `ce_rand()` 取 0..1 ⇒ 再乘 `π/2` ✓。
+                                   *   ⚠ ★ 一手的随机是引擎的 RNG ✓，本卡用 `ce_rand()` ✓（同分布意图 ✓）。*/
+                                  + ((float)(ce_rand() % 10001u) * 0.0001f) * 1.5707964f);
+                }
             }
-            ++s_c4m_st.emitted;
         }
-        if (++s_c4m_st.timer >= POFV_C4M_CYCLE) { s_c4m_st.active = 0; s_c4m_st.timer = 0; }
+        s_c4m_st.total = span;   /* 2026-10-17: 供 C4 倒计时用（三件仲裁读它）*/
+        if (++s_c4m_st.timer >= span) { s_c4m_st.active = 0; s_c4m_st.timer = 0; }
     }
-    if (s_c4m_st.laser_timer > 0) {
-        --s_c4m_st.laser_timer;
-        if (s_c4m_st.laser_timer == 0 && s_c4m_st.laser_vm) {
-            ce_anm_delete((uint32_t)s_c4m_st.laser_vm); s_c4m_st.laser_vm = 0;
+    /* ★ 2026-10-18（IMPL §2.4 #1 ✓）：★ 槽 1/2 的**延迟 spawn** ✗ —— 到点才建 VM ✓（三条错开 60/90/120 ✓）
+     *   ★ 门 = `s_c4m_st.active` ✓（★ 必须在 C4 进行中 ✓，★ 否则 clear 之后残留延迟会凭空 spawn ✗）*/
+    if (s_c4m_st.active) {   int li;
+        for (li = 0; li < 3; ++li) {   /* 2026-10-18（§2.4 #1）：三条都走延迟 ✅ */
+            if (s_c4m_st.laser_delay[li] <= 0) continue;
+            if (--s_c4m_st.laser_delay[li] > 0) continue;
+            {
+                /* ★ 2026-10-18 订正（IMPL §2 #1 ✓）：★ 起点 = **方向与活动区的交点** ✗ ——
+                 *   ★ 一手是从 **boss**（`ins_401(60,4,0,200)` ✓ ⇒ 卡侧镜像后 (0, 448−200=248) ✓）出发 ✓，
+                 *     ★ 方向 `%D`（★ 三台各偏 ±30° ✓）与 288×448 求交 ✓ ⇒ ★ 交点就是该条的出生点 ✓
+                 *     ★ ⇒ ★ 这才是"★ 激光从板边出发 ✓、★ 在碰壁点撒星 ✓"✗ 的正确结构 ✓。
+                 *   ★ 原来用"★ 自机位置 + ±60 px"✗ 是**错的** ✗（★ 已替换 ✓）。*/
+                /* 2026-10-18（整体验收 ②）：射线原点 x 取自机 x => 交点在自机正上方 = "瞄当时的自机"
+                 * （IMPL §2.4 #2）；y 仍是 boss 的 248。每条在自己那一帧读 ✓。*/
+                /* 2026-10-18（最终验收 J2）：**只有第 3 台（竖直那条）读自机 x** ✓；
+                 * 第 2 台（**−30°** ✓，重验更正：旧写 +30° ✗）的回原点 x = 0（boss 位）✓。*/
+                const float ox_b = (li == 2) ? (ce_player_pos() ? ce_player_pos()[0] : 0.0f) : 0.0f;
+                const float oy_b = POFV_FIELD_H - 128.0f;   /* ⚠ 2026-10-18 重验更正: 魔理沙的 boss y = 128 ✓(`pl01:249 ins_401(60,4,0.0f,128.0f)` ✓)；
+                * 我一直写的 200 是**早苗**的 ✓(`pl02:151`) ✗ ⇒ 镜像后 = 448-128 = **320** ✓ */
+                /* 第 2 台 = theta**−**30° ✓；第 3 台 = 竖直（读自机 x ⇒ 瞄当时自机）*/
+                /* #1：第 2 台 = **−30°**（+30° 已在第 1 台）；第 3 台 = 竖直 ✓ */
+                /* 2026-10-18（§2.4 #4）：★ 低档只有竖直一条（无 ±30°）✅；高档才按台分 ±30°。*/
+                /* ★★★ 2026-10-18 owner 质疑"错开方向的基点是竖直？一手是什么方向"✗
+                 *   ★ 一手原文（`pl01.txt:376` `Boss00BossCard1_at` ✓）：
+                 *     `ins_604($A, **-1.5707964f + ([-9987.0f] * 0.17453292f)**, …)`✗
+                 *     ⇒ ★ **−π/2（竖直向上）＋ ±5°（0.1745 rad）随机**✗ ✓
+                 *   ★ 我原来的 "+30°／−30°／竖直"✗ **是我自己编的** ✗ ⇒ ★ **删掉** ✓。
+                 *   ★ 后面那条 `ins_604($A, %D, 0)` 的 %D 是**交点方向**✗ ⇒ 与我们"瞄准板边"等价 ✓，
+                 *     ★ 因为交点本来就是沿这个方向算出来的 ✓。*/
+                const float ang_b = -1.5707963f
+                                  + ((float)(ce_rand() % 10001u) * 0.0001f) * 0.17453292f;
+                float dxb = 0.0f, dyb = 0.0f;
+                pofv_c4m_edge(ox_b, oy_b, ang_b, &dxb, &dyb);
+                s_c4m_st.laser_dx[li] = dxb;      /* ★ 回写交点 x（伤害盒要用）✓ */
+                s_c4m_st.laser_vm[li] = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
+                                             CE_ANM_ABILITY_SCRIPT_POFV109_C4M_LASER, POFV_C3M_VM_LAYER);
+                if (s_c4m_st.laser_vm[li]) {
+                    ce_anm_set_pos((uint32_t)s_c4m_st.laser_vm[li], dxb, POFV_FIELD_H * 0.5f, 0.0f);   /* 2026-10-18: 焦点只给 x, y 固定场地中心 224 */   /* ★ 交点 ✓ */
+                    ce_anm_set_scale((uint32_t)s_c4m_st.laser_vm[li], 1.0f, 1.0f);   /* 同上 */
+                    ce_anm_set_color((uint32_t)s_c4m_st.laser_vm[li], 0xFF57EC4Eu);
+                }
+                s_c4m_st.laser_timer[li] = (s_c4m_st.level >= 4) ? POFV_C4M_LASER_LIFE_HI
+                                                                 : POFV_C4M_LASER_LIFE;
+            }
         }
+    }
+    {   int li;
+        for (li = 0; li < 3; ++li) {
+            if (s_c4m_st.laser_timer[li] <= 0) continue;
+            --s_c4m_st.laser_timer[li];
+            if (s_c4m_st.laser_timer[li] == 0 && s_c4m_st.laser_vm[li]) {
+                ce_anm_delete((uint32_t)s_c4m_st.laser_vm[li]); s_c4m_st.laser_vm[li] = 0;
+            }
+        }
+    }
+    if (s_c4m_st.laser_timer[0] > 0 || s_c4m_st.laser_timer[1] > 0 || s_c4m_st.laser_timer[2] > 0) {   /* ★ 2026-10-18：任一条还在就进来 ✓（原来只看槽 0 ✗ => 槽 0 先死后真他两条没了判定 ✓）*/
         {
             const float *pp = ce_player_pos();
             float pos[3];
-            if (pp && s_c4m_st.laser_vm)
-                ce_anm_set_pos((uint32_t)s_c4m_st.laser_vm, pp[0], pp[1], 0.0f);
-            if (pp) {
-                pos[0] = pp[0]; pos[1] = pp[1] - 210.0f; pos[2] = 0.0f;
-                (void)ce_damage_rect(pos, 0.0f, 2, pofv_dmg_laser(1, 4, (int)s_c4_lv_n), 16.0f, 420.0f);   /* ★ 2026-10-13：★ **激光走激光表** ✓（同 C3M ✓；★ 等级按 `s_c4_lv_n` ✓ —— 卡里 C4M 的 rank 就是这么取的 ✓）*/
+            if (pp) {   /* ★ 2026-10-18 订正（K1 ✓）：★ **三条都跟随** ✗（原来只有槽 0 跟随 ✓ ⇒ 槽 1/2 会掉队 ✗）*/
+                /* ⚠ **2026-10-18 重验更正** ✗：★ 下文「只有槽 0 跟随自机」**已过期** ——
+                 *   三条都固定在**交点**上 ✓（`pofv_c4m_edge` ✓），这里谁都不跟随 ✓（`(void)pp`）✗。
+                 *   ★ 一手的三条激光**固定在"方向与活动区的交点"**上 ✓（`ins_569` ✓），★ 不跟自机 ✗；
+                 *   ★ 槽 1/2 现在就是在**交点**生成的 ✓ ⇒ ★ 再让它们跟随自机 ✗ 会把交点覆盖掉 ✗ ✓。
+                 *   ★ 槽 0 也已改成交点 ✓（见 `pofv_c4m_fire`）✓。*/
+                /* 2026-10-18（IMPL §2 #1）: 槽 0 现在也固定在**交点**上 => 不再跟随自机
+                 * （一手三条激光都固定在边界交点；跟随会把交点覆盖掉）。*/
+                (void)pp;
+            }
+            /* 2026-10-18（IMPL §2 #4 收尾）: 三条激光**各自**一条伤害盒（原来只有槽 0 有）
+             * 各盒的 x = 该条交点 x、y 覆盖 [0,420]（= 从版顶向下 420，与绘制同源）。 */
+            {
+                int li3;
+                for (li3 = 0; li3 < 3; ++li3) {
+                    if (s_c4m_st.laser_timer[li3] <= 0 || !s_c4m_st.laser_vm[li3]) continue;
+                    pos[0] = s_c4m_st.laser_dx[li3]; pos[1] = 210.0f; pos[2] = 0.0f;
+                    (void)ce_damage_rect(pos, 0.0f, 2, pofv_dmg_laser(1, 4, (int)s_c4_lv_n), 16.0f, 420.0f);
+                }
+                /* ★ 2026-10-18（IMPL §2.4 #3 ✓）：★ **激光在交点撒星** ✗ —— 一手是"★ 碰到边界后每帧一颗"✗。
+                 *   ★ 卡侧的硬约束：★ 池 `POFV_C4M_MAX = 48` ✓、★ 星 life = 150 ✓ ⇒ ★ 每帧一颗必然爆池 ✗
+                 *     （★ 还会饿死主弹幕 ✗）⇒ ★ 取 **每 4 帧一颗** ✓（★ 约 37 颗在活 ✓）。
+                 *   ★ ⚠ ❓ 与一手"每帧一颗"不同 ✗ —— ★ 这是**卡侧池容量**的妥协 ✓，不是复刻 ✗。
+                 *   ★ 三条**轮流**撒 ✓（`s_rot` ✓）；★ 原点临时指向该条交点 ✓，★ 方向朝场内（向下 ✓）。*/
+                {
+                    static int s_rot = 0, s_div = 0;
+                    if ((s_div++ & 3) == 0) {
+                        int li4;
+                        for (li4 = 0; li4 < 3; ++li4) {
+                            const int idx = (s_rot + li4) % 3;
+                            float ox1, oy1;
+                            if (s_c4m_st.laser_timer[idx] <= 0 || !s_c4m_st.laser_vm[idx]) continue;
+                            ox1 = s_c4m_st.ox; oy1 = s_c4m_st.oy;
+                            s_c4m_st.ox = s_c4m_st.laser_dx[idx];
+                            s_c4m_st.oy = 0.0f;
+                            /* 2026-10-18（最终验收 §2.4 #3）：一手的撒星是 `%D + π + rand×90°`
+                             * => 朝场内（向下）再叠 **±45° 的随机**，不是只朝正下方。*/
+                            pofv_c4m_emit(POFV_FLIP_ANG(-1.5707963f)
+                                          + ((float)(ce_rand() % 1000u) / 1000.0f - 0.5f) * 1.5707963f);
+                            s_c4m_st.ox = ox1; s_c4m_st.oy = oy1;
+                            s_rot = (idx + 1) % 3;
+                            break;
+                        }
+                    }
+                }
+            }
+            if (pp) {   /* ★ 2026-10-13：★ **激光走激光表** ✓（同 C3M ✓；★ 等级按 `s_c4_lv_n` ✓ —— 卡里 C4M 的 rank 就是这么取的 ✓）*/
             }
         }
     }
@@ -5856,21 +6670,29 @@ static void pofv_c4m_tick(void)
             if (b->vm) { ce_anm_delete((uint32_t)b->vm); b->vm = 0; }
             b->live = 0; continue;
         }
-        /* ★ ⑦ 补 ✓（一手 `EX_ACCEL`）：★ 前 120 帧每帧 +0.03 ✓。*/
-        if (b->age <= POFV_C4M_ACCEL_FRAMES) b->spd += POFV_C4M_ACCEL;
+        /* ★ ⑦ 补（一手 `EX_ACCEL`）：★ 前 120 帧每帧加**按档**的量 —— 低 `+0.03` ✓、高 `+0.02` ✓
+         *  （重验更正：旧句统一写 +0.03 ✗，高档实际是 +0.02 ✓）。*/
+        /* ★ 2026-10-17（施工单 §12④-4 第 1 条 ✓）：★ `ins_611` 的加速**按档** —— ★ 低档 0.03 ✓／★ 高档 **0.02** ✓。*/
+        if (b->age <= POFV_C4M_ACCEL_FRAMES)
+            b->spd += (s_c4m_st.level >= 4) ? POFV_C4M_ACCEL_HI : POFV_C4M_ACCEL;
         di = (int)(b->ang * (36.0f / 6.2831853f)) % 36; if (di < 0) di += 36;
         b->x += s_c2_dir36[di][0] * b->spd;
         b->y += s_c2_dir36[di][1] * b->spd;
         /* ★★★★★ 2026-10-13（★ 独立审计 `48e1d2c8` **R2** ✓）：★ **模型 ③：版顶反弹** ✓
-         *   —— ★ 一手这位 boss 的弹**本来就有反弹** ✓（`etEx(type = 64 = EX_BOUNCE, a = 4 次,
-         *   b = 13 = BOUNCE_ULR（上|左|右，★ 不含下边 ✓）)` ✓），★ 而本档原来 `b->y < 0.0f`
-         *   **直接删弹** ✗ ⇒ ★ 与 C4 / C4S **不一致** ✗（★ 那两档都有 ✓）。
+         *   —— ★ ✗ **2026-10-17 订正（对抗性验证抓出）**：★ 下面这组 `a = 4 / b = 13` **不是**从
+         *   `pl01.txt` 读到的 ✗（★ 那句 `ins_611(0,1,64,4,13,…)` 不在该文件里 ✓）⇒ ★ "4 次 / 上|左|右"
+         *   ★ **没有一手依据** ✗。★ 魔理沙 C4 该处实际是 ★ `ins_611($A, 0, 2, 1, …)` ✓（**7 参** ✓），
+         *   而 ★ `engine/ecl/` **没有 TH19 的指令文档** ✗ ⇒ ★ 第 3/4 参语义**无据可依** ✓ ⇒ ★ 标 ❓ ✓。
+         *   ★ 卡里仍按"反弹 4 次、上/左/右"跑 ✓（★ 行为未改 ✓，★ 只把这个 ❓ 写明 ✗）。
          *   ★ 反射：★ 屏幕 y 向下 ⇒ 方向 `(cos, sin)` 的 y 翻号 ⇒ ★ **`ang = -ang`** ✓（只翻一次 ✓）。
          *   ★ 本卡这一次版顶 = 对一手的**简化** ✗（★ 一手是 4 次 + 含左右墙 ✓，已登记 ✓）。*/
         /* ★★★★★ 2026-10-16（★ owner 口径 ✓ ＋ 一手 §14.3/§14.4 ✓）：★ **把上面那句"简化"补齐** ✗ ——
-         *   ★ 一手 `Boss00BossCard1_at` 里是 `ins_611(0, 1, 64, **4**, **13**, …)` = `EX_BOUNCE`：
-         *   ★ **反弹 4 次** ✓、★ **walls 13 = 上|左|右** ✓（★ 不含下边 ✓ —— 与 owner 在 `:4264`
-         *   定的口径一致 ✓："版顶反弹、版底漏走" ✓）。
+         *   ★ ✗ **2026-10-17 订正（对抗性验证抓出）**：★ 上面那句引文 `ins_611(0, 1, 64, 4, 13, …)`
+         *     ★ **不在 `pl01.txt` 里** ✗（★ 那是**别的角色**的 ✓）⇒ ★ "反弹 4 次 / walls 13" 这两个数
+         *     ★ **没有一手依据** ✗。★ 魔理沙 C4 该处实际是 ★ `ins_611($A, 0, **2**, **1**, …)` ✓
+         *     ★ —— ★ 那是 **7 参**（★ 不是九参 ✓），★ 且 ★ `engine/ecl/` **没有 TH19 的指令文档** ✗
+         *     ★ ⇒ ★ 第 3/4 参到底是"★ 次数／walls"还是别的 ✗ **无据可依** ✓ ⇒ ★ 标 ❓、★ 不猜 ✗。
+         *     ★ 卡里现在仍按"★ 反弹 4 次、上/左/右"跑 ✓（★ 行为未改 ✓，★ 只把这个 ❓ 写明 ✓）。
          *   ★ 反射：★ 上/下两面 ⇒ `ang = -ang` ✓；★ 左/右两面 ⇒ `ang = π − ang` ✓（★ 屏幕 y 向下 ✓）。
          *   ★ 次数用 `bounced` 当**计数器** ✓（结构里它本来就是 `int` ✓）⇒ ★ 到 **4** 次即不再反弹，
          *   之后撞墙由下面的出界判据收掉 ✓（= 一手"第 5 次收"✓，与本卡 C3 的 `BOUNCE_MAX 4` 同款 ✓）。*/
@@ -5878,34 +6700,42 @@ static void pofv_c4m_tick(void)
             /* ★★★★★ 2026-10-16 **owner 口述（一级证据 ✓）**：「★ **魔理沙激光碰壁之后，从碰壁点放出来的
              *   那些星星就是 `bullet.png` 里面应该是第十一行的星星**」✓
              *   ⇒ ★ 每次撞墙时，从**碰壁点**再放出**一小簇星**（★ = 一手 `bullet1.png` 第 11 行
-             *   `sprite256..269`（`(1,177,14,14)` ✓，已切为 `POFV109_C4M_STAR.png` + 脚本 465 ✓））✓。
+             *   ★ 2026-10-18：★ 该族已**不采用** ✗ —— ★ 一手是 `602($A, 16, 13)` ⇒ **sprite16 = (0,192,8,8)** ✓（8×8）
+             *   ⇒ ★ 现用 `POFV109_C4M_STAR16.png` + 脚本 464 ✓（★ 旧的 14×14 `POFV109_C4M_STAR.png` 退役 ✓）。
              *   ★ 做法（不改任何函数签名 ✓）：★ 临时把"原点锁"（`s_c4m_st.ox/oy` ✓）指向**碰壁点** ✓
-             *   ⇒ ★ 连调 `POFV_C4M_SPARK_N` 次 `pofv_c4m_emit()`（★ 出射角 = **朝场内**的方向 ＋ 小扇形 ✓）
+             *   ⇒ ★ 2026-10-18 起：★ **一次碰壁只发 1 颗** ✗（★ 原为 3 颗 ±20° ✓；
+             *     ★ "每帧一颗"仍 ❓ 未实现 ✓）★ 出射角 = **朝场内**的**单一方向** ✓
+             *     （重验更正：旧句写「＋小扇形」✗，代码是 `pofv_c4m_emit(inward)` 单角、无扇形 ✓）
              *   ⇒ ★ 再**还原原点**（★ 保证"三束同源"不被破坏 ✓）。
              *   ⚠ ★ 数量 3 与扇形 ±20° 是 ★ **按 owner 口述的观感取的 ❓ 自定值** ✗（一手里没直接读到
              *   "碰壁撒星"的确切参数 ✓）⇒ ★ 已登记 `TUNING` ✓，**不写成"一手"** ✗。*/
             float inward = 0.0f;
+            int hit_this = 0;      /* ★ 2026-10-18 重验修 bug：这一帧是否**真的碰壁** */
             const int hit_top   = (b->y <= 0.0f);
             const int hit_left  = (b->x <= -POFV_FIELD_HALF_W);
             float sx = b->x, sy = b->y;
             if (hit_top) {
-                b->y = 0.0f; b->ang = -b->ang; ++b->bounced;
+                b->y = 0.0f; b->ang = -b->ang; ++b->bounced; hit_this = 1;
                 inward = 1.5707964f;                 /* ★ 版顶被弹回 ⇒ 朝下（场内）✓ */
             } else if (hit_left) {
-                b->x = -POFV_FIELD_HALF_W; b->ang = 3.1415927f - b->ang; ++b->bounced;
+                b->x = -POFV_FIELD_HALF_W; b->ang = 3.1415927f - b->ang; ++b->bounced; hit_this = 1;
                 inward = 0.0f;                       /* ★ 左墙 ⇒ 朝右（场内）✓ */
             } else if (b->x >= POFV_FIELD_HALF_W) {
-                b->x = POFV_FIELD_HALF_W; b->ang = 3.1415927f - b->ang; ++b->bounced;
+                b->x = POFV_FIELD_HALF_W; b->ang = 3.1415927f - b->ang; ++b->bounced; hit_this = 1;
                 inward = 3.1415927f;                 /* ★ 右墙 ⇒ 朝左（场内）✓ */
             }
-            if (b->bounced > 0 && b->bounced <= 4) {
+            /* ⚠ 重验修 bug：原来这里是 `if (b->bounced > 0 && b->bounced <= 4)` —— `bounced` 只增不减
+             *   ⇒ 首次碰壁后**每帧都成立** ⇒ 实际是「每帧发 1 颗」，且非碰壁帧 `inward = 0.0f`（朝右）✗。
+             *   ⇒ 现在用 `hit_this`：**只在真的碰壁那一帧**发 1 颗 ✓。*/
+            if (hit_this) {
                 const float ox0 = s_c4m_st.ox, oy0 = s_c4m_st.oy;   /* ★ 保存原点 ✓ */
-                int s9;
                 s_c4m_st.ox = sx; s_c4m_st.oy = sy;                 /* ★ 原点 = 碰壁点 ✓ */
-                for (s9 = 0; s9 < 3; ++s9) {                        /* ★ 一小簇 = 3 颗 ✓ */
-                    const float off = ((float)s9 - 1.0f) * 0.3490659f;   /* ±20° ✓ */
-                    pofv_c4m_emit(inward + off);
-                }
+                /* ★ 2026-10-18 订正（IMPL §2.4 #3 ✓）：★ 一手是"★ 碰到边界后**每帧一颗**"✗ ——
+                 *   ★ 而卡侧这颗是**弹**（★ 碰一次就反弹走了 ✓），★ 没有"★ 激光持续贴边界"✗ 那个模型 ✓
+                 *   ★ ⇒ ★ 本处退一步：★ **一次碰壁只发 1 颗** ✓（★ 原来是 3 颗一簇 ✗），★ 方向 = 朝场内 ✓
+                 *   ★ ⚠ ❓ "★ 每帧一颗"✗ **仍未实现** ✗ —— ★ 它要"★ 三条激光各自在边界上持续撒"✗ 的结构 ✓
+                 *     ★ 而那正是"★ 起点 = 边界交点"✗ 那一步的一部分 ✓（★ 已登记在 `TUNING` ✓）。*/
+                pofv_c4m_emit(inward);
                 s_c4m_st.ox = ox0; s_c4m_st.oy = oy0;               /* ★ 还原原点 ✓ */
             }
         }
@@ -5951,6 +6781,10 @@ static void pofv_c2s_clear(void)
         s_c2s[k].live = 0; s_c2s[k].age = 0;
     }
     s_c2s_st.active = 0; s_c2s_st.ring = 0; s_c2s_st.timer = 0;
+    /* 2026-10-18：收起那只原生子机（ce_option_drop 删 VM + 清 flags）并置 0 防陈旧指针 */
+    /* ★ 2026-10-18 重验：判空用 `o->ptr` ✓（与窗口尽那处一致 ✓）—— `s_c2s_card` 可能是陈旧指针 ✗ */
+    if (s_c2s_opt.ptr) ce_option_drop(s_c2s_card, &s_c2s_opt);
+    s_c2s_card = 0;
 }
 
 static void pofv_c2s_fire(void)
@@ -6034,12 +6868,24 @@ static void pofv_c2s_tick(void)
  *         ③ `y = RANDF2×32` 的 `RANDF2` 未定位 ⇒ ★ 本卡取 **y = 96**（自机上方固定一点 ✓）；
  *         ④ 伤害沿用 C1 口径 ✓。*/
 #define POFV_C3S_MAX      60
-#define POFV_C3S_X0     140.0f     /* ★ 一手 ✓ `[-9981.0f]` 的初值 */
-#define POFV_C3S_Y       96.0f     /* ❓③：`RANDF2 × 32` 的 `RANDF2` 未定位 */
+#define POFV_C3S_X0     140.0f     /* ★ 2026-10-18 订正（IMPL §3 #1/#3 ✓，TH19 反编译定案）：
+                                    *   一手 `pl02.txt` `ExtraAttack()`：★ **x 起点 = `[-9981] = 140`** ✓
+                                    *   （`pl02:415`）、★ **x 每步 − `%F`** ✓（`pl02:422`）。
+                                    *   ⚠ 原来这里写 `130` 并注"一手 ✓ `[-9985]=130`"✗ —— ★ **130 不是 x** ✗：
+                                    *   `[-9985]=130` 是**段起始时间**（喂五段的 `$D` ✓，`pl02:414/421`），
+                                    *   ★ 我把两个变量的角色搞反了 ✗。*/
+#define POFV_C3S_SEG0   130.0f     /* ★ 段起始时间 ✓（一手 `[-9985] = 130` ✓，`pl02:414`）
+                                    *   ❓ 卡侧五段的段长仍按 `s_c3s_*` 近似，**未**接这个变量 ✗。*/
+#define POFV_C3S_Y2     0.0f       /* ★ 一手 y 基准 = 0 ✓（y = `[-9987] × 32` ∈ [−32,32] ✓，`pl02:419`）
+                                    *   ★ 卡侧镜像 ⇒ 出生 `y = POFV_FIELD_H − (基准 + ry)` ✓ */
+/* ★ 2026-10-18（收尾 ✓）：★ 删掉 `POFV_C3S_Y = 96.0f` ✗ —— ★ 它是"❓③ y = RANDF2×32 未定位"那个旧口径的遗留 ✓，
+ *   ★ 自 `f04bb503` 起**已无任何引用** ✗（★ 现在 y 走 `POFV_C3S_Y2` ＋ `ry` ✓）。*/
 
 static const unsigned char s_c3s_cnt[8]  = { 4, 5, 6, 7, 5, 7, 8, 9 };    /* $C ✓ */
 static const unsigned char s_c3s_waves[8]= { 1, 1, 1, 1, 2, 2, 2, 2 };    /* $D ✓ */
-static const unsigned char s_c3s_e[8]    = { 20,18,16,14,10, 9, 8, 7 };   /* $E ✓ */
+/* ★ 2026-10-18（收尾 ✓）：★ 删掉 `s_c3s_e`（`$E` = 20,18,16,14,10,9,8,7）✗ ——
+ *   ★ 自 `f04bb503` 起 x 步长改用 `s_c3s_f`（`%F`）✓，`$E` 是**段起始时间**的递减量 ✓（`pl02:421`）
+ *   ★ ⇒ 本表已无引用 ✗。★ 若将来接五段的段长，★ 应把 `$E` 接到段起始时间上 ✓，★ 别放回这里当步长 ✗。*/
 static const unsigned char s_c3s_f[8]    = { 10,10, 9, 9, 8, 8, 7, 7 };   /* %F ✓ */
 static const unsigned char s_c3s_wait[8] = { 15,15,13,13,12,11,10,10 };   /* $G ✓ */
 
@@ -6051,7 +6897,19 @@ static const unsigned char s_c3s_wait[8] = { 15,15,13,13,12,11,10,10 };   /* $G 
  *     · ★ `posTime(28, 0, %F0, %F1, 0.0f)` ⇒ ★ **28 帧内从出生点飘到（出生点＋偏移）** ✓。
  *   ⇒ ★ 所以要有：★ `rx/ry`（偏移 ✓）、★ `rot`（自转基角 ✓），★ 以及一手那个 **28 帧寿命** ✓。
  *   ⚠ ★ 字段先加上 ✓；★ **填值（spawn）与逐帧应用（tick）下一笔做** ✓（★ 本轮不构建不提交 ✗）。*/
-typedef struct { int live, age, life; float x, y; float rx, ry, rot; int32_t vm; } pofv_c3s_t;
+/* ★★★★★ 2026-10-16 **加运动字段**（owner：「早苗 C3 = 从正上方落下、到某高度**转为横向**」✓ ⇒ 照一手 ✓）：
+ *   ★ 一手 `_ext/ecl/pl02.txt:356 ExAttackFunc2()` ✓（★ 逐字 ✓）：
+ *     · ★ `ins_605(0, 0.0f, 0.0f)` ✓ ⇒ ★ **发射器自己不吐弹** ✓（速度 0 ✓）
+ *     · ★ `ins_700(0, -1,-1,-1, **24**)` ✓ ⇒ ★ 寿命初值 24 ✓
+ *     · ★ 然后 **5 段 `ins_609` 效果栈** ✓（★ `ins_609` = **`etExSet`** ✓，★ 本仓已验证 ✓ `TUNING.md:10271` ✓）：
+ *       ★ 段1 `(8, 40, 0, %C=0.1, 0)` ✓／★ 段2 `(8, $D−40, 40, 0, 0)` ✓／
+ *       ★ 段3 `(8, 10, $D, (−40×%C)/10, 0)` ✓／★ 段4 `(8, 8, $D, 0, **∓0.19634955=∓11.25°**)` ✓／
+ *       ★ 段5 `(8, 120, $D, **0.05 + %B×0.05**, 0)` ✓
+ *     ⇒ ★ 本仓早先的分析（`TUNING.md:20145` ✓）：★「行为 = **一条激光 ＋ 5 段弹**（★ 帧数 **40/40/10/8/120** ✓、
+ *       ★ 速度 **0.1 / 0 / (−40×0.1)/10 / 0 / 0.05** ✓、★ **±11.25° 左右镜像** ✓）」✓
+ *   ⇒ ★ 所以本卡要能表达：★ **下落**（朝下 ✓）＋ ★ **分段加速/偏转**（★ 每段带自己的时长与加速度 ✓）
+ *     ⇒ ★ 加 `spd`（当前速度 ✓）、`ang`（当前朝向 ✓）、`yaw`（段 4 那种一次性偏转的累计 ✓）。*/
+typedef struct { int live, age, life, side; float x, y; float rx, ry, rot; float spd, ang, yaw; int32_t vm; } pofv_c3s_t;
 static pofv_c3s_t s_c3s[POFV_C3S_MAX];
 static struct { int active, wave, step, timer, level, side; float f0; } s_c3s_st;
 
@@ -6078,7 +6936,24 @@ static void pofv_c3s_spawn(float x, float y)
      *   ★ `rotate(0.0f, 0.0f, %RANDRAD)` ⇒ ★ 自转基角 = 随机整圈 ✓。
      *   ⚠ ★ 逐帧**应用**（`posTime(28, 0, %F0, %F1, 0)` = 28 帧内线性飘到"出生点＋偏移" ✓）
      *   ★ 在 tick 里做 ✓（下一笔 ✓ —— ★ 本笔先把值抽出来 ✓）。*/
-    s_c3s[k].live = 1; s_c3s[k].age = 0; s_c3s[k].life = 28;   /* ★ 一手 ✓ script35 共 28 帧 */
+    /* ★ 2026-10-17（对抗性验证 C4b ✗）：★ 原来 `life = 28` ✗（★ 那是**旧**脚本 35 的时长 ✓）
+     *   ★ 而一手 `ExAttackFunc2` 的 5 段总长 = ★ **40 + 40 + 10 + 8 + 120 = 218 帧**
+     *   ★（★ 前两段各 40 ✓ —— 段①②的边界在 `b->age` 的 80 ✓，★ 与卡内既有实现一致 ✓）
+     *   ⇒ ★ 28 帧时子弹就死了 ✗ ⇒ ★ 段②–⑤ 与段④的 ±11.25° **根本跑不到** ✗
+     *   ★ 改成 **220** ✓（★ 略大于 5 段总和 ✓，★ 出界另有回收 ✓）。*/
+    s_c3s[k].live = 1; s_c3s[k].age = 0; s_c3s[k].life = 220;
+    /* ★ 2026-10-16 **照一手 `ExAttackFunc2()` 给运动初值** ✓（owner：「从正上方落下、到某高度转为横向」✓）：
+     *   ★ 一手：★ `ins_604(0, 1.5707964f, 1.5707964f)` ⇒ ★ **朝下（+π/2）** ✓；
+     *   ★ `ins_605(0, 0.0f, 0.0f)` ⇒ ★ **初速 0** ✓（★ 由后面 5 段效果栈推进 ✓）；
+     *   ★ `ins_700(0, -1,-1,-1, **24**)` ⇒ ★ 寿命起步 24（★ 之后段 5 再延到 120+ ✓）。
+     *   ★ `side` = ★ 本卡每一步交替的 ±1 ✓（★ **镜像**：★ 段 4 的 ∓11.25° 要乘它 ✓ —— 见 tick ✓）。*/
+    /* ★ 2026-10-17（对抗性验证 C5a ✗）：★ 一手是 `ins_604(0, **+1.5707964f**, +1.5707964f)` ✓
+     *   ⇒ ★ 本行**直接给镜像后的 −π/2** ✓、★ **不再调 `POFV_FLIP_ANG`** ✗ ——
+     *   ★ 原来写 `POFV_FLIP_ANG(-1.5707963f)` ✗ ⇒ ★ 负负相消 = **净零翻转** ✗（★ 朝向根本没镜像 ✗）。*/
+    s_c3s[k].ang  = -1.5707963f;                                  /* ★ 一手 +π/2，镜像后 = −π/2（本行不再翻）*/
+    s_c3s[k].spd  = 0.0f;                                         /* ★ 一手 ✓ 初速 0 */
+    s_c3s[k].yaw  = 0.0f;
+    s_c3s[k].side = (s_c3s_st.side >= 0) ? 1 : -1;
     s_c3s[k].rx = (float)(ce_rand() % 13u);                        /* ★ 一手 ✓ [0,12] */
     s_c3s[k].ry = (float)(ce_rand() % 13u) - 24.0f;                /* ★ 一手 ✓ [−24,−12] */
     s_c3s[k].rot = ((float)(ce_rand() % 1024u) / 1024.0f) * 6.2831853f;   /* ★ 一手 ✓ 随机整圈 */
@@ -6095,7 +6970,7 @@ static void pofv_c3s_spawn(float x, float y)
                           *   ★ `sprite351` 的矩形（`bullet.anm.txt:368` ✓）＝ ★ `(241, 177, 14, 14)` ✓
                           *   ⇒ ★ **y=177 就是那一行"星星"** ✓（与魔理沙 C4 的弹 `sprite256..269` **同一行** ✓，
                           *   只差**最右一列**的颜色 ✓）★ ⇒ ★ 所以本处**直接复用**已切好的星素材
-                          *   （`POFV109_C4M_STAR` ✓，来自同排第一列 ✓）。
+                          *   （★ 2026-10-18：现为 `POFV109_C4M_STAR16` = sprite16 ✓，8×8 ✓）。
                           *   ⚠ ★ 与一手的差别（如实标 ✗）：★ 一手里她是**第 14 列**（x=241 ✓）、
                           *   本处用**第 1 列**（x=1 ✓）⇒ 颜色略不同 ✓；★ 若 owner 要按一手取色，
                           *   只需再切一张 `(241,177,14,14)` 并换这一行 ✓（登记 `TUNING` ✓）。
@@ -6105,14 +6980,16 @@ static void pofv_c3s_spawn(float x, float y)
                           *   在 **y=177 那一行 = 圆球行** ✓；★ **真·星行是 y=161 = 第 11 行**
                           *   `sprite288..301` ✓，见 `TUNING.md`「素材错行更正」✓）
                           *   ⇒ ★ 本处改用 ★ **`POFV109_C3S_ORB`**（= 一手 `sprite351` 的原格 ✓，
-                          *   已目视确认是**白色的球** ✓）＋ 脚本 **466** ✓（一手 `script35` 的初值：
+                          *   已目视确认是**白色的球** ✓）＋ 脚本 **465** ✓（一手 `script35` 的初值：
                           *   `alpha(128)` ＋ 加算 ✓）⇒ ★ **一手 ✓**。*/
                          CE_ANM_ABILITY_SCRIPT_POFV109_C3S_ORB,
                          POFV_C4_VM_LAYER);
     if (s_c3s[k].vm) {
         ce_anm_set_color((uint32_t)s_c3s[k].vm, 0xffffffffu);
         ce_anm_set_pos((uint32_t)s_c3s[k].vm, x, y, 0.0f);
-        ce_anm_set_scale((uint32_t)s_c3s[k].vm, 0.5f, 0.5f);
+        /* 2026-10-18（对抗性验证 D4 ✓）：贴图从 8x8 的点换成 **256x16 的横条** =>
+         * X 必须按 30/256 缩（原来 0.5 会把 256 画成 128px 宽）。Y 留 0.5 => 16x0.5 = 8px。*/
+        ce_anm_set_scale((uint32_t)s_c3s[k].vm, 0.5f * (30.0f / 256.0f), 0.5f);
     }
 }
 
@@ -6163,11 +7040,20 @@ static void pofv_c3s_tick(void)
                                         *    ⚠ ★ **横向 x 那半还没改** ✗：★ 现在仍是"★ 自机 x + 侧向偏移"✗
                                         *    —— ★ 你说"★ 不涉及任何 boss 位置"✓ ⇒ ★ x 也该脱离自机 ✓，
                                         *    ★ 下一轮单独一笔（★ 一次一样 ✓，★ 账里已写 ✓）。*/
-                                       POFV_FIELD_H + (float)ry);
+                                       /* ★ 2026-10-18 订正（IMPL §3 #3 ✓）：★ 一手 y = `[-9987] × 32` ∈ [−32,32]
+                                        *   （★ 基准 **0** ✓、★ 贴**顶边** ✓，`pl02:419`）。
+                                        *   ⚠ 2026-10-17 我在此写"每波 y 起点 **140**"✗ —— ★ **140 是 x** ✗
+                                        *   （`[-9981] = 140` ✓）；★ y 从头到尾都没有 140 这一项 ✗。
+                                        *   ★ 卡侧是**镜像** ✓ ⇒ 出生 `y = FIELD_H − (0 + ry)` ✓（贴底边、向上走 ✓）。*/
+                                       POFV_FIELD_H - (POFV_C3S_Y2 + (float)ry));
                     }
                 }
                 s_c3s_st.side = -s_c3s_st.side;
-                s_c3s_st.f0 -= (float)s_c3s_f[lv];            /* ★ 一手 ✓ 每步 −%F */
+                /* ★ 2026-10-18 订正（IMPL §3 #1 ✓，TH19 反编译定案）：★ 一手 `pl02.txt` `ExtraAttack()`：
+                 *   ★ **x 每步 − `%F`**（`10,10,9,9,8,8,7,7` ✓，`pl02:422` ✓）、
+                 *   ★ **`$E`（20,18,16,14,10,9,8,7）不是 x** ✗ —— 它是**段起始时间**（`[-9985] -= $E` ✓，`pl02:421`）。
+                 *   ⚠ 2026-10-17 我写的那条注释（"x 每步 −$E／y 每步 −%F"）✗ **是错的** ✗，以此条为准。*/
+                s_c3s_st.f0 -= (float)s_c3s_f[lv];            /* ★ 一手 ✓ x 每步 −%F（`pl02:422`） */
             }
             if (++s_c3s_st.timer >= (int)s_c3s_wait[lv]) {     /* ★ 一手 ✓ 每步 wait $G */
                 s_c3s_st.timer = 0; ++s_c3s_st.step;
@@ -6198,12 +7084,53 @@ static void pofv_c3s_tick(void)
          *   ⚠ ★ 一手寿命 **28 帧** ✓；★ 卡里 `life = 120` ✗ ⇒ ★ 本处曲线在 28 帧后**保持** ✓（★ 不擅自改寿命 ✗，
          *   ★ 那属另一处、且要与窗口逻辑一起看 ✓ —— 已登记 ✓）。*/
         if (b->vm) {
+        /* ★★★★★ 2026-10-16 **照一手 `ExAttackFunc2()` 补"下落 + 5 段转向"** ✓
+         *   （owner 唯一担心的那处 ✓：「★ 早苗 C3 = 从正上方落下、到某高度**转为横向**」✓）
+         *   ★ 一手（`_ext/ecl/pl02.txt:356` ✓）＋ ★ 本仓既有分析（`TUNING.md:20145` ✓）：
+         *     ★ 帧数 **40 / 40 / 10 / 8 / 120** ✓、★ 速度 **0.1 / 0 / (−40×0.1)/10 / 0 / 0.05** ✓、
+         *     ★ 段 4 的 **∓0.19634955f（= ∓11.25°）** 用**符号**分左右（= **镜像** ✓）。
+         *   ★ 运动积分：★ 照本卡 `pofv_c4m_tick()` 的**方向表**写法 ✓（★ 不引数学库 ✓）：
+         *     `di = (int)(ang×36/2π) % 36;  x += s_c2_dir36[di][0]×spd;  y += s_c2_dir36[di][1]×spd;`
+         *   ⚠ ★ 两手里的 `%C = 0.1f` ✓ 与 `%B = [-9888]` ✓ ★ 都是**引擎标量** ✓ ⇒ ★ 本处取 `%C=0.1`（一手字面量 ✓）、
+         *     `%B` 取 **0.0** ❓（★ 与本卡别处一致 ✓，★ 标明非一手 ✗）。*/
+        if (b->age > 1) {
+            const float ag = (float)b->age;
+            float step = 0.10f;                       /* ★ 一手 ✓ 段 1/2 的速度 0.1 */
+            if (ag < 80.0f) {
+                step = 0.10f;
+            } else if (ag < 90.0f) {                  /* ★ 一手 ✓ 段 3：加 (−40×0.1)/10 的侧向 */
+                step = 0.10f + (-40.0f * 0.10f) / 10.0f * (ag - 80.0f);
+            } else if (ag < 98.0f) {                  /* ★ 一手 ✓ 段 4：±11.25° 的**一次性偏转**（★ 镜像乘 side） */
+                /* 2026-10-18（整体验收 ③ ✓）：★ 转向该**朝自机** ✗ —— 原来按 b->side（出生列）硬编码
+                 * ⇒ ★ 两列都朝**外** ✗（IMPL §3.4 #3 要「朝自机那一侧」）。★ 现改为读自机 x 的符号。
+                 * ❓ 符号方向（自机在 +x ⇒ ±11.25° 哪边）是按「朝它转」推的，未与一手逐字核。*/
+                { const float *ppb = ce_player_pos();
+                  b->yaw = ((ppb ? ppb[0] : 0.0f) >= 0.0f) ? 0.19634955f : -0.19634955f; }
+                step = 0.10f;
+            } else {                                  /* ★ 一手 ✓ 段 5：角加速 0.05（★ 乘 side = 镜像） */
+                b->ang += (b->side >= 0 ? 1.0f : -1.0f) * 0.05f;
+                step = 0.10f;
+            }
+            b->spd = step;
+            if (ag >= 98.0f) b->yaw = 0.0f;          /* 2026-10-18（对抗性验收 ④）：★ yaw 只在 90-98 段赋值,
+                                                      * 但下面那句**每帧**都会加 ⇒ 98 帧后一直自转(不是横向走) ✗
+                                                      * ⇒ 出段就清零 ✓。*/
+            b->ang += b->yaw;                         /* ★ 段 4 的偏转（只在那 8 帧生效 ✓） */
+            {
+                const int di = (int)(b->ang * (36.0f / 6.2831853f)) % 36;
+                const int dj = (di < 0) ? di + 36 : di;
+                b->x += s_c2_dir36[dj][0] * b->spd;
+                b->y += s_c2_dir36[dj][1] * b->spd;
+            }
+        }
             const float ag = (float)b->age;
             float sc;
             if (ag < 14.0f)      sc = 1.0f + (1.9f - 1.0f) * (ag / 14.0f);             /* ★ 一手 ✓ 0→14 帧 ⇒ ×1.9 */
             else if (ag < 28.0f) sc = 1.9f + (0.8f - 1.9f) * ((ag - 14.0f) / 14.0f);  /* ★ 一手 ✓ 14→28 帧 ⇒ ×0.8 */
             else                 sc = 0.8f;
-            ce_anm_set_scale((uint32_t)b->vm, sc, sc);
+            /* 2026-10-18（对抗性验证 E3 ✓）：贴图是 **256x16 的横条** ⇒ X 要按 30/256 缩，
+             * 否则每帧 sc(0.8-1.9) 会把 256 画成 205-486 px（脚本里的 scale 也会被这里盖掉）。*/
+            ce_anm_set_scale((uint32_t)b->vm, 0.1171875f * sc, 0.5f * sc);   /* X=30/256, Y=8/16 */
             /* ★ 一手 `alpha(128)` ⇒ 第 8 帧起 `alpha(20)` ✓（写 ARGB 的 AA 位 ✓）*/
             ce_anm_set_color((uint32_t)b->vm,
                              (b->age < 8) ? 0xffffff80u : 0xffffff14u);
@@ -6309,7 +7236,6 @@ static void clear_card(ce_card_t *c)
     pofv_c3_clear();   /* ★ 铁律：C3 每一颗弹都带一台 VM ⇒ 删卡/换关/重开全收 ✓ */
     pofv_barrier_clear();   /* ★ 铁律：罩子（盾/破罩计时）删卡要收干净 ✓ */
     pofv_c4_clear();        /* ★ 铁律：C4 每发一台 VM ⇒ 删卡/换关全收 ✓ */
-    pofv_c2m_clear();       /* ★ 铁律：魔理沙 C2 的 6 条激光 VM ⇒ 全收 ✓ */
     pofv_c3m_clear();       /* ★ 铁律：魔理沙 C3 的激光 VM ⇒ 全收 ✓ */
     pofv_c4m_clear();       /* ★ 铁律：魔理沙 C4 的激光与扫射弹 VM ⇒ 全收 ✓ */
     pofv_c2s_clear();       /* ★ 铁律：早苗 C2 的整圈 VM ⇒ 全收 ✓ */
@@ -6876,6 +7802,7 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
 
 static int on_tick_2(ce_card_t *c)
 {
+    s_c2s_card = c;      /* 2026-10-18：C2 的原生子机要用卡指针 */
     int i;
     /* ★★★★★ 2026-10-13 owner 要求：★ **按空格 = 放 C3**（**调试用** ✓）——
      *   ★ 接口 = `ce_key_down(CE_VK_SPACE)` ✓（`native/sdk.h:838` ✓）；★ 那个头文件里连
@@ -6889,9 +7816,17 @@ static int on_tick_2(ce_card_t *c)
         static int s_dbg_sp_prev = 0;                       /* ★ 只在按下的那一帧触发 ✓ */
         const int sp = ce_key_down(CE_VK_SPACE) ? 1 : 0;
         if (sp && !s_dbg_sp_prev) {
-            pofv_c3_fire();
-            ce_log("pofv: [DBG] 空格 ⇒ 放 C3 ✓（f=%d kind=%d charge=%.0f）",
-                   (int)s_card_frames, (int)s_aura_kind, (double)s_aura_charge);
+            /* ⚠ 2026-10-18 修：★ 原来这里写死 `pofv_c3_fire()` ✗ = **灵梦的 C3** ✓，
+             *   ★ 所以按空格**永远不会**放到当前角色的 C3 ✗（★ owner 正是用这个键测魔理沙 C3 ✓
+             *   ⇒ ★ 难怪"★ 什么都看不见"✗ —— ★ 他放的是灵梦那套 ✓）。
+             *   ⇒ ★ 改成按 `s_aura_kind` 走**角色自己的** C3 ✓。*/
+            if (s_aura_kind == 1)      pofv_c3m_fire();   /* 魔理沙 ✓ */
+            else if (s_aura_kind == 3) pofv_c3s_fire();   /* 早苗 ✓ */
+            else                       pofv_c3_fire();    /* 灵梦/咲夜 ✓ */
+            /* ★ 2026-10-18：把**原始角色号**也打出来（`kind` 是映射后的：1 魔理沙/2 咲夜/3 早苗/0 灵梦）*/
+            ce_log("pofv: [DBG] 空格 ⇒ 放 C3 ✓（f=%d kind=%d raw_char=%d charge=%.0f）",
+                   (int)s_card_frames, (int)s_aura_kind,
+                   (int)(*(const int32_t *)POFV_ADDR_PLAYER_CHAR), (double)s_aura_charge);
         }
         s_dbg_sp_prev = sp;
     }
@@ -7503,22 +8438,44 @@ static int on_tick_2(ce_card_t *c)
              *   就是青蛙」✗ + 上一轮「意外释放 C2 C3 …**其他人也应该都有**」✓）：
              *   ★ 这里原来**写死了灵梦那三支**（`pofv_c2_fire/c3_fire/c4_fire` ✗）⇒
              *   ★ **早苗/魔理沙松手放出的都是"灵梦的档位"** ✓ = owner 报的"早苗 C2 发灵梦大球" ✓。
-             *   ⇒ ★ **按角色分派** ✓：魔理沙 `c2m/c3m/c4m` ✓、早苗 `c2s/c3s` ✓（★ 她**没有 c4s** ✗
+             *   ⇒ ★ **按角色分派** ✓：魔理沙 `c2m/c3m/c4m` ✓（★ `c2m` 已于 **2026-10-17 删除** ⇒ 她 C2 走通用 ✓）、
+             *     早苗 `c2s/c3s` ✓（★ 她**没有 c4s** ✗
              *     ⇒ C4 仍走通用的 `pofv_c4_fire()` ✓，❓若一手她 C4 另有其物，再补 ✓）、其余（灵梦/咲夜）走通用 ✓。*/
-            if (tier_rel == 2) {
+            if (tier_rel == 2 || tier_rel == 3) {   /* ★ 2026-10-16 等价重构步 A：C2/C3 合流 ⇒ 下面按表分派 ✓ */
                 /* ★★★★★ 2026-10-13（★ owner：「★ **魔理沙的 C2 是没有那个奇怪的六向激光的**」✗
                  *   —— ★ 并强调"★ **我说过多少次了**"✓ ⇒ ★ 这条是他的**一级证据** ✓）：★ **去掉 `c2m` 分支** ✗
                  *   ⇒ ★ 她**落到本支最后的通用 `pofv_c2_fire()`** ✓（★ 中性 C2 ✓、★ **不再有那六条激光** ✗）。
-                 *   ★ ⚠ 一手侧那套 `c2m`（`POFV_C2M_LASERS 6` ✓ + `pofv_c2m_fire/tick/clear` ✓）**暂时留着** ✗
-                 *   ★（★ 现在没人调用 `fire` ✓ ⇒ 已是死路 ✓；★ 要不要连根删掉，等你一句话 ✓）。
+                 *   ★ ⚠ 一手侧那套 `c2m`（`POFV_C2M_LASERS 6` ✓ + `pofv_c2m_fire/tick/clear` ✓）原**暂时留着** ✗
+                 *   ⇒ ★★ **2026-10-17 已按 owner 指令连根删掉** ✓（宏 / 结构体 / 三个函数 / 两处调用 / 素材 / 附录全清 ✓）。
                  *   ★ ⚠ 卡里另有一处同案被前人关过 ✓：★ `:6962` 的注释「★ 这里原来就是蓄力到 C2 就放
                  *   ★ **六向激光** ✗ 的真身 ⇒ 关掉 ✓」✓ —— ★ 但 `:6738` 这条**还开着** ✗ ✓（就是你现在看到的 ✓）。*/
-                if (s_aura_kind == 3) pofv_c2s_fire();
-                else pofv_c2_fire();
-            } else if (tier_rel == 3) {
-                if (s_aura_kind == 1) pofv_c3m_fire();
-                else if (s_aura_kind == 3) pofv_c3s_fire();
-                else pofv_c3_fire();
+                /* ★★★★ 2026-10-16 ★ **「角色 × 档位 ⇒ 配方」显式建表**（★ 等价重构 ✓，★ 行为零变化 ✓）：
+                 *   ★ 键 = `s_aura_kind` ✓（★ 1 = 魔理沙 ✓、★ 3 = 早苗 ✓、★ 0/2 = 灵梦／咲夜 ⇒ 通用 ✓）；
+                 *   ★ 表 = `[kind][0=C2, 1=C3]` ✓ ⇒ ★ 加角色只需**加一行** ✓（★ 咲夜 ✓），★ 不必再插 `if` ✓；
+                 *   ★ ⚠ 每一格**都等于重构前的现状** ✓（★ 含"kind 2 走通用"这种看着多余的格 ✓ ——
+                 *     ★ 我不能证明 `s_aura_kind == 2` 不出现 ✗ ⇒ ★ 保留 = 绝对等价 ✓）。*/
+                {
+                    static void (*const fire_tab[4][2])(void) = {
+                        /* kind 0 ★ 灵梦／咲夜 */ { pofv_c2_fire,  pofv_c3_fire  },
+                        /* kind 1 ★ 魔理沙     */ { pofv_c2_fire,  pofv_c3m_fire },
+                        /* kind 2 ★ 同通用     */ { pofv_c2_fire,  pofv_c3_fire  },
+                        /* kind 3 ★ 早苗       */ { pofv_c2s_fire, pofv_c3s_fire },
+                    };
+                    int k = (int)s_aura_kind;
+                    if (k < 0 || k > 3) k = 0;   /* ★ 越界 ⇒ 通用 ✓（= 原来的 `else` ✓）*/
+                    /* ★★★★ 2026-10-17（施工单 §12⑤ ＋ §47 ＋ §49 ✓）：★ **魔理沙 C2 ⇒ 让她同帧那份 C1 出 3 条** ✗ ——
+                     *   ★ 一手机制 = 置 `EX+0xd4` ✓（★ owner 口径「★ **魔理沙的 C2 就是 C1 激光 ×3**」✓）；
+                     *   ★ 卡里那个标志★**早就存在** ✓ = ★ `s_c1_m_set11` ✓（★ **别新造一套** ✗ ✓）。
+                     *   ★ 消耗点也**早就写好了** ✓：★ 同帧稍后的 `pofv_c1_fire()` 读到它就追加
+                     *     ★ "★ **正中 1 ＋ 左右各 1（偏移 ∓32）** ✓、★ `dmg = 6` ✓、★ `spd = 0`（定点）✓"
+                     *     —— ★ 与 §12⑤ 的四条要求**逐条吻合** ✓。
+                     *   ⚠ ★ 唯一缺的就是"**谁来置位**"✗ —— ★ 原来的写点在被删掉的 `c2m` 里 ✗
+                     *     ⇒ ★ 删 c2m 后它成了**恒 0 的死标志** ✗ ⇒ ★ **本笔补上** ✓。
+                     *   ⚠ ★ **不能**把这个置位写进 `pofv_c2_fire()` **里面** ✗ —— ★ 那是**灵梦/魔理沙共用**的 ✓
+                     *     ⇒ ★ 会让灵梦的 C2 也触发 ✗ ⇒ ★ 故落在**分派这一格**（★ kind 1 = 魔理沙 ✓ ＋ tier 2 = C2 ✓）。*/
+                    if (k == 1 && tier_rel == 2) s_c1_m_set11 = 1;
+                    fire_tab[k][tier_rel - 2](); /* ★ tier 2 ⇒ 第 0 列；tier 3 ⇒ 第 1 列 ✓ */
+                }
             } else if (tier_rel >= 4) {
                 /* ★ C3/C4 审计 60f3724f ①（**高**）：★ 原来 `else pofv_c4_fire();` ✗ ⇒
                  *   ★ **早苗（kind 3）掉进了灵梦的扫描弧** ✗ —— ★ 那是**别的角色**的攻击 ✓。
@@ -7526,6 +8483,10 @@ static int on_tick_2(ce_card_t *c)
                  *   ★ **正解** = 照一手 `pl02.txt:125` 那**三个 async 发射器** ✓（★ 已登记待做 ✓）。*/
                 if (s_aura_kind == 1) pofv_c4m_fire();
                 else if (s_aura_kind == 3) pofv_c4s_fire();   /* ★ 2026-10-13：★ 早苗 C4 由"借 C3S 占位"改成**自己的 C4S** ✓ */
+                /* ★★★★ 2026-10-17（owner：「★ **咲夜C1-C4是一点没做啊**」✓ ＋「★ 只做 C1 和 C4 本身」✓）：
+                 *   ★ 她（kind 2 ✓）**原来掉进最后那支 `pofv_c4_fire()`** ✗ = ★ **灵梦的扫描弧** ✗
+                 *   ⇒ ★ 本行给她**自己的 C4** ✓（★ `Sub2` 外壳 ＋ 五招 ✓，★ 逐参见她那段实现 ✓）。*/
+                else if (s_aura_kind == 2) pofv_c4k_fire();
                 /* ★★★★★ 2026-10-13（★ owner 定案 + ★ 一手复核 `86d147f1` **闭环** ✓）：
                  *   ★ owner：★「★ **当 C4 持续时间再放 C4，是给对面放 C3**」✓（★ 后更正"★ 是**判据较弱**的观察"✓
                  *   ★ ⇒ ★ 交复核 ✓ ⇒ ★ **复核结论：成立** ✓）。
@@ -7545,7 +8506,10 @@ static int on_tick_2(ce_card_t *c)
                  *   ⇒ ★ 所以降级也要**按角色**放各自的 C3 ✓（★ 路由同 `:6603/:6604` 那两行 ✓）。*/
                 else if (s_aura_kind == 1 && s_c4m_st.active) pofv_c3m_fire();   /* ★ 魔理沙 ✓ */
                 else if (s_aura_kind == 3 && s_c4s.active)    pofv_c3s_fire();   /* ★ 早苗 ✓ */
-                else if (s_c4.live) pofv_c3_fire();   /* ★ 灵梦 / 咲夜（用通用 C4 状态 ✓）：C4 进行中 ⇒ 改放 C3 ✓ */
+                /* ★ 2026-10-17：★ **咲夜**的那一支 ✓ —— ★ 她的 C4 活着时再按 C4 ⇒ ★ **改放 TH19 通用的 C3** ✓
+                 *   （★ owner 口径：「★ C2／C3 用 TH19 现成的」✓ ⇒ ★ 不去做她的 C3 ✗）。*/
+                else if (s_aura_kind == 2 && s_c4k_st.active) pofv_c3_fire();
+                else if (s_c4.live) pofv_c3_fire();   /* ★ 灵梦（用通用 C4 状态 ✓）：C4 进行中 ⇒ 改放 C3 ✓ */
                 else pofv_c4_fire();
             }
             /* ★★★★★ 2026-10-12 **TH09 一手：CA 消弹环**（锚定场 ✓ —— 见 `s_ca_ring` 定义处的长注释 ✓）：
@@ -7735,7 +8699,8 @@ static int on_tick_2(ce_card_t *c)
         }
         /* ★ ② C2 —— **早苗**分支（一手 = shot 行 11 = 更慢的 26 发整圈 ✓，见上）*/
         /* ★ D1（C1 审计 d40db02d ✓）：★ 一手只在释放路发射 ✓ ⇒ 这里不再途中发 ✗。*/
-        /* ★ ② C2 —— **魔理沙**分支（一手 = 6 条 `EXLaserInf` ✓，见上）*/
+        /* ★ ② C2 —— **魔理沙**分支：★ 那套六向激光（一手 = 6 条 `EXLaserInf`）已于 **2026-10-17 连根删掉** ✓
+         *   ⇒ ★ 她的 C2 走**通用 `pofv_c2_fire()`** ✓（★ 中性 C2 ✓）。*/
         /* ★ D1 ✓：★ 这里原来就是蓄力到 C2 就放六向激光 ✗ 的真身 ⇒ 关掉 ✓。*/
         /* ★ ⑤ C3（ExtraAttack）：★ 按蓄力档（**不是**边沿 ✗ —— 旧 `pofv_aura_rise_edge()` 已被 owner 实跑否掉 ✓）*/
         /* ★ ⑤ C4：一手阈值 = 2500（= `pl00.sht +0x38` ×10 ✓，= 满 ✓）*/
@@ -7839,10 +8804,13 @@ static int on_tick_2(ce_card_t *c)
     pofv_c1_tick();                     /* ★ C1：前进 + 伤害源 + 收尾 ✓ */
     pofv_c3_tick();                     /* ★ C3：波次机 + 每颗弹（加速/反弹/伤害源）+ 收尾 ✓ */
     pofv_c4_tick();                     /* ★ C4：扫描弧（两条反向 + 加速 + 伤害源）✓ */
-    pofv_c2m_tick();                    /* ★ ② C2 魔理沙：6 条激光 ✓ */
     pofv_c3m_tick();                    /* ★ ⑤ C3 魔理沙：横扫双镜像激光 ✓ */
     pofv_c4m_tick();                    /* ★ ⑤ C4 魔理沙：激光 + 扫射弹 ✓ */
     pofv_c4s_tick();                    /* ★ ⑤b C4 早苗：扫动的风扇（一手 pl02 ✓ + 模型翻转 ✓）*/
+    pofv_c4k_tick();                    /* ★ ⑤c C4 咲夜：3 台以外的那套（★ owner：「只做 C1 和 C4 本身」✓）*/
+    pofv_c4_decor_arbitrate();          /* ★ ⑥ C4 三件（魔法阵 460／红晕 461／计时 ✓）—— ★ **四角色通用** ✓
+                                         *   ★ owner：「★ 所有人 C4 的魔法阵、变红、计时必须抽成通用函数」✓
+                                         *   ★ 每帧**只调这一次** ✓，★ 谁的 C4 活着用谁的状态 ✓（见函数里的仲裁 ✓）。*/
     pofv_c2s_tick();                    /* ★ ② C2 早苗：更慢的 26 发整圈 ✓ */
     pofv_c3s_tick();                    /* ★ ⑤ C3/C4 早苗：交替两侧刷弹 ✓ */
 
@@ -7854,7 +8822,7 @@ static int on_tick_2(ce_card_t *c)
      *   ② ★ 我原打算走**声明层**（`ce_option_pose_declare`）✗ ⇒ ★ 审计指出 **109 < 111**
      *      ⇒ ★ 会**抢走 111 的落笔权** ✗、且 12 格池与 71/77/108/116 相争 ⇒ 属**跨卡影响** ✓
      *      ⇒ ★ **改用审计给的简单路**：**直接 `ce_option_get`** ✓（不碰声明层 ⇒ 不碰 111 ✓）。
-     *   ③ ★ 子机脚本**不能借 108 的 224–227** ✗（会串到 108 的贴图 ✓）⇒ ★ 用**109 自己的 448** ✓
+     *   ③ ★ 子机脚本**不能借 108 的 224–227** ✗（会串到 108 的贴图 ✓）⇒ ★ 用**109 自己的 447** ✓
      *      （= 早苗的青蛙 ✓，本会话刚切好 ✓）。
      *   ★ 时机照 SDK 注释 ✓：`on_tick_2 → ce_option_get`（没有就按 retry 补申请 ✓）。*/
         /* ★★★★★ 2026-10-13：★ 这 9 个 `*_tick()` **原来就在这里** ✗ —— 而这条分支是
@@ -9341,10 +10309,14 @@ static int on_draw(ce_card_t *c)
          *   ⚠ ❓ 待实跑校准（登记 TUNING）：① 原生记录若带淡入淡出 ⇒ 会轻微闪动（那时改成"每帧一条
          *     长寿命记录 + 同位置复用"或退回我们自己的 VM 方案 ✓）；② `align_h = 2`（居中 ✓）与
          *     `scale = 0.0f`（沿用引擎默认 ✓）这两个数是观感旋钮 ✓。*/
-        if (s_c4.live) {
-            uint8_t *am = *(uint8_t **)CE_ADDR_ASCII_MANAGER_PTR;
+        {   /* ★★★★★ 2026-10-17（对抗性验证抓出 ✗）：★ 倒计时原来被 `s_c4.live` 卡着 ✗
+             *   ⇒ ★ 只有灵梦的 C4 有计时 ✗。★ 改成走**同一个状态查询** ✓（★ 与三件同源 ✓）
+             *   ⇒ ★ 四个角色 C4 期间都有倒计时 ✓（★ `tt4 <= 0` 的那档——魔理沙 ❓——显示 `00.00` ✓）。*/
+            int el4 = 0, tt4 = 0;
+            const int active4 = pofv_c4_decor_state(&el4, &tt4);
+            uint8_t *am = active4 ? *(uint8_t **)CE_ADDR_ASCII_MANAGER_PTR : 0;
             if (am) {
-                const int32_t rf = POFV_C4_DURATION - s_c4.timer;
+                const int32_t rf = (tt4 > 0) ? (tt4 - el4) : 0;
                 const int32_t rr = (rf > 0) ? rf : 0;
                 const uint32_t old_life = *(uint32_t *)(am + 0x1924c);
                 int32_t sec = rr / 60, frm = rr % 60;
@@ -9509,7 +10481,7 @@ static int pofv_on_shot_set_index(ce_card_t *c, int power_level)
  *     + **青内环（16 段 / 半径 20）**」✓（§4.3 表 ✓），★ 各 10 帧 ✓（`ins_412(10,4,4.0f,4.0f)` ✓）。
  *   ⚠ ★ **有意不同**（登记 TUNING ❓）：★ 一手是"**同一台常驻 VM 重放**爆发" ✗ —— ★ 本卡罩子的常驻 VM
  *     是**每 8 帧重发**的（见 `pofv_barrier_tick` ✓）⇒ ★ 打断它没意义 ✗ ⇒ ★ 这里**另起三台爆发 VM** ✓
- *     （脚本 453/454/455 ✓，自带 10 帧自删 ✓）。
+ *     （脚本 452/453/454 ✓，自带 10 帧自删 ✓）。
  *   ⚠ ★ 一手那支 **半径 128 的消弭圈不是罩子的通用行为** ✗ —— ★ 只在 `@MAMIZOU2`（狸猫）时才有 ✓
  *     （`S+0xba` ✓，§4.2 ✓）⇒ ★ 本卡**不加** ✓（加了就是给所有人狸猫的效果 ✗）。*/
 static void pofv_barrier_break_fx(void)
@@ -9525,7 +10497,7 @@ static void pofv_barrier_break_fx(void)
     for (i = 0; i < 3; ++i) {
         if (s_barrier_break_vm[i] && ce_anm_get_vm((uint32_t)s_barrier_break_vm[i])) continue;
         s_barrier_break_vm[i] = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), fx[i], 6);   /* ★ 2026-10-13 审计 `a39d612c` 订正 ✗：
-                            ★ **层实参是死参** ✗ —— ★ 脚本 453/454/455 各自写了 `layer(6)` ✓ **覆盖**它 ✓
+                            ★ **层实参是死参** ✗ —— ★ 脚本 452/453/454 各自写了 `layer(6)` ✓ **覆盖**它 ✓
                             ★ ⇒ ★ **层由脚本决定、此参数仅默认值** ✓；★ 原来那句"★ 层 6 可用 ✓"✗ 与观感无关 ✓。*/
         if (s_barrier_break_vm[i]) {
             vm_set_world_pos((uint32_t)s_barrier_break_vm[i], p[0], p[1]);   /* ★ 在玩家身上 ✓（一手 ✓）*/

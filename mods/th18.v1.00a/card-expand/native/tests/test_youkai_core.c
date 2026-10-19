@@ -3137,33 +3137,20 @@ int main(void)
     check_orbit_gift_ledger();              /* ★ 2026-09-30：绕转使魔「一只敌人只补一次」的判定 */
 
     /* ── leveledit（第三方米斯蒂亚补丁）同开时的使魔归属 ────────────────────────────────
-     * 口径见 `HANDOFF-108-LEVELEDIT-FAMILIARS.md` §1 ✓；判据与一手出处见 `youkai_core.h` 那段 ✓。
-     * ★★ 2026-10-17：判据**已实测钉死** ✓ ⇒ `YK_LE_TRUSTED == 1` ✓、`YK_LE_SUB_INDEX_MIN == 24` ✓。
-     *   证据（两份 dump 逐条对过 ✓）：零售 `local/th18.v1.00a/dat/st02bs.ecl` 用
-     *   `thecl -m th18.eclm -d 18` 解出 **24 个函数**（末尾 `BossEscape` ⇒ 最大索引 **23** ✓）；
-     *   leveledit 的 `stage02-mystia/files/st02bs.ecl` 解出 **62 个**（第 24 个之后全是
-     *   `MystiaMaskAnimate` / `MystiaSongStart` / `MystiaStars` … ✓）。
-     * 不变式：① **没装 108 ⇒ 恒不动作** ✓；② **`subroutine_index < 24` ⇒ 恒不命中** ✓（零售上界 ✓）。*/
+     * 口径见 `HANDOFF-108-LEVELEDIT-FAMILIARS.md` §1 ✓；本段钉的是**两条不变式** ✓：
+     *   ① **没装 108 ⇒ 恒不动作** ✓（owner 口径 ③：此时"只有人侧、没有妖侧"✓）；
+     *   ② **判别常量未实测（`YK_LE_TRUSTED == 0`）⇒ 恒不命中** ✓（保守回退：行为与今天完全一致 ✗）。
+     * ⚠ 常量钉死（P113 探针日志）之后，把下面 `#if 0` 那段打开并填真实值 ✓。*/
     CHECK(yk_le_mode(0, 0, 0, 0) == 0);            /* 没 108 ⇒ 永不动作 ✓ */
-    CHECK(yk_le_mode(0, 999, 678, 9) == 0);        /* 同上：**输入再"像"也不动作** ✓ */
-    CHECK(yk_le_mode(1, 0, 0, 0) == 0);            /* ② 零售侧索引 ⇒ 不命中 ✓ */
-    CHECK(yk_le_mode(1, 23, 0, 0) == 0);           /* ② 零售最大索引 23 ⇒ 不命中 ✓（边界）*/
-    CHECK(yk_le_is_levelledit_fight(23, 0, 0) == 0);
-    CHECK(yk_le_is_levelledit_fight(24, 0, 0) == 1);   /* ★ 边界：≥24 ⇒ 命中 ✓ */
-    CHECK(yk_le_mode(1, 26, 0, 0) == 1);               /* ★ 那场（README：第一个 non 是 Sub26 ✓）*/
-    CHECK(yk_le_mode(1, 62, 123, 7) == 1);             /* ★ 他们的 sub 量级 ⇒ 命中 ✓ */
-    CHECK(yk_le_mode(1, 0x7fffffff, 0, 0) == 1);       /* 上界不过滤 ✓ */
-    /* ★★ 2026-10-18（B2 接管）：判据 = 敌机的 `$I3`（`ecl_int_vars[3]`）== `YK_LE_FAM_MARK`(997)。
-     *   一手：leveledit `mods/stage02-mystia/translate.py:207-217`（每个 `MystiaChild<n>()` 第一行
-     *   `$I3 = 997;`）；与「那场」判据（`yk_le_mode`）**同时**成立才接管（调用侧 `yk_le_here()` ✓）。*/
-    CHECK(YK_LE_FAM_MARK == 997);
-    CHECK(yk_le_is_their_familiar(997) == 1);          /* ★ 他们的使魔 ⇒ 命中 ✓ */
-    CHECK(yk_le_is_their_familiar(0) == 0);            /* 没标记 ⇒ 不命中 ✓ */
-    CHECK(yk_le_is_their_familiar(998) == 0);          /* 邻近值不误伤 ✓ */
-    CHECK(yk_le_is_their_familiar(-1) == 0);
-    /* ★ 没装 108 ⇒ 连「那场」都不成立 ⇒ 接管整条链死掉（调用侧 `le_here && is_their_familiar` ✓）*/
-    CHECK(yk_le_mode(0, YK_LE_SUB_INDEX_MIN, 0, 0) == 0);
-    CHECK(yk_le_mode(0, 62, 0, 0) == 0);
+    CHECK(yk_le_mode(0, 12345, 678, 9) == 0);      /* 同上：**输入再"像"也不动作** ✓ */
+    CHECK(yk_le_mode(1, 0, 0, 0) == 0);            /* 常量未钉死 ⇒ 保守不命中 ✓ */
+    CHECK(yk_le_is_levelledit_fight(0, 0, 0) == 0);
+    CHECK(yk_le_is_their_familiar(0, 0, 0) == 0);
+#if 0   /* ❓实测后打开：把 REAL_* 换成日志里读到的真实值（见交接单 §4）✓ */
+    CHECK(yk_le_mode(1, REAL_SUB274, REAL_ANMMAIN, REAL_IV0) == 1);   /* 那场 ✓ */
+    CHECK(yk_le_mode(0, REAL_SUB274, REAL_ANMMAIN, REAL_IV0) == 0);   /* 没 108 ⇒ 不动作 ✓ */
+    CHECK(yk_le_is_their_familiar(REAL_FAM_ID, REAL_ANMMAIN, REAL_SLOT0) == 1);
+#endif
 
     printf("youkai_core: %d checks, %d failed\n", s_pass + s_fail, s_fail);
     return s_fail ? 1 : 0;

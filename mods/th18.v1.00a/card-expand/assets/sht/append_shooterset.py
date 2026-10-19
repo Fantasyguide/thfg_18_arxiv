@@ -147,16 +147,13 @@ APPEND = [
                          angle=-1.5707964, speed=14.0, opt_slot=0, mode=0,
                          anm="CE_ANM_ABILITY_SCRIPT_PEA", sfx=0x20, func_on_init=0)]),
 
-    # ★★★ 2026-10-15（owner 两条口径）：「**一手的大招只有一种发弹：向前一个角度范围内的大量随机角度
-    #   发弹**」✓「**最好是一帧发一颗，而不是同时发几颗**」✓ ＋「**那就每颗 10**」✓
-    #   ⇒ 从"每 5 帧一排 7 颗、横向铺开 ±48 px"改成 **每帧 1 颗、居中** ✓；
-    #     方向：这里的 `angle` 只作默认 ✓ —— 实际朝向由**卡侧**给（`cards/peashooter.c` 的 ±20° 随机表 ✓）；
-    #     伤害 7 → **10** ✓（⚠ 必须与 `cards/peashooter_core.h` 的 `PEA_GAT_DMG` / `PE_DMG_GATLING`
-    #     保持一致 ✗ —— 那两处是"此处只作对账"的镜像 ✓，改一处就得改三处 ✓）；
-    #     持续 `PEA_GAT_FRAMES` = 240 帧 ⇒ 一次爆发 **240 颗 / 2400 伤害** ✓（原 2352 ✓，+2% ✓）。
-    ("PEA_GATLING", [dict(fire_rate=1, start_delay=0, damage=10, hit_w=12.0, hit_h=12.0,
-                          spawn_dx=0.0, angle=-1.5707964, speed=18.0, opt_slot=0, mode=0,
-                          anm="CE_ANM_ABILITY_SCRIPT_PEA_SMALL", sfx=-1, func_on_init=0)]),
+    # 开大（PVZ 的机枪射手）：每 5 帧一排，一排 7 颗横向铺开 ±48 px；持续 100 帧 = 20 排 = 140 颗。
+    # 单颗只有 7（= PVZ 原版豌豆伤害的量级），一排 7 颗同帧也只有 49，稳在所有角色的每帧上限
+    # （最低 Sakuya 60）之下 —— 一口气打出去的是**数量**，不是单发。
+    ("PEA_GATLING", [dict(fire_rate=5, start_delay=0, damage=7, hit_w=12.0, hit_h=12.0,
+                          spawn_dx=dx, angle=-1.5707964, speed=18.0, opt_slot=0, mode=0,
+                          anm="CE_ANM_ABILITY_SCRIPT_PEA_SMALL", sfx=-1, func_on_init=0)
+                     for dx in (-48.0, -32.0, -16.0, 0.0, 16.0, 32.0, 48.0)]),
 
     # ★ 季节（id 119）：**五副季节各一组**，数值逐条照 TH16 `pl00sub/pl02sub/pl03sub/pl01sub/pl04sub.sht`
     # 的 option 弹（2026-09-10 一手解析：sets 按季节档，每个 set 里每个 option 一条 shooter）。
@@ -2497,8 +2494,8 @@ def _pofv109_sets(target_file: str, anm_ids: dict) -> list:
                  # ★★ 2026-10-12 **按 owner 原话与一手正文定案**：★「它应当是**碰到敌人爆炸**」✓
                  #   ⇒ ★ `func_on_hit` 从 **4 改成 0** ✓：
                  #     · `hit0` = 「**interrupt(1) 播爆炸、不建伤害源**」✓ ⇒ ★ 它正好触发
-                 #       **我们脚本自己的 `interruptLabel(1)`** ✓（★ 448 里那支 = 一手"**爆开那支**"✓，
-                 #       见 `assets/ability/scripts/448_pofv109_c2s_frog.anm.txt:20-24` ✓）；
+                 #       **我们脚本自己的 `interruptLabel(1)`** ✓（★ 447 里那支 = 一手"**爆开那支**"✓，
+                 #       见 `assets/ability/scripts/447_pofv109_c2s_frog.anm.txt:20-24` ✓）；
                  #     · ★ 而行的 `damage = 22` **本来就照常给伤害** ✓ ⇒ ★ 伤害没丢 ✓；
                  #     · ★ 原来那个 `hit4`（= 建**伤害源子体** ✓）**没有那下爆炸** ✗ ⇒ 与 owner 的描述不符 ✗。
                  func_on_init=0, func_on_tick=0, func_on_draw=0, func_on_hit=0)
