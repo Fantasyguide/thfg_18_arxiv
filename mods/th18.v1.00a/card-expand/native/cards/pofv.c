@@ -6520,6 +6520,33 @@ static void pofv_c4m_emit(float ang)
                          CE_ANM_ABILITY_SCRIPT_POFV109_C4M_STAR,
                          POFV_C4_VM_LAYER);
     if (s_c4m[k].vm) {
+        /* ★★★ 2026-10-19 owner：★ 撒星贴图 = ★ `bullet1.png` **第 11 行倒数第 3 个**✗
+         *   = `sprite317 (209,160,14,16)`（★ 黄 ✓，★ 已切 `POFV109_STAR317.png` ✓）；
+         *   ★ **另外还会发随机颜色的小彩弹（8×8 那颗）**✗ ⇒ ★ 见下面的第二路 ✓。*/
+        ce_anm_set_sprite(CE_ABILITY_ANM(), (uint32_t)s_c4m[k].vm,
+                          CE_ANM_ABILITY_SPRITE_POFV109_STAR317);
+        ce_anm_set_color((uint32_t)s_c4m[k].vm, 0xFFFFE860u);   /* ★ 黄 ✓ */
+        /* ★ 2026-10-19 owner：★「★ 另外还会发**随机颜色的小彩弹** ✗（★ 8×8 的那玩意 ✓）」✗
+         *   ⇒ ★ 同一位置再发一颗 8×8 的小彩弹 ✓，★ 颜色每次随机 ✓（★ `sprite38` = 最小彩弹 ✓）。*/
+        {
+            int k2;
+            for (k2 = 0; k2 < POFV_C4M_MAX; ++k2) if (!s_c4m[k2].live) break;
+            if (k2 < POFV_C4M_MAX) {
+                static const uint32_t cols[8] = { 0xFFFF4040u,0xFFFFA020u,0xFFFFF040u,0xFF40FF40u,
+                                                  0xFF40FFFFu,0xFF4080FFu,0xFFC040FFu,0xFFFF40C0u };
+                const uint32_t cc = cols[(ce_rand() >> 4) & 7u];
+                s_c4m[k2] = s_c4m[k];
+                s_c4m[k2].ang = ang + ((float)(ce_rand() % 62832u) * 0.0001f);
+                s_c4m[k2].spd = s_c4m[k].spd * 0.7f;
+                s_c4m[k2].vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
+                                     CE_ANM_ABILITY_SCRIPT_POFV109_C4M_STAR, POFV_C4_VM_LAYER);
+                if (s_c4m[k2].vm) {
+                    ce_anm_set_sprite(CE_ABILITY_ANM(), (uint32_t)s_c4m[k2].vm,
+                                      CE_ANM_ABILITY_SPRITE_POFV109_LASER);   /* ★ 8×8 彩弹 ✓ */
+                    ce_anm_set_color((uint32_t)s_c4m[k2].vm, cc);
+                }
+            }
+        }
         /* ★ 2026-10-18（IMPL §2 #4 ✓）：★ 贴图换成 **s16（8×8）** 之后，★ 这里两行都要跟着改 ✗：
          *   ★ ① **scale**：★ 原来是 `0.4` ✓（★ 给旧 14×14 用的 ⇒ 5.6 px ✓）★ —— 换 8×8 后只剩 **3.2 px** ✗
          *     ⇒ ★ 取 **0.7** ✓（★ 8×0.7 = 5.6 px ✓，★ 与原来同尺寸 ✓）。
