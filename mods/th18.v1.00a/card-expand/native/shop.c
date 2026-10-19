@@ -13,7 +13,9 @@
  * 为什么无空档帧：商店 on_tick 优先级 0xc，在自己 tick 里析构（state 5 → 0x4176e0 → 0x417857 清指针）；
  * GameThread 0x10 随后跑到这里重开；敌人 0x1b / GUI(MSG) 0x21 看到的指针始终非 0。
  * 例外（AUDIT P4′）：GameThread 在 0x443b05 之前有两条提前返回（0x44387b、0x4439ed），恰在那一帧命中就晚一帧重开——日志标 late。
- * 练习模式（0x4c5f8c >= 0）与 replay 回放（GameThread+0xd0 != 0）里商店 30 帧自动退、不走成交分支，天然不重开；再显式挡一道。
+ * **Extra 单关局**（`0x4c5f8c >= 0`，一手 `engine.h` 的 `CE_ADDR_EXTRA_RUN`：唯一正写点 `0x46d9cb` 写 1；
+ * ⚠ 旧注释把它写成「练习模式」是错的 —— 关卡练习开局 `0x46769f` 自己把它清成 -1）与 replay 回放
+ * （GameThread+0xd0 != 0）里商店 30 帧自动退、不走成交分支，天然不重开；再显式挡一道。
  */
 #include "card_expand.h"
 #include "thcrap_bp.h"
@@ -45,7 +47,8 @@ int __cdecl BP_ce_shop_reopen(x86_reg_t *regs, void *bp_info)
     uint8_t *gt = (uint8_t *)regs->esi;                       /* GameThread this（0x443874 mov esi,ecx）*/
     int flag_set  = (regs->eax & CE_GT_FLAG_OPEN_SHOP) != 0;
     int shop_open = CE_SHOP_PTR() != 0;
-    int blocked   = CE_PRACTICE_STAGE() >= 0 || (gt && *(int32_t *)(gt + CE_GT_REPLAY_PLAYING) != 0);
+    /* 0x4c5f8c >= 0 = Extra 单关局（旧宏名 CE_PRACTICE_STAGE 语义是错的，地址与比较都没变）*/
+    int blocked   = CE_EXTRA_RUN() >= 0 || (gt && *(int32_t *)(gt + CE_GT_REPLAY_PLAYING) != 0);
     if (ce_shop_on_gamethread(&s_shop, flag_set, shop_open, CE_CURRENT_STAGE(), CE_TIME_IN_STAGE(), blocked)) {
         regs->eax |= CE_GT_FLAG_OPEN_SHOP;
         int gap = CE_TIME_IN_STAGE() - s_shop.last_bought_frame;          /* 原生退场 30 帧：成交帧 + 31 = 重开帧；更晚 = 中间有空档帧 */

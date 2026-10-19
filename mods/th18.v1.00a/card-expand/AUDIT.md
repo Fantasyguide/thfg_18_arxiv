@@ -32609,3 +32609,312 @@ owner 2026-10-15 实跑逐字：
   （若不再闪退 ⇒ 归他们 ✓；若仍闪退 ⇒ 才可能是我们 ✓）。
 - **对同开测试的影响** ✓：coexistence 的验收应在**普通流程**（非符 → 符卡 → …）里做 ✓，
   **不要**用符卡练习当同开验收场景 ✗（那里本来就有他们的已知问题 ✓，会把归因搅浑 ✗）。
+
+### §BE-108-PRACTICE-EQUIP-2026-10-19（2026-10-19，DSH agent，卡 108）：**符卡练习里自动把 108 发到手上**（owner 拍板 B）
+
+- **要解决的**：练习模式开局同样走 `AbilityManager__reset_cards 0x407DA0`，而它从**存档的另一个卡组槽**
+  重建牌组（`engine/card/th18/02-lifecycle.md` §6：`SCOREFILE+0x5f678+slot*4` / `+0x5f608+slot*0x10+i`）
+  ⇒ owner 的练习槽只有 113/118 ⇒ 108 **不在卡链表里** ⇒ 它的 `ctor` / `on_tick_2` **一次都不会被调到** ✗
+  ⇒ 使魔接管没法测。
+- **改法**（只发**本局**，不碰存档卡组 / 卡组槽 / 主游玩路径）：
+  · `cards/youkai.c`：新增 `yk_practice_equip_once()`。判据 = `CE_PRACTICE_STAGE() >= 0`（`0x4c5f8c`，
+    `engine.h` 的宏）+ `CE_PLAYER()` + `CE_ABILITY_MGR()` 都在；走**商店同一条路**
+    `ce_give_card(108u, CE_MODE_SHOP, 0)`（先例 `cards/pot.c` / `cards/give12.c`）；
+    `ce_owned(108)` 已是 1 ⇒ 跳过；每局首发一次（失败不重试）；**成功发过之后若 `owned[108]`
+    又变回 0**（= 关卡开场 `reset_cards` 清 `owned[]` 再从存档重建，把刚发的 108 整副删掉）⇒
+    补发**一次**，之后不再追；`CE_TIME_IN_STAGE()` 倒退（= 重开 / 重选关，与 `cards/mof.c` 同一判据出处）
+    或离开练习时复位。
+  · ⚠ **不能挂在 108 自己的 `on_ctor` / `on_tick_2`**：那两个回调本身就属于这张卡 —— 它不在练习卡组里时
+    根本不存在（循环依赖）⇒ 必须由**与卡组无关**的帧点从外面叫进去。
+  · `sdk.c`（**共享件**）：`BP_ce_item_frame`（`0x446ee3`，每个正常游玩帧一次、卡链遍历之后）尾部加
+    一个 extern 声明 + 一次 `yk_practice_equip_once()` 调用。非练习模式 = 一次全局 int 读 + return，
+    零写、零分配；练习里发卡会改卡链 / 重建 HUD 列表 ⇒ 刻意放在遍历**之后**。
+- **对既有卡的影响面**（共享件登记的必填项）：只有 `BP_ce_item_frame` 尾部一次函数调用。
+  该函数在非练习模式第一行就返回；练习模式里也只动 `owned[108]` 与 108 的对象。**没有改任何既有卡的
+  回调 / 语义 / 数据表**；不新增站点（跳板池零增量）。回归 = `make dll` / `make test-host` / `make check` 全绿。
+- **验证**：`make dll` rc=0 ✓；`make test-host` rc=0 ✓；`strings th18_card_expand.dll` 命中
+  `youkai: practice auto-equip 108 (ce_owned=%d, r=%d)` / `... skipped (already owned)` /
+  `... was rebuilt away by reset_cards - re-giving once` ✓；
+  `nm cards/youkai.o` = `T yk_practice_equip_once`、`nm sdk.o` = `U yk_practice_equip_once`、
+  `objdump -dr sdk.o` 的调用点落在 `BP_ce_item_frame` 内 ✓；
+  `make check` rc=2 —— **只红** modkit 同开护栏（`lang_zh-hans` × `th18_leveledit_sanae_mystia`、
+  `th18_card_expand_255` × leveledit 共 **12 处外部同路径冲突**，与本改动无关 ✓），其余全绿 ✓；
+  `deploy.py --skip-build --force` rc=0 ✓、四处 DLL md5 = `7c8d0b1e2c3bf613d6b3207a4dbf3115` ✓、
+  `deploy-manifest.json` 第 20 条（head `d4bc54ed`）✓。
+- **没有主机单测**（诚实标注）：判据与副作用全是引擎侧（练习全局 / `owned[]` / `ce_give_card`）⇒
+  纯逻辑无法脱离 exe 测；实跑判据 = 日志里那一行 `youkai: practice auto-equip 108 (ce_owned=1, r=…)`
+  （`ce_owned=1` 即「已经在手上了」；跳过时是 `... skipped (already owned)`；
+  若出现 `... was rebuilt away ... re-giving once` 说明 reset_cards 时序确实存在、已自动补上）。
+
+### §BE-108-PRACTICE-EQUIP-2026-10-19b（2026-10-19，DSH agent，卡 108）：**上一版的练习判据是错的 —— 换成一手判据 + 加只读探针**
+
+- **现象（owner 实跑）**：符卡练习里**真的进了战斗**，日志（154 KB）里 `youkai: practice auto-equip 108` /
+  `MARK` / 任何关卡痕迹 **一行都没有** ⇒ 自动装卡从未执行。
+- **根因（一手，全二进制线性反汇编逐条核对读写点）**：旧判据 `0x4c5f8c >= 0`（`engine.h` 的
+  `CE_ADDR_PRACTICE_STAGE` / `CE_PRACTICE_STAGE()`）**不是练习判据**。`0x4c5f8c` 实际是
+  **「本局 = Extra（第 7 面单关局）」标记**：
+  · 唯一正写点 `0x46d9cb`（`MainMenu__tick_menu_17_achievement` = Extra 开局，写 **1**，同段还写
+    `CURRENT_STAGE=7`、关卡数据 `0x4cf428=0x4c99dc`、启动方式 `0x4cf438=6`）；
+  · 清 `-1` 四处：`0x464c10` / **`0x46769f`（关卡练习开局，就是这里把它清成 −1）** / `0x444baa` / `0x457b4c`；
+  · ECL 侧：系统变量 `-9899` = 本地址，**只有 `st07.ecl` / `st07bs.ecl` 各引用 1 次**（其余 15 个 0 次）。
+  ⇒ 符卡练习里它恒为 `-1` ⇒ 旧判据必然逐字 no-op，**而且一行日志都不打**（这次实验最难查的地方）。
+- **真判据（一手）**：
+  ① `0x4cf438 == 5` —— 本局启动方式 = 符卡练习（唯一写点 `0x46cfce`，`MainMenu__tick_menu_14_spell_prac_diff_select`；
+     `4` = 关卡练习 `0x4676ac`、`2` = 回放 `0x46803f`、`6` = Extra `0x46d9a6`、`1` = 普通）；
+  ② `0x4ccd14 >= 0` —— 本局要练的**符卡 id**（唯一非负写点 `0x46cffe`，值 = `menu+0x5d34[cursor]`；
+     普通 `0x466be0` / 回放 `0x468025` / Extra `0x46d9c1` 都写 −1；回放装载 `0x468016` / `0x461a35` 从 rpy 头恢复）。
+     **ECL 实证**：系统变量 `-9907` = 本地址，`st01bs…st07bs` 逐关引用（5/7/7/7/9/13/13 次）= boss 脚本「跳到要练的那张符」。
+  ③ 🟡 兜底（只为防「① 被某条路径改写 ⇒ 功能又静默失效」重演）：`GAME_FLAGS 0x4cccc8 & 0x30 == 0x20`
+     且 ② 成立且不在回放中（`GT+0xd0 == 0`）。注意 `0x20` 是**派生值**：
+     `ReplayManager__initialize 0x461a0d..0x461a2f` 按 ② `>= 0` 置 `0x20`、否则 `&= ~0x30`
+     （同一个位就是商店 `0x417cf5` / MSG `0x43e423` / trance 卡第 8 条读的那个「练习」位）。
+- **改法**：`cards/youkai.c` 的 `yk_practice_equip_once()` 换成 ①＋②（＋🟡兜底）；幂等 / 只进本局
+  AbilityManager / 不写存档 / `reset_cards` 抹掉后补发一次 / `CE_TIME_IN_STAGE()` 倒退复位 **全部原样保留**。
+  新增 `yk_practice_probe()`：**启动方式一变就打一行只读探针**（`youkai: practiceprobe cand0=0x4cf438=… …`），
+  三个候选 + 旧判据的 `0x4c5f8c` 一起落日志 ⇒ 下一局日志本身就是证据（这条是补「旧判据静默 no-op」的教训）。
+  发卡日志追加 `spell=` 字段（`... (ce_owned=%d, r=%d, spell=%d)`），前缀不变 ⇒ 既有 grep 仍命中。
+- **共享件影响面**：`engine.h` 加/改宏（`CE_ADDR_EXTRA_RUN`、`CE_ADDR_PRACTICE_STAGE` 降为**兼容别名**、
+  新增 `CE_ADDR_START_KIND` / `CE_ADDR_SPELL_PRACTICE_ID` / `CE_ADDR_GAME_FLAGS` + 4 个 accessor）；
+  `shop.c` 把 `CE_PRACTICE_STAGE() >= 0` 改成 `CE_EXTRA_RUN() >= 0` —— **地址、比较、行为逐字不变**（纯改名，
+  注释里说明它挡的是 Extra 而不是练习）；`sdk.c` 只改注释。**没有改任何既有卡的回调 / 语义 / 数据表**，
+  站点零新增（跳板池零增量）。
+- **验证**：`make dll` rc=0 ✓（无新 warning）；`make test-host` rc=0（63 checks）✓；
+  `strings th18_card_expand.dll` 命中 `youkai: practiceprobe cand0=0x4cf438=%d …` 与新发卡行 ✓；
+  `objdump -dr cards/youkai.o` 实测读到 `0x4ccd14` / `cmpl $0x5,0x4cf438` / `movzbl 0x4cccc8` / `0x4c5f8c` ✓；
+  `deploy.py --skip-build --force` rc=0 ✓、**四处 DLL md5 全等** = `42b9e7a594f773b043f9893694b7657b`
+  （`<modkit>/mods/` / `<modkit>/thcrap/bin/mod_*` / `<modkit>/thcrap/repos/Renko_1055/.../` / `native/`）、
+  patch js md5 = `7eba2eb25452939a514290f8fec26d94`（未改）、`deploy-manifest.json` 最新一条 head =
+  本条所在提交（`git log -1`）。
+- **没有主机单测**（诚实标注）：判据全是引擎全局 ⇒ 只能实跑验。
+
+#### ★ 实跑确认（2026-10-19 02:07 那局，owner「生效了」）✅
+
+日志 `game/th18_card_expand.log`（本次启动 02:07:51）原文两行，**与预测逐字一致**：
+
+```
+youkai: practiceprobe cand0=0x4cf438=5 cand1=0x4cccc8&0x30=0x20 cand2=0x4ccd14=8 cand3=0x4c5f8c=-1 stage=2 practice=1
+hud-card: refreshed after giving card 108 (selected=0653f078)
+youkai: practice auto-equip 108 (ce_owned=1, r=4, spell=8)
+```
+
+- `cand3=0x4c5f8c=-1` ⇒ **旧判据在符卡练习里确实是 -1**（这次订正的直接实证）；
+  `cand0=5` / `cand1=0x20` / `cand2=8`（第 2 面第 8 张符）⇒ ①②③ 三条候选全部落在预期值上。
+- 卡片确实进手且能跑：同一局 `hud: ===== claim_pinned` 里 **`card 108` 占 HUD 槽 #0（256x53）**，
+  结尾 `youkai: run done … 896 transfer damage … xfer[… rect 75 …]` ⇒ 转嫁逻辑有实际输出。
+- ⚠ **`r` 的口径订正**：`ce_give_card()` 返回的是引擎分配器 `AbilityManager__allocate_new_card 0x411460`
+  的返回值，**判据是 `>= 0`**（`ce_give_card_transaction` 内部就是 `if (result >= 0)` 才 mark）；
+  这一局它是 **4**，不是 1。早先「`r=1` 才算成功」的说法作废 —— 看日志请用 `r >= 0` + `ce_owned=1`。
+  全程**没有**出现 `... skipped (already owned)` / `... re-giving once` ⇒ 本局没有 `reset_cards` 抹卡，
+  补发那条闸空转（符合预期）。
+
+### §BE-108-LE-TAKEOVER-2026-10-19c（2026-10-19，DSH agent，卡 108）：**接管改按「他们那个包的口径」认**（图像脚本 28/29）＋ 敌机普查
+
+- **现象（owner 实跑 02:09 那局，逐字）**：「接管没有生效，人侧没有消失，切换没有音效」。
+- **日志定位（一手，先读日志再动手）**：
+  · `0 行 MARK` ⇒ 那一局场上**没有一只** `$I3 == 997` 的敌机（`yk_le_is_their_familiar()` 的判据没命中）；
+  · 同局 `le-probe(enemy): id=3/4/6/7 … slot0=29` ⇒ 他们的使魔**在场上**（`enemy.anm` 脚本 29 = 他们追加的
+    两种使魔图像之一），但 `iv3=0` ⇒ **`$I3` 这条标记在符卡练习里读不到**；
+  · `youkai: shift SE 人→妖 NOT played - no familiar live this frame` ⇒ 切换音是**下游**（门 = 场上有一只
+    已接管的使魔）；接管没发生 ⇒ 音效自然没有；
+  · 人侧外观切换（`yk_xfam_vm_tick`）只处理 `x->le` 条目 ⇒ 没接管 ⇒ 他们的本体不会消失 ✓ 三条现象同一根因。
+- **判据订正（他们仓库一手，本机就有 `/home/nipporita/th18-leveledit/mods/stage02-mystia/`）**：
+  · `familiar_visuals.py:39` `CHILDREN = {28:28, 30:28, 37:28, 43:28, 47:29, 49:29, 55:29, 59:28}`
+    ⇒ 8 个 `MystiaChild*` 的主 anm 脚本**只有 28 / 29**（README 同口径：追加 scripts 28/29 = 两种使魔图像）；
+  · 运行时读法 = `zEnemyData+0x26c`（`CE_ENEMY_ANM_SCRIPT` = `zEnemy+0x1498`，老板读出来 21 = 他们
+    `anmSetMain(0,21)` 写的值 ⇒ 这一格确实是**主脚本** ✓）。
+  ⇒ 接管判据 = **① `$I3 == 997`（保留，兜底）‖ ② 主脚本 ∈ {28,29} 且在「他们那场」**。
+- **「他们那场」判据加了粘性**（`s_le_seen_stage`，按 `CURRENT_STAGE` 记忆）：`le_here`（boss 的 ECL
+  `subroutine_index ≥ 24`）在他们的 `Boss()`/`BossDead()`（sub<24）时刻会掉回 0，而他们的使魔能活过那些时刻
+  ⇒ 同一面里确认过一次就成立，换面自动失效 ✓（**不动** `yk_le_is_levelledit_fight()` 本体与它的单测）。
+- **误伤防护**：② 只在 `le_stage` 里生效（脚本 28/29 是他们**追加**的，零售局同号脚本可能是别的用途）；
+  ① 本来就被 `le_boss` 门住。
+- **新增只读诊断**（owner 口径：不要再「静默失败」）：
+  · `MARK` 现在**两条判据任一中**都打，带 `via=1/2 iv3= anm0= le_here= le_stage= parent= life=`；
+  · `youkai/le: CENSUS`（每 120 帧一行汇总：`live/scanned/iv997/slot28_29/parent`）+ `CENSUS-DET`
+    （≤4 条明细，带该敌机的 ECL `subroutine_index` 与 `iv=$I0..$I4`、life）——
+    下一局若还不对，这一眼就能分清「他们的使魔不在场」/「标记格换了」/「sub 号段可作更强判据」。
+- **影响面**：只改 `cards/youkai.c`（108 自己的文件），无共享件、无新站点（跳板池零增量）；
+  不装 108 ⇒ 这些 tick 根本不跑 ✓；零售局 ⇒ `le_stage=0` ⇒ ②不走、①照旧靠 997 ✓。
+- **验证**：`make dll` rc=0 ✓、`make test-host` rc=0（63 checks）✓、`strings` 命中三条新格式串 ✓、
+  `deploy.py --skip-build --force` rc=0 ✓、**四处 DLL md5 全等 = `1dcba4a30fc607571e2be578855aaa88`**、
+  台账第 26 条。**实跑待验**（预期：`TAKEOVER familiar … via=2`，随后 `shift SE 人→妖 played …`）。
+
+#### 2026-10-19d 追加（owner 实跑反馈两连）
+
+- **「他的 vm 没消失」**：他们的使魔挂了**两格** anm（`familiar_visuals.py:overlay_ecl`：
+  `anmSetSprite(0, 28/29)` = 本体、`anmSetSprite(1, 31)` = **他们自己的魔法阵** script31 = TH08
+  etama script48 case2 / tex `mystia/fam-circle.png` 62×62）⇒ 原来只藏 slot 0 的 body 时，
+  他们的魔法阵仍在（owner 看到的就是它）。
+- **owner 裁决**：「**那就只隐藏本体，不画我们的魔法阵**」⇒ 接管使魔**不再 spawn 我们的环**
+  （`s_xfam_ring_fail` / ring spawn 整段删除，`ring_vm` 字段只为兼容旧状态保留、恒 0）；
+  藏本体改成两手：① `color_1` alpha=0（原写法）+ ② 清 `flags_lo(+0x534)` bit1 = visible
+  （他们的本体脚本带 `colorTime/alphaTime`，只写颜色可能被脚本写回）—— 两者都**只写 slot 0**，
+  **不碰 slot 1（他们的魔法阵）** ✓；人侧还原时按存下的原值恢复（bit1 原值 0 就不点亮）。
+- **owner 追加口径**：「妖侧的使魔在自机附近不能发弹，这是基本机制」⇒ 新闸 **NOFIRE**：
+  接管的使魔在**妖侧**（`yk_focused()`）且离自机 `< YK_LE_FAM_NOFIRE_DIST`(64 px, 🟡 见 `TUNING.md` §2.0zz)
+  时，在**已在用**的站点 `th18:0x433ffa`（`on_enemy_shot_slot` 返回非 0 = 本帧这一槽不发射）里掐掉它的
+  `etOn` ⇒ **0 新站点**；只碰 `x->le` 条目，零售敌机 / 自建壳 / 绕转使魔一律不动；整局最多 8 行
+  `youkai/leveledit: NOFIRE familiar id=… d=…` 日志（带实测距离）。
+- 验证（本轮）：`make dll` rc=0、`make test-host` rc=0（63 checks）、`deploy --skip-build --force` rc=0；
+  四处 DLL md5 见「本次发布」行。**实跑待验**：妖侧靠近他们使魔 ⇒ 它不再发弹（`NOFIRE` 行）。
+
+#### 2026-10-19e 追加（owner：「是**拖尾光**没关掉」）
+
+- **定位（一手，leveledit 仓库 `assets.py:132-142`）**：他们的使魔**本体脚本** `script28/29` 是
+  `loop: sprite(...); +2: scriptNewRoot(script30); +2: scriptNewRoot(script30); … jmp(loop,0);`
+  ⇒ 每 2 tick 撒一颗**拖尾火花**（`script30` = 加法 16×16、20 tick 自删、layer 7）。
+  `scriptNewRoot` = **独立 root VM**（一手 `AnmLoaded__instantiate_orphan_vm_to_world_list_back 0x488a40`）
+  ⇒ **不在 `anm_vm_ids[]`** ⇒ 藏本体（slot 0）藏不到它，它照旧每 2 tick 冒新的。
+- **改法**：妖侧藏本体时顺手**删掉贴在这只使魔身上的那颗 VM**（短命粒子、他们的 ECL 不引用它）：
+  · 遍历 VM 列表（一手 `AnmManager__get_vm_with_id 0x488b40` 的走法：`mgr+0x6f0` world / `mgr+0x6f8` ui，
+    结点 `{+0 VM*, +4 next}`，VM id 在 `+0x544`）；
+  · 过滤 = 当前脚本号（`VM+0x28`）== **30** 且实体坐标（`VM+0x5f0`）离该使魔 **< 32 px**；
+  · 先取 `next` 再删（删除会摘结点）；整局最多 8 行 `trail VM deleted id=…` 日志。
+- **owner 追加裁决**：「抖动没关系」⇒ **不加**迟滞，`NOFIRE` 保持纯逐发否决（近 ⇒ 掐、远 ⇒ 继续）。
+- 验证（本轮）：`make dll` rc=0、`make test-host` rc=0、`strings` 命中 `trail VM deleted` / `NOFIRE`；
+  四处 DLL md5 见发布行。实跑待验：妖侧他们使魔身后**不再有拖尾光**。
+
+#### 2026-10-19f 追加（owner：「只要加载了我们的 DLL，使魔就开始转嫁血量，这个可能吗？」）
+
+- **结论：可能**（且已实装）。判据不是「卡在手上」，而是「**DLL 在场**」：
+  · 载体 = `sdk.c` 的帧点 `BP_ce_item_frame` 里已经在调的 `yk_practice_equip_once()`（**与卡组无关**，
+    实跑已证它在 108 不在卡组时照跑）⇒ 在这一支最前面加 `yk_le_transfer_standalone()`；
+  · `yk_le_transfer_standalone()`（`cards/youkai.c`）：判据 / 喂料 / 落点与卡内那条**逐条同源**——
+    他们那场 = boss ECL `subroutine_index >= 24`（按面粘性）；他们使魔 = 主 anm 脚本 ∈ {28,29}
+    或 `$I3 == 997`；**1/2 转给母机**（`parent_enemy_id`），母机查不到退回全局 boss，都没有才 `noboss` 丢；
+    时符 / 无敌期整笔丢 —— 全部复用同一批纯逻辑（`yk_transfer_feed` / `yk_transfer_clamp` /
+    `yk_xfer_suppress_reason` / `ce_damage_rect`）；
+  · **只做转伤**：外观（藏本体 / 拖尾 / NOFIRE）仍归卡内 —— 那是「装上 108」才有的表现；
+  · **幂等**：`ce_owned(108)` 为真 ⇒ 整段 no-op（卡内那条在跑，绝不双计）；
+  · 台账复用模块级 `s_xfam`（不是卡状态）⇒ 两条路里同一条使魔是同一个条目；
+  · 节拍用 `ce_sdk_frame()`（卡不在时 `s_ledger_frame` 不涨）；调用点在「自机 + AbilityManager 都在」之后
+    （`ce_owned()` 不解空指针）。
+- **做不到的那半（诚实标注）**：**没装我们的 DLL** 时当然做不到 —— 转伤靠 `ce_damage_rect` 建伤害源，
+  那是 DLL 侧的东西（owner 自己也说「没有 dll 做不到」✓）。
+- 验证（本轮）：`make dll` rc=0、`make test-host` rc=0（63 checks）、`strings` 命中
+  `TAKEOVER (no-108 path)` / `transfer applied (no-108 path)`；四处 DLL md5 见发布行。
+  实跑判据：**不带 108** 进他们那场 ⇒ 日志出现 `TAKEOVER (no-108 path) familiar id=…` 与
+  `transfer applied (no-108 path) boss id=… amount=…`，且使魔掉血时 boss 掉 1/2。
+
+#### 2026-10-19g 追加（owner：「他使魔血量太低了，得修改到我们 108 的水平」）
+
+- **现状（一手实跑）**：`CENSUS-DET` 实测他们的使魔 `life=20` —— 那是 **TH08 原值**（他们 ECL 的
+  `enmCreate(..., life, 0, 0)` 实参）。他们**自己改不上去**：ECL 的 life ≥ 1000 会被
+  `EnemyManager__allocate_new_enemy` 置「大怪」位 `0x40000000`（不可撤销）⇒ 他们 2026-10-18 只能封顶 999
+  （见他们 `notes.md` 的那条）。
+- **改法**：由**我们**在接管那一刻**回写三格 life**（`enemy+0x6220/6224/6228` = current/maximum/remaining），
+  取本卡自建使魔的同一条规则 `yk_map_fam_hp(母机最大HP, 机体)` = 母机 HP/3 × 机体千分比
+  （`youkai_core.h` §2.1ccc-30）；回写这条路**不置位**（本卡自建使魔本来就是「低值出生 + 事后回写」）。
+  · **只在 `max < want` 时写一次**（否则每次掉血都重写会吞掉伤害差分）；写后调用方重读 `life.current` 再进台账；
+  · 卡内路径用 `le_boss`、无 108 路径用 `yk_boss()`；日志 `HP raised id=… 20 -> …`（整局最多 8 行）。
+- 验证（本轮）：`make dll` rc=0、`make test-host` rc=0（63 checks）、`strings` 命中 `HP raised`；
+  四处 DLL md5 见发布行。实跑判据：接管日志之后出现 `HP raised id=… 20 -> <母机HP/3×千分比>`，
+  且使魔挨打明显变厚、`transfer applied` 的 amount 同比变大。
+
+#### 2026-10-19h 追加（owner：「TH08 不可能是这种一碰就碎的血量吧」）
+
+- **先把事实摆清（一手）**：他们 ECL 的 `familiarCreate(..., life, ...)` 实参来自 TH08 `ecldata2`，
+  他们自己的 `notes.md` 记着原值就是 **600/100/50/20** 四档；实跑 `MARK` 也看到同一波里有
+  `life=20` 与 `life=999999` 两种（不是我们读错）。⇒ TH08 原版这些子机里**确实有一批是 20**。
+- **但「一碰就碎」是真的**：TH18 自机弹的伤害量级比 TH08 高一个数量级 ⇒ 把 20 直接搬进 TH18 = 秒杀。
+  ⇒ 结论不是「照抄 TH08」，而是「**按 TH18 的伤害尺度重定**」。
+- **定案**：接管时写 `yk_map_fam_hp(母机最大HP, 机体) × YK_LE_FAM_HP_SCALE/1000`
+  （默认 **1.0×** = 本卡自建使魔的同一规则；BossCard2 的 boss `lifeSet(2000)` ⇒ **666**，比 20 厚 33 倍）；
+  旋钮登记 `TUNING.md` §2.0zz #2 —— owner 报一个倍数就改一行。
+
+#### 2026-10-19i 追加（owner 拍板：「按照 600 来吧」）
+
+- 接管使魔的血量改成**定值 `YK_LE_FAM_HP_FIXED = 600`**（× `YK_LE_FAM_HP_SCALE/1000` 倍数旋钮，默认 1.0×）。
+  依据：TH08 原版这批 `MystiaChild37/43` 的 `familiarCreate` 实参本来就是 **600**（他们 `notes.md` 的
+  TSub35/TSub40 行；同表另有 666/700/633/999 几档）。
+- **不再**按「母机 HP/3」推 —— 那个值会随 boss 阶段漂（BossCard2 的 boss 只有 2000 ⇒ 666；Boss1 16250 ⇒ 5416），
+  owner 要的是一个稳定手感 ⇒ 定值更合适。
+- 只**往上提**（`max < want` 才写）：实跑见过他们有一批本来就是 `999999`，原样保留 ✓。
+- 日志：`youkai/leveledit: HP raised id=… 20 -> 600 (owner: fixed 600)`（整局最多 8 行）。
+
+#### 2026-10-19j 追加（owner：「妖侧使魔得关闭体术」＋「你看看 [log]」）
+
+- **体术**：走本仓**已实跑验过**的那条正解 —— `yk_no_body_attack()` 写引擎自己的闸
+  `zEnemyData + 0x5108`（`no_hitbox_timer.current`，绝对 `e+0x6334`）= **2** ⇒ 前置闸 `0x42f51c`（`>0`）
+  跳过**接触致伤**；**不碰 `flags_lo` / hitbox 几何**（那两样改不动体术，见 `yk_no_body_attack()` 的一手注）。
+  ⇒ 只写**妖侧**（`yk_xfam_vm_tick` 的 side 分支）：人侧不写，计时器自己衰减回 0 ⇒ 体术自动恢复
+  （他们那批在人侧仍是原版敌人，体术该留着）。
+- **日志复核（02:36 那局，一手）**：`HP raised` **没出现**（那局跑的是 600 之前的 DLL，符合预期）；
+  但发现**真问题**：6 条 `transfer applied` 全是 **`hp_delta=0`**
+  （例：`boss=2 hp_before=1000 hp_after=1000 … amount=44, ext=44`）⇒ **喂料/建源都在跑，boss 却没掉血**。
+  ⇒ 本轮给那条观测加了两格：`boss_flags=0x…`（`enemy+0x635c`，bit4 = 免伤位）与 `inv=`
+  （`enemy+0x6320` 无敌计时器）⇒ 下一局一眼分清「boss 当时免伤」还是「我们的源没落地」。
+
+#### 2026-10-19p 追加（owner 改主意：接管不改血量）
+
+- **决定**：`YK_LE_FAM_HP_FIXED` 改为 **0 = 关** ⇒ 接管**不动他们的血量**（保持 ECL 原值，实跑 = 20）。
+  owner 逐字：「对于米斯蒂亚的使魔，**108 接管的血量也跟没接管一样**，不然太难了」。
+- 接管保留：1/2 转伤（`ce_damage_rect` 那条链）、妖侧外观（藏本体 + 删拖尾）、`NOFIRE` 近身掐弹、关体术。
+- 旋钮保留：要再提血，把 `YK_LE_FAM_HP_FIXED` 改成正数即可（代码路径与日志都还在，只是常量 0 时被编译器消掉）。
+
+#### 2026-10-19r 追加（★ 转嫁 `hp_delta=0` 定案：**源没毛病，是目标那帧扣不动血**；撤回 19q）
+
+- **19q 的结论是错的**：`c1b85336` 写了「伤害源建得出来，但敌机侧 `0x45f0f0` 从不采纳它」并改成**直接扣血**。
+  本轮把 `0x45dfa0`（建源）/`0x45f0f0`（结算）/`0x42ed40`（敌机伤害段）逐条反汇编读完 ⇒ **源一个字段都不缺**：
+  - `ce_damage_rect` 的调用形状与原生卡 Remilia `0x40f4a6` **逐参同形**（`push dmg / push life / 0.0 角度 / center*`
+    + `XMM2 = 宽 / XMM3 = 高`，`ret 0x10`）；建源写的字段：`+0x74` dmg、`+0x7c` 累计上限 `9999999`、
+    `+0x80` 命中间隔 `1`、`+0x84` 一源一敌 tag、`+0x88` 冷却 `0`、`+0x8c` 类别 `0`、`+0x98` 特殊 handler `0`
+    （自机弹那条 `0x45e890` 才把 `+0x98` 改成 1，走 `0x4b4270` 表；0 = 通用路径，照常累加）；
+  - 结算侧 `0x45f0f0` 的四道自检（active / `timer.cur != timer.prev` / `timer.cur % +0x80 == 0` / `+0x88 <= 0`）
+    新建的源**全部通过**（`+0x88` 由玩家侧 `0x45c502 dec` 每帧递减，只会变负）。
+- **真因 = 引擎自己的三道闸**（`EnemyData__step_game_logic` `0x42ed40`，`ebx` = zEnemyData = `enemy+0x122c`）：
+  ① `42f101 test cl,0x21 / jne 42f3c5`（flags = `[ebx+0x5130]` = `enemy+0x635c` 的 bit0/bit5
+     = `CE_ENEMY_FLAG_NO_LOCK`）⇒ **整段伤害结算（含 `call 0x45f0f0`）被跳过**；
+  ② `42f2b9 test BYTE [ebx+0x5130],0x10 / jne 42f31c`（bit4 = `CE_ENEMY_FLAG_NO_DAMAGE`）⇒ 只进 `+0x5008`；
+  ③ `42f2c2 cmp DWORD [ebx+0x50f4],0 / jg 42f31c`（**无敌计时器** = `enemy+0x6320`）⇒ 只进 `+0x5008`。
+  扣血全 exe 只有 `42f2da sub [ebx+0x5000],esi` 与 `42f314 sub [ebx+0x4ff4],esi` 两处，都排在三道闸之后。
+- **6/6 条实跑逐条对闸（一手日志原文）**：`flags=0x40b10040 inv=117`、`0x40b10040 inv=87`、
+  `0x40b1004c inv=57`、`0x40b1004c inv=27` ⇒ 过了 ①，被 **③** 吃掉；
+  `0x4091004f inv=47`、`0x4091004f inv=17` ⇒ **bit0 置位**，被 **①** 整段跳过。
+  ⇒ **没有一条落在三道闸都开着的帧**，所以「源没被采纳」是误判。
+  ⚠ 19m 曾提出同一假设、被 `8ac2bc45` 以「inv=41/55/25 期间玩家伤害照样在进（hp 1000→832）」撤回 ——
+  那条推断不成立：观测是 30 帧节流的**瞬时采样**，HP 下降发生在**两次观测之间**，而 `0x50f4` 归零后
+  玩家就能打进去。本次以反汇编为准（`engine.h` 的 `CE_ENEMY_FLAG_NO_DAMAGE` 注释 2026-09-22 就已经写了这两道闸）。
+- **顺带纠正一条假出处**：本仓一直流传「自建使魔那条转伤**实跑验证过能落地**」，但其出处是
+  `§BE#180` 引的 `xfer[… rect 977 fail 0]` —— 那是**建源调用的次数**，不是 HP 证据。
+  代码层面自建（映射/绕转）与接管（leveledit）**走的是同一行 `ce_damage_rect`、同一组参数、同一个落点**
+  （`yk_transfer_tick` 末尾那一段），**不存在「能落地 vs 不能落地」的逐字段差异**；
+  6/6 条实跑里也没有一条自建支的 `hp_delta>0` 记录 ⇒ 「自建那条已验证落地」这个前提本身不成立
+  （这也是为什么拿它当对照组会把人带偏）。本轮起用 `all_delta` / `src acc` 两格直接判。
+- **改了什么**（`cards/youkai.c`，只动 108 自己的卡，**不碰共享件**）：
+  1. 新增 `yk_target_damageable()`：三道闸全开才返回 1；免伤位（bit4）返回 −1（永远扣不动）；其余返回 0；
+  2. 卡内 + 无 108 两条路都在**建源前**过这道闸：闸关 ⇒ **不建源**，量攒在 `pending`（上限 `YK_XFER_HOLD_CAP` = 600），
+     窗口一开那一帧一次性落地（超出上限的部分进 `dropped` 账，`xfer[` 汇总对得上）；
+  3. `YK_XFER_DIRECT_HP` **1 → 0**（回到引擎的伤害源正路；那条直接扣血是绕过引擎的旁路，留作二分开关）；
+  4. `ce_damage_rect` 之后新增 owner 要的 `SRC …` 行，且打的是**从槽里回读的字段**而不是入参：
+     `youkai/leveledit: SRC id=… dmg=… ang=… flags=… owner=… life=… box=…, … slot=… act=… inv=…`
+     （`owner` = `+0x98`；`act` = 池里 active 槽数，**`act=1024` = 池满 ⇒ `0x45dfea` 那条出口不分配槽但仍返回 > 0**）；
+  5. `transfer applied` 那行加 `inv0=`（**建源那一帧**的无敌值）、`all=a->b all_delta=`（`enemy+0x6234`，
+     含被免伤吃掉的总伤害 ⇒ **源有没有命中**）、`src slot/alive/acc/dmg`（下一 tick 回读那条源自己的 `+0x78`
+     ⇒ **有没有被结算**）。
+- **验证（本轮）**：`make dll` rc=0、`make test-host` rc=0（63 checks）、`strings` 命中 `SRC id=` / `SRC hold` /
+  `all_delta=`。四处 DLL md5 见发布行。
+- **下一局判据（一眼）**：
+  · `SRC …` 出现且 `flags=0x1 dmg=<amount> act<1024` ⇒ 源确实建进池里了；
+  · `transfer applied … all_delta>0` ⇒ 引擎判了重叠；`src acc>0` ⇒ 那条源被结算过；
+  · `all_delta>0 而 hp_delta=0` ⇒ 命中了但被闸吃掉（`inv0>0` / flags bit0/bit5）—— 这说明 `yk_target_damageable()`
+    的判据还漏了一条，把那一格补上即可；
+  · `hp_delta>0` ⇒ 转嫁真的落地 ✓（`all_delta` 与 `hp_delta` 应同量级）。
+
+### BE-TERMINOLOGY-2026-10-19 · 术语口径：原生 / 原版（禁「零售」）
+
+**owner 口径（`local/*.md` 铁律）**：
+- **原生** = TH18 本身的内容
+- **原版** = 其它东方作品的内容
+- ✗ 不写「零售」（两边都是商业发行，这个词没有区分度 ✗）
+
+**已改**：`NOTICE.md` §5 SE 段 2 处（「各作零售 SE」→「各作原版 SE」、「上表那些零售字节」→「上表那些原版字节」）；
+桌面交接 `交接-20261019-108与leveledit协同.md` 2 行 3 处（§五「零售局」×2 → 「原生局」、§七「零售局」→「原生局」）。
+
+**TODO（小修小补，累计 116 处 / 27 个文件，不急 ✓）**：
+- [ ] 以后**新写**的代码注释 / 文档 / 提交信息一律用 **原生/原版** ✓
+- [ ] 旧文里**碰到就顺手改**（不做一次性大 rename ✗ —— diff 太大、与逻辑无关）
+- [ ] 优先改**玩家可见**的文本（卡面 desc / README / NOTICE / 交接）⇒ 已完成 ✓
+- [ ] 代码注释里的「零售」按触及它的那个提交顺带改 ✓
+- [ ] 收尾时用 `git grep -c 零售` 报一次**剩余行数**（今天基线：**116 行 / 27 文件**；
+      ★ 按「出现次数」口径 `git grep -o | wc -l` 同日为 **251 次 / 56 文件** —— 两个都要报，别混用 ✓）

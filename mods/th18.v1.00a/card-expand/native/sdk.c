@@ -2670,6 +2670,17 @@ static void ce_integrity_check(void)
         ce_log("integrity[stage %d]: CARD MANAGER INTEGRITY FAILURE — 请把以上行贴给维护者", stage);
 }
 
+/* ★ 2026-10-19（owner 拍板 B）：**符卡练习里自动装 108** 的卡侧入口（实现在 `cards/youkai.c`）。
+ *   为什么需要从**帧点**叫，而不是 108 自己的 `on_ctor` / `on_tick_2`：
+ *   练习模式从**存档的另一个卡组槽**重建牌组（`AbilityManager__reset_cards 0x407DA0`，
+ *   `engine/card/th18/02-lifecycle.md` §6）⇒ 108 不在那个卡组里 ⇒ 它的回调**根本不存在** ✗。
+ *   本帧点（`BP_ce_item_frame`）是**与卡组无关**的、每个正常游玩帧恰好到一次的地方 ⇒ 在这里发一次卡。
+ *   ⚠ 该函数自带全部判据 / 幂等 / 日志：非符卡练习**逐字 no-op**（不读卡表、不发卡）；
+ *     符卡练习里也只在 `0x4cf438 == 5 && 0x4ccd14 >= 0 && CE_PLAYER() && CE_ABILITY_MGR()` 时才动
+ *     （判据一手表见 `cards/youkai.c` 该函数上方的 2026-10-19b 订正段）。
+ *   改共享件登记见 `AUDIT.md` §BE-108-PRACTICE-EQUIP-2026-10-19。*/
+void yk_practice_equip_once(void);
+
 int __cdecl BP_ce_item_frame(x86_reg_t *regs, void *bp_info)
 {
     ce_site_trail("ce_item_frame");
@@ -2986,6 +2997,9 @@ int __cdecl BP_ce_item_frame(x86_reg_t *regs, void *bp_info)
             ce_sdk_trace(ce_card_id(card), 0x68, "on_item_frame");
         }
     }
+    /* ★ 2026-10-19（owner 拍板 B）：符卡练习自动装 108 —— **放在卡链遍历之后**（发卡会改链表 / 重建
+     *   HUD 列表，不能在遍历中途动它）。非符卡练习 = 读两个全局（`0x4cf438` / `0x4ccd14`）+ return。*/
+    yk_practice_equip_once();
     return BP_EXEC_ORIGINAL;
 }
 
