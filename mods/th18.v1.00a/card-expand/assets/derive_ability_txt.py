@@ -18,7 +18,7 @@
 （见 `native/text.c` 的头注），而引擎把 7 行当 7 个字符串分别渲染 ⇒ 我们这一行按 UTF-8 走、
 原版那些行照旧按 cp932 走，互不影响。其余字节**一个都不动**（做的是字节级外科手术）。
 
-★ owner 口径：2026-10-03「原版卡的『空白卡片』的描述改为：『**删牌大于一切噶人闷**』」。
+★ owner 口径：2026-10-03「原版卡的『空白卡片』的描述改为：『**删牌大于一切啊噶人闷**』」。
 """
 import os
 import sys
@@ -30,7 +30,7 @@ SRC = os.path.join(_REPO, "local", "th18.v1.00a", "dat", "ability.txt")
 OUT = os.path.join(ROOT, "patch", "th18", "ability.txt")
 
 SECTION = b"@BLANK"          # 空白卡（注册表 `zTableCardData[]` 的 id 0 = BLANK）
-NEW_DESC = "删牌大于一切噶人闷"      # owner 指定（UTF-8）
+NEW_DESC = "删牌大于一切啊噶人闷"      # owner 指定（UTF-8）
 
 
 def patch_section(data: bytes, key: bytes, new_lines: list) -> bytes:
