@@ -272,10 +272,16 @@ prog 24 = `ELECTRONIC`；鼓组名 `KICK & SNARE` / `ORCHESTRA` / `ETHNIC`；ban
 `find_sf2()` 优先挑 `thfont.sf2`）。混音不是"一刀切"：按 **GM program（音色号）/ 鼓通道** 给 dB 增益，
 逐曲例外（03 小号/低音区、07 主旋律、08 铜管）登记在 `tools/make_trance_rearr.py` 的
 `GLOBAL` / `PER_TRACK` 表，规则与当前取值见 [`TUNING.md`](TUNING.md) §2.0h。
+**音色覆盖（同批）**：**鼓 = kit 25**（17 首 ch9，含 ch15 静音层；thfont bank128 `TR-909 [SC-55]`）、
+**ZUN 号 = 56**（轨名含 `Romantic Tp` 的轨，61/58 → 56；表 = `KIT_PROGRAM` / `TRUMPET_REMAP`）。
+母带与起点用 `--master-peaks` / `--starts` 锚在改版前那一版 ⇒ 除鼓/号外其它乐器逐采样不变；
+`th18_07b`、`th18_13b` 与 A/B 的 `__kit25_TR808__`、`th18_08b` 与 `__kit25_and_56trumpet__`
+**逐字节相同**（A/B 在 `灵界BGM试听/鼓组A-B/`）。
 **上一代音源留档**：GeneralUser GS 渲染版 17 个另存为 `<modkit>\thcrap\bin\bgm\*.wav.gu.bak`
 （`thcrap/bin/bgm/` 同目录，覆盖前逐字节复制并核对 md5）；
-更早的自写合成器（`--render naive`）版 17 个仍在 `*.wav.naive.bak`（共 191.5 MB）。
-三代**帧数逐首相等**（= `thbgm.fmt` 的循环体长度）⇒ 循环点 / 同时间点 seek 的口径不变。
+更早的自写合成器（`--render naive`）版 17 个仍在 `*.wav.naive.bak`（共 191.5 MB）；
+本批（kit25 + 56 之前那一版）17 个另存为 `*.wav.pre-kit25.bak`。
+各代**帧数逐首相等**（= `thbgm.fmt` 的循环体长度）⇒ 循环点 / 同时间点 seek 的口径不变。
 
 ---
 

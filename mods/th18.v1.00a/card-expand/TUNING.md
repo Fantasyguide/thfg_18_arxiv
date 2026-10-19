@@ -422,16 +422,19 @@ AUDIT.md#cn-91-一手真身4032d0-是一套目的地-alpha-遮罩)。它靠本�
 > owner 方法论原话：「**我建议你从音色是什么冲调 arrange**」—— 所以调音旋钮的单位是 **dB**，
 > 键是 **GM program（音色号）/ 鼓通道**，不是"主旋律 / 伴奏"这种粗分轨。
 > **唯一实现**：`tools/make_trance_rearr.py` 文件头的两张表 **`GLOBAL`**（17 首通用）与
-> **`PER_TRACK`**（单曲例外，键 = 内部曲名）。改混音**只动那两张表**，别在别处硬编数值。
+> **`PER_TRACK`**（单曲例外，键 = 内部曲名）。**混音增益**只动那两张表；
+> **音色覆盖**（鼓 kit / ZUN 号）是同一文件里的 **`KIT_PROGRAM` / `TRUMPET_REMAP`**（见下表与下面 kit25/56 口径）。
 
 | 项 | 现值 | 在哪 | 什么时候要改 |
 | --- | --- | --- | --- |
+| **鼓 kit（音色覆盖）** | **25**（17 首的 **ch9**；ch15 第二层鼓也一并 25） | `KIT_PROGRAM`（`program_override()`） | owner 说鼓组不对（25 = thfont bank128 `TR-909 [SC-55]`，808/909 系；原默认是 0 `STANDARD 1` / 16 `POWER`） |
+| **ZUN 号（音色覆盖）** | **56**（`61` Brass Section / `58` Tuba → `56` Trumpet；**只改轨名含 `Romantic Tp` 的轨**） | `TRUMPET_PROGRAM` / `TRUMPET_REMAP` / `TRUMPET_TRACK_RE` | owner 说号的音色不对；**轨名没有 `Romantic Tp` 依据的轨一律不动** |
 | 全局鼓 | **+2.5 dB**（17 首全加；只认 ch9 / **bank 128** 的 GM 鼓组，含下面"ch15 补 bank"那层） | `GLOBAL["drums_db"]` | owner 说鼓整体太大/太小 |
 | 主旋律轨 | **−9.1 dB**（= 旧线性 0.35） | `DB_MELODY` | 换 `pick_melody` 判据或整体压法时才动 |
 | 倍斯（GM 32–39） | **+4.1 dB**（= 旧线性 1.6） | `DB_BASS` | 同上 |
 | 03 一面道中 | 小号 **56–58 −4.4 dB**（ZUNpet）/ melody **−10.5 dB** / 低音区乐器 **+2.3 dB**（平均音高 <60 的整件乐器） | `PER_TRACK["th18_03"]` | owner 说 zun 号还大/低音还薄 |
 | 07 三面道中 | melody **−12.1 dB**（弦乐 40–47 表在、但**本曲 MIDI 没有弦乐**，命中 0） | `PER_TRACK["th18_07"]` | 待 owner 确认"弦乐"指哪个音色（本曲只有钢琴/12 弦吉他/萨克斯/哨音/小号/倍斯） |
-| 08 三面 boss | 铜管 **56–63 −3 dB**（本曲实际命中 **61 `BRASS`**，16.6% 能量） | `PER_TRACK["th18_08"]` | owner 说号还大/还小 |
+| 08 三面 boss | 铜管 **56–63 −3 dB**（本曲实际命中 **61 `BRASS`**，16.6% 能量；61 现按 ZUN 号覆盖成 **56**，这张表照样覆盖） | `PER_TRACK["th18_08"]` | owner 说号还大/还小 |
 
 **优先级（每音只命中一条，不叠乘）**：鼓 > melody 轨 > `prog_db` > 倍斯 32–39 > 低音区乐器 > 1.0。
 **为什么不按单音抬低音区**：伴奏常是**八度叠奏**（03 的 ch1 就是 46–67 的八度线），逐音抬只会把低八度抬起来、
@@ -460,6 +463,26 @@ AUDIT.md#cn-91-一手真身4032d0-是一套目的地-alpha-遮罩)。它靠本�
     **默认不动**（包内素材保持现状）；试听 = 拿这条重渲那 5 首（本轮临时目录 `/tmp/audition-drum-unmute/`，**未入包**）。
 - ★ 2026-10-19 owner（**待办**）：07b 的"弦乐"= **~40 s 附近能量最大的那一层**
   ⇒ 下次调 07b 时先定位那一段的主音色（大概率是 prog 25 十二弦吉他，占 34%）再压
+- ★★ **2026-10-19 owner 本轮拍板（kit 25 + ZUN 号 56，现行）**：依据音色审计
+  （`local/th18.v1.00a/midi/TIMBRE-AUDIT.md`）+ `灵界BGM试听/鼓组A-B/` 的 A/B 听感 ——
+  - **鼓 = kit 25**（TR-808 / SD Tekno 系）：**17 首的 ch9 program 一律 25**；`th18_15`（No.16 结局）
+    audit 原建议这首不参与换 kit，owner 定「15/16 不在游玩曲目里 ⇒ 也统一 25」；**ch15**
+    （5 首的第二层鼓 / 源 MIDI 里 `CC7=0` 静音）**也设 25**（对成品零听感变化，只为口径统一）。
+    实现 = `KIT_PROGRAM = 25` + `program_override()`：只改**临时 MIDI** 的 PC 值字节，不增删事件。
+  - **ZUN 号 = 56**：**只对轨名命中 `Romantic Tp` 的轨**做 `TRUMPET_REMAP = {61→56, 58→56}`。
+    audit 说这批"多数 61、少数本来就是 56、`th18_04` 甚至是 58" ⇒ **按轨名判**，不能盲改 61；
+    没有轨名依据的轨**一个字节不动**。逐曲命中（现行）：
+    `th18_04` 58→56、`th18_05/06/08/09/11/14/17/18` 61→56；`th18_03/07/10/12` 本来就 56（不动）；
+    `th18_01/13/15/16` 没有 `Romantic Tp` 轨（不动）。
+  - **A/B 口径落地**：`--master-peaks` / `--starts`（改版前的 pre-norm 峰值与起点）⇒ 换 kit / 换号
+    之外**其它乐器逐采样不变**。客观验证：`th18_07b`、`th18_13b` 与 **A/B 的 `__kit25_TR808__`
+    逐字节相同**；`th18_08b` 与 **`__kit25_and_56trumpet__` 逐字节相同**；17/17 帧数 Δ=0。
+    复现：先 `--no-program-override --peak-report pre-peaks.json --start-report pre-starts.json`
+    跑一遍旧版拿锚点，再 `--master-peaks pre-peaks.json --starts pre-starts.json` 出全量。
+    **本批锚点已存** `local/th18.v1.00a/trance_bgm/pre-kit25-{peaks,starts}.json`（gitignored）——
+    照这两份重跑即可逐字节复现；旧 wav 在 `*.wav.pre-kit25.bak`。
+    ⚠ 峰值 JSON 里存**打印的 6 位小数**（`round(peak, 6)`）；存全精度 float 会让 A/B 的 md5 差在
+    最后 1 个样本的舍入上（实测 `1.0306828022003174` vs `1.030683`）。
 
 
 ### 2.0b ★ 113 的**灵界主炮组**（TH13 灵界 set10 复刻，2026-09-13）

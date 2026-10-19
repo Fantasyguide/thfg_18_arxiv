@@ -27,6 +27,11 @@ TH13 的 `NN`/`NNb` 对**时长严格相等、时间轴零延迟对齐**（能�
    > 倍斯 program 32–39 > 低音区乐器 > 1.0**。CLI 可临时覆盖：`--drums-gain` / `--prog-gain 56=-4.4`
    （支持 `56-63=-3` 区间）/ `--melody-db` / `--bass-db` / `--low-db` / `--track-config <json>`；
    旧的线性口径 `--melody-gain 0.35` / `--bass-gain 1.6` 仍可用（内部换算成 dB）。
+   ★ **换音色 / 换 kit 时冻结母带与时间轴（2026-10-19 A/B 口径）**：`--master-peaks <json>`
+   给每首一个**改版前的 pre-norm 峰值**（增益 = `--peak 0.92` / 那个峰值），`--starts <json>`
+   给每首**改版前的起点**（不再跑 `fine_align`）⇒ 除这次改的音色外，其它乐器**逐采样不变**、
+   A/B 可以在同一秒直接切换。`--peak-report` / `--start-report` 把本次的值写出来，供下一轮用。
+   两项都不给 ⇒ 照旧：逐文件峰值归一 + 每次重新 fine_align。
 3. **渲染**（`--render`）：
    - **`sf2`（默认）** = **GM SoundFont 真采样渲染**（2026-10-19 起）：把调音表写进 MIDI 的
      **note-on velocity**（每音按"鼓 / melody / program / 倍斯 / 低音区"取一条增益，
@@ -51,6 +56,16 @@ TH13 的 `NN`/`NNb` 对**时长严格相等、时间轴零延迟对齐**（能�
        得用 `--drum-bank-unmute 100`（默认关，等 owner 拍板）。
    - **`naive`（兜底，2026-09-14 那版）** = 自写小型合成器（GM program 家族 → 锯齿/脉冲/正弦 + ADSR，
      鼓用噪声包络）。**没有 fluidsynth / 没有 sf2 的机器**靠它仍能出全套素材。
+   ★ **鼓 kit / ZUN 号覆盖表（2026-10-19 owner 定：`KIT_PROGRAM` / `TRUMPET_REMAP`）**：
+     渲染前在**临时 MIDI**（不动源 MIDI）里把 program change 的**值字节原地改掉**：
+     · **鼓通道（ch9，以及工具补过 bank128 / 源 MIDI 里就是 bank128 的鼓层，含 ch15）一律
+       `KIT_PROGRAM = 25`** —— thfont 里 bank128 prog25 = `TR-909 [SC-55]`（808/909 血统的电鼓），
+       替换掉原来的 GM 默认 `STANDARD 1`(prog0) / `POWER`(prog16)。ch15 那层在源 MIDI 里是
+       `CC7=0` 静音（见 `drum_bank_patch`），照样设 25 —— 对成品零听感变化，只为"万一放开"时同套 kit。
+     · **轨名命中 `Romantic Tp`（ZUN 号）的轨**：按 `TRUMPET_REMAP` 把 `61`（Brass Section）/
+       `58`（Tuba）改成 `56`（Trumpet；thfont bank0 prog56 的 preset 名就叫 `Romantic Tp`）。
+       **轨名没有依据的轨一律不动**（本批 61 全部带 `Romantic Tp` 轨名，故 61→56 的命中面 = 这些轨）。
+     · `--no-program-override` 关掉这张表（A/B 对照、或出"改版前 pre-norm 峰值"用）。
 4. **对齐**（`fine_align`）：把渲染结果与**原曲循环体**的 chroma 时间序列做相关，取最佳延迟 ⇒
    以那个偏移为起点、截取**与原曲循环体严格等长**的一段（`--xfade` 加末尾 500 ms 交叉淡化）
    ⇒ 时长/循环点与原曲一致（我们刚修好的"同时间点 seek"继续有效）。
@@ -67,6 +82,7 @@ SoundFont 是**第三方音色库**（来源 URL + sha256 见 `local/th18.v1.00a
 import argparse
 import glob
 import hashlib
+import json
 import math
 import os
 import re
@@ -182,6 +198,26 @@ DB_MELODY = 20 * math.log10(0.35)      # −9.1 dB
 DB_BASS = 20 * math.log10(1.6)         # +4.1 dB
 
 
+# ---------------------------------------------------------------- 鼓 kit / ZUN 号覆盖表
+# ★★ 2026-10-19 owner 拍板（依据 `local/th18.v1.00a/midi/TIMBRE-AUDIT.md` 的音色审计 +
+#   `灵界BGM试听/鼓组A-B` 的听感 A/B）：
+#   · **鼓 = kit 25**（TR-808 / SD Tekno 系）：17 首的 **ch9 program 一律 25**；ch15 那层
+#     （5 首的第二套鼓、源 MIDI 里 `CC7=0` 静音）**也设 25**（对成品零听感变化，口径统一）。
+#     thfont.sf2 的 bank128 prog25 preset 名 = `TR-909 [SC-55]`（audit 按一般表叫 TR-808；
+#     两者都是 808/909 血统，与默认 STANDARD 1 / POWER 明显不同族）。
+#   · **ZUN 号 = 56**：旋律轨里 `61`（Brass Section）/ `58`（Tuba）→ `56`（Trumpet），
+#     **只改轨名命中 `Romantic Tp` 的轨**（audit：本批多数 61、少数本来就是 56、1 首 58 ——
+#     所以不能盲改 61，必须按轨名判）；**轨名没有依据的轨一律不动**。
+#   做法 = 渲染前把**临时 MIDI** 的 program change 值字节原地改（不增删事件 ⇒ 时间轴不动）。
+KIT_PROGRAM = 25
+TRUMPET_PROGRAM = 56
+# 61 = Brass Section（本批 "ZUN 号" 误用的 GM 音色）；58 = Tuba（`th18_04` 的 Romantic Tp 轨）。
+# 56 本身已经是目标 ⇒ 不在表里，命中轨原样保留。
+TRUMPET_REMAP = {61: TRUMPET_PROGRAM, 58: TRUMPET_PROGRAM}
+# `SD-90 (Romantic Tp)` / `Romantic Tp` / `ZUNpet` 都算；别把 `Bari.Sax` 之类捎进来。
+TRUMPET_TRACK_RE = re.compile(r"romantic\s*tp|trumpet|zun\s*pet", re.I)
+
+
 
 # ---------------------------------------------------------------- SMF 解析
 def _vlq(b, i):
@@ -193,7 +229,7 @@ def _vlq(b, i):
             return v, i
 
 
-def parse_smf(path, velout=None, info=None, ccout=None):
+def parse_smf(path, velout=None, info=None, ccout=None, pcout=None):
     """→ (tracks, ppq, tempos)。tracks[i] = [(tick, 'on'/'off'/'prog', ch, a, b)]（按 tick 升序）。
 
     `velout`（list，可选）：把每条 note-on 的 **velocity 字节在文件里的绝对偏移**追加进去，
@@ -205,6 +241,10 @@ def parse_smf(path, velout=None, info=None, ccout=None):
 
     `ccout`（list，可选）：把 CC7（通道音量）的**值字节绝对偏移**追加进去，
     形如 `(轨号, tick, 通道, 值, 偏移)` —— `--drum-bank-unmute` 靠它把 `CC7=0` 原地抬高。
+
+    `pcout`（list，可选）：把 program change（0xC0）的**值字节绝对偏移**追加进去，
+    形如 `(轨号, tick, 通道, program, 偏移)` —— 鼓 kit / ZUN 号覆盖表（`program_override`）
+    靠它**原地改值**（与 `velout`/`ccout` 一样，只改字节、不增删事件 ⇒ 时间轴不动）。
     """
     d = open(path, "rb").read()
     if d[:4] != b"MThd":
@@ -266,9 +306,13 @@ def parse_smf(path, velout=None, info=None, ccout=None):
                         # ⚠ 这里 `i` **已经走过了两个数据字节**（见上面 `i += 2`）⇒ 值在 `i-1`
                         ccout.append((ti, tick, ch, b, body_off + i - 1))
             elif hi in (0xC0, 0xD0):
+                # ⚠ program change 的值字节（0xC0 的 a）在这里、**i 还没前进** ⇒ 绝对偏移 = body_off+i
+                val_at = body_off + i
                 a = body[i]; i += 1
                 if hi == 0xC0:
                     evs.append((tick, "prog", ch, a, 0))
+                    if pcout is not None:
+                        pcout.append((ti, tick, ch, a, val_at))
             else:
                 break
         tracks.append(evs)
@@ -383,6 +427,62 @@ def drum_bank_names(hits):
             name += f" 等 {len(items)} 轨"
         parts.append(f"ch{ch} → bank128（{name}，{items[0][4]} 音）")
     return " / ".join(parts)
+
+
+# ---------------------------------------------------------------- 鼓 kit / ZUN 号（program 覆盖）
+def program_override(raw, info, pc_out, drum_ch):
+    """→ (改过的 MIDI 字节, hits, seen)。
+
+    · **`KIT_PROGRAM`**：`drum_ch` 里**每一条** program change → 25（ch9 / 补过 bank128 的 ch15）；
+    · **`TRUMPET_REMAP`**：**只对轨名命中 `TRUMPET_TRACK_RE` 的轨**（61 Brass Section / 58 Tuba → 56）。
+      轨名没有依据的轨**一个字节不动**（`seen` 只装轨名命中的那些，供报表逐曲列出）。
+    只改 PC 的**值字节**（不增删事件 ⇒ 所有后续偏移仍有效；`pc_out` 来自补 bank 之后的那次解析）。
+    """
+    raw = bytearray(raw)
+    names = [" / ".join(m["names"]) for m in info]
+    hits, seen = [], []
+    for ti, tick, ch, prog, at in pc_out:
+        assert raw[at] == prog, f"PC 偏移不自洽：track {ti} tick {tick} ch{ch} @{at}"
+        name = names[ti] if ti < len(names) else ""
+        if ch in drum_ch:
+            if prog != KIT_PROGRAM:
+                raw[at] = KIT_PROGRAM
+                hits.append(dict(track=ti, name=name, tick=tick, ch=ch,
+                                 old=prog, new=KIT_PROGRAM, why="kit"))
+        elif name and TRUMPET_TRACK_RE.search(name):
+            new = TRUMPET_REMAP.get(prog, prog)
+            seen.append(dict(track=ti, name=name, tick=tick, ch=ch, old=prog, new=new))
+            if new != prog:
+                raw[at] = new
+                hits.append(dict(track=ti, name=name, tick=tick, ch=ch,
+                                 old=prog, new=new, why="trumpet"))
+    return raw, hits, seen
+
+
+def program_override_summary(hits, seen):
+    """→ 一行摘要（"kit25 ch9（1 个 PC：16→25）；ZUN 号 tr6/ch4 61→56「Romantic Tp」"）。"""
+    parts = []
+    kit = {}
+    for h in hits:
+        if h["why"] == "kit":
+            kit.setdefault(h["ch"], []).append(h["old"])
+    if kit:
+        parts.append("kit25 " + ", ".join(
+            f"ch{ch}（{len(v)} 个 PC：{','.join(map(str, sorted(set(v))))}→{KIT_PROGRAM}）"
+            for ch, v in sorted(kit.items())))
+    if seen:
+        # 同一轨常有多条同值 PC（本批每轨 5 条，DAW 按段重发）⇒ 按 (轨/通道/旧→新) 去重再报
+        uniq = []
+        for s in seen:
+            k = (s["track"], s["ch"], s["old"], s["new"], s["name"])
+            if k not in [(u["track"], u["ch"], u["old"], u["new"], u["name"]) for u in uniq]:
+                uniq.append(s)
+        parts.append("ZUN 号 " + ", ".join(
+            (f"tr{s['track']}/ch{s['ch']} {s['old']}→{s['new']}「{s['name']}」"
+             if s["old"] != s["new"] else
+             f"tr{s['track']}/ch{s['ch']} 已是 {s['new']}「{s['name']}」（不动）")
+            for s in uniq))
+    return "；".join(parts)
 
 
 # ---------------------------------------------------------------- 主旋律判定
@@ -626,7 +726,8 @@ def _db2lin(db):
 
 
 def render_sf2(mid_path, sf2, fs, fs_libdir, melody_tracks, prog_by_ch, notes,
-               mel_gain, bass_gain, log=print, tune=None, drum_bank=True, unmute_cc7=None):
+               mel_gain, bass_gain, log=print, tune=None, drum_bank=True, unmute_cc7=None,
+               program_override_on=True):
     """SoundFont 渲染：改 velocity 的临时 MIDI ⇒ fluidsynth 渲 44100 Hz wav ⇒ 读回 ⇒ 降到 22050。
 
     返回 (n,2) float32 @ SR —— 与 `render_naive` 同接口，后面的 fine_align / 截断 / 归一化
@@ -647,6 +748,9 @@ def render_sf2(mid_path, sf2, fs, fs_libdir, melody_tracks, prog_by_ch, notes,
     把这层放开，它是真鼓"，对成品**零听感变化**（实测与 `--no-drum-bank` 逐采样相同）。
     `unmute_cc7`（默认 None）：把这层静音的 `CC7=0` 抬到给定值（`--drum-bank-unmute`），
     用来试听"真鼓放出来是什么样"；**默认不动**（包内素材保持现状，等 owner 拍板）。
+    `program_override_on`（默认开）：跑 `program_override()` —— 鼓通道 → **kit 25**、
+    `Romantic Tp` 轨 61/58 → **56**（2026-10-19 owner 拍板，见文件头 `KIT_PROGRAM` / `TRUMPET_REMAP`）。
+    `--no-program-override` 关掉（A/B 对照 / 出改版前峰值）。
     """
     tune = tune or {}
     drums_gain = _db2lin(tune.get("drums_db") or 0.0)
@@ -669,9 +773,11 @@ def render_sf2(mid_path, sf2, fs, fs_libdir, melody_tracks, prog_by_ch, notes,
                 mid_src = os.path.join(tmp, "patched.mid")
                 open(mid_src, "wb").write(patched)
                 log(f"    [drum-bank] {os.path.basename(mid_path)}: {drum_bank_names(hits)}")
-        vol, cc_out = [], []
-        # 只为拿 velocity / CC7 字节偏移（**补过 bank 的文件重新解析**，偏移才对）
-        tracks, _, _ = parse_smf(mid_src, velout=vol, ccout=cc_out)
+        vol, cc_out, pc_out = [], [], []
+        # 只为拿 velocity / CC7 / PC 的字节偏移（**补过 bank 的文件重新解析**，偏移才对）
+        # `info2` 同时装轨道名：program_override 要按轨名判 "ZUN 号"（Romantic Tp）。
+        info2 = []
+        tracks, _, _ = parse_smf(mid_src, velout=vol, ccout=cc_out, pcout=pc_out, info=info2)
         # 鼓通道：ch9（GM 规定）+ 本次补过 bank 的通道
         #   + 任何 CC0=1（MMA 14-bit 口径 = bank 128）的通道
         drum_ch = ({9} | set(hits)
@@ -689,6 +795,15 @@ def render_sf2(mid_path, sf2, fs, fs_libdir, melody_tracks, prog_by_ch, notes,
                     and (prog_by_ch.get(k[1]) or 0) not in range(32, 40)   # 倍斯另有 bass_db
                     and k[0] not in melody_tracks}                          # melody 轨另有 melody_db
         raw = bytearray(open(mid_src, "rb").read())
+        # ★ 鼓 kit 25 / ZUN 号 56（2026-10-19 owner 定）：只改临时 MIDI 的 program change 值字节
+        if program_override_on:
+            raw, prog_hits, prog_seen = program_override(raw, info2, pc_out, drum_ch)
+            # 调音表按 **program** 命中：改过的通道要让增益表看到**新** program
+            # （本批 08 的 56–63 表早已覆盖 61/56；这里只是让语义自洽，未来加别的表不会错位）
+            for h in prog_hits:
+                prog_by_ch[h["ch"]] = h["new"]
+            if prog_hits or prog_seen:
+                log(f"    [prog] {program_override_summary(prog_hits, prog_seen)}")
         # ★ 被 **CC7=0** 静音的通道：本批 5 首的 ch15 就是这种（见 drum_bank_patch 的注释）。
         #   它们**听不见**，但它们的 velocity 会参与下面的"全局等比缩"⇒ 静音层能悄悄把整首曲子
         #   压低（实测 th18_18：补鼓后全局缩 0.825→0.751，全曲 RMS 掉 1.5 dB，而听感上什么都没变）。
@@ -979,7 +1094,6 @@ def resolve_tune(stem, a):
     tune["prog_db"] = {int(k): float(v) for k, v in (tune.get("prog_db") or {}).items()}
     # --track-config：JSON，按**内部曲名**键（也可直接给一份不带曲名的对象）
     if a.track_config:
-        import json
         try:
             cfg = json.loads(a.track_config)
         except json.JSONDecodeError as e:
@@ -1049,6 +1163,18 @@ def main(argv=None):
                     help="不做细对齐（默认**做**：小节线 ±1 小节三条锚点各搜 ±0.8 s，取 chroma 相关最高者）")
     ap.add_argument("--no-drum-bank", action="store_true",
                     help="**不**给非 ch9 的鼓通道补 bank 128（关掉 ch15 真鼓修复；仅供 A/B 对照）")
+    ap.add_argument("--no-program-override", action="store_true",
+                    help="**不**改 program（鼓 kit 25 / ZUN 号 61,58→56）——A/B 对照或出改版前峰值用")
+    ap.add_argument("--master-peaks", default=None, metavar="JSON",
+                    help="母带增益锚定：JSON {内部曲名: 改版前 pre-norm 峰值}（A/B 口径 —— 保证换 kit / "
+                         "换号以外**其它乐器绝对电平不变**，也让 07b 与 kit25 A/B 逐字节相同）")
+    ap.add_argument("--peak-report", default=None, metavar="JSON",
+                    help="把每首**归一化前**的峰值写进这个 JSON（给下一次 --master-peaks 用）")
+    ap.add_argument("--starts", default=None, metavar="JSON",
+                    help="起点锚定：JSON {内部曲名: 起点秒} —— 换音色/换 kit 时沿用改版前起点，"
+                         "不跑 fine_align（A/B 口径；07b 与 kit25 A/B 逐字节相同就靠这条）")
+    ap.add_argument("--start-report", default=None, metavar="JSON",
+                    help="把每首实际采用的起点（秒）写进这个 JSON（给下一次 --starts 用）")
     ap.add_argument("--drum-bank-unmute", type=int, default=None, metavar="CC7",
                     help="给补过鼓 bank 的通道把源 MIDI 的 `CC7=0` 抬到 CC7（0–127）"
                          "——本批 5 首的 ch15 是整层静音的，这条只为试听；**默认不动**")
@@ -1091,6 +1217,22 @@ def main(argv=None):
         raise SystemExit(f"读不出 {MUSICCMT}（需要游戏自带的音乐室注释文件）")
     stems = a.stem or [k for k, _ in sorted(tbl.items(), key=lambda kv: kv[1])]
     os.makedirs(a.out, exist_ok=True)
+    # 母带锚定（A/B 口径）：给 `--master-peaks` 的 JSON 里有的曲目用**固定增益**
+    # = a.peak / 改版前 pre-norm 峰值 ⇒ 换 kit / 换号之外其它乐器电平不动；
+    # 没给的曲目照旧逐文件峰值归一。`--peak-report` 把这次归一化前的峰值存下来供下次用。
+    master_peaks = {}
+    if a.master_peaks:
+        with open(a.master_peaks, encoding="utf-8") as f:
+            master_peaks = json.load(f)
+        print(f"母带锚定：{len(master_peaks)} 首用 --master-peaks 的改版前峰值（其余照旧归一）")
+    # 起点锚定（A/B 口径）：`--starts` 里有的曲目直接用改版前的起点（不再跑 fine_align）
+    forced_starts = {}
+    if a.starts:
+        with open(a.starts, encoding="utf-8") as f:
+            forced_starts = json.load(f)
+        print(f"起点锚定：{len(forced_starts)} 首用 --starts 的改版前起点（换音色不动时间轴）")
+    peak_report = {}
+    start_report = {}
     env_cache = {}
     print(f"{'曲':<9}{'轨':>4}{'音符':>7}{'主旋律轨':>9}{'MIDI 时长':>10}{'循环体':>9}{'起点':>9}{'r':>7}  文件")
     wrote = 0
@@ -1140,7 +1282,8 @@ def main(argv=None):
             rendered = render_sf2(mid, sf2, fs, fs_lib, mel, prog, notes,
                                   mel_gain, bass_gain, tune=tune,
                                   drum_bank=not a.no_drum_bank,
-                                  unmute_cc7=a.drum_bank_unmute)
+                                  unmute_cc7=a.drum_bank_unmute,
+                                  program_override_on=not a.no_program_override)
         else:
             rendered = render_naive(notes, prog, midi_secs + 0.5, mel_ch, mel_gain,
                                     bass_gain, seed=hash(stem) & 0xFFFF)
@@ -1162,7 +1305,13 @@ def main(argv=None):
         #   差 **2.27 s** ⇒ "同时间点 seek" 时会串到另一小节上（实测 chroma@0 = 0.78，修正后 0.93）。
         #   ⇒ 修法：把 **±1 小节**那三条小节线都当锚点，各跑一遍 `fine_align`，取 chroma 相关
         #     最高的那条（判据不变，只是候选从 1 条变 3 条；±0.8 s 的窗口宽度也不变）。
-        if a.no_align:
+        # ★ `--starts`（A/B 口径）：换音色 / 换 kit **不动时间轴** —— 直接用改版前那次的起点，
+        #   不再跑 fine_align。这样同一首的多个音色版本逐采样对齐，A/B 可以直接切换比对。
+        if stem in forced_starts:
+            start_sec = float(forced_starts[stem])
+            r_corr = float("nan")
+            print(f"    [start] {stem}: 锚定改版前起点 {start_sec:+.6f}s（换音色不动时间轴）")
+        elif a.no_align:
             lag, r_corr = 0.0, float("nan")
         else:
             cands = []
@@ -1177,6 +1326,7 @@ def main(argv=None):
             if start_est != cands[1][0]:
                 print(f"    [align] 小节线估计 {cands[1][0]:+.2f}s → 换用 "
                       f"{start_est:+.2f}s（r={r_corr:.3f}，±1 小节重挑）")
+        start_report[stem] = start_sec
         start = max(0, int(start_sec * SR))
         want = int(round(loop_secs * SR))                        # ★ 严格 = 原曲循环体长度
         if start < 0:                                            # 渲染比原曲早 ⇒ 前面补静音
@@ -1192,7 +1342,14 @@ def main(argv=None):
             w = np.linspace(0, 1, xf, dtype=np.float32)[:, None]
             seg[:xf] = seg[:xf] * w + seg[-xf:] * (1 - w)
         peak = float(np.abs(seg).max()) or 1.0
-        seg *= (a.peak / peak)
+        peak_report[stem] = peak
+        if stem in master_peaks:
+            gain = a.peak / float(master_peaks[stem])
+            seg *= gain
+            print(f"    [master] {stem}: 改版前 pre-norm peak {float(master_peaks[stem]):.6f} "
+                  f"→ 固定增益 {gain:.6f}（新峰值 {peak * gain:.6f}）")
+        else:
+            seg *= (a.peak / peak)
         pcm = (np.clip(seg, -1, 1) * 32767.0).astype("<i2").tobytes()
         name = f"{stem}b_rearr.wav"
         path = os.path.join(a.out, name)
@@ -1210,6 +1367,14 @@ def main(argv=None):
               f"{midi_bpm(tempos, tick_at_intro):.1f} 主旋律能量占比 "
               f"{share(mel_ch)*100:.0f}%→"
               f"{share(mel_ch)*100*mel_gain**2/(1-share(mel_ch)+share(mel_ch)*mel_gain**2):.0f}%]")
+    if a.peak_report and peak_report:
+        with open(a.peak_report, "w", encoding="utf-8") as f:
+            json.dump(peak_report, f, ensure_ascii=False, indent=1, sort_keys=True)
+        print(f"pre-norm 峰值 → {a.peak_report}（{len(peak_report)} 首；下次给 --master-peaks 用）")
+    if a.start_report and start_report:
+        with open(a.start_report, "w", encoding="utf-8") as f:
+            json.dump(start_report, f, ensure_ascii=False, indent=1, sort_keys=True)
+        print(f"起点 → {a.start_report}（{len(start_report)} 首；下次给 --starts 用）")
     print(f"\n写出 {wrote} 个文件 → {os.path.relpath(a.out, REPO)}"
           f"（切模式：mode.txt 写 `rearr`；同步：bash local/sync_modkit_dll.sh）")
     return 0 if wrote or a.dry_run else 2
