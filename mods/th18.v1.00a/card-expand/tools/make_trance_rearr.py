@@ -23,7 +23,7 @@ TH13 的 `NN`/`NNb` 对**时长严格相等、时间轴零延迟对齐**（能�
 2. **判主旋律**（`pick_melody`）：按"音域最高 + 单音为主 + 音符密度"打分，选出 1–2 条主旋律轨；
    ★ **调音按音色（2026-10-19 起，owner 口径「从音色是什么冲调 arrange」）**：文件头两张表全是 **dB** ——
    `GLOBAL`（17 首通用，目前只有 `drums_db = +2.5`）与 `PER_TRACK`（单曲例外，键 = 内部曲名）。
-   每音的增益按优先级取**一条**：**鼓（ch9 / CC0=128）> melody 轨 > `prog_db`（GM program 表）
+   每音的增益按优先级取**一条**：**鼓（ch9 / bank 128）> melody 轨 > `prog_db`（GM program 表）
    > 倍斯 program 32–39 > 低音区乐器 > 1.0**。CLI 可临时覆盖：`--drums-gain` / `--prog-gain 56=-4.4`
    （支持 `56-63=-3` 区间）/ `--melody-db` / `--bass-db` / `--low-db` / `--track-config <json>`；
    旧的线性口径 `--melody-gain 0.35` / `--bass-gain 1.6` 仍可用（内部换算成 dB）。
@@ -37,6 +37,18 @@ TH13 的 `NN`/`NNb` 对**时长严格相等、时间轴零延迟对齐**（能�
      MIDI；把增益写进 velocity = 每个音各算各的，比"按通道分几次渲染再相加"简单且不会漏掉
      同通道不同角色的音。velocity→振幅实测**近似线性**（见 `_sf2_velocity_gain`），
      所以线性增益 g 直接当 velocity 因子用。
+     ★ **鼓组 bank 修补（2026-10-19 owner：ch15 那层「假钢琴鼓」必须改真鼓）**：
+       本批 5 首（内部 `th18_13/14/16/17/18`）把**第二层鼓**写在 **ch15**、而 MIDI 里
+       **一个 bank select 都没有** ⇒ fluidsynth 按 prog 0 把它渲成**钢琴**。⇒ 渲染前在
+       **临时 MIDI**（不动源 MIDI）里给这些通道补 `CC0=1 + CC32=0`（MMA 14-bit 口径 =
+       **bank 128**）+ fluidsynth 加 `-o synth.midi-bank-select=mma`（默认 `gs` 会**直接
+       忽略** CC0，实测见 `drum_bank_patch`）。**只对"确认是鼓"的通道**下手：通道 ≠ 9、
+       该轨的音色/轨道名命中鼓组关键字（`Drum Kit` / `GA5` / `Elementics`）、且**全部音高
+       落在 GM 打击乐键域 27–87**。
+       ⚠ **实测：这 5 首的 ch15 在源 MIDI 里是 `CC7=0`（整层静音）** ⇒ 补 bank 对成品
+       `_rearr` **零听感变化**（补/不补逐采样差 −48 dB）；真能听到"假钢琴鼓"的是 **naive**
+       老变体（`*_both.wav` / `*_se.wav`：naive 只认 ch9 为鼓、也不认 CC7）。要让它真的响
+       得用 `--drum-bank-unmute 100`（默认关，等 owner 拍板）。
    - **`naive`（兜底，2026-09-14 那版）** = 自写小型合成器（GM program 家族 → 锯齿/脉冲/正弦 + ADSR，
      鼓用噪声包络）。**没有 fluidsynth / 没有 sf2 的机器**靠它仍能出全套素材。
 4. **对齐**（`fine_align`）：把渲染结果与**原曲循环体**的 chroma 时间序列做相关，取最佳延迟 ⇒
@@ -57,6 +69,7 @@ import glob
 import hashlib
 import math
 import os
+import re
 import shutil
 import struct
 import subprocess
@@ -121,16 +134,21 @@ FMT_RECORD = 0x34
 #   不要按 "melody / bass" 这种粗分轨调，要按「**这条轨用的是什么音色**」（GM program / 鼓通道）给增益。
 #   所以下面两张表的单位全是 **dB**（velocity→振幅实测近似线性，见 `_sf2_velocity_gain`；
 #   g_lin = 10^(dB/20)）。优先级（每音只命中一条，不叠乘）：
-#       **鼓（ch9 / CC0=128）> melody 轨 > 指定 program > 倍斯 program 32–39 > 低音区乐器 > 1.0**
+#       **鼓（ch9 / bank 128）> melody 轨 > 指定 program > 倍斯 program 32–39 > 低音区乐器 > 1.0**
 #
 # `GLOBAL` = 17 首全部生效；`PER_TRACK` = 单曲覆盖（键 = **内部曲名**，不是 wav 名）。
 # ⚠ 单曲例外**不要**摊到全量：owner 只点了 03/07/08 三首。
 
 GLOBAL = {
     # ★ owner：「整体灵界可以把鼓的声音放大」⇒ 17 首全加。
-    #   只认 **GM 鼓**：ch9（GM 规定的鼓通道）或 CC0=128 的 bank（本批 MIDI 全是 ch9）。
-    #   ⚠ 实测本批有几首把鼓**另写一层在 ch15**（`GA5 (Elementics)` / `Triebwerk (Drum Kit 6)`，
-    #     且**没有** CC0=128）⇒ fluidsynth 按 prog 0 把它渲成钢琴，那不是"鼓"，不该吃这个增益。
+    #   只认 **GM 鼓**：ch9（GM 规定的鼓通道）或 **bank 128** 的鼓组。
+    #   ★ 2026-10-19 owner：「ch15 那层假钢琴鼓**肯定得改成真鼓**」——实测本批 5 首
+    #     （内部 `th18_13/14/16/17/18`）把**第二层鼓**写在 **ch15**（音色名 `GA5 (Elementics)` /
+    #     `Triebwerk (Drum Kit 6)`）且 MIDI 里**没有任何 bank select** ⇒ 若放开就是 prog 0 钢琴。
+    #     现在 `drum_bank_patch()` 给这些通道补 bank select（MMA 口径 CC0=1+CC32=0 = bank 128）
+    #     ⇒ 走**真鼓组**，并因此吃这条 +2.5 dB。
+    #   ⚠ 但这 5 首的 ch15 在**源 MIDI 里是 `CC7=0`（整层静音）** ⇒ 补 bank 对成品零听感变化
+    #     （补/不补逐采样差 −48 dB）。"假钢琴鼓"只在 **naive** 老变体（`*_both.wav` / `*_se.wav`）里听得到。
     "drums_db": +2.5,
 }
 
@@ -175,12 +193,18 @@ def _vlq(b, i):
             return v, i
 
 
-def parse_smf(path, velout=None):
+def parse_smf(path, velout=None, info=None, ccout=None):
     """→ (tracks, ppq, tempos)。tracks[i] = [(tick, 'on'/'off'/'prog', ch, a, b)]（按 tick 升序）。
 
     `velout`（list，可选）：把每条 note-on 的 **velocity 字节在文件里的绝对偏移**追加进去，
     形如 `(轨号, tick, 通道, 音高, velocity, 偏移)` —— sf2 路径靠它**原地改 velocity**
     （比"重新生成一个 SMF"安全：所有 meta/sysex/CC 原样保留）。
+
+    `info`（list，可选）：逐轨追加 `{"names": [轨道名/音色名...], "notes": {ch: [音高...]}}`
+    —— 给 `drum_bank_patch` 判"这条轨是不是鼓"用（音色名 + 音域），**不改**事件流。
+
+    `ccout`（list，可选）：把 CC7（通道音量）的**值字节绝对偏移**追加进去，
+    形如 `(轨号, tick, 通道, 值, 偏移)` —— `--drum-bank-unmute` 靠它把 `CC7=0` 原地抬高。
     """
     d = open(path, "rb").read()
     if d[:4] != b"MThd":
@@ -199,6 +223,7 @@ def parse_smf(path, velout=None):
             continue
         ti = len(tracks)
         evs, i, tick, run = [], 0, 0, None
+        names, note_ch = [], {}
         while i < len(body):
             dt, i = _vlq(body, i)
             tick += dt
@@ -218,6 +243,8 @@ def parse_smf(path, velout=None):
                     tempos.append((tick, (data[0] << 16) | (data[1] << 8) | data[2]))
                 elif typ == 0x2F:
                     break
+                elif typ in (0x03, 0x04):                  # 轨道名 / 乐器名（鼓组识别的依据）
+                    names.append(data.decode("cp932", "replace").strip())
             elif st in (0xF0, 0xF7):
                 ln2, i = _vlq(body, i); i += ln2
             elif hi in (0x80, 0x90, 0xA0, 0xB0, 0xE0):
@@ -226,13 +253,18 @@ def parse_smf(path, velout=None):
                 i += 2
                 if hi == 0x90 and b > 0:
                     evs.append((tick, "on", ch, a, b))
+                    note_ch.setdefault(ch, []).append(a)
                     if velout is not None:
                         velout.append((ti, tick, ch, a, b, vel_at))
                 elif hi == 0x80 or (hi == 0x90 and b == 0):
                     evs.append((tick, "off", ch, a, 0))
-                elif hi == 0xB0 and a in (0, 32):
-                    # 只留 bank select（CC0/CC32）：判鼓组（bank 128）要用；其余 CC 不装
+                elif hi == 0xB0 and a in (0, 7, 32):
+                    # 只留 bank select（CC0/CC32）+ 通道音量（CC7）：判鼓组（bank 128）与
+                    # 「这层是不是被 CC7=0 静音了」都要用；其余 CC 不装
                     evs.append((tick, "cc", ch, a, b))
+                    if ccout is not None and a == 7:
+                        # ⚠ 这里 `i` **已经走过了两个数据字节**（见上面 `i += 2`）⇒ 值在 `i-1`
+                        ccout.append((ti, tick, ch, b, body_off + i - 1))
             elif hi in (0xC0, 0xD0):
                 a = body[i]; i += 1
                 if hi == 0xC0:
@@ -240,6 +272,8 @@ def parse_smf(path, velout=None):
             else:
                 break
         tracks.append(evs)
+        if info is not None:
+            info.append({"names": names, "notes": note_ch})
     if not tempos:
         tempos = [(0, 500000)]                 # 文件一个 tempo 事件都没有 ⇒ 用 SMF 默认 120 BPM
     tempos.sort(key=lambda tu: tu[0])          # ⚠ 只按 tick 排（按 (tick, µs) 排会把同一 tick 的顺序搞乱）
@@ -263,6 +297,92 @@ def ticks_to_sec(tempos, ppq):
                 return ta + (tick - a) * u / 1e6 / ppq
         return t
     return f
+
+
+# ---------------------------------------------------------------- 鼓组 bank 修补（ch15 假鼓 → 真鼓）
+# ★★ 2026-10-19 owner：「ch15 那层**假钢琴鼓**肯定得改成真鼓」。
+#   现象：内部 `th18_13/14/16/17/18` 五首里有一层鼓写在 **ch15**（音色名 `GA5 (Elementics)` /
+#   `Triebwerk (Drum Kit 6)`，prog 0）且整份 MIDI **一个 bank select 都没有** ⇒ fluidsynth 按
+#   prog 0 把它渲成**钢琴**（音高 33–53 的低音区钢琴 = 听起来像"假鼓"）。
+#   做法：渲染前给这些通道补 **bank select = bank 128（鼓组）**，只写进**临时 MIDI**，源 MIDI 不动。
+#
+# ⚠ **bank 128 的正确写法**（实测 2026-10-19，fluidsynth 2.2.5 + thfont.sf2）：
+#   · CC 的值域是 7 bit（0–127），**`CC0=128` 根本发不出来**（0x80 会被当成 status 字节）。
+#     SF2 的 bank 号是 14 bit：`bank = CC0(MSB) × 128 + CC32(LSB)` ⇒ **bank 128 = CC0=1 + CC32=0**。
+#   · 但 fluidsynth 默认 `synth.midi-bank-select = gs`，**GS 模式直接忽略 CC0**（实测 CC0=1 与
+#     不发的渲染**逐采样相同**，rms/质心都一样）；`gm`/`xg` 同样不认。只有 `mma` 按 14 bit 收
+#     ⇒ 所以渲染时加 `-o synth.midi-bank-select=mma`。
+#   · 实测判据：同一串鼓音符（36/38/42/49）渲在 ch9（GM 鼓）vs ch15+CC0=1+mma ⇒ 波形相关 **+1.000**
+#     （centroid 5766 Hz = 打击乐）；不发 CC0 / 发 CC0=0 / gs+CC0=1 ⇒ 相关 −0.04（centroid 959 Hz = 钢琴）。
+#   · 本批 17 份 MIDI 除本次补的以外**没有任何 CC0/CC32**（逐文件扫过）⇒ 切 mma 对其余 12 首零影响。
+#
+# ★★ **但这层在源 MIDI 里是静音的**（2026-10-19 实测，比 bank 更要紧）：
+#   这 5 首的 ch15 轨道都有一条 `CC7=0`（通道音量 0）@tick 0 ⇒ **整层发不出声**（fluidsynth 实测：
+#   CC7=0 → −75 dB）。⇒ 补 bank **不会改变成品听感**（本工具补/不补的 `_rearr` 逐采样差 −48 dB）；
+#   真正能听到"假钢琴鼓"的是 **naive** 老变体（`*_both.wav` / `*_se.wav`）：naive 合成器只认 ch9
+#   为鼓、也不认 CC7 ⇒ 那层在 naive 里就是低音区钢琴（音高 33–53）。
+#   ⇒ 要不要让这层**真的响**是 mixing 决定，不是 bug 修：`--drum-bank-unmute CC7` 可抬回来试听，
+#     **默认不动**（等 owner 拍板；实测 th18_16 抬到 CC7=100：sub<60 +4.7 dB / 60–250 +5.5 dB）。
+DRUM_NAME_RE = re.compile(r"drum\s*kit|drumkit|\bGA5\b|elementics", re.I)
+GM_DRUM_LO, GM_DRUM_HI = 27, 87      # GM 打击乐键域（B1–D#6 一带有意义的鼓键；超出就不是鼓）
+
+
+def drum_bank_patch(raw, info):
+    """→ (新 MIDI 字节, hits)。`hits[ch] = [(轨号, 音色名, 最低音, 最高音, 音符数)]`。
+
+    **只对确认是鼓的通道**补 bank select（写法见上面的注释），判据三条全中：
+      ① 通道 ≠ 9（ch9 按 GM 本来就是鼓组，不需要补）；
+      ② 该轨的**轨道名/音色名**命中 `DRUM_NAME_RE`（`Drum Kit` / `GA5` / `Elementics`）；
+      ③ 该通道**全部音高**落在 GM 打击乐键域 `27–87`、且至少 8 个音（排除"名字撞车但其实是旋律"的轨）。
+    插入点 = 该轨 body 的最前面（delta 0，tick 0）：`CC0=1` + `CC32=0`（= bank 128）。
+    同一通道若在多条轨出现，则每条含它的轨都插一次（幂等，tick 0 重复设 bank 无害）。
+    """
+    hits = {}
+    for ti, meta in enumerate(info):
+        name = " / ".join(meta["names"])
+        if not name or not DRUM_NAME_RE.search(name):
+            continue
+        for ch, pitches in sorted(meta["notes"].items()):
+            if ch == 9 or len(pitches) < 8:
+                continue
+            lo, hi = min(pitches), max(pitches)
+            if lo < GM_DRUM_LO or hi > GM_DRUM_HI:
+                continue
+            hits.setdefault(ch, []).append((ti, name, lo, hi, len(pitches)))
+    if not hits:
+        return raw, hits
+    # ⚠ MThd 头块固定 14 字节（`MThd` + len=6 + 6 字节 body）：从 **14** 开始走块，前 14 字节原样保留。
+    out, pos, ti = bytearray(raw[:14]), 14, 0
+    while pos + 8 <= len(raw):
+        sig = raw[pos:pos + 4]
+        ln = struct.unpack_from(">I", raw, pos + 4)[0]
+        body = raw[pos + 8:pos + 8 + ln]
+        if sig == b"MTrk":
+            inject = b""
+            for ch in sorted(hits):
+                if ch in info[ti]["notes"]:
+                    inject += bytes([0, 0xB0 | ch, 0, 1, 0, 0xB0 | ch, 32, 0])
+            if inject:
+                body = inject + body
+            out += b"MTrk" + struct.pack(">I", len(body)) + body
+            ti += 1
+        else:
+            out += sig + struct.pack(">I", ln) + body
+        pos += 8 + ln
+    if pos < len(raw):
+        out += raw[pos:]
+    return bytes(out), hits
+
+
+def drum_bank_names(hits):
+    """→ 一行摘要（"ch15 → bank128（GA5 (Elementics)，4481 音）"）。"""
+    parts = []
+    for ch, items in sorted(hits.items()):
+        name = items[0][1]
+        if len(items) > 1:
+            name += f" 等 {len(items)} 轨"
+        parts.append(f"ch{ch} → bank128（{name}，{items[0][4]} 音）")
+    return " / ".join(parts)
 
 
 # ---------------------------------------------------------------- 主旋律判定
@@ -506,20 +626,27 @@ def _db2lin(db):
 
 
 def render_sf2(mid_path, sf2, fs, fs_libdir, melody_tracks, prog_by_ch, notes,
-               mel_gain, bass_gain, log=print, tune=None):
+               mel_gain, bass_gain, log=print, tune=None, drum_bank=True, unmute_cc7=None):
     """SoundFont 渲染：改 velocity 的临时 MIDI ⇒ fluidsynth 渲 44100 Hz wav ⇒ 读回 ⇒ 降到 22050。
 
     返回 (n,2) float32 @ SR —— 与 `render_naive` 同接口，后面的 fine_align / 截断 / 归一化
     **一个字都没改**（换的只是音源，时间轴不动）。
 
     `tune` = 调音表（见文件头 `GLOBAL` / `PER_TRACK`，**单位 dB**）：
-      · `drums_db` —— **鼓**（ch9 或 CC0=128 的鼓组 bank）；
+      · `drums_db` —— **鼓**（ch9，或 bank select 指到 **bank 128** 的鼓组通道）；
       · `melody_db` —— `pick_melody` 选的 melody 轨；
       · `prog_db` = {GM program: dB} —— 按 **program change** 命中（"从音色是什么调"的关键旋钮）；
       · `bass_db` —— 倍斯 program 32–39；
       · `low_db` / `low_mean_max` —— **按乐器**（轨+通道）判低音区：平均音高 < `low_mean_max`
         就整件 +`low_db`。★ 不按单音抬：伴奏常是**八度叠奏**，逐音只抬低八度会把八度关系弄歪。
     优先级（每音只命中一条，不叠乘）：鼓 > melody 轨 > `prog_db` > 倍斯 > 低音区乐器 > 1.0。
+
+    `drum_bank`（默认开）：渲染前跑 `drum_bank_patch()`，把"确认是鼓但不在 ch9"的通道
+    补 bank select 到 **bank 128**（ch15 假钢琴鼓修复；`--no-drum-bank` 关掉，仅供 A/B）。
+    ⚠ 本批这 5 首的 ch15 在**源 MIDI 里就是 `CC7=0`（整层静音）** ⇒ 补 bank 只保证"万一有人
+    把这层放开，它是真鼓"，对成品**零听感变化**（实测与 `--no-drum-bank` 逐采样相同）。
+    `unmute_cc7`（默认 None）：把这层静音的 `CC7=0` 抬到给定值（`--drum-bank-unmute`），
+    用来试听"真鼓放出来是什么样"；**默认不动**（包内素材保持现状，等 owner 拍板）。
     """
     tune = tune or {}
     drums_gain = _db2lin(tune.get("drums_db") or 0.0)
@@ -529,60 +656,97 @@ def render_sf2(mid_path, sf2, fs, fs_libdir, melody_tracks, prog_by_ch, notes,
     low_gain = _db2lin(tune.get("low_db") or 0.0)
     low_mean_max = float(tune.get("low_mean_max") or 60)
     drum_hit = pg_hit = low_hit = 0
-    vol = []
-    tracks, _, _ = parse_smf(mid_path, velout=vol)   # 只为拿 velocity 字节偏移（几何与主流程一致）
-    # 鼓通道：ch9（GM 规定）+ 任何 CC0=128 选了鼓组 bank 的通道
-    drum_ch = {9} | {ch for evs in tracks for tick, k, ch, a, b in evs
-                     if k == "cc" and a == 0 and b == 128}
-    # 每件乐器（轨+通道）的平均音高 —— 判它是不是"低音乐器"
-    agg = {}
-    for ti, tick, ch, note, vel, at in vol:
-        if ch not in drum_ch:
-            s, n = agg.get((ti, ch), (0, 0))
-            agg[(ti, ch)] = (s + note, n + 1)
-    mean_pitch = {k: s / n for k, (s, n) in agg.items()}
-    low_inst = {k for k, mp in mean_pitch.items()
-                if mp < low_mean_max
-                and (prog_by_ch.get(k[1]) or 0) not in range(32, 40)   # 倍斯另有 bass_db
-                and k[0] not in melody_tracks}                          # melody 轨另有 melody_db
-    raw = bytearray(open(mid_path, "rb").read())
-    # ① 每音的线性增益（优先级见 docstring）
-    scaled = []
-    for ti, tick, ch, note, vel, at in vol:
-        g = 1.0
-        prog = prog_by_ch.get(ch) or 0
-        if ch in drum_ch:
-            g = drums_gain
-            drum_hit += 1
-        elif ti in melody_tracks:
-            g = mel_gain
-        elif prog in prog_gain:
-            g = prog_gain[prog]
-            pg_hit += 1
-        elif prog in range(32, 40):
-            g = bass_gain
-        elif (ti, ch) in low_inst:
-            g = low_gain
-            low_hit += 1
-        scaled.append((_sf2_velocity_gain(vel, g), vel, at))
-    # ② 超过 127 就**整体等比缩**（不是逐音 clip）：相对关系不变，绝对电平交给末尾的峰值归一。
-    top = max(v for v, _, _ in scaled)
-    shrink = 1.0
-    if top > 127:
-        shrink = 127.0 / top
-        scaled = [(max(1, int(round(v * shrink))), o, at) for v, o, at in scaled]
-    chg = sum(1 for v, o, _ in scaled if v != o)
-    for v, _, at in scaled:
-        raw[at] = v
     tmp = tempfile.mkdtemp(prefix="rearr-sf2-")
     try:
+        # ① 鼓组 bank 修补（ch15 假鼓）：只改**临时 MIDI**，源 MIDI 一个字节不动
+        mid_src = mid_path
+        hits = {}
+        if drum_bank:
+            info = []
+            parse_smf(mid_path, info=info)
+            patched, hits = drum_bank_patch(open(mid_path, "rb").read(), info)
+            if hits:
+                mid_src = os.path.join(tmp, "patched.mid")
+                open(mid_src, "wb").write(patched)
+                log(f"    [drum-bank] {os.path.basename(mid_path)}: {drum_bank_names(hits)}")
+        vol, cc_out = [], []
+        # 只为拿 velocity / CC7 字节偏移（**补过 bank 的文件重新解析**，偏移才对）
+        tracks, _, _ = parse_smf(mid_src, velout=vol, ccout=cc_out)
+        # 鼓通道：ch9（GM 规定）+ 本次补过 bank 的通道
+        #   + 任何 CC0=1（MMA 14-bit 口径 = bank 128）的通道
+        drum_ch = ({9} | set(hits)
+                   | {ch for evs in tracks for tick, k, ch, a, b in evs
+                      if k == "cc" and a == 0 and b == 1})
+        # 每件乐器（轨+通道）的平均音高 —— 判它是不是"低音乐器"
+        agg = {}
+        for ti, tick, ch, note, vel, at in vol:
+            if ch not in drum_ch:
+                s, n = agg.get((ti, ch), (0, 0))
+                agg[(ti, ch)] = (s + note, n + 1)
+        mean_pitch = {k: s / n for k, (s, n) in agg.items()}
+        low_inst = {k for k, mp in mean_pitch.items()
+                    if mp < low_mean_max
+                    and (prog_by_ch.get(k[1]) or 0) not in range(32, 40)   # 倍斯另有 bass_db
+                    and k[0] not in melody_tracks}                          # melody 轨另有 melody_db
+        raw = bytearray(open(mid_src, "rb").read())
+        # ★ 被 **CC7=0** 静音的通道：本批 5 首的 ch15 就是这种（见 drum_bank_patch 的注释）。
+        #   它们**听不见**，但它们的 velocity 会参与下面的"全局等比缩"⇒ 静音层能悄悄把整首曲子
+        #   压低（实测 th18_18：补鼓后全局缩 0.825→0.751，全曲 RMS 掉 1.5 dB，而听感上什么都没变）。
+        #   ⇒ 静音通道的音符**不参与** `top`，只做越界保护（≤127，反正发不出声）。
+        cc7 = {}
+        for evs in tracks:
+            for tick, k, ch, a, b in evs:
+                if k == "cc" and a == 7:
+                    cc7.setdefault(ch, []).append(b)
+        muted_ch = {ch for ch, vals in cc7.items() if vals and max(vals) == 0}
+        unmuted = set()
+        if unmute_cc7 is not None:                 # ★ 可选：把静音的鼓层抬回来（A/B 试听用）
+            for ti, tick, ch, v, at in cc_out:
+                if ch in hits and v == 0:
+                    raw[at] = max(1, min(127, int(unmute_cc7)))
+                    unmuted.add(ch)
+            muted_ch -= unmuted
+        # ② 每音的线性增益（优先级见 docstring）
+        scaled, audible = [], []
+        for ti, tick, ch, note, vel, at in vol:
+            g = 1.0
+            prog = prog_by_ch.get(ch) or 0
+            if ch in drum_ch:
+                g = drums_gain
+                drum_hit += 1
+            elif ti in melody_tracks:
+                g = mel_gain
+            elif prog in prog_gain:
+                g = prog_gain[prog]
+                pg_hit += 1
+            elif prog in range(32, 40):
+                g = bass_gain
+            elif (ti, ch) in low_inst:
+                g = low_gain
+                low_hit += 1
+            v = _sf2_velocity_gain(vel, g)
+            scaled.append((v, vel, at))
+            if ch not in muted_ch:
+                audible.append(v)
+        # ③ 超过 127 就**整体等比缩**（不是逐音 clip）：相对关系不变，绝对电平交给末尾的峰值归一。
+        top = max(audible) if audible else 127
+        shrink = 1.0
+        if top > 127:
+            shrink = 127.0 / top
+        scaled = [(max(1, min(127, int(round(v * shrink)))), o, at) for v, o, at in scaled]
+        chg = sum(1 for v, o, _ in scaled if v != o)
+        for v, _, at in scaled:
+            raw[at] = v
         mid2 = os.path.join(tmp, "scaled.mid")
         wav = os.path.join(tmp, "out.wav")
         open(mid2, "wb").write(bytes(raw))
         env = dict(os.environ)
         if fs_libdir:
             env["LD_LIBRARY_PATH"] = fs_libdir
-        cmd = [fs, "-F", wav, "-r", str(RENDER_SR), "-g", "1.0", "-i", sf2, mid2]
+        # ★ `synth.midi-bank-select=mma`：默认 `gs` 会**忽略 CC0** ⇒ bank 128 选不上（见 drum_bank_patch）。
+        #   MMA 按 14-bit 收（CC0=MSB×128 + CC32）；本批 MIDI 除本次补的以外没有 CC0/CC32 ⇒ 对其余曲零影响。
+        cmd = [fs, "-F", wav, "-r", str(RENDER_SR), "-g", "1.0",
+               "-o", "synth.midi-bank-select=mma", "-i", sf2, mid2]
         r = subprocess.run(cmd, env=env, capture_output=True, text=True)
         if r.returncode != 0 or not os.path.exists(wav):
             raise SystemExit(f"fluidsynth 失败（rc={r.returncode}）：{' '.join(cmd)}\n"
@@ -592,6 +756,14 @@ def render_sf2(mid_path, sf2, fs, fs_libdir, melody_tracks, prog_by_ch, notes,
         shutil.rmtree(tmp, ignore_errors=True)
     out = downsample_2x(pcm, sr)
     extra = ""
+    if hits:
+        extra += f"，鼓组 bank 修补 {drum_bank_names(hits)}"
+        if muted_ch:
+            extra += (f"，其中 {','.join('ch%d' % c for c in sorted(muted_ch))} 的 CC7=0"
+                      f"（源 MIDI 本来就是静音层，不计入全局缩）")
+        if unmuted:
+            extra += (f"，已把 {','.join('ch%d' % c for c in sorted(unmuted))} 抬回 "
+                      f"CC7={unmute_cc7}（试听用，非默认）")
     if drums_gain != 1.0:
         extra += f"，鼓 {tune['drums_db']:+.1f} dB（命中 {drum_hit} 个音）"
     if prog_gain:
@@ -860,7 +1032,7 @@ def main(argv=None):
     ap.add_argument("--melody-db", type=float, default=None, help="主旋律增益（dB）")
     ap.add_argument("--bass-db", type=float, default=None, help="倍斯增益（dB）")
     ap.add_argument("--drums-gain", type=float, default=None, metavar="DB",
-                    help="鼓（ch9 / CC0=128 鼓组）增益，dB（全局默认 +2.5）")
+                    help="鼓（ch9 / bank 128 鼓组）增益，dB（全局默认 +2.5）")
     ap.add_argument("--prog-gain", action="append", default=None, metavar="PROG[-HI]=DB",
                     help="按 GM program（或 program 区间）调增益，dB，可重复"
                          "（例 --prog-gain 56=-4.4 --prog-gain 56-63=-3）")
@@ -875,6 +1047,11 @@ def main(argv=None):
     ap.add_argument("--dry-run", action="store_true", help="只解析 + 报表，不渲染")
     ap.add_argument("--no-align", action="store_true",
                     help="不做细对齐（默认**做**：小节线 ±1 小节三条锚点各搜 ±0.8 s，取 chroma 相关最高者）")
+    ap.add_argument("--no-drum-bank", action="store_true",
+                    help="**不**给非 ch9 的鼓通道补 bank 128（关掉 ch15 真鼓修复；仅供 A/B 对照）")
+    ap.add_argument("--drum-bank-unmute", type=int, default=None, metavar="CC7",
+                    help="给补过鼓 bank 的通道把源 MIDI 的 `CC7=0` 抬到 CC7（0–127）"
+                         "——本批 5 首的 ch15 是整层静音的，这条只为试听；**默认不动**")
     ap.add_argument("--xfade", action="store_true", help="接缝加 500 ms 交叉淡化（默认不加）")
     ap.add_argument("--render", choices=("sf2", "naive"), default="sf2",
                     help="音源：sf2 = GM SoundFont 渲染（默认，需 fluidsynth + .sf2）；"
@@ -961,7 +1138,9 @@ def main(argv=None):
                     mel_ch.add(ch)
         if a.render == "sf2":
             rendered = render_sf2(mid, sf2, fs, fs_lib, mel, prog, notes,
-                                  mel_gain, bass_gain, tune=tune)
+                                  mel_gain, bass_gain, tune=tune,
+                                  drum_bank=not a.no_drum_bank,
+                                  unmute_cc7=a.drum_bank_unmute)
         else:
             rendered = render_naive(notes, prog, midi_secs + 0.5, mel_ch, mel_gain,
                                     bass_gain, seed=hash(stem) & 0xFFFF)
