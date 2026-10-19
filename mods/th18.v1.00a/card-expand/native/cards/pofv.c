@@ -6461,9 +6461,17 @@ static void pofv_c4m_fire(void)
              * `pofv_c4m_tick()` 里按 `laser_delay[li]` 倒计时执行 ✓。*/
             /* 2026-10-18（§2.4 #1）：一手的起始帧是 **60/90/120** ✅ => 三条都走延迟 ✅
              * （原来第 1 台在激活当帧就出 ✗ = 早 60 帧）。*/
-            s_c4m_st.laser_delay[0] = 60;
-            s_c4m_st.laser_delay[1] = 90;
-            s_c4m_st.laser_delay[2] = 120;
+            /* ★ 2026-10-19 owner：「★ 激光从**一开始就不可见** ✗」✗
+             *   ⇒ ★ 低难度只建 `li==2` 那条 ✗，★ 但它要等 **120 帧**才 spawn ✗ ⇒ ★ 看不见 ✓。
+             *   ⇒ ★ 改成：★ **低难度 `li==2` 立刻出（delay 0）**✗ ✓；★ 高难度仍 `60/90/120` 先后 ✓。*/
+            if (pofv_c4_rank() < 4) {
+                s_c4m_st.laser_delay[0] = 0; s_c4m_st.laser_delay[1] = 0;
+                s_c4m_st.laser_delay[2] = 0;                     /* ★ 立刻 ✓ */
+            } else {
+                s_c4m_st.laser_delay[0] = 60;
+                s_c4m_st.laser_delay[1] = 90;
+                s_c4m_st.laser_delay[2] = 120;
+            }
             s_c4m_st.laser_vm[1] = 0; s_c4m_st.laser_vm[2] = 0;
             s_c4m_st.laser_timer[1] = 0; s_c4m_st.laser_timer[2] = 0;
         } else {
@@ -6631,7 +6639,9 @@ static void pofv_c4m_tick(void)
                     th0 = (float)ti0 * 0.17453293f;
                 }
                 pofv_c4m_edge(0.0f, oy_b, th0, &ex, &ey);
-                s_c4m_st.ox = ex; s_c4m_st.oy = ey;                 /* ★ 从边界交点发 ✓ */
+                /* ★ 2026-10-19 owner：「★ 星星的**发弹点随自机平移** ✗」✗
+                 *   ⇒ ★ 原来这里**每帧**用 `ex/ey` 覆盖 `ox/oy` ✗ ⇒ ★ 跟着自机动 ✗ ✓
+                 *   ⇒ ★ 删掉覆盖 ✓ —— ★ `ox/oy` 只在 `pofv_c4m_fire` 里**拍一次快照**✗ ✓。*/
                 s_c4m_st.base = -th0 + 3.1415927f;                  /* ★ 朝场内（反向）✓ */
             }
             for (g = 0; g < groups; ++g) {
