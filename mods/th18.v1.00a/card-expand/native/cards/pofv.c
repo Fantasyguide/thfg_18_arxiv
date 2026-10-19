@@ -7963,7 +7963,7 @@ static int on_tick_2(ce_card_t *c)
             else if (s_aura_kind == 3) pofv_c4s_fire();   /* 早苗 C4 ✓ */
             else                       pofv_c4_fire();    /* 灵梦/咲夜 C4 ✓ */
             /* ★ 2026-10-18：把**原始角色号**也打出来（`kind` 是映射后的：1 魔理沙/2 咲夜/3 早苗/0 灵梦）*/
-            ce_log("pofv: [DBG] 空格 ⇒ 放 C3 ✓（f=%d kind=%d raw_char=%d charge=%.0f）",
+            ce_log("pofv: [DBG] 空格 ⇒ 放 **C4** ✓（f=%d kind=%d raw_char=%d charge=%.0f）",
                    (int)s_card_frames, (int)s_aura_kind,
                    (int)(*(const int32_t *)POFV_ADDR_PLAYER_CHAR), (double)s_aura_charge);
         }
