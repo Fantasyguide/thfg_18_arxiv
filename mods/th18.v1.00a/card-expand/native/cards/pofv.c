@@ -6320,6 +6320,50 @@ static void pofv_c4m_edge(float px, float py, float ang, float *ex, float *ey)
     if (*ey < 0.0f) *ey = 0.0f; if (*ey > POFV_FIELD_H) *ey = POFV_FIELD_H;
 }
 
+/* ★★★ 2026-10-19 owner 定的**索敌逻辑**✗（★ 反向模型用 ✓）：
+ *   「★ 索敌按照一定 Boss ✗，★ 然后以**自机位置正上方为 theta = 0**✗，
+ *     ★ `abs(cos theta) * **剩余血量**` 排序」✗
+ *   ⇒ ★ 取 `|cos θ| × HP` 最大的那个 boss ✓（★ θ 从**正上方**量 ✓）。
+ *   ⚠ ★ 本卡**没有暴露敌人 HP** ✗ ⇒ ★ 这一版先用 **`|cos θ|`** 排序 ✓（★ 同分取槽位靠前 ✓），
+ *     ★ HP 那一项标 ❓ ✓（★ 等找到 `enemy + HP` 偏移再加 ✓）。*/
+static const uint8_t *pofv_c4_target_boss(float *out_cos)
+{
+    uint8_t *em = CE_ENEMY_MGR();
+    const float *pp = ce_player_pos();
+    const uint8_t *best_e = 0;
+    float best_num = -1.0f, best_d2 = 1.0f;
+    int bi;
+    if (out_cos) *out_cos = 0.0f;
+    if (!em || !pp) return 0;
+    {
+        const int32_t *bids = (const int32_t *)(em + CE_EM_BOSS_IDS);
+        for (bi = 0; bi < 4; ++bi) {
+            uint8_t *e;
+            const float *ep;
+            float dx, dy, len;
+            if (bids[bi] <= 0) continue;
+            e = ce_enemy_by_id(em, bids[bi]);
+            if (!e || !ce_enemy_lockable(e)) continue;
+            ep = ce_enemy_pos(e);
+            dx = ep[0] - pp[0];
+            dy = ep[1] - pp[1];          /* ★ 画面 y 向下 ✓ */
+            (void)len;
+            /* ★ `|cos θ|` 的**比值比较**不用 sqrt ✗：★ 比 `(-dy)^2 / |d|^2` 即可 ✓
+             *   （★ 交叉相乘 ✓：`a_dy^2 * b_d2` vs `b_dy^2 * a_d2` ✓）。*/
+            {
+                const float d2 = dx * dx + dy * dy;
+                const float num = dy * dy;                 /* ★ (-dy)^2 ✓ */
+                if (d2 > 1e-6f) {
+                    if (best_e == 0 || num * best_d2 > best_num * d2) {
+                        best_e = e; best_num = num; best_d2 = d2;
+                    }
+                }
+            }
+        }
+    }
+    return best_e;
+}
+
 static void pofv_c4m_fire(void)
 {
     const float *pp = ce_player_pos();
@@ -7848,9 +7892,10 @@ static int on_tick_2(ce_card_t *c)
              *   ★ 所以按空格**永远不会**放到当前角色的 C3 ✗（★ owner 正是用这个键测魔理沙 C3 ✓
              *   ⇒ ★ 难怪"★ 什么都看不见"✗ —— ★ 他放的是灵梦那套 ✓）。
              *   ⇒ ★ 改成按 `s_aura_kind` 走**角色自己的** C3 ✓。*/
-            if (s_aura_kind == 1)      pofv_c3m_fire();   /* 魔理沙 ✓ */
-            else if (s_aura_kind == 3) pofv_c3s_fire();   /* 早苗 ✓ */
-            else                       pofv_c3_fire();    /* 灵梦/咲夜 ✓ */
+            /* ★ 2026-10-19 owner：★ **空格改成放 C4**✗ ✓（★ 方便调 C4 ✓）*/
+            if (s_aura_kind == 1)      pofv_c4m_fire();   /* 魔理沙 C4 ✓ */
+            else if (s_aura_kind == 3) pofv_c4s_fire();   /* 早苗 C4 ✓ */
+            else                       pofv_c4_fire();    /* 灵梦/咲夜 C4 ✓ */
             /* ★ 2026-10-18：把**原始角色号**也打出来（`kind` 是映射后的：1 魔理沙/2 咲夜/3 早苗/0 灵梦）*/
             ce_log("pofv: [DBG] 空格 ⇒ 放 C3 ✓（f=%d kind=%d raw_char=%d charge=%.0f）",
                    (int)s_card_frames, (int)s_aura_kind,
