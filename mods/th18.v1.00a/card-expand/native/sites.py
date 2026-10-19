@@ -1086,7 +1086,7 @@ SDK_SITES = [
     #     · `Card__death_save_bomb_revive` `0x40a2a0` 在 `0x40a3ed` / `0x40a42c` 各做一次
     #       「CURRENT_BOMBS 0x4ccd58 − 1 → 钳 0 → 钳 MAX_BOMBS 0x4ccd64」，**从不写 MAX**；
     #     · 全函数唯一调用方 = `0x40a534`（在 `CardEirin__on_player_death_after_deathbomb` `0x40a4f0` 里，
-    #       = 原生卡 23 的虚表 `+0x0c` 处理器；`+0x0c` 由 `Player__on_tick__body` `0x45c113` 广播、
+    #       = 原生卡 23 的虚表 `+0x0c` 处理器；`+0x0c` 由 `Player__on_tick__body` `0x45c114`–`0x45c121` 广播（`call [eax+0xc]` + `or edi,eax`）、
     #       返回值被 OR 起来、非 0 就跳过 `0x45d090` 的扣命 ⇒ 这就是「免费命」的来源）；
     #     · 站点选在两扣**之后**的汇合点 `0x40a44b`：`8b 86 84 77 04 00` = mov eax,[esi+0x47784]
     #       （6 字节、无相对寻址、窗内无分支；`0x40a434 je 0x40a44b` 落在**窗口首字节** ⇒ 安全）。

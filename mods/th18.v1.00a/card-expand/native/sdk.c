@@ -1797,7 +1797,7 @@ int __cdecl BP_ce_bomb_spent(x86_reg_t *regs, void *bp_info)
  * 两个来源共用同一条广播（`on_death_save_spent`，trace 0x7c）：
  *   ① **引擎的死亡回避** `Card__death_save_bomb_revive` `0x40a2a0`（原生卡 23 = 死秽回避之药，
  *      由 `CardEirin__on_player_death_after_deathbomb` `0x40a4f0` 在虚表 `+0x0c` 里调；`+0x0c` 的返回值
- *      被 `Player__on_tick__body` `0x45c11d or edi,eax` 收集，非 0 ⇒ 跳过 `0x45d090` 的扣命）：
+ *      被 `Player__on_tick__body` `0x45c121 or edi,eax` 收集（广播循环 `0x45c114`–`0x45c121`），非 0 ⇒ 跳过 `0x45d090` 的扣命）：
  *      它在 `0x40a3ed` / `0x40a42c` 各扣 1 发 `CURRENT_BOMBS 0x4ccd58`（每处钳 0、再钳 `MAX_BOMBS 0x4ccd64`），
  *      **从不写 MAX**，也**不走 consume_bomb** ⇒ `BP_ce_bomb_spent` 完全抓不到它。
  *      站点 `0x40a44b` 在两次扣之后、`MAX` 尚未被任何东西改之前 ⇒ `spent = MAX − CURRENT` 就是真实花掉的发数。
