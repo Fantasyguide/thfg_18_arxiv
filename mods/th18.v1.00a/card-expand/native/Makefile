@@ -65,6 +65,9 @@ voice_ids.h: ../assets/voice/ORDER.txt $(wildcard ../assets/voice/*.wav) ../patc
 ##             见 pl_anm_ids.h）→ build/
 ## ability-text —— 原版卡（id < 57）的文案：改 `ability.txt`（逐字节外科手术，源在 local/）。
 ##   为什么不是 cards.js：`native/text.c` 的文案重定向只覆盖 id >= 57（见 assets/derive_ability_txt.py 的头注）。
+##   ★★ 2026-10-19：**同时生成 `patch/th18/abilities.js`** —— 光盖 `ability.txt` 会被 base_tsa 的
+##      `gentext#card_desc`（`th18/abilities.js`，lang_zh-hans 自带中文原生文本）在运行时整段换掉；
+##      我们排在 lang_zh-hans 之后，JSON 合并后 `"0_0"` 才是空白卡说明的真正来源（见脚本头注）。
 ability-text:
 	python3 ../assets/derive_ability_txt.py
 

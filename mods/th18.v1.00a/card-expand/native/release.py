@@ -51,6 +51,10 @@ MAP = {                                   # dist 里的 → modkit 里的
     "patch-devstage/th18/st06.ecl": "thcrap/repos/Renko_1055/th18_card_expand_devstage/th18/st06.ecl",
     "patch-devstage/th18/st06bs.ecl": "thcrap/repos/Renko_1055/th18_card_expand_devstage/th18/st06bs.ecl",
     "patch-step3/th18/ability.txt": "thcrap/repos/Renko_1055/th18_card_expand_255/th18/ability.txt",
+    # ★ 2026-10-19：`ability.txt` **不是**空白卡说明的唯一来源 —— base_tsa 的 `gentext#card_desc` 会用
+    #   `th18/abilities.js` 把说明 6 行整段换掉（`lang_zh-hans` 自带一份中文原生文本）。我们排在它后面
+    #   ⇒ 同一 key 后合并者胜。两个文件必须一起发（详见 assets/derive_ability_txt.py 头注的一手证据）。
+    "patch-step3/th18/abilities.js": "thcrap/repos/Renko_1055/th18_card_expand_255/th18/abilities.js",
     "patch-step3/th18/voice.js":  "thcrap/repos/Renko_1055/th18_card_expand_255/th18/voice.js",
     "bin/th18_card_expand.dll":   "mods/th18_card_expand.dll",
 }
