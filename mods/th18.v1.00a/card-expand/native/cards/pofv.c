@@ -6771,6 +6771,12 @@ static void pofv_c4m_tick(void)
         for (li = 0; li < 3; ++li) {
             if (s_c4m_st.laser_timer[li] <= 0) continue;
             --s_c4m_st.laser_timer[li];
+            /* ★ 2026-10-19：★ 每帧**重申**激光的 scale ✗ ✓ ——
+             *   ★ 脚本自己也有 `scale()` ✓，★ 谁后写谁生效 ✗ ✓ ⇒ ★ 卡侧每帧写死 ✓ 才稳 ✓。
+             *   ★ X = 1.0（★ 满宽 ✓）、★ Y = **1.317**（★ 448×1.317 = **590** = 场地对角线 ✓）。*/
+            if (s_c4m_st.laser_vm[li]) {
+                ce_anm_set_scale((uint32_t)s_c4m_st.laser_vm[li], 1.0f, 1.317f);
+            }
             if (s_c4m_st.laser_timer[li] == 0 && s_c4m_st.laser_vm[li]) {
                 ce_anm_delete((uint32_t)s_c4m_st.laser_vm[li]); s_c4m_st.laser_vm[li] = 0;
             }
