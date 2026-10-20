@@ -11,7 +11,7 @@ CC        := $(TOOLCHAIN)/bin/i686-w64-mingw32-gcc
 OBJDUMP   := $(TOOLCHAIN)/bin/i686-w64-mingw32-objdump
 
 TARGET := th18_bgwarp.dll
-SRC    := th18_bgwarp.c route_b.c
+SRC    := th18_bgwarp.c route_b.c bgwarp_core.c
 DEF    := th18_bgwarp.def
 
 CFLAGS  := -O2 -Wall -Wextra
