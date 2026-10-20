@@ -1461,6 +1461,40 @@ static uint32_t yk_slot_fam_id(const yk_map_t *m, uint32_t enemy_id, int slot)
 }
 
 /* ========================= §3.5 使魔的建 / 钉 / 撤 ========================= */
+/* ★ 2026-10-20 晚：出生点「停机场」偏移 + 出生写闸的探针计数（机制见 `yk_spawn_familiar_parent` 的注，
+ *   闸本身见下面 `yk_no_body_attack()`）。停机场 = 版面上方 8192 px：自机活动范围 y ∈ [0,448]、
+ *   x ∈ [-192,192]（一手 `engine/enemy/th18/09-enemy-offscreen-removal.md` §2 的四个边界常量）。*/
+#define YK_SPAWN_PARK_Y   (-8192.0f)
+static unsigned s_nhb_first_logged;
+
+/* ★★★★ 2026-10-01 晚（**109 线一手定名 ⇒ 无体术正解**）：`zEnemyData + 0x5108` =
+ *   **`no_hitbox_timer.current`**（`engine/ecl/th18/01-boss-interrupts-and-spellcard.md:45` 定名）
+ *   ⇒ 绝对 = `zEnemy + 0x122c + 0x5108` = **`e + 0x6334`**。
+ *   接触致伤判定在 `EnemyData__step_game_logic 0x42ed40`，**前置闸 `0x42f51c`：`+0x5108 > 0`
+ *   ⇒ 引擎自己跳过接触致伤判定**（纯读）⇒ 壳**仍会被自机弹打中 / 可被锁定 / 计数照常**，只是撞上去不掉血。
+ *   **不碰 `flags_lo`**。
+ *   ⛔ 作废：先前按 109 ECL 注释采用的 `setHitbox(0,0)`（`enemy+0x1344`）—— 体术走三个**通用几何判定**
+ *   （圆 `0x45cd90` / OBB `0x45cea0` / AABB `0x45cc20`，判据是**双方几何体**）⇒ 把敌机盒设 0
+ *   只能让「敌机那半」为 0，**永远得不到「没有体术判定」**（除非能让 `hitbox_2 < 0`）⇒ **已撤**。*/
+#define YK_ENEMY_NO_HITBOX_TIMER  (0x122c + 0x5108)   /* = e + 0x6334 = zTimer.current   */
+#define YK_ENEMY_NO_HITBOX_TIMER_F (YK_ENEMY_NO_HITBOX_TIMER + 4)
+                                                      /* = e + 0x6338 = zTimer.current_f */
+/* ★★★★ 2026-10-20 晚（owner：「**碰到使魔就 MISS/死**」仍在）—— 闸的**寿命**也要管：
+ *   写 `current` 一格**只管当帧**：引擎每帧末 `0x42ff80` 的 `0x4301f3` 段
+ *     `cmp [esi+0x5108],0 / jle skip / lea ecx,[esi+0x5104] / call Timer__decrement(0x409750)`
+ *   而 `Timer__decrement` 的写法是（一手）：
+ *     `eax=[ecx+0xc]; [ecx]=[ecx+4]; xmm0=[ecx+8]-speed; [ecx+8]=xmm0; [ecx+4]=(int)xmm0`
+ *   ⇒ **`current` 每次都是从 `current_f` 重算出来的**（`current_f` 我们原来没写、恒 0）
+ *   ⇒ 就算写 `current=100`，这一帧减完也变成 `(int)(0-1) = -1` ⇒ 下一帧闸就开了。
+ *   ⇒ 正解 = **两格一起写**（`current` = `current_f` = 8）⇒ 减完还剩 7 帧余量，
+ *     这样即使某一帧我们的 pin 没跑到（早退/表满/接管台账抖动），闸也不会立刻掉。
+ *   （`current_f` 是 float；本仓 .c 禁 x86 浮点库，这里只是存一个立即数，不产生库调用。）*/
+#define YK_NO_BODY_FRAMES  8
+
+/* ★★★ 前置声明：`yk_spawn_familiar_parent()` 出生后**第一件事**就是上闸（定义在下面，
+ *   因为闸的历史注和字段表在同一处）。*/
+static void yk_no_body_attack(uint8_t *f);
+
 /* ★★★ 2026-09-28（第四十九批）：加一个 `parent_id` 实参 ——
  *   `0` = 老语义（1:1 映射使魔，链根）；`!= 0` = **惰性绕转使魔**（父敌 id，见下面那一节）。
  *   ⚠ 唯一不同的一格就是 `CE_SPAWN_PARENT`：它同时决定
@@ -1475,8 +1509,28 @@ static uint8_t *yk_spawn_familiar_parent(float x, float y, uint32_t parent_id, i
     if (!CE_ENEMY_MGR()) return 0;
     __builtin_memset(spawn, 0, sizeof spawn);
     pos = (float *)(spawn + CE_SPAWN_POS);
+    /* ★★★★★ 2026-10-20 晚（owner：「**碰到使魔就 MISS/死**」✗ 仍在）—— **停机场**（本卡唯一的
+     *   「写闸之前」窗口，一手）：
+     *     `EnemyManager__allocate_new_enemy 0x42d7d0` 在 **`0x42d90f call 0x42fe80`** 里就把这只新敌人
+     *     **完整跑了一帧**：`0x42fe80` →（`0x42fed7 lea ecx,[ebx+0x122c]`）→ `0x42fedd call 0x42ff80`
+     *     → **`0x42fff0 call 0x42ed40`** = `EnemyData__step_game_logic`，而**体术段就在这个函数里**
+     *     （`0x42f50d`–`0x42f69f`，闸 `0x42f51c` 读 `+0x5108`）。
+     *   ⇒ 这一次体术判定发生在**`ce_spawn_enemy_*` 返回之前** ⇒ 我们拿到指针时已经判完了 ⇒
+     *     出生那一帧 `+0x5108` **必然是 0**（一手：这个 build 里引擎**从不写**这一格，只在 `0x4301f3` 递减）。
+     *   ⇒ 壳**生在哪、就在哪白挨一次体术判定**。实跑对上了（22:32:48 那局）：
+     *       `youkai/emit SPAWN: slot 0 key 0 fam_id=3 ... pos=(0.0,400.0)`
+     *       `youkai: no_hitbox fam_id=3 (e+0x6334) before=0 after=2`   ← 第一次写才 0→2
+     *       下一帧 `youkai/debug: PLAYER HIT/STATE 1 -> 4 (4 = deathbomb window)`
+     *     而 `(0, 400)` 正是版面底中 —— 自机最常站的地方 ⇒ 「碰到使魔就 MISS」= **它出场那一下踩在自机身上**。
+     *   做法：**出生点先挪到停机场**（版面上方 `-8192px`，任何自机都到不了）⇒ 引擎那次写在 spawn
+     *     内部的体术判定必然打空；调用方（`yk_emit_apply_create` / `yk_orbit_spawn_one`）**同一帧**
+     *     就把壳钉回真位置（见下面 `yk_pin_familiar(f, act->x, act->y)` 的注释）。
+     *   ⚠ 停机场**不会**让引擎当场删壳：出框判定 `0x42e5a0` 对「**从没进过屏**」的敌人返回 0
+     *     （`0x42ebcc test flags,0x10000 / je 返 0`；X 轴同形 `0x42ebe1 and eax,0x10004 / cmp 0x10000 /
+     *     jne 返 0`）⇒ 停机场安全；随后 `ce_spawn_enemy_*` 补的 `0xC`（bit2|bit3）是第二重保险。
+     *   ⇒ 下一帧起：闸已由下面的出生写 + 每帧 pin 立住 ⇒ **不可能再致伤**（见 `yk_no_body_attack` 的注）。*/
     pos[0] = x;
-    pos[1] = y;
+    pos[1] = y + YK_SPAWN_PARK_Y;
     pos[2] = 0.0f;
     *(int32_t *)(spawn + CE_SPAWN_SCORE) = 0;             /* 打死不给分（spec §6.1 的无害化）*/
     *(int32_t *)(spawn + CE_SPAWN_MAIN_DROP) = 0;         /* 不掉落 */
@@ -1504,6 +1558,26 @@ static uint8_t *yk_spawn_familiar_parent(float x, float y, uint32_t parent_id, i
          * 门现在是**惰性**的 ✓（`yk_le_here()` 恒 0 —— 判别常量还没实测 ✓），所以这一行今天
          * 与原来完全等价 ✓；常量钉死后它会直接跳过建壳 ✓，而下面所有 `if (e …)` 分支自然都不跑 ✓。*/
         uint8_t *e = yk_le_here() ? 0 : (uint8_t *)ce_spawn_enemy_keep_offscreen("NoEnemyDebug", spawn);
+        /* ★★★★★ 2026-10-20 晚：**拿到指针的第一件事 = 上闸 + 探针**（机制见函数顶的「停机场」注）。
+         *   为什么不能等 tick：`allocate_new_enemy` 已经把它跑过一帧了（`0x42d90f call 0x42fe80`
+         *   → `0x42fff0 call 0x42ed40`），那一帧的闸恒 0；停机场让它打空，这一写保证**下一帧起**闸在。
+         *   `before` 在这一行**必然 0**（这个 build 里引擎从不写 `+0x5108`；它是从 0 开始的）
+         *   —— 关键不是 before 变 2，而是**唯一能看到 0 的那一次判定发生在停机场**。
+         *   探针 = 每局最多 8 行；以后一眼能判「有没有出现『第一次写之前壳已经能碰到人』」。*/
+        if (e) {
+            int32_t nhb_before = *(const int32_t *)(e + YK_ENEMY_NO_HITBOX_TIMER);
+            yk_no_body_attack(e);
+            if (s_nhb_first_logged < 8u) {
+                ++s_nhb_first_logged;
+                ce_log("youkai: no_hitbox FIRST-WRITE fam=%u frame=%u before=%d after=%d "
+                       "(spawn-internal step 0x42d90f->0x42fe80->0x42fff0->0x42ed40 ran BEFORE this "
+                       "pointer existed; shell was born at the park point (%.0f,%.0f), "
+                       "%.0f px above the playfield => that one contact check cannot reach the player)",
+                       *(const uint32_t *)(e + CE_ENEMY_ID), (unsigned)ce_sdk_frame(),
+                       (int)nhb_before, (int)*(const int32_t *)(e + YK_ENEMY_NO_HITBOX_TIMER),
+                       (double)x, (double)(y + YK_SPAWN_PARK_Y), (double)-YK_SPAWN_PARK_Y);
+            }
+        }
         /* ★ 第二步：真血量 >999 ⇒ 出生后回写三格 life（**只有这条路不置位 30**）。
          *   `yk_clamp_spawn_life(life)` 是幂等的纯函数，这里再算一次只为拿到「spawn 值」。*/
         if (e && life > 0 && life > yk_clamp_spawn_life(life)) {
@@ -1580,22 +1654,15 @@ static void yk_pin_follow_step(yk_pin_follow_t *pf, uint32_t fam_id, float tx, f
     if (pf->age < 0xffffu) ++pf->age;
 }
 
-/* ★★★★ 2026-10-01 晚（**109 线一手定名 ⇒ 无体术正解**）：`zEnemyData + 0x5108` =
- *   **`no_hitbox_timer.current`**（`engine/ecl/th18/01-boss-interrupts-and-spellcard.md:45` 定名）
- *   ⇒ 绝对 = `zEnemy + 0x122c + 0x5108` = **`e + 0x6334`**。
- *   接触致伤判定在 `EnemyData__step_game_logic 0x42ed40`，**前置闸 `0x42f51c`：`+0x5108 > 0`
- *   ⇒ 引擎自己跳过接触致伤判定**（纯读）⇒ 每帧写 `= 2` 即可 ⇒ 壳**仍会被自机弹打中 / 可被锁定 /
- *   计数照常**，只是撞上去不掉血。**不碰 `flags_lo`**。
- *   ⛔ 作废：先前按 109 ECL 注释采用的 `setHitbox(0,0)`（`enemy+0x1344`）—— 体术走三个**通用几何判定**
- *   （圆 `0x45cd90` / OBB `0x45cea0` / AABB `0x45cc20`，判据是**双方几何体**）⇒ 把敌机盒设 0
- *   只能让「敌机那半」为 0，**永远得不到「没有体术判定」**（除非能让 `hitbox_2 < 0`）⇒ **已撤**。*/
-#define YK_ENEMY_NO_HITBOX_TIMER  (0x122c + 0x5108)   /* = e + 0x6334 */
+/* ⚠ 字段/寿命两个宏都搬到了文件上方的 §3.5 段首（`YK_ENEMY_NO_HITBOX_TIMER` /
+ *   `YK_ENEMY_NO_HITBOX_TIMER_F` / `YK_NO_BODY_FRAMES`）—— 因为 `yk_spawn_familiar_parent()`
+ *   出生后**立刻**要用它们（引擎在 spawn 内部已跑过一帧，见那里的注）。*/
 
 /* ★★★★ 2026-10-01 晚（owner：「**那个环绕的额外使魔也得无碰撞**」）——**统一入口**
  *   `yk_no_body_attack(f)`：对我们建的**任何**敌人壳写引擎自带闸
- *   `e+0x6334`（`zEnemyData+0x5108` = `no_hitbox_timer.current`）= 2
+ *   `e+0x6334`（`zEnemyData+0x5108` = `no_hitbox_timer.current`）> 0
  *   ⇒ 引擎前置闸 `0x42f51c`（`>0`）跳过接触致伤；**不碰 `flags_lo`** ⇒ 仍可被打中/锁定。
- *   **出生时 + 每帧**都调（映射壳见 `yk_spawn_familiar`/`yk_pin_familiar`；
+ *   **出生时 + 每帧**都调（映射壳见 `yk_spawn_familiar_parent`/`yk_pin_familiar`；
  *   绕转层见 `yk_orbit_spawn_one`/`yk_orbit_pin`）⇒ 以后新增 spawn 路径只要调它就不会漏。
  *
  * ★★★★ 2026-10-20（owner：「**108 的使魔怎么又有判定了**」）—— 两处订正（一手 + 调用点）：
@@ -1603,14 +1670,17 @@ static void yk_pin_follow_step(yk_pin_follow_t *pf, uint32_t fam_id, float tx, f
  *        `0042f50d  mov ecx,[ebx+0x5130]`   ← `ebx` = `zEnemyData`（flags_lo）
  *        `0042f51c  cmp dword ptr [ebx+0x5108],0`
  *        `0042f523  jg 0x42f69f`            ← **>0 ⇒ 整段接触致伤（含三个几何判定）跳过**
- *      ⇒ `+0x5108` = **`no_hitbox_timer.current`** = 绝对 `e+0x6334` ⇒ 写 2 就是**真正的「无体术」闸**
- *      （⛔ 引擎文档 `engine/enemy/th18/06-enemy-inert-flag.md:214` 那句「只递减、无人读」是**旧结论、错的**：
- *       它读的是计时器**基址** `0x6330`，而读点在 `+0x5108` = `0x6334`；本条一手对照见 `yk_xfam_vm_tick` 的注）。
+ *      ⇒ `+0x5108` = **`no_hitbox_timer.current`** = 绝对 `e+0x6334`
+ *      （⛔ 引擎文档 `engine/enemy/th18/06-enemy-inert-flag.md` 原先那句「只递减、无人读」是**旧结论、错的**：
+ *       它读的是计时器**基址** `0x6330`，而读点在 `+0x5108` = `0x6334`；该文档 2026-10-20 已订正，
+ *       本条一手对照另见 `yk_xfam_vm_tick` 的注）。
  *   ② **接管（leveledit）使魔的调用点搬到外观门之前、且两侧都写** —— 见 `yk_xfam_vm_tick()` 里
  *      `++live;` 之后那段长注（旧位置在「外观表满 / 本体 VM 拿不到」两个 `continue` 之后 ⇒ 那些帧根本没写）。*/
 static void yk_no_body_attack(uint8_t *f)
 {
-    if (f) *(int32_t *)(f + YK_ENEMY_NO_HITBOX_TIMER) = 2;
+    if (!f) return;
+    *(int32_t *)(f + YK_ENEMY_NO_HITBOX_TIMER)   = YK_NO_BODY_FRAMES;       /* current   */
+    *(float   *)(f + YK_ENEMY_NO_HITBOX_TIMER_F) = (float)YK_NO_BODY_FRAMES; /* current_f */
 }
 
 /* ★★★★★ 2026-10-01 晚（owner：空格杀到 **93..104** 那批「过期 registry id」⇒ 引擎 **id 回收** ⇒ 杀到 boss）：
@@ -3305,6 +3375,13 @@ static void yk_run_action(yk_card_t *s, const yk_action_t *act)   /* s 可为 NU
         /* ★ 2026-10-01 晚（owner：空格「啥用没有」= 我们的壳**父链是 0** ⇒ 活体校验全拒）：
          *   spawn 后把父 id 写成**该槽的母机 id** ⇒ ① 空格可用；② 这条父子关系本来就该有。*/
         *(uint32_t *)(f + YK_ENEMY_PARENT_ID) = act->enemy_id;
+        /* ★★★★★ 2026-10-20 晚：**同一帧钉回真位置**，紧跟在出生后（出生点是「停机场」，见
+         *   `yk_spawn_familiar_parent()` 顶上的注）。原来这一步在下面几十行之后（`yk_fam_created` +
+         *   全部诊断日志之后）—— 现在提前的理由有两条，都不涉及行为：
+         *     ① 引擎在 spawn **内部**已经跑过一帧体术判定（那一帧打空），早钉一帧 = 观感上零延迟；
+         *     ② `COORD-SPAWN` 那行诊断读的是 `ce_enemy_pos(f)`，挪到它前面才不会把停机场当成
+         *        「引擎实际落点」打出来（那行的语义保持 = 「请求点 vs 引擎落点」）。*/
+        yk_pin_familiar(f, act->x, act->y);
         yk_map_gift_mark(act->enemy_id, act->slot, ce_sdk_frame());   /* ★ P82：记账（修 +N 时序 bug ✓）*/
         ce_log("youkai/emit SPAWN: slot %d key %d fam_id=%u ret=%d pos=(%.1f,%.1f) enemy_id %u",
                YK_EMIT_REAL_SLOT(act->slot), act->slot, fid, f ? 1 : 0, (double)act->x, (double)act->y, act->enemy_id);
@@ -3347,7 +3424,7 @@ static void yk_run_action(yk_card_t *s, const yk_action_t *act)   /* s 可为 NU
         }
         }
         yk_fam_created(&s_map, act->enemy_id, act->slot, fid);
-        yk_pin_familiar(f, act->x, act->y);
+        /* ⚠ `yk_pin_familiar()` 已上移到 spawn 之后（见那段注）—— 这里不再重复钉一次。*/
         /* ★ 壳建好的**那一刻**起跟随 VM（脚本按发射口槽选：槽 i → s53+i 那一套四色之一）。
          * ⚠ 建 VM 只能在 tick / 帧末（要分配），绝不在死亡栈上 —— 这条路径是 `on_tick_2`，合法。*/
         yk_fam_vm_spawn(fid, yk_fam_mapped_kind(act->slot), act->x, act->y);
@@ -8092,6 +8169,10 @@ static int on_ctor(ce_card_t *c)
     __builtin_memset(s_fired_enemy, 0, sizeof s_fired_enemy);
     __builtin_memset(s_fired_slot, 0, sizeof s_fired_slot);
     s_fired_head = 0;
+    /* ★ 2026-10-20 晚：出生写闸的 `FIRST-WRITE` 探针**每关/每局重新计**（8 行/局）——
+     *   判据见 `yk_spawn_familiar_parent()` 里的注：`before` 恒 0 是正常的，关键是**没有**
+     *   「第一次写之前壳能碰到人」的路径（停机场保证）。*/
+    s_nhb_first_logged = 0;
     yk_transfer_reset(&s->tr);
     {   /* ★ 2026-09-30：外部/绕转使魔的转嫁采样表也随卡重来一起清（文件级静态）。*/
         unsigned xi;
