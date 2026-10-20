@@ -440,7 +440,9 @@ def _prepare_guide_dir():
         try:
             os.symlink("../../../assets/cards", link, target_is_directory=True)
         except (OSError, NotImplementedError):
-            return str(CARD_IMAGES)               # Windows 无符号链接权限：用绝对路径兜底
+            # Windows 无符号链接权限：把绝对路径交给 make_guide.py。
+            # LaTeX 的 \includegraphics 吃正斜杠，不吃反斜杠 ⇒ 统一转成 "/"。
+            return str(CARD_IMAGES).replace("\\", "/")
     return "cards"
 
 
