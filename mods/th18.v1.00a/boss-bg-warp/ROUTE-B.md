@@ -5,6 +5,42 @@
 > 单独一个文件的原因：主文件 `native/th18_bgwarp.c` 由**另一个并行 agent** 维护；
 > 路线 B 放在自己的文件里（自装桩、自己的日志/ini），只在 `Makefile` 的 `SRC` 里加一行，**不改对方代码**。
 
+## 文件布局（2026-10-21 拆分：为并进卡侧做准备）
+
+| 文件 | 角色 | 说明 |
+| --- | --- | --- |
+| **`native/bgwarp_core.c` / `.h`** | ★ **可移植核心** | 自绘扭曲的全部实现（装桩/绘制/场/解贴图/防递归/重叠分域）。**零 ini、零日志文件、零热键** |
+| `native/route_b.c` | 试验台 | 只负责 ini + 日志 + 热键 + 调 core（方便迭代） |
+| `native/th18_bgwarp.c` | 别人的 | 另一个 agent 维护的顶点验证 mod（不碰） |
+
+### 公开接口（`bgwarp_core.h`）
+
+```c
+int  bgwarp_install(bgwarp_log_fn logf);      /* 装层 6 桩，一次；失败即保持关闭（不影响游戏） */
+void bgwarp_set(int on, float radius, float power, float alpha);   /* on=0 ⇒ 立刻停 */
+void bgwarp_tune(int grid_n, float fade, int overlap, float blend);
+void bgwarp_set_mode(int mode);  int bgwarp_mode(void);
+void bgwarp_set_test(int surf, int two, float shift, float two_off, int radius_auto);
+void bgwarp_set_tick(void (*fn)(void));       /* 宿主每帧回调（可选） */
+void bgwarp_restore(void);                    /* 还原层 6 桩 */
+```
+
+### 并进卡侧（109 C4）只要三行
+
+```c
+bgwarp_install(card_log);                     /* DLL 加载后一次，或首次激活时 */
+bgwarp_set(1, 160.0f, 1.0f, 255.0f);          /* C4 发动 */
+bgwarp_set(0, 0, 0, 0);                       /* C4 结束 / on_delete（本仓铁律） */
+```
+
+### 生命周期（一手依据）
+
+一手 boss 扭曲的消失方式是**硬停**：效果结束时引擎把
+`stage+0x3410`（那份 aura 网格的指针）**直接清零**（`0x41da03`：`mov dword [edi+0x3410], 0`），
+同段还把 `+0x3414=112.0f`、`+0x3418=192.0f`、相位 `+0x3434/+0x3438=0` 恢复默认；
+每帧 tick 开头 `test ecx,ecx / je` ⇒ 指针为空就整段跳过 ⇒ **瞬间消失，不淡出** ✓
+⇒ 所以 `bgwarp_set(0,…)` 就是**立刻停**（与一手一致）。要做淡出属于**自定**行为，须登记。
+
 ## 它做什么
 
 | 环节 | 做法（一手见 [`AUDIT.md`](AUDIT.md) §O） |
