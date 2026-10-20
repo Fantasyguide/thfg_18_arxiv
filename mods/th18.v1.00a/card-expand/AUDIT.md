@@ -4868,7 +4868,8 @@ UI 列表尾插、组内后生成者后画（§2b.4）。
 | 2026-10-04 | **删除 109 卡全部代码**（含别人的文件：脚本编号前移 / sht 生成器）| 见下方小节「§BE-109 删除记录」|
 | 日期 | 别人的卡 | 文件 | 改了什么 | 为什么 | 验证 |
 | --- | --- | --- | --- | --- | --- |
-| 2026-10-20 | **109 花映塚**（+ **发布闸**） | `patch/th18/cards.js`（109 的 `desc`）、`native/tools/deploy.py`（校验闸） | 109 的 `desc` 第 7 行「（本卡仍在开发中，效果可能还会变）」**并进第 6 行** ⇒ 回到 6 行（63 B，仍 <64）；`deploy.py` 的 ② 校验**新增 `make cards-check`** | ★★ owner 2026-10-20 08:12 实跑「**所有 mod 卡消失**」：DLL 自检 `FAIL: cards: card "109": desc: at most 6 lines` ⇒ `start_deck: disabled` + `mitigation: allocator bound restored to retail (56)` ⇒ **新 id 57..254 全停用**；根因 = `3b4ca1d6`（docs commit 顺手改了卡面文案）加了第 7 行，而发布闸当时**不查 cards.js** | `make cards-check` rc=0（49 张全合规、109 desc 6 行 [58,57,45,51,48,63] B）；`python3 mkfiles.py` 重算 `patch/files.js`（`th18/cards.js` crc `3376893556`）；部署后 `python3 tools/deploy.py --skip-build` 三道闸全绿；DLL 前后 md5 `72205148…` 四处同（未重编）；owner 重启待验 |
+| 2026-10-20 | **109 花映塚**（+ **发布闸**） | `patch/th18/cards.js`（109 的 `desc`）、`native/tools/deploy.py`（校验闸） | 109 的 `desc` 第 7 行并进第 6 行 ⇒ 回到 6 行；`deploy.py` 的 ② 校验新增 `make cards-check` | owner 08:12 实跑「所有 mod 卡消失」：desc 7 行 ⇒ 整批新卡停用；详见 §BE-DEVBUILD-2026-10-20 | `make cards-check` rc=0（49 张全合规、109 desc 6 行）；`mkfiles.py` 重算 `files.js`；deploy 三道闸全绿；详见 §BE-DEVBUILD-2026-10-20 |
+| 2026-10-20 | **所有卡（共享件：Makefile / 构建闸）** | `native/tools/devbuild.py`（新）、`native/Makefile`（`dev:`）、`native/README.md`（新）、`patch/th18/cards.js`（201 三项置 0）、`patch/files.js` | 新增一条命令的构建闸：校验→构建→发布→回读→汇总；新增「调试卡不可见」闸；加 `make dev` 入口 | owner 今天连环翻车（109 desc / 201 进图册 / 旧 BGM / 冲突标记）⇒ 纪律变成闸；详见 §BE-DEVBUILD-2026-10-20 | 三个故意故障均被拦；全绿 PASS 表见 §BE-DEVBUILD-2026-10-20 |
 | 2026-10-19 | **70 腐化**（★ owner 已授权：**全权主持修改** ✓）+ **108 永夜抄**（1 行上报）+ **共享件** | `cards/corruption_core.{h,c}`(新)、`tests/test_corruption_core.c`(新)、`cards/youkai.c`(1 行)；★ 共享件 `sites.py` / `sdk.c` / `sdk/public.h`；生成物 `sites_gen.h` / patch / `.def` | ★ 新站点 **`ce_death_save_spent` `0x40a44b`** + 钩子 `on_death_save_spent(card, spent)` + 上报函数 `ce_death_save_spent_note()`；腐化改「只减上限、CURRENT 拉满」⇒ 详见文末「BE-CORRUPTION-DEATHSAVE-2026-10-19」 | ★ 一手真 bug：死亡回避 `0x40a2a0` 只扣 `CURRENT_BOMBS`、**不写 MAX**、**不走 `consume_bomb`** ⇒ 带 70 时那 1–2 发被每帧钉回 ⇒ **每次死亡免费、残机永不减** ✗ | `make dll` / `make test-host` rc=0 ✓；单测 20 断言 ✓；`sitecheck 0x40a44b 6` 四项全绿 ✓；`make check` 仅**环境 leveledit 同开冲突**红（与本次无关）✓；四处 DLL 同 md5 ✓ |
 | 2026-10-13 | **109 卡专属（未改共享件 ✓）** | ★ 新增脚本 `457`/`458`/`459` + 阴阳玉贴图（`bball/` 30×30、62×62）+ 生成器 ⇒ 详见「§BE-109-BBALL」✓ |
 | 2026-10-13 | **109 卡专属（未改共享件 ✓）** | ★ 新增脚本 `456` + 本卡 7 处 spawn 换引用 ⇒ 详见下方小节「§BE-109-HUD20」✓ |
@@ -4891,6 +4892,32 @@ UI 列表尾插、组内后生成者后画（§2b.4）。
 | 2026-09-13 | **117 鬼形兽**（咆哮） | 见下方「§BE 详录 #10」 |
 | 2026-09-13 | **所有卡（共享件，追加式）** | 见下方「§BE 详录 #11」 |
 | 2026-09-13 | **所有卡（共享件，追加式）** | 见下方「§BE 详录 #12」 |
+
+#### §BE-DEVBUILD-2026-10-20（构建闸：一条命令，任何一步红就停）
+
+- **动了哪些共享件**：`native/Makefile`（只加 `dev:` 目标，不动既有目标）、
+  `patch/th18/cards.js`（201 调试卡的 `initial_unlocked` / `deck_visible` / `weight` 全部置 0）、
+  `patch/files.js`（cards.js 改了 ⇒ 重算 crc）。
+- **新增**：`native/tools/devbuild.py`（纯标准库）、`native/README.md`（用法）。
+- **为什么**：owner 今天四次翻车 —— 109 的 `desc` 第 7 行导致整批新卡停用（游戏里所有 mod 卡消失）；
+  201 调试卡进商店/图鉴/指南；发布包里 BGM 是旧批次；`guide.tex` 带冲突标记（连续 7 个 `<`）被编译。
+  这些都不是写代码时能记住的事，只能靠构建期闸。
+- **一条命令**：`make dev MODKIT_DIR="<modkit>"`（等价 `python3 tools/devbuild.py --modkit <modkit>`）。
+  流程 = **校验 → 构建 → 发布 → 回读 → 汇总**；任何一步红就停，打印「哪一步 / 为什么 / 怎么修」。
+- **新增的「调试卡不可见」闸**（判据）：`cards.js` 里 `internal_name` 命中
+  `DEBUG_DEL` / `DEBUG_*` / `TEST_*` 的卡，`initial_unlocked`、`deck_visible`、`weight` 必须**全 0**；
+  缺字段按非 0 处理。指南侧再查 `调试・定向删卡` 与 `DEBUG_*` / `TEST_*` 内部名不得出现在 `guide.tex`。
+- **回读口径**：109 的 `desc` 行数与 201 的三项都**从 modkit 部署件读**，不看源；
+  `files.js` 的每个 crc 与部署件现算比对（文本按 git blob 的 LF 口径，兼容 modkit 的 CRLF 工作区）。
+- **`--full`**：抽 3 个 wav + `cards.js` + DLL，比「zip 内 md5」vs「modkit 现件」；
+  不一致**只报不重打**，并逐条列出哪些条目旧。
+- **验证（三个故意故障，每次改完复原）**：
+  1. 把 201 的 `deck_visible` 改回 1 ⇒ 第 02 步「调试/测试卡不可见」红；
+  2. 把 109 的 `desc` 加到 7 行 ⇒ 第 01 步 `cards-check` 红；
+  3. 在 `PLAYER-GUIDE.md` 造一个冲突标记（连续 7 个 `<`）⇒ 第 12 步「冲突标记」红。
+- **全绿**：默认模式（构建 + 发布 + 回读）PASS；`--skip-build` 模式也 PASS。
+- **谁改的**：DSH agent（2026-10-20）。
+
 #### §BE-109 两格（2026-10-12，owner 口径「给 109 两格。你可以自己改，写 audit 即可」）
 
 - **动了哪些共享件**：
