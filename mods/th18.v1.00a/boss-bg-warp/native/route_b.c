@@ -59,7 +59,13 @@ static int      rb_n        = 33;     /* 网格分辨率（奇数 3..65） */
 static float    rb_shift    = 64.0f;  /* M1 平移像素 */
 static float    rb_fade     = 0.15f;  /* 圆盘外圈羽化比例 */
 static float    rb_radius   = 160.0f; /* 网格半径（世界单位） */
-static int      rb_radius_auto;       /* ini radius_auto：1 = 用"反推出来的敌方半径"当我方半径（观感对齐敌方） */
+/*
+ * ini radius_auto：**默认 0**。
+ *   ★ 为什么默认关（owner 2026-10-21 指出）：boss 的 VM 网格**随时可能创建/销毁**（光环出现/消失），
+ *     若我方半径跟着它走，半径会随光环出现而**跳变** ✗。我方那个盘必须**只由自己的 ini 决定** ⇒
+ *     "boss 不出现也照常工作"。
+ */
+static int      rb_radius_auto;
 static float    rb_power    = 1.0f;   /* 位移倍数 */
 static unsigned rb_alpha    = 255;    /* 圆内 alpha */
 static float    rb_two_off  = 256.0f; /* 第二份的圆心相对偏移（屏幕像素，仅用于验证） */
