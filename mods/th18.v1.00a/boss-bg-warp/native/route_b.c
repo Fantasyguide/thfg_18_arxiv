@@ -85,6 +85,7 @@ static unsigned rb_log_every = 300;   /* 每隔多少次画一行日志 */
 static int      rb_stub_ok;
 static int      rb_logged_desc, rb_logged_grid, rb_logged_halo, rb_logged_enemy, rb_logged_pts, rb_logged_entry, rb_logged_vms, rb_logged_rt, rb_logged_nohalo, rb_logged_baddev, rb_logged_ov;
 static unsigned rb_frames, rb_drawn;
+static void    *rb_last_dev;
 static unsigned rb_vp_ok;
 static float    rb_vp_x = 436.0f, rb_vp_y = 244.0f, rb_vp_w = 408.0f, rb_vp_h = 472.0f;
 static void    *rb_scene_tex;         /* 场景面纹理（缓存） */
@@ -273,12 +274,27 @@ static const unsigned char RB_IID_TEX[16] = {
     0x27, 0x12, 0xc3, 0x85, 0xe5, 0x3d, 0x00, 0x4f,
     0x9b, 0x3a, 0xf1, 0x1a, 0xc3, 0x8c, 0x18, 0xb5
 };
+/*
+ * ★★ 面的 vtable 也必须过 `rb_code()` —— 这是 2026-10-21 血案的直接原因：
+ *   上一版这里只做了 `rb_rd(vt[11], 1)`（可读）就 `call`，而"过期面"的 vtable 槽是**堆上的值** ⇒
+ *   `Eip` 跳到堆地址（dump th18.exe.84840.dmp：Eip=0x8e43efc 不在模块、栈上是我们的层 6 桩）。
+ */
+static BOOL rb_surf_ready(void *surf)
+{
+    void **svt;
+    if (!surf || !rb_rd(surf, 0x40)) return FALSE;
+    svt = *(void ***)surf;
+    if (!svt || !rb_rd(svt + 13, 4)) return FALSE;
+    if (!rb_code((const void *)svt[11])) return FALSE;   /* GetContainer */
+    if (!rb_code((const void *)svt[12])) return FALSE;   /* GetDesc */
+    return TRUE;
+}
+
 static void *rb_surface_tex(void *surf)
 {
     void *tex = NULL;
-    if (!surf || !rb_rd(surf, 0x40)) return NULL;
+    if (!rb_surf_ready(surf)) return NULL;
     {   void **vt = *(void ***)surf;
-        if (!vt || !rb_rd(vt + 11, 4) || !rb_rd((const void *)vt[11], 1)) return NULL;
         ((long (__stdcall *)(void *, const void *, void **))vt[11])(surf, RB_IID_TEX, &tex);
     }
     return tex;
@@ -652,7 +668,7 @@ static void *rb_pick_surface(void *dev, void **vt)
     void *surf = rb_rd(rb_base + (rb_surf ? RVA_SURF_A : RVA_SURF_B), 4)
                ? *(void **)(rb_base + (rb_surf ? RVA_SURF_A : RVA_SURF_B)) : NULL;
     void *rt = NULL;
-    if (vt && rb_rd(vt + 0x26, 4)) {
+    if (vt && rb_rd(vt + 0x27, 4) && rb_code((const void *)vt[0x26])) {
         ((long (__stdcall *)(void *, void **))vt[0x26])(dev, &rt);
     }
     if (rt && surf && rt == surf) {
@@ -716,15 +732,27 @@ static void rb_draw(void)
         return;
     }
     rb_get_vp(dev, vt);
+    /*
+     * ★★ 设备指针一变（重建/Reset）⇒ 旧纹理与旧"面"都可能已被释放 ⇒ 必须清缓存。
+     *   不清的后果：拿旧 texture 去 SetTexture（D3D 会拒绝）或拿旧面去 GetContainer（可能直接崩）。
+     */
+    if (dev != rb_last_dev) {
+        rb_last_dev = dev;
+        rb_scene_tex = NULL;
+        rb_halo_tex  = NULL;
+        rb_logged_desc = 0;
+        rb_logged_rt = 0;
+        rb_logf("[设备] 设备指针变化 → %p ⇒ 已清空纹理/面缓存", dev);
+    }
 
     if (!rb_logged_desc) {
         rb_logged_desc = 1;
         surf = rb_pick_surface(dev, vt);
         if (surf && rb_rd(surf, 0x40)) {
             struct { unsigned fmt, type, usage, pool, multi, msq, w, h; } d;
-            void **svt = *(void ***)surf;
             memset(&d, 0, sizeof d);
-            if (svt && rb_rd(svt + 12, 4)) ((long (__stdcall *)(void *, void *))svt[12])(surf, &d);
+            if (rb_surf_ready(surf))
+                ((long (__stdcall *)(void *, void *))(*(void ***)surf)[12])(surf, &d);
             rb_logf("[面] 源面 %s = %p → %ux%u format=%u", rb_surf ? "A[0x4ccf9c]" : "B[0x4ccfa0]",
                     surf, d.w, d.h, d.fmt);
         }
