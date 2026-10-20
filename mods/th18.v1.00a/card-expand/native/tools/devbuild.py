@@ -266,28 +266,34 @@ def run_step(label, why, fix, fn):
     try:
         detail = fn() or ""
     except StepFail as e:
+        fail = e
+    except Exception as e:                      # 闸自己出 bug 也要按「哪一步/为什么/怎么修」报
+        import traceback
+        fail = StepFail("内部异常：%s: %s" % (type(e).__name__, e), traceback.format_exc())
+    else:
         dt = time.perf_counter() - t
-        print("%s %6.2fs" % (color("✗", C_BAD), dt), flush=True)
-        add_row(label, "FAIL", dt)
-        print()
-        print(color("✗ 第 %02d 步失败：%s" % (n, label), C_BAD))
-        print("  结论：%s" % e.message)
-        if e.output:
-            print()
-            print("  ── 输出（末尾 %d 行）────────────────────────────────────────────" % 40)
-            for line in tail(e.output, 40).splitlines():
-                print("  " + line)
-            print("  " + "─" * 74)
-        print()
-        print("  为什么：%s" % why)
-        print("  怎么修：%s" % fix)
-        print()
-        print_table()
-        sys.exit(1)
+        print("%s %6.2fs  %s" % (color("✓", C_OK), dt, (detail or "")[:110]), flush=True)
+        add_row(label, "PASS", dt, detail)
+        return detail
+    # ── 失败路径（只有异常会走到这里）──────────────────────────────────
     dt = time.perf_counter() - t
-    print("%s %6.2fs  %s" % (color("✓", C_OK), dt, (detail or "")[:110]), flush=True)
-    add_row(label, "PASS", dt, detail)
-    return detail
+    print("%s %6.2fs" % (color("✗", C_BAD), dt), flush=True)
+    add_row(label, "FAIL", dt)
+    print()
+    print(color("✗ 第 %02d 步失败：%s" % (n, label), C_BAD))
+    print("  结论：%s" % fail.message)
+    if fail.output:
+        print()
+        print("  ── 输出（末尾 %d 行）────────────────────────────────────────────" % 40)
+        for line in tail(fail.output, 40).splitlines():
+            print("  " + line)
+        print("  " + "─" * 74)
+    print()
+    print("  为什么：%s" % why)
+    print("  怎么修：%s" % fix)
+    print()
+    print_table()
+    sys.exit(1)
 
 
 def skip_step(label, note):
