@@ -245,7 +245,7 @@ def main():
     if TARGET.is_file() and md5(TARGET) == cand["md5"]:
         print(f"\n目标已经是同一份（md5 {cand['md5']}）—— 不重复写。")
     else:
-        shutil.copy2(cand, TARGET)
+        shutil.copy2(CAND, TARGET)
         print(f"\n✅ 已装：{TARGET.relative_to(MOD)}  md5 {md5(TARGET)}  {TARGET.stat().st_size:,} B")
     return 0
 
