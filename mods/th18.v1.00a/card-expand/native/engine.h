@@ -40,6 +40,15 @@
 #define CE_FN_SPEND_POWER          0x457480   /* GlobalsInner__spend_power：thiscall(GlobalsInner*; amount) ret 4。CURRENT_POWER <= 一档时拒绝（返回 0、不扣）；
                                                  * 否则扣 amount 并钳到一档（永远保留 1.00），返回「档数是否变了」（0/1）。原生调用点：
                                                  * CardTsukasa__c_press 0x410f1c（push [0x4ccd40]; ecx = 0x4cccdc; call）、商店 0x418477、死亡 0x45c154。AUDIT §V */
+#define CE_FN_GAIN_POWER           0x4573f0   /* GlobalsInner__gain_power：thiscall(GlobalsInner*; amount) ret 4 —— spend_power 的对称件（2026-09-12 一手，
+                                                 * engine/card/th18/06-resource-economy.md §4b）。CURRENT_POWER >= MAX_POWER 时**拒绝、一点都不加**（返回 0，
+                                                 * 零售由此把火力道具转成分数）；否则 CURRENT_POWER += amount 并钳到 MAX_POWER，钳到那一路顺手删 GUI 的
+                                                 * `[0x4cf2e0]+0xbc` VM、在那里起 anm script 0x33（满火力横幅）。返回「档数是否变了」= (新−amount)/档 != 新/档。
+                                                 * 零售调用点：CardRingo__constructor 0x40a0c9（DANGO +0x32 = +0.50，加火力卡的原型）、火力道具 0x446a87、
+                                                 * ItemManager__on_tick__body 0x446343 / 0x44628a、CardMegumu__c_press 0x410c1b、CardMamizou__destructor 0x40d3a9 */
+#define CE_FN_POPUP_ADD            0x4645f0   /* PopupManager__sub_4645f0：**stdcall**(const float3 *pos, int value, u32 argb) ret 0xc —— 管理器是全局 [0x4cf420]，
+                                                 * 第一参是**世界坐标**（道具路径传 ItemManager+0xc2c，CardRingo 传 PLAYER+0x620）。value < 0 → 只写裸字形 0x0a
+                                                 * （火力上升箭头）而不是数字串。槽布局见本文件「弹字 ring」一节 */
 #define CE_FN_PLAYER_REPOPULATE_OPTIONS 0x45d5e0 /* Player__repopulate_options_and_notify_cards：thiscall(this = PLAYER+0x620; 一个从不读取的栈参) ret 4
                                                  * （尾 0x45dd0b `ret 4`；Tsukasa 0x410f27 `push ecx; lea ecx,[player+0x620]; call`）。按火力档重建自机子机、
                                                  * 尾部广播 on_power_level_change。扣火力后必须调（Tsukasa / 商店都这么做）。AUDIT §V */
@@ -123,7 +132,42 @@
 #define CE_ADDR_SHOP_PTR           0x4cf2a4   /* zAbilityShop*：GameThread__on_tick 0x443bed 写、析构 0x417857 清零；敌人 / 弹幕 / GUI 非 0 即冻结（SM §3.5）*/
 #define CE_ADDR_TIME_IN_STAGE      0x4ccce8   /* int：GameThread__on_tick 尾 0x443d16 inc（ExpHP TIME_IN_STAGE）*/
 #define CE_ADDR_CURRENT_STAGE      0x4cccdc   /* int：= GlobalsInner 首字段（ExpHP CURRENT_STAGE_globalsinner_base）*/
-#define CE_ADDR_PRACTICE_STAGE     0x4c5f8c   /* int：练习模式选的关（stage select 0x46769d 写），-1 = 非练习；商店 0x417cc7 读它决定 30 帧自动退 */
+/* ★★★ 2026-10-19b 订正（一手，全二进制线性反汇编 + 逐条读写点）：`0x4c5f8c` **不是**练习判据。
+ *   它 = **「本局 = Extra（第 7 面单关局）」标记**：`1` = Extra、`-1` = 其它。
+ *     · 唯一正写点 `0x46d9cb`（Extra 开局：同一段还写 `CURRENT_STAGE=7` `0x4cccdc`、关卡数据 `0x4cf428=0x4c99dc`、
+ *       启动方式 `0x4cf438=6`）；
+ *     · 清 `-1` 的四处：`MainMenu__thread_start 0x464c10`、**关卡练习开局 `0x46769f`**、
+ *       `GameThread__end_stage 0x444baa`、`FUN_00457a60 0x457b4c`；
+ *     · 读点：`GameThread__thread_start 0x4429ff`（Extra 不重播随机种子）、`end_stage 0x444b97`（收尾走
+ *       gamemode 2/4）、`FUN_00457a60 0x457af1/0x457b25`、商店 `0x417cc7`（Extra 里 30 帧自动退）；
+ *     · **ECL 侧**（本机 `local/th18.v1.00a/dat/` 里的 17 个 `st??.ecl` 实测）：系统变量 `-9899` = 本地址，**只有
+ *       `st07.ecl` / `st07bs.ecl` 各引用 1 次**（第 7 面）；其余 15 个关卡脚本 0 次。
+ *   ⇒ 符卡练习里它**恒为 -1**（练习菜单开局自己写的），拿它当练习判据必然一次都不触发（2026-10-19 实跑即如此）。
+ *   ⚠ 旧名 `CE_ADDR_PRACTICE_STAGE` / `CE_PRACTICE_STAGE()` 保留为**兼容别名**（行为不变、只改名不改址）：
+ *     `shop.c` 那处的语义本来就是「Extra 里别开商店」，与练习无关。*/
+#define CE_ADDR_EXTRA_RUN          0x4c5f8c   /* int：1 = 本局是 Extra 单关局，-1 = 其它（见上方一手表）*/
+#define CE_ADDR_PRACTICE_STAGE     CE_ADDR_EXTRA_RUN   /* ❌ 旧名（语义是错的）：只作兼容，新代码别用 */
+/* ---- ★★★ 符卡练习（真正的判据）--------------------------------------------------------------
+ * ① `0x4cf438` = **本局启动方式**（枚举，唯一写点都在菜单里）：
+ *      `1` 普通（`0x465067` 等标题流程）、`2` 回放（`0x46803f`）、`3` 某状态机过渡（`0x455180`）、
+ *      `4` **关卡练习**（`MainMenu__tick_menu_08_stage_select` `0x4676ac`）、
+ *      `5` **符卡练习**（`MainMenu__tick_menu_14_spell_prac_diff_select` `0x46cfce`）、
+ *      `6` Extra（`MainMenu__tick_menu_17_achievement` `0x46d9a6`）。
+ * ② `0x4ccd14` = **本局要练的符卡 id**（int，`-1` = 不是符卡练习）：
+ *      唯一非负写点 `0x46cffe`（符卡练习难度菜单，值 = 该面符卡列表 `menu+0x5d34[cursor]`）；
+ *      `-1` 写点：普通开局 `0x466be0`、回放 `0x468025`、Extra `0x46d9c1`；回放装载时从 rpy 头恢复（`0x468016` / `0x461a35`）。
+ *      **ECL 侧实证**：系统变量 `-9907` = 本地址，`st01bs…st07bs.ecl` 逐关引用（5/7/7/7/9/13/13 次；`st01…st07.ecl` 各 1 次）—— 就是
+ *      boss 脚本「跳到要练的那张符」用的量（同一次 `.ecl` 实测）。
+ * ③ `0x4cccc8` = GAME_FLAGS（低字节）；bit4/5 是 2 bit 模式域，**`0x20` = 符卡练习**：
+ *      `ReplayManager__initialize 0x461a0d..0x461a2f` 每局开头按 ② `>= 0` 置 `0x20`、否则 `&= ~0x30`；
+ *      读点 = 商店 `0x417cf5`/`0x417d79`、MSG `0x43e423`（`GLOBALS+8 & 0x30 == 0x20`）、
+ *      trance 卡第 8 条 `(GAME_FLAGS & 0x30) != 0x20`（`cards/trance.c`）。⇒ 它是 ② 的**派生值**，不是独立信号。*/
+#define CE_ADDR_START_KIND          0x4cf438  /* int：本局启动方式（见上表；5 = 符卡练习）*/
+#define CE_START_KIND_SPELL_PRACTICE 5
+#define CE_ADDR_SPELL_PRACTICE_ID   0x4ccd14  /* int：本局练的符卡 id，-1 = 不是符卡练习（ECL 系统变量 -9907）*/
+#define CE_ADDR_GAME_FLAGS          0x4cccc8  /* uint32：GAME_FLAGS（doc 里的 DAT_004cccc8 / GLOBALS+8）*/
+#define CE_PRACTICE_MODE_MASK       0x30u     /* 模式域掩码 */
+#define CE_PRACTICE_MODE_SPELL      0x20u     /* 符卡练习（回放符卡练习时也是它）*/
 #define CE_GT_FLAGS                0xb0       /* zGameThread+0xb0：位 0x20000 = 请求开商店（MSG opcode 36 置 0x440d83；GameThread 0x443b05 测、0x443c17 清）*/
 #define CE_GT_REPLAY_PLAYING       0xd0       /* zGameThread+0xd0：非 0 = replay 回放中（商店 0x417cd8、sub_417880 都看它）*/
 #define CE_GT_FLAG_OPEN_SHOP       0x20000
@@ -357,6 +401,7 @@
 #define CE_CURRENT_LIVES()  (*(int32_t *)CE_ADDR_CURRENT_LIVES)
 #define CE_LIVES_MAX()      (*(int32_t *)CE_ADDR_LIVES_MAX)
 #define CE_CURRENT_POWER()  (*(int32_t *)CE_ADDR_CURRENT_POWER)
+#define CE_MAX_POWER()      (*(int32_t *)CE_ADDR_MAX_POWER)
 #define CE_POWER_PER_LEVEL() (*(int32_t *)CE_ADDR_POWER_PER_LEVEL)
 #define CE_CURRENT_BOMBS()  (*(int32_t *)CE_ADDR_CURRENT_BOMBS)
 #define CE_MAX_BOMBS()      (*(int32_t *)CE_ADDR_MAX_BOMBS)
@@ -365,7 +410,12 @@
 #define CE_SHOP_PTR()       (*(void **)CE_ADDR_SHOP_PTR)
 #define CE_TIME_IN_STAGE()  (*(int32_t *)CE_ADDR_TIME_IN_STAGE)
 #define CE_CURRENT_STAGE()  (*(int32_t *)CE_ADDR_CURRENT_STAGE)
-#define CE_PRACTICE_STAGE() (*(int32_t *)CE_ADDR_PRACTICE_STAGE)
+#define CE_EXTRA_RUN()      (*(int32_t *)CE_ADDR_EXTRA_RUN)          /* 1 = Extra 单关局，-1 = 其它 */
+#define CE_PRACTICE_STAGE() (*(int32_t *)CE_ADDR_PRACTICE_STAGE)      /* ❌ 旧名别名（= CE_EXTRA_RUN），新代码别用 */
+#define CE_START_KIND()     (*(int32_t *)CE_ADDR_START_KIND)          /* 本局启动方式；5 = 符卡练习 */
+#define CE_SPELL_PRACTICE_ID() (*(int32_t *)CE_ADDR_SPELL_PRACTICE_ID) /* 本局练的符卡 id，-1 = 不是符卡练习 */
+#define CE_GAME_FLAGS()     (*(uint32_t *)CE_ADDR_GAME_FLAGS)         /* GAME_FLAGS 全字 */
+#define CE_PRACTICE_MODE()  ((uint32_t)(*(uint8_t *)CE_ADDR_GAME_FLAGS) & CE_PRACTICE_MODE_MASK)
 #define CE_LIFE_FRAGMENTS() (*(int32_t *)CE_ADDR_LIFE_FRAGMENTS)
 #define CE_SPELLCARD()      (*(uint8_t **)CE_ADDR_SPELLCARD_PTR)
 #define CE_OWNED_ARRAY()    ((const int32_t *)(CE_ABILITY_MGR() + CE_MGR_OWNED))
@@ -538,6 +588,8 @@ typedef struct { int32_t prev; int32_t cur; float cur_f; } ce_timer_t;   /* zTim
 #define CE_SE_RELEASE    0x4d   /* Tenshi 发动 */
 #define CE_SE_CHANGEITEM 0x4e   /* 切主动卡 */
 #define CE_SE_TROPHY     0x4f
+#define CE_SE_POWERUP    0x0d   /* se_powerup.wav（th18-sound-table.md 一手表）：火力**跨档**时零售自己放的那一声
+                                 * —— CardRingo__constructor `0x40a0b0` 与 ItemManager__collect_power_item `0x446870` 都只在档数真变了时放 */
 #define CE_FN_PLAY_SOUND           0x476c70   /* stdcall(id) + xmm2 = 世界 x（声像）；ret 4 */
 #define CE_FN_ADD_LIFE             0x4575f0   /* thiscall(GlobalsInner*)，无栈参，裸 ret：CURRENT_LIVES+1 钳 LIVES_MAX、清碎片、音效 0x11、起特效、extend 计数 +1。CardLife/Mokou dtor 调它。AUDIT O26 */
 #define CE_FN_GUI_UPDATE_BOMBS     0x4420e0   /* thiscall(gui; bombs, fragments, max) ret 0xc：刷 HUD 炸弹行。

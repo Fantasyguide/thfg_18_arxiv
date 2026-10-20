@@ -94,8 +94,20 @@ if (this->flags_b0 & 0x20000) {
 **关店由商店自己完成**（on_tick 优先级 **0xc**）：state 5（成交后 30 帧）/ 4（空白卡确认后）/ 9 → `FUN_004132b0`（清文案）
 → `AbilityShop__sub_417880`（replay 存/复原卡组）→ `FUN_004176e0`（注销两个 UpdateFunc、杀全部 VM、
 **`0x417857` 把 `0x4cf2a4` 清零**、`delete`）。还有两条不经成交的退出：`0x417CC7` 起，`timer == 0x1e` 且
-（replay 回放 `GAME_THREAD+0xd0 != 0` ‖ `DAT_004cccc8 & 0x30` ‖ **练习模式 `0x4c5f8c >= 0`**）→ 30 帧自动退；
+（replay 回放 `GAME_THREAD+0xd0 != 0` ‖ `DAT_004cccc8 & 0x30 == 0x20`（**符卡练习**）‖
+**`0x4c5f8c >= 0`（Extra 单关局，不是练习）**）→ 30 帧自动退；
 暂停菜单开着（`0x4cf40c+0x1ec != 0`）时只有 state 4/5/9 能继续退。
+
+> ★ **2026-10-19b 订正（一手）**：这里原先写的「练习模式 `0x4c5f8c >= 0`」是**错的**。
+> `0x4c5f8c` 是**「本局 = Extra（第 7 面单关局）」标记**：唯一正写点 `0x46d9cb`（Extra 开局，同时写
+> `CURRENT_STAGE=7`、`0x4cf428=0x4c99dc`、启动方式 `0x4cf438=6`，值 = **1**），四处清 `-1`
+> （`0x464c10` / **关卡练习开局 `0x46769f`** / `0x444baa` / `0x457b4c`）；ECL 侧只有 `st07` / `st07bs`
+> 读系统变量 `-9899` = 本地址。⇒ 符卡练习里它恒为 `-1`，**这条门在练习里不成立**。
+> 真正的符卡练习判据 = `0x4cf438 == 5`（启动方式，唯一写点 `0x46cfce`）+ `0x4ccd14 >= 0`（本局练的符卡 id，
+> 唯一非负写点 `0x46cffe`；ECL 系统变量 `-9907`，`st01bs…st07bs` 逐关引用）——
+> `DAT_004cccc8 & 0x30 == 0x20` 正是 `ReplayManager__initialize 0x461a0d..0x461a2f` **按 `0x4ccd14 >= 0`
+> 派生**出来的那个位。详见 [`11-sentinels-56-57.md`](11-sentinels-56-57.md) §6.2 与
+> `mods/th18.v1.00a/card-expand/AUDIT.md` §BE-108-PRACTICE-EQUIP-2026-10-19。
 
 **帧内顺序决定「再开一家」没有空档**（th18 一手 `register__on_tick` 的优先级参数）：商店 **0xc**（`0x4171DE`）→
 GameThread **0x10**（`0x442A97`）→ EnemyManager **0x1b**（`0x42DCD8`）→ Gui **0x21**（`0x43BAC5`）。商店在自己的 tick

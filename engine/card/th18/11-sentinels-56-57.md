@@ -541,11 +541,42 @@ if (entry->id == ABILITY_NULL) { ... }        // 判空
 结论：**表原地向后长这条路是堵死的**，不是「搬走邻表就行」。真要长表，
 只能整表搬进 codecave，付上面那 99 处的工价。
 
+### 6.2 ★ `0x4c5f8c` 的语义已经查清：**Extra（第 7 面）单关局标记** ✅（2026-10-19b 一手）
+
+> 起因：`mods/th18.v1.00a/card-expand` 的「符卡练习自动装 108」把 `0x4c5f8c >= 0` 当练习判据，
+> 实跑（2026-10-19 01:57）在符卡练习里一次都没触发。查下来是**判据错**，不是探针错。
+
+- **取值只有两种**：`1`（Extra）与 `-1`（其它）。全 `.text` 里只有这 5 个**写**点：
+  | 写点 | 值 | 出处 |
+  | --- | --- | --- |
+  | `0x46d9cb` | **1** | `MainMenu__tick_menu_17_achievement`：Extra 开局（同段还写 `CURRENT_STAGE=7` `0x4cccdc`、关卡数据 `0x4cf428=0x4c99dc`、启动方式 `0x4cf438=6`）|
+  | `0x464c10` | −1 | `MainMenu__thread_start` |
+  | `0x46769f` | −1 | `MainMenu__tick_menu_08_stage_select` = **关卡练习开局**（同段写 `0x4cf438=4`）|
+  | `0x444baa` | −1 | `GameThread__end_stage`（收尾）|
+  | `0x457b4c` | −1 | `FUN_00457a60` |
+- **读点**（`>= 0` 语义全都自洽于「Extra」）：`0x4429ff` `GameThread__thread_start`（Extra 不重播随机种子）、
+  `0x444b97` `end_stage`（收尾走 gamemode 2/4 而不是下一面）、`0x457af1` / `0x457b25`、
+  商店 `0x417cc7`（Extra 里 30 帧自动退）、ECL 取系统变量 `0x437956`（int）/ `0x43860d`（float）。
+- **ECL 侧实证**（本机 `local/th18.v1.00a/dat/` 的 17 个 `st??.ecl` 逐文件数立即数）：
+  系统变量 **`-9899`** 只有 **`st07.ecl` / `st07bs.ecl` 各 1 次**，其余 15 个脚本 **0 次**
+  ⇒ 只有第 7 面（Extra）用它。反过来，系统变量 **`-9907` = `0x4ccd14`**（= **本局练的符卡 id**）被
+  `st01`–`st07` 的全部 boss 脚本引用（`st01bs` 5 次 … `st05bs` 9 次 / `st06bs` 13 次 / `st07bs` 13 次）
+  ⇒ 那才是**符卡练习**的判据。
+- **符卡练习的真判据（一手）**：`0x4cf438 == 5`（本局启动方式 = 符卡练习，唯一写点
+  `MainMenu__tick_menu_14_spell_prac_diff_select` `0x46cfce`）+ `0x4ccd14 >= 0`（本局练的符卡 id，
+  唯一非负写点 `0x46cffe`，值 = 该面符卡列表 `menu+0x5d34[cursor]`；普通开局 `0x466be0` / 回放 `0x468025` /
+  Extra `0x46d9c1` 都写 −1）。引擎自己在 `ReplayManager__initialize 0x461a0d..0x461a2f` 按 `0x4ccd14 >= 0`
+  把 `GAME_FLAGS & 0x30` 置成 `0x20`（= 商店 / MSG / trance 卡读的那个「练习」位），所以
+  `DAT_004cccc8 & 0x30 == 0x20` 是**派生值**、不是独立信号。
+- **对搬表的意义**：`0x4c5f8c` 只是「一个 int 全局」，`0x4c5f88` 同理（`Ending__initialize` `0x42b735` 读、
+  `0x42b751` 写 −1，Extra 菜单 `0x46d532` 写）——搬表时**只搬表、两个全局原地不动**即可；
+  §4.5 那 99 处里属于「热全局」的那些（`mov r32,[0x4c5f8c]` 与 `cmp r32,0x4c5f8c` 同址不同用法）必须按**寻址方式**分类。
+
 ## 7. 本次未查
 
 - 卡组编成界面里 NULL 条目的**实际观感**（机制已 ✅ 闭合，只是没看过它长什么样）。
-- `0x4c5f88` / `0x4c5f8c` 这两个全局各是什么语义（`Enemy__ecl_get_int_global` 会读它，
-  说明至少 `0x4c5f8c` 是一个 ECL 可见的全局；搬表时要一起挪，所以得先知道它是什么）。
+- ~~`0x4c5f88` / `0x4c5f8c` 这两个全局各是什么语义~~ → **`0x4c5f8c` 已结案** = Extra 单关局标记（§6.2 ✅）；
+  `0x4c5f88` 仍 🟡（只有 `Ending__initialize` 读 / 写 −1 与 Extra 菜单写）。
 - ~~三个卡牌 ANM 的 sprite 索引余量~~ → 已解包（2026-09-04）：`abcard.anm` 正好 118 个 sprite（0..117，
   2/3 = `BACK_max`/`dummy`，116/117 = `empty_max`/`dummy`，与两行哨兵完全对上），格式层可无限追加；
   运行时上限仍 🟡。见 [`10-extensibility-limits.md`](10-extensibility-limits.md) §5。

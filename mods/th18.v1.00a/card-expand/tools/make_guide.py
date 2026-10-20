@@ -2,14 +2,19 @@
 # -*- coding: utf-8 -*-
 """make_guide.py —— 把玩家手册（markdown）+ 卡面数据（cards.js）生成一本 XeLaTeX 图册。
 
-用法（在 Windows 侧的 card-guide 目录里跑）：
+用法（在 card-guide 目录里跑；路径一律相对当前目录，不写死本机路径）：
     python3 make_guide.py <cards.js> <PLAYER-GUIDE.md> <out.tex> [<cards 图片目录>=cards]
 
 产出 guide.tex：
-  · 第一部分：系统卡 106–117 —— 每卡一页：卡面 PNG + **卡面文字**（cards.js 的 name/desc ✓）+ 玩家手册正文 ✓
-  · 第二部分：本 mod 其它卡 —— 双栏，卡面 PNG + 卡面文字 ✓
-编译（Windows 侧 TeX Live）：
-    C:\\texlive\\2025\\bin\\windows\\xelatex.exe -interaction=nonstopmode -halt-on-error guide.tex   （跑两遍出目录）
+  · **统一模板，一卡一页**（owner 2026-10-20）：本 mod 所有卡（58–92、106–118）按 id 升序，
+    每张卡另起一页：卡面 PNG + **卡面文字**（cards.js 的 name/desc ✓）+ 玩家手册正文 ✓
+    （没有正文的卡只留卡面，不补空话 ✗）；旧版的「第一部分系统卡 / 第二部分双栏其它卡」已取消。
+编译（任何装了 XeLaTeX + 中文字体的机器）：
+    xelatex -interaction=nonstopmode -halt-on-error guide.tex   （跑两遍出目录）
+
+中文字体：默认 `Microsoft YaHei`（Windows 自带）。其它机器可用环境变量
+`GUIDE_CJK_FONT` 换字体名，或用 fontconfig 把该名字映射到本机字体
+（Linux 例：`FONTCONFIG_FILE=<fonts.conf> xelatex ...`，fonts.conf 里指向本机字体目录）。
 
 ★ 卡名宏（owner 2026-10-15 口径）：
   · 系统卡 106–117 用**纯字母**别名宏：\\hmx/\\HMX = 106 红魔乡、\\hzc/\\HZC = 114 辉针城 … \\gxs/\\GXS = 117 鬼形兽
@@ -19,6 +24,7 @@
     ⇒ 每个宏后面补一对 `{}` 断开 ✓
 """
 import json
+import os
 import re
 import sys
 import pathlib
@@ -48,13 +54,21 @@ def esc(s):
 INLINE = re.compile(r'`([^`]+)`|\*\*([^*]+)\*\*')
 
 
+def _tt(s):
+    """`code` → \\texttt，并在 / : . - 后补可断点（文件:行 这种长串在双栏里会撑出边界 ✗）。"""
+    s = esc(s)
+    for ch in ('/', ':', '.', '-', r'\_'):
+        s = s.replace(ch, ch + r'\allowbreak{}')
+    return r'\texttt{' + s + '}'
+
+
 def inline(s):
     """行内 markdown：`code` / **bold** → LaTeX（其余部分转义 ✓）"""
     out, i = [], 0
     for m in INLINE.finditer(s):
         out.append(esc(s[i:m.start()]))
         if m.group(1) is not None:
-            out.append(r'\texttt{' + esc(m.group(1)) + '}')
+            out.append(_tt(m.group(1)))
         else:
             out.append(r'\textbf{' + esc(m.group(2)) + '}')
         i = m.end()
@@ -180,10 +194,42 @@ def _restore(tex, store):
     return tex
 
 
+def _protect_bold(tex):
+    """把 **已经加粗** 的整段（\\textbf{...}）换成占位符。
+    ★ owner 2026-10-20：PLAYER-GUIDE 正文里卡名已经手写成 **卡名** ⇒ 这里不能再套一层，
+      也不能在加粗段里补「编号 」（否则「红魔乡的」会变成「106 红魔乡的」，等于改了正文 ✗）。
+    """
+    out, store, i = [], [], 0
+    while True:
+        j = tex.find(r'\textbf{', i)
+        if j < 0:
+            out.append(tex[i:])
+            break
+        out.append(tex[i:j])
+        k, depth = j + len(r'\textbf{'), 1
+        while k < len(tex) and depth:
+            if tex[k] == '{' and tex[k - 1] != '\\':
+                depth += 1
+            elif tex[k] == '}' and tex[k - 1] != '\\':
+                depth -= 1
+            k += 1
+        store.append(tex[j:k])
+        out.append('\x02%d\x02' % (len(store) - 1))
+        i = k
+    return ''.join(out), store
+
+
+def _restore_bold(tex, store):
+    for i, s in enumerate(store):
+        tex = tex.replace('\x02%d\x02' % i, s)
+    return tex
+
+
 def linkify(tex, cards):
     """卡名 → 宏 / 加粗文本。先「编号+卡名」再裸名；边界只排除数字紧贴 ✓。
        ★ 宏后补 `{}`：xeCJK 下汉字是 catcode 11 字母，会把宏名吞进控制序列 ✗。"""
     tex, store = _protect(tex)
+    tex, bstore = _protect_bold(tex)   # ★ 已有的 **加粗** 整段不再二次套 bold / 补编号
     marks = []          # ★ 已替换过的片段先收进占位符：否则"编号+卡名"替完后，
                         #   "裸卡名"规则会再钻进刚生成的那段里 ⇒ 「92 92 伟大之作」✗（owner 2026-10-15 指出）
     def hold(s):
@@ -205,14 +251,19 @@ def linkify(tex, cards):
                      % (cid, re.escape(nm), cid), _rep, tex)
     for i, mk in enumerate(marks):
         tex = tex.replace('\x01%d\x01' % i, mk)
+    tex = _restore_bold(tex, bstore)
     return _restore(tex, store)
 
 
+# ★ 中文字体：不写死路径；默认 Windows 自带的 Microsoft YaHei，其它机器用
+#   GUIDE_CJK_FONT 换字体名，或靠 fontconfig 把这个名字映射到本机字体（见文件头）。
+CJK_FONT = os.environ.get('GUIDE_CJK_FONT', 'Microsoft YaHei')
+
 PRE = r'''\documentclass[11pt,a4paper,fontset=none]{ctexart}
 \usepackage{xeCJK}
-\setCJKmainfont{Microsoft YaHei}
-\setCJKsansfont{Microsoft YaHei}
-\setCJKmonofont{Microsoft YaHei}
+\setCJKmainfont{@CJK@}
+\setCJKsansfont{@CJK@}
+\setCJKmonofont{@CJK@}
 \usepackage[a4paper,margin=2.1cm]{geometry}
 \usepackage{graphicx}
 \usepackage{xcolor}
@@ -237,6 +288,8 @@ PRE = r'''\documentclass[11pt,a4paper,fontset=none]{ctexart}
 \newcommand{\parthdr}[2]{\par\needspace{3\baselineskip}{\Large\bfseries #1\quad #2}\par\medskip\addcontentsline{toc}{section}{#1 #2}}
 \begin{document}
 '''
+# ★ 字体名在 PRE 里用占位符，读完环境变量再填 —— 避免 % 格式化误伤导言区的 % 注释 ✓
+PRE = PRE.replace('@CJK@', CJK_FONT)
 
 
 def main():
@@ -244,86 +297,52 @@ def main():
     imgdir = sys.argv[4] if len(sys.argv) > 4 else 'cards'
     cards = parse_cards(js)
     guide = parse_guide(md)
-    sysids = [i for i in range(106, 118) if i in cards]      # ★ 系统卡 = 106–117
-    extra = [i for i in (118,) if i in cards]               # ★ 附：118 挑战卡
-    skip = {201, 200}                                       # ★ 不进图册：201（调试）与 200（测试卡）
-    others = sorted(i for i in cards if i not in sysids and i not in extra and i not in skip)
+    skip = {200, 201}                            # ★ 不进图册：200/201 都是测试·调试卡，不进玩家图册
+    # ★ owner 2026-10-20：所有卡统一模板、按 id 升序 —— 58…92、106…118 一条线排下去 ✓
+    ids = sorted(i for i in cards if i not in skip)
 
     L = [PRE, card_macros(cards)]
     L.append(r'\begin{center}')
-    L.append(r'{\Huge\bfseries 卡牌手册（106--117）}\\[6pt]')
-    L.append(r'{\large 附：本 mod 全部卡片图鉴}\\[10pt]')
-    L.append(r'{\small 卡号 106--117 = \textbf{原作编号 + 100}：106 = 红魔乡，\ldots，117 = 鬼形兽。}')
+    L.append(r'{\Huge\bfseries 卡牌手册}\\[6pt]')
+    L.append(r'{\large 本 mod 全部卡片图鉴（按卡号排列）}\\[10pt]')
+    L.append(r'{\small 系统卡 106--117 = \textbf{原作编号 + 100}：106 = 红魔乡，\ldots，117 = 鬼形兽。}')
     L.append(r'\end{center}')
     L.append(r'\vspace{6pt}')
-    L.append(r'本册分两部分：\textbf{第一部分}逐张讲 106--117 怎么用、代价是什么（正文来自玩家手册）；'
-             r'\textbf{第二部分}是本 mod 其它卡片的图鉴（卡面 + 卡面上印的字）。调试工具与测试卡（201、200）不进本册；118 是挑战卡。')
+    L.append(r'本册\textbf{一卡一页}：每张卡先给卡图与卡面文字，下面接玩家手册里的展开说明'
+             r'（定位 / 数值 / 用法 / 注意事项）；正文长时自然续页，没有正文的卡只留卡面。'
+             r'58--92 是其它卡，106--117 是系统卡，118 是挑战卡。')
     L.append(r'\tableofcontents')
     L.append(r'\clearpage')
 
-    # ── 第一部分：系统卡 ──
-    L.append(r'\parthdr{第一部分}{卡牌 106--117}')
-    first = True
-    for cid in sysids:
+    for n, cid in enumerate(ids):
         c = cards[cid]
-        img = '%s/%s_max.png' % (imgdir, c['internal'])
-        if first:
-            first = False          # ★ 第一张卡跟在"第一部分"标题后面 ⇒ 不强制分页 ✓（owner 2026-10-15）
-        else:
+        if n:                       # ★ 第 1 张紧跟目录后的那一页；其余每张卡另起一页 ✓
             L.append(r'\clearpage')
-        L.append(r'\cardtitle{%d %s}' % (cid, esc(c['name'])))
-        L.append(r'\noindent\begin{minipage}[t]{0.41\textwidth}')
-        L.append(r'\includegraphics[width=\linewidth]{%s}' % img)
-        L.append(r'\end{minipage}\hfill')
-        L.append(r'\begin{minipage}[t]{0.55\textwidth}')
+        # ★ 页眉/编号/名字与系统卡一致：\cardtitle = \section，标题就是「编号　卡名」✓
+        # ★ owner 2026-10-20：109 还在开发中 ⇒ 标题后缀（指南里同步标注；卡面 desc 也加了一句）
+        note = '（开发中）' if cid == 109 else ''
+        L.append(r'\cardtitle{%d %s%s}' % (cid, esc(c['name']), esc(note)))
+        # ★ internal_name 只用来找卡图（<internal_name>_max.png），与系统卡同一套 ✓
+        img = pathlib.Path('%s/%s_max.png' % (imgdir, c['internal'])) if c['internal'] else None
+        if img is not None and img.exists():
+            L.append(r'\noindent\begin{minipage}[t]{0.41\textwidth}')
+            L.append(r'\includegraphics[width=\linewidth]{%s}' % str(img))
+            L.append(r'\end{minipage}\hfill')
+            L.append(r'\begin{minipage}[t]{0.55\textwidth}')
+        else:                       # 没卡图就整行给卡面文字（不硬凑占位图 ✗）
+            L.append(r'\noindent\begin{minipage}[t]{0.98\textwidth}')
         L.append(r'\printedlabel')
         L.append(r'{\small %s}\par' % '\\\\'.join(inline(x) for x in c['desc']))
         L.append(r'\end{minipage}')
         L.append(r'\divider')
-        if cid in guide:
+        if cid in guide:            # ★ 没有正文的卡就留空（不硬凑 ✗）
             L.append(linkify(md2tex(guide[cid]), cards))
         L.append('')
-    # ── 附：118 挑战卡 ──
-    if extra:
-        L.append(r'\clearpage')
-        L.append(r'\section{附：118 挑战・十二合一（挑战卡）}')
-        for cid in extra:
-            c = cards[cid]
-            L.append(r'\noindent\begin{minipage}[t]{0.41\textwidth}')
-            L.append(r'\includegraphics[width=\linewidth]{%s/%s_max.png}' % (imgdir, c['internal']))
-            L.append(r'\end{minipage}\hfill')
-            L.append(r'\begin{minipage}[t]{0.55\textwidth}')
-            L.append(r'\printedlabel')
-            L.append(r'{\small %s}\par' % '\\\\'.join(inline(x) for x in c['desc']))
-            L.append(r'\end{minipage}')
-            L.append('')
-    # ── 第二部分：其它卡 ──
-    L.append(r'\clearpage')
-    L.append(r'\parthdr{第二部分}{本 mod 其它卡}')
-    L.append(r'{\small 下列卡片按卡号排列；每张给卡面图与卡面上印的字。}')
-    L.append(r'\begin{multicols}{2}')
-    for cid in others:
-        c = cards[cid]
-        img = pathlib.Path('%s/%s_max.png' % (imgdir, c['internal']))
-        L.append(r'\needspace{0.20\textheight}')
-        if c['internal'] and img.exists():
-            L.append(r'\noindent\begin{minipage}[c]{0.33\linewidth}')
-            L.append(r'\includegraphics[width=\linewidth]{%s}' % str(img))
-            L.append(r'\end{minipage}\hfill')
-            L.append(r'\begin{minipage}[c]{0.64\linewidth}')
-        else:
-            L.append(r'\noindent\begin{minipage}[c]{0.98\linewidth}')
-        L.append(r'{\bfseries %d %s}\par\smallskip' % (cid, esc(c['name'])))
-        L.append(r'{\footnotesize %s}\par' % '\\\\'.join(inline(x) for x in c['desc']))
-        L.append(r'\end{minipage}')
-        L.append(r'\par\smallskip{\color{gray}\hrule}\smallskip')
-    L.append(r'\end{multicols}')
     L.append(r'\end{document}')
     pathlib.Path(out).write_text('\n'.join(x for x in L if x is not None), encoding='utf-8')
     print('  已写 %s' % out)
-    print('  第一部分 %d 张（有正文的 %d 张）| 第二部分 %d 张其它卡'
-          % (len(sysids), sum(1 for i in sysids if i in guide), len(others)))
-    miss = [i for i in sysids + others
+    print('  共 %d 张卡（一卡一页；有正文的 %d 张）' % (len(ids), sum(1 for i in ids if i in guide)))
+    miss = [i for i in ids
             if cards[i]['internal'] and not pathlib.Path('%s/%s_max.png' % (imgdir, cards[i]['internal'])).exists()]
     print('  缺卡面图：%s' % (miss or '无 ✓'))
 

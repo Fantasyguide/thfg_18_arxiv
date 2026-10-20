@@ -89,6 +89,13 @@ ROADMAP 里问的是「`allocate_new_card` 的完整 switch/default：未知 ID 
 这正是 thcrap 最擅长的东西（文件替换是它的本职），所以**文案侧几乎没有障碍**——
 前提是 #5 的循环边界和 #6 的缓冲区尺寸放得进去。
 
+⚠️ **但「盖住 `ability.txt`」不等于「显示改了」**（2026-10-19 实跑踩到 ✗）：如果栈里有语言包，
+base_tsa 的 `gentext#card_name`（`0x41669c`）/ `gentext#card_desc`（`0x4167b0`）会在**运行时**
+用 `<lang>/th18/abilities.js` 把卡名与说明各行再覆盖一遍（`lang_zh-hans` 自带 `"0_0"` = 空白卡
+中文原生文本 ⇒ 我们改的 `ability.txt` 被整段盖掉）。机制与修法见
+[`mods/thcrap-platform.md` §2.5](../../../mods/thcrap-platform.md)：改原版卡说明要
+`ability.txt` + `th18/abilities.js`（`"<id>_0"`）**两个文件一起出**。
+
 内部名是查表键，也意味着新卡必须先在注册表里有一项、且 `internal_name` 指针有效。
 
 ## 5. 图标

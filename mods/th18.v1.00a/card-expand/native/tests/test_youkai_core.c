@@ -1090,6 +1090,28 @@ int main(void)
     CHECK(YK_TRANSFER_DEN == 2);                                  /* 用户 2026-09-12 定案 1/2 */
     CHECK(YK_TRANSFER_CAP_PER_FRAME == 0);                        /* ★ 占位：还没封顶 */
 
+    /* ★★★★ 2026-10-20（owner：「出界的使魔也会扣 boss 血 + 顺手打穿下一根血条」）：
+     *   **一根血条的钳** —— `current` 就是这一根的剩余；`amount` 再大也只能扣到 0。
+     *   判据逐条：`(amount, current) → 施加量`。*/
+    CHECK(yk_bar_damage_clamp(500, 100) == 100);   /* ★ owner 那条：current=100, amount=500 ⇒ 只扣 100 */
+    CHECK(yk_bar_damage_clamp(100, 100) == 100);   /* 刚好打空这一根（不越界）*/
+    CHECK(yk_bar_damage_clamp(50, 100) == 50);     /* 比一根小 ⇒ 原样 */
+    CHECK(yk_bar_damage_clamp(500, 1) == 1);       /* 只剩 1 点 ⇒ 只扣 1 点 */
+    CHECK(yk_bar_damage_clamp(500, 0) == 0);       /* 这一根已经空了 ⇒ 一点都不能带到下一根 */
+    CHECK(yk_bar_damage_clamp(500, -7) == 0);      /* 异常负值（已死/读错）⇒ 不扣 */
+    CHECK(yk_bar_damage_clamp(0, 100) == 0);
+    CHECK(yk_bar_damage_clamp(-1, 100) == 0);      /* 负伤害不倒加血 */
+
+    /* ★★★★ 2026-10-20（owner：「使魔**出界**了也会扣 boss 血」）：**消失时的喂料门**。
+     *   目标行为 = 「只有真被打死且死讯新鲜才喂」；出界（没有死亡广播）一笔都不喂。*/
+    CHECK(YK_XFAM_DEATH_FRAME_WINDOW == 4u);
+    CHECK(yk_xfam_gone_should_feed(1, 1, 0) == 1);   /* 被打死（KILLED/BOMB_KILL）+ 广播新鲜 ⇒ 喂 */
+    CHECK(yk_xfam_gone_should_feed(1, 1, 4) == 1);   /* 窗口边界（引擎死亡 → 下一帧才发现，实际差 1）*/
+    CHECK(yk_xfam_gone_should_feed(1, 1, 5) == 0);   /* 过期广播 ⇒ 不喂（别拿旧死讯当这一笔）*/
+    CHECK(yk_xfam_gone_should_feed(1, 0, 1) == 0);   /* ECL delete / enmKillAll ⇒ 不是我们打的 ⇒ 不喂 */
+    CHECK(yk_xfam_gone_should_feed(0, 0, 0) == 0);   /* ★ 出界/离场：**一条死亡广播都没有** ⇒ 不喂 */
+    CHECK(yk_xfam_gone_should_feed(0, 1, 0) == 0);   /* 自称「被打死」但没见到广播 ⇒ 不信 */
+
     /* life 采样（逐帧差分的边界）*/
     memset(&e, 0, sizeof e);
     e.fam_id = 7;
@@ -3137,20 +3159,70 @@ int main(void)
     check_orbit_gift_ledger();              /* ★ 2026-09-30：绕转使魔「一只敌人只补一次」的判定 */
 
     /* ── leveledit（第三方米斯蒂亚补丁）同开时的使魔归属 ────────────────────────────────
-     * 口径见 `HANDOFF-108-LEVELEDIT-FAMILIARS.md` §1 ✓；本段钉的是**两条不变式** ✓：
-     *   ① **没装 108 ⇒ 恒不动作** ✓（owner 口径 ③：此时"只有人侧、没有妖侧"✓）；
-     *   ② **判别常量未实测（`YK_LE_TRUSTED == 0`）⇒ 恒不命中** ✓（保守回退：行为与今天完全一致 ✗）。
-     * ⚠ 常量钉死（P113 探针日志）之后，把下面 `#if 0` 那段打开并填真实值 ✓。*/
+     * 口径见 `HANDOFF-108-LEVELEDIT-FAMILIARS.md` §1 ✓；判据与一手出处见 `youkai_core.h` 那段 ✓。
+     * ★★ 2026-10-17：判据**已实测钉死** ✓ ⇒ `YK_LE_TRUSTED == 1` ✓、`YK_LE_SUB_INDEX_MIN == 24` ✓。
+     *   证据（两份 dump 逐条对过 ✓）：零售 `local/th18.v1.00a/dat/st02bs.ecl` 用
+     *   `thecl -m th18.eclm -d 18` 解出 **24 个函数**（末尾 `BossEscape` ⇒ 最大索引 **23** ✓）；
+     *   leveledit 的 `stage02-mystia/files/st02bs.ecl` 解出 **62 个**（第 24 个之后全是
+     *   `MystiaMaskAnimate` / `MystiaSongStart` / `MystiaStars` … ✓）。
+     * 不变式：① **没装 108 ⇒ 恒不动作** ✓；② **`subroutine_index < 24` ⇒ 恒不命中** ✓（零售上界 ✓）。*/
     CHECK(yk_le_mode(0, 0, 0, 0) == 0);            /* 没 108 ⇒ 永不动作 ✓ */
-    CHECK(yk_le_mode(0, 12345, 678, 9) == 0);      /* 同上：**输入再"像"也不动作** ✓ */
-    CHECK(yk_le_mode(1, 0, 0, 0) == 0);            /* 常量未钉死 ⇒ 保守不命中 ✓ */
-    CHECK(yk_le_is_levelledit_fight(0, 0, 0) == 0);
-    CHECK(yk_le_is_their_familiar(0, 0, 0) == 0);
-#if 0   /* ❓实测后打开：把 REAL_* 换成日志里读到的真实值（见交接单 §4）✓ */
-    CHECK(yk_le_mode(1, REAL_SUB274, REAL_ANMMAIN, REAL_IV0) == 1);   /* 那场 ✓ */
-    CHECK(yk_le_mode(0, REAL_SUB274, REAL_ANMMAIN, REAL_IV0) == 0);   /* 没 108 ⇒ 不动作 ✓ */
-    CHECK(yk_le_is_their_familiar(REAL_FAM_ID, REAL_ANMMAIN, REAL_SLOT0) == 1);
-#endif
+    CHECK(yk_le_mode(0, 999, 678, 9) == 0);        /* 同上：**输入再"像"也不动作** ✓ */
+    CHECK(yk_le_mode(1, 0, 0, 0) == 0);            /* ② 零售侧索引 ⇒ 不命中 ✓ */
+    CHECK(yk_le_mode(1, 23, 0, 0) == 0);           /* ② 零售最大索引 23 ⇒ 不命中 ✓（边界）*/
+    CHECK(yk_le_is_levelledit_fight(23, 0, 0) == 0);
+    CHECK(yk_le_is_levelledit_fight(24, 0, 0) == 1);   /* ★ 边界：≥24 ⇒ 命中 ✓ */
+    CHECK(yk_le_mode(1, 26, 0, 0) == 1);               /* ★ 那场（README：第一个 non 是 Sub26 ✓）*/
+    CHECK(yk_le_mode(1, 62, 123, 7) == 1);             /* ★ 他们的 sub 量级 ⇒ 命中 ✓ */
+    CHECK(yk_le_mode(1, 0x7fffffff, 0, 0) == 1);       /* 上界不过滤 ✓ */
+    /* ★★ 2026-10-18（B2 接管）：判据 = 敌机的 `$I3`（`ecl_int_vars[3]`）== `YK_LE_FAM_MARK`(997)。
+     *   一手：leveledit `mods/stage02-mystia/translate.py:207-217`（每个 `MystiaChild<n>()` 第一行
+     *   `$I3 = 997;`）；与「那场」判据（`yk_le_mode`）**同时**成立才接管（调用侧 `yk_le_here()` ✓）。*/
+    CHECK(YK_LE_FAM_MARK == 997);
+    CHECK(yk_le_is_their_familiar(997) == 1);          /* ★ 他们的使魔 ⇒ 命中 ✓ */
+    CHECK(yk_le_is_their_familiar(0) == 0);            /* 没标记 ⇒ 不命中 ✓ */
+    CHECK(yk_le_is_their_familiar(998) == 0);          /* 邻近值不误伤 ✓ */
+    CHECK(yk_le_is_their_familiar(-1) == 0);
+    /* ★ 没装 108 ⇒ 连「那场」都不成立 ⇒ 接管整条链死掉（调用侧 `le_here && is_their_familiar` ✓）*/
+    CHECK(yk_le_mode(0, YK_LE_SUB_INDEX_MIN, 0, 0) == 0);
+    CHECK(yk_le_mode(0, 62, 0, 0) == 0);
+
+    /* ★★★ 2026-10-20（owner 口径回滚）：**符卡练习里自动发 108** —— 「进练习发一张，retry 后没有」。
+     *   历史：`da946d56` 实装 → `d4bc54ed` 加「reset_cards 抹掉后补发」→ `28ff8307` 整条删掉
+     *   （owner：retry 后 108 没了）。**现在 owner 明确**：那个「retry 后消失」是**要的测试特性**
+     *   （「有 108 / 没 108」的对照）⇒ 补发不做。下面把「判据」与「发不发」逐条钉死。*/
+
+    /* ---- 判据 `yk_practice_is_spell(start_kind, spell_id, practice_mode, replay_playing)` ---- */
+    CHECK(YK_PRACTICE_START_KIND_SPELL == 5);   /* 一手：`0x4cf438 == 5`（唯一写点 th18:0x46cfce）*/
+    CHECK(YK_PRACTICE_MODE_SPELL == 0x20u);     /* 一手：`GAME_FLAGS 0x4cccc8 & 0x30`（引擎自己的练习位）*/
+    CHECK(yk_practice_is_spell(5, 8, 0x20u, 0) == 1);   /* ★ 正常符卡练习（实跑那局 cand0=5 / cand2=8）*/
+    CHECK(yk_practice_is_spell(5, 0, 0x00u, 0) == 1);   /* ① 成立就够（GAME_FLAGS 还没置位也不影响）*/
+    CHECK(yk_practice_is_spell(5, 8, 0x00u, 0) == 1);   /* 同上：① 是主判据，不依赖兜底 */
+    CHECK(yk_practice_is_spell(1, 8, 0x00u, 0) == 0);   /* ★ 普通关卡（start_kind=1，GAME_FLAGS 无练习位）⇒ 不发 */
+    CHECK(yk_practice_is_spell(5, -1, 0x20u, 0) == 0);  /* ② `0x4ccd14 == -1` ⇒ 一定不是练习 */
+    CHECK(yk_practice_is_spell(5, -1, 0x00u, 0) == 0);  /* 同上，兜底也救不了（② 是必要条件）*/
+    CHECK(yk_practice_is_spell(4, 8, 0x00u, 0) == 0);   /* ★ 关卡练习（start_kind=4，不是符卡练习）⇒ 不发 */
+    CHECK(yk_practice_is_spell(6, 8, 0x00u, 0) == 0);   /* Extra（start_kind=6）⇒ 不发 */
+    CHECK(yk_practice_is_spell(2, 8, 0x20u, 1) == 0);   /* ★ 回放（3 兜底必须让路：发卡会改回放轨迹）*/
+    CHECK(yk_practice_is_spell(2, 8, 0x00u, 1) == 0);   /* 回放 + 没有练习位 ⇒ 同样不发 */
+    CHECK(yk_practice_is_spell(4, 8, 0x20u, 0) == 1);   /* 🟡 兜底：① 被改写但引擎练习位在 ⇒ 救急发 */
+
+    /* ---- 决策 `yk_practice_grant_decision(in_practice, owned, already_granted)` ---- */
+    CHECK(YK_PRACTICE_GRANT_NONE == 0);
+    CHECK(YK_PRACTICE_GRANT_SEND == 1);
+    CHECK(YK_PRACTICE_GRANT_SKIP_OWNED == 2);
+    CHECK(yk_practice_grant_decision(1, 0, 0) == YK_PRACTICE_GRANT_SEND);       /* ★ 进练习、手上没有 ⇒ 发一张 */
+    CHECK(yk_practice_grant_decision(1, 0, 1) == YK_PRACTICE_GRANT_NONE);       /* ★★ retry 后（已试过）⇒ **不发** */
+    CHECK(yk_practice_grant_decision(1, 1, 0) == YK_PRACTICE_GRANT_SKIP_OWNED); /* 练习槽本来就带了 ⇒ 跳过 */
+    CHECK(yk_practice_grant_decision(1, 1, 1) == YK_PRACTICE_GRANT_NONE);       /* 手上已有且发过 ⇒ 什么都不做 */
+    CHECK(yk_practice_grant_decision(0, 0, 0) == YK_PRACTICE_GRANT_NONE);       /* ★ 正常关卡 ⇒ 不发 */
+    CHECK(yk_practice_grant_decision(0, 1, 0) == YK_PRACTICE_GRANT_NONE);       /* 正常关卡 + 有 108 ⇒ 不发 */
+    CHECK(yk_practice_grant_decision(0, 0, 1) == YK_PRACTICE_GRANT_NONE);       /* 非练习 ⇒ 连"已试过"都不看 */
+
+    /* ---- 组合：把判据喂给决策（= youkai.c 里那三行）---- */
+    CHECK(yk_practice_grant_decision(yk_practice_is_spell(5, 8, 0x20u, 0), 0, 0) == YK_PRACTICE_GRANT_SEND);
+    CHECK(yk_practice_grant_decision(yk_practice_is_spell(1, 8, 0x00u, 0), 0, 0) == YK_PRACTICE_GRANT_NONE);
+    CHECK(yk_practice_grant_decision(yk_practice_is_spell(5, 8, 0x20u, 0), 0, 1) == YK_PRACTICE_GRANT_NONE);
 
     printf("youkai_core: %d checks, %d failed\n", s_pass + s_fail, s_fail);
     return s_fail ? 1 : 0;

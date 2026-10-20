@@ -1492,6 +1492,31 @@ int32_t yk_half_with_carry(int32_t delta, int32_t *carry);
 void    yk_transfer_feed(yk_transfer_t *t, int32_t delta, int32_t pct);   /* ★ P59：pct = 100（附加）/ 50（发弹口）✓ */
 /* cap <= 0 = 无上限（占位默认）；否则钳到 cap。 */
 int32_t yk_transfer_clamp(int32_t pending, int32_t cap);
+/* ★★★★ 2026-10-20（owner：「使魔被打掉了**会**扣 boss 血（对），但**出界**了也会扣，
+ *   而且这个扣血还会**顺手打穿下一根血条**」）—— **一根血条的钳**。
+ *   一手：`zEnemyLife`（`zEnemyData + 0x4ff4`，绝对 `enemy+0x6220`）的 `current` **就是这一根血条的剩余**；
+ *   引擎自己的伤害路径（`EnemyData__step_game_logic` `0x42ed40` ③）在一根被打空时把
+ *   `life.current` **钉到中断槽的 `hp_value`**（`engine/ecl/th18/01-boss-interrupts-and-spellcard.md` §2），
+ *   超出的那一笔**不结转到下一根**。
+ *   ⇒ 我们直接写 `life.current` / 建伤害源时也必须先钳到 `current`，否则：
+ *     · 直接扣：`amount` 比 `current` 大 ⇒ 差值只能丢（引擎语义），钳了才**记账正确**；
+ *     · 伤害源：源寿命 >1 帧（`+0x60/+0x64` 计时器，`0x45c3e1` 每帧 `prev = cur; cur--`）⇒ 第一帧打空这一根后
+ *       **后面几帧还会打到下一根** = owner 看到的「打穿下一根」。
+ *   返回 = 这一笔真正该施加的量（0 = 参数非法 / 这一根已经空了）。`bar_left <= 0` 一律 0。 */
+int32_t yk_bar_damage_clamp(int32_t amount, int32_t bar_left);
+/* ★★★★ 2026-10-20（owner：「使魔**出界**了**也会**扣 boss 血 ✗」）—— **xfam 消失时的喂料判据**。
+ *   背景：接管/外部使魔的条目从扫描里「消失」有三种完全不同的死法，只有**被伤害打死**才该把
+ *   「最后一次看到的血」当作最后一击喂进转嫁（2026-10-19r 的修法）：
+ *     · 被打死   = `CE_EDEATH_KILLED`（一手 `retaddr 0x42f3b7`，`life.current <= 0` 主路）/ `BOMB_KILL`；
+ *     · ECL `delete()`（`CE_EDEATH_ECL_DIE`）/ `enmKillAll`（`CE_EDEATH_KILL_ALL`）⇒ 不是我们打的；
+ *     · **出界/离场**：引擎走 `0x42dff2 call [eax+0x14]`（管理器析构 `0x42d220`，
+ *       `engine/enemy/th18/09-enemy-offscreen-removal.md` §1）⇒ **不经过 `Enemy__die 0x430240`、
+ *       一条死亡广播都没有**（`death_seen == 0`）⇒ 必须判成**没死**，一笔都不喂。
+ *   `death_seen` = 收到过死亡广播；`killed_by_damage` = kind ∈ {KILLED, BOMB_KILL}；
+ *   `frame_delta` = 广播帧到「发现消失」那一帧的差（窗口见 `YK_XFAM_DEATH_FRAME_WINDOW`）。
+ *   返回 1 = 允许喂。宁可少喂（返回 0），绝不白扣 boss 血。 */
+#define YK_XFAM_DEATH_FRAME_WINDOW 4u
+int yk_xfam_gone_should_feed(int death_seen, int killed_by_damage, uint32_t frame_delta);
 /* 采样一只使魔的 life.current：返回本帧掉血量（>0）。
  * 第一次采样 / 换了一只使魔（`fam_id` 变了）/ life 变大（引擎自己重算）都返回 0。 */
 int32_t yk_sample_life(yk_slot_t *e, uint32_t fam_id, int32_t life_now);
@@ -2692,22 +2717,96 @@ int yk_orbit_offset(unsigned step, float radius, float *dx, float *dy);
  *   （P113 的只读探针，见交接单 §4 ✓）。在 `YK_LE_TRUSTED` 置 1 之前，
  *   本组判据**一律返回"不命中 / 不抑制"** ✓ ⇒ **行为与今天完全一致** ✗（不猜 ✓）。
  *
- * 输入都是**只读字段**（与探针同源 ✓，出处 = vendor `type-structs-own.json` 的 `zEnemyData` ✓）：
- *   `boss_sub274` = boss 敌机的 `+0x274`（`__probably_cur_subscript_for_anm_main` ✓）；
- *   `boss_anm_main` = `+0x270`；`iv0` = `ecl_int_vars[0]`（`+0x28c` ✓）；
- *   `enemy_id` = `CE_ENEMY_ID`；`anm_main` / `anm_slot0` = `+0x270` / `+0x26c` ✓。*/
-#define YK_LE_TRUSTED            0   /* ❓待实测：P113 探针跑完「零售 / leveledit」两局后再置 1 ✓ */
-#define YK_LE_BOSS_SUB274_MIN    0   /* ❓待实测：只在 leveledit 局出现的那组值（见交接单 §4）*/
+ * 输入都是一手只读字段 ✓：
+ *   ★ `boss_sub274`（**参数名是历史遗留** ✗）现在接的是 **boss 那台 ECL VM 的 `subroutine_index`** ✓，
+ *     链路（**全在 th18 的 vendor `type-structs-own.json` 里** ✓）：
+ *       `zEnemy + 0x0 = struct zEclVm`（内嵌 ✓）→ `+0xc = zEclRunContextHolder`（内嵌 ✓）
+ *       → `holder + 0x0 = current_context`（`zEclRunContext*` ✓）→ `+0x4 = cur_location`（内嵌 `zEclLocation` ✓）
+ *       → `+0x0 = subroutine_index`（int32 ✓）；起点 `zEnemy = zEnemyData - CE_ENEMY_DATA(0x122c)` ✓（engine.h:191 ✓）。
+ *   `boss_anm_main` = `+0x270`；`iv0` = `ecl_int_vars[0]`（`+0x28c` ✓）；`enemy_id` = `CE_ENEMY_ID` ✓。
+ *
+ * ★★ **判据 `subroutine_index ≥ 24` 的来源**（2026-10-17 实测 ✓，两份 dump 逐条对过 ✓）：
+ *   · **零售** `local/th18.v1.00a/dat/st02bs.ecl`：`thecl -m th18.eclm -d 18` 解出 **24 个函数**
+ *     （末尾 `BossEscape` ✓）⇒ 零售**不可能**出现 ≥ 24 的 `subroutine_index` ✓；
+ *   · **leveledit** `stage02-mystia/files/st02bs.ecl`：解出 **62 个**，第 24 个之后全是米斯蒂娅专用段
+ *     （`MystiaMaskAnimate` / `MystiaSongStart` / `MystiaStars` … ✓）⇒ 那场**必然**用到 ≥ 24 的索引 ✓；
+ *   · 旁证：`mods/stage02-mystia/README.md` 的 sub 表（`Sub26–31 / 33–49 / 52–55 / 58/59/61` ✓）✓。
+ *   ✗ **被取代**：原打算用 `+0x274` 与 `YK_LE_FAM_ID_*`（敌机 id 区间 ✗）—— 两者都**没有实测支撑** ✗。*/
+#define YK_LE_TRUSTED            1   /* ★ 2026-10-17 置 1 ✓：判据已由两份 dump 实测钉死 ✓ */
+#define YK_LE_SUB_INDEX_MIN     24   /* ★ 零售 24 个 sub ⇒ 最大索引 23 ✓ ⇒ ≥24 只可能是 leveledit 版 ✓ */
+#define YK_LE_SUB_INDEX_MAX 0x7fffffff
+/* ⚠ 旧口径遗留 ✗（`+0x274` 那条）—— 只为兼容旧调用签名保留 ✓，判据看 `YK_LE_SUB_INDEX_*` ✓。*/
+#define YK_LE_BOSS_SUB274_MIN    0
 #define YK_LE_BOSS_SUB274_MAX    0
-#define YK_LE_FAM_ID_FIRST       0   /* ❓待实测：他们使魔敌机的 id 区间（探针的 le-probe(enemy) 行）*/
-#define YK_LE_FAM_ID_LAST        0
+
+/* ★★★ 2026-10-18（**B2 接管判据**，一手 ✓）：leveledit 的使魔标记。
+ *
+ * 对方在 ECL 里给**每一只**生成的使魔打了 `$I3 = 997`：
+ *   `/home/nipporita/th18-leveledit/mods/stage02-mystia/translate.py:207-217` ——
+ *   ```c
+ *   void MystiaChild<n>() {
+ *       $I3 = 997;          // ← 就是这个标记
+ *       ...
+ *   }
+ *   ```
+ *   同段注释逐字：「`$I3 = 997` marks every generated familiar so the 108 card can recognise it
+ *   from `zEnemyData+ecl_int_vars[3]` (+0x14c4, i.e. EnemyData+0x298)」✓；
+ *   并说明 TH18 敌人只有 `$I0–$I3`、且没有任何可达 sub 读写 `$I3` ⇒ 标记活到敌人死亡 ✓。
+ *   ⇒ 运行时读法（一手偏移链）：`zEnemy*` 的 `+CE_ENEMY_DATA(0x122c) + 0x298`
+ *     = `zEnemy+0x14c4` = `ecl_int_vars[3]` ✓（`engine.h` 的 `CE_ENEMY_ECL_I0 0x14b8` 是 `[0]`，
+ *     `+12` 就是 `[3]` ✓）；`youkai.c` 的 `yk_le_iv3()` 是唯一读点 ✓。
+ * ⚠ 必须与「那场」判据**同时**成立才接管（见 `yk_le_is_their_familiar()` 的注 ✓）。*/
+#define YK_LE_FAM_MARK           997
 
 /* 那场是不是 leveledit 版？（判据 = 上面那组常量；未钉死 ⇒ 恒 0 ✓）*/
 int yk_le_is_levelledit_fight(int boss_sub274, int boss_anm_main, int iv0);
-/* 这只敌机是不是"他们的使魔"？（未钉死 ⇒ 恒 0 ✓）*/
-int yk_le_is_their_familiar(int enemy_id, int anm_main, int anm_slot0);
+/* 这只敌机是不是"他们的使魔"？—— 输入 = 它的 `$I3`（`ecl_int_vars[3]`，见上面 `YK_LE_FAM_MARK` ✓）。
+ * ★ 调用侧**必须**同时满足两个条件才接管（`youkai.c` 的 `yk_le_iv3()` + `yk_le_here()` ✓）：
+ *   ① `mark == YK_LE_FAM_MARK`（本函数 ✓）；② `yk_le_here()`（= 那场 ✓）。
+ *   ⇒ 零售局（没有 997）与零售敌机（`$I3` 是 ECL 自己用的变量，几乎不为 997）都不会命中 ✓；
+ *     没装 108 时本卡的 tick 根本不跑 ⇒ 也不会命中 ✓（owner 口径 ③）。*/
+int yk_le_is_their_familiar(int mark);
 /* 给 `youkai.c` 的一条总口 ✓：
  *   `has_108` = 本卡在不在（本卡自己的代码里恒 1 ✓；留参数是为了让单测能喂 0 ✓）
  *   返回 0 = 照旧（建自建壳 ✓）；1 = 那场（不建自建壳 ✓，并把匹配到的敌机当使魔 ✓）。
  *   ★ 没装 108 ⇒ **恒 0** ✓（owner 口径 ③ 的机器化 ✓）。*/
 int yk_le_mode(int has_108, int boss_sub274, int boss_anm_main, int iv0);
+
+/* ============================================================ §10 符卡练习：自动发 108（可测判据）
+ *
+ * ★ 来源（历史，别重造）：`da946d56` 实装「符卡练习里自动把 108 发到手上」；`28ff8307` 删掉它
+ *   （owner：**retry 后 108 就没了**）；**2026-10-20 owner 口径回滚** ✓：
+ *   那个「retry 后消失」**不是 bug，是要的测试特性** —— 正好拿来对照「有 108 / 没 108」两条路径
+ *   （有 108 ⇒ 卡内那条；没 108 ⇒ 仅 DLL 的 `yk_le_transfer_standalone()`）。
+ *   ⇒ 本节只做**一件事**：**进符卡练习时发一张**；`d4bc54ed` 那套「防 reset_cards 抹掉 / 补发」**不做** ✗
+ *   （它会把对比特性抹掉）。
+ *
+ * 判据（一手，见 `engine.h` 的同名宏与 `youkai.c` 上方的订正段）：
+ *   ① `start_kind == 5` —— `0x4cf438`，本局由**符卡练习菜单**启动（唯一写点 `th18:0x46cfce`）；
+ *   ② `spell_id >= 0` —— `0x4ccd14`，本局要练的符（唯一非负写点 `th18:0x46cffe`；ECL 系统变量 -9907）；
+ *   ③ 🟡 兜底：`practice_mode == 0x20`（`GAME_FLAGS 0x4cccc8 & 0x30`）且不在回放中 ——
+ *      只在 ① 被某条路径改写时救急（`0x20` 由 `ReplayManager__initialize 0x461a0d..` 按 ② 派生）。
+ *
+ * 为什么抽成纯函数：判据与「发不发」全是**纯布尔组合**，引擎侧（全局 / `owned[]` / `ce_give_card`）
+ *   才需要 exe ⇒ 这一层能在主机 `make test-host` 里逐条钉死（`tests/test_youkai_core.c`）。*/
+#define YK_PRACTICE_START_KIND_SPELL  5      /* `0x4cf438 == 5` = 符卡练习（4 = 关卡练习、2 = 回放、6 = Extra）*/
+#define YK_PRACTICE_MODE_SPELL        0x20u  /* `GAME_FLAGS & 0x30`：0x20 = 引擎自己的练习位（🟡 兜底用）*/
+
+/* 判据：本帧是不是**符卡练习**。返回 1 = 是（⇒ 可以发卡）；0 = 不是（主游玩 / 关卡练习 / Extra / 回放）。
+ *   `spell_id` 是**必要条件**（`< 0` ⇒ 一定不是符卡练习）；① 成立就直接算（与旧实现同序）；
+ *   ① 不成立时才看 ③，而 ③ 必须先排除回放（回放里发卡会改回放轨迹 ✗）。*/
+int yk_practice_is_spell(int start_kind, int spell_id, uint32_t practice_mode, int replay_playing);
+
+/* 「本帧发不发 108」的**全部决策**（纯函数；副作用只有调用方那一个 `ce_give_card`）。
+ *   · `in_spell_practice` —— `yk_practice_is_spell()` 的结果；
+ *   · `owned`             —— `ce_owned(108)`（手上已经有一张）；
+ *   · `already_granted`   —— 本次符卡练习里**已经试过**（成功或失败都算；离开练习才清）。
+ * 返回 `YK_PRACTICE_GRANT_*`：
+ *   · `NONE`       = 不发。**正常关卡**、以及 **retry 之后**（`already_granted == 1`）都走这支 ——
+ *                    后者是 owner 要的对比特性 ✓，**故意**不补发（`reset_cards` 在关卡开场把 108 清掉）。
+ *   · `SEND`       = 发一张（练习里、手上没有、还没试过）。
+ *   · `SKIP_OWNED` = 练习槽本来就带了 108 ⇒ 不发，只记一行日志。*/
+#define YK_PRACTICE_GRANT_NONE        0
+#define YK_PRACTICE_GRANT_SEND        1
+#define YK_PRACTICE_GRANT_SKIP_OWNED  2
+int yk_practice_grant_decision(int in_spell_practice, int owned, int already_granted);

@@ -411,7 +411,7 @@
       "蓄力分四档，后两档是 BOSS 攻击。",
       "固灵结界常驻：碰敌弹化为灵力道具，",
       "碰到的灵被沈静化，击破它掉一把。",
-      "蓝圈只吃白弹，红圈吃掉圈内一切。"
+      "蓝圈只吃白弹，红圈吃掉圈内一切（开发中）。"
     ],
     "category": 0,
     "internal_name": "POFV_BLAST",
@@ -583,8 +583,9 @@
     ],
     "internal_name": "DEBUG_DEL",
     "category": 0,
-    "initial_unlocked": 1,
-    "deck_visible": 1,
+    "initial_unlocked": 0,
+    "deck_visible": 0,
+    "weight": 0,
     "repeatable": 1,
     "hud_show": 1,
     "price_tier": 1,

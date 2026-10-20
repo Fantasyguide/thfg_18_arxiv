@@ -12,6 +12,12 @@
  *                      2026-09-13 起是**纯观察者**（不写 regs->esi、不调卡回调），只打 `score-out:` 那行，
  *                      用来在实跑日志里看见引擎的高度系数（满额支 engine == ours，线下支 engine < ours）。
  *   BP_ce_bomb_spent   0x4203bc  do_bomb 里 consume_bomb 刚返回。沿卡链表调 on_bomb_spent()。
+ *   BP_ce_death_save_spent 0x40a44b  Card__death_save_bomb_revive 0x40a2a0 两处扣 CURRENT_BOMBS
+ *                      （0x40a3ed / 0x40a42c，**不写 MAX**）之后的汇合点。此刻 MAX 未动、CURRENT 已扣完
+ *                      ⇒ spent = MAX − CURRENT，沿卡链表调 on_death_save_spent(spent)。
+ *                      ★ 这条路**不走** consume_bomb ⇒ 上面那条抓不到；带「腐化」(70) 时那 1–2 发会被
+ *                      每帧钉回 ⇒ 每次死亡免费（AUDIT §BE `BE-CORRUPTION-DEATHSAVE-2026-10-19`）。
+ *                      卡侧自己扣 B 的路（108 的「有 106 多扣 1」）走 `ce_death_save_spent_note()` 同一个广播。
  *   BP_ce_enemy_drop   0x430510  Enemy__drop_items_and_notify_cards 入口（ecx = zEnemyDrop = enemy+0x623c，不是敌人）。撒附加表之前
  *                                沿卡链表调 on_enemy_drop_pre(counts)，counts = zEnemyDrop+0x04 起 20 个 int32；主掉落 +0x00 已经撒过（S10）。
  *                                卡循环之后施加**乘法层** ce_drop_apply()（EVENTS-CONTRACT §2）。
@@ -1787,6 +1793,55 @@ int __cdecl BP_ce_bomb_spent(x86_reg_t *regs, void *bp_info)
     return BP_EXEC_ORIGINAL;
 }
 
+/* ============================ ★★★ 死亡消耗 B（死亡回避）============================
+ * 两个来源共用同一条广播（`on_death_save_spent`，trace 0x7c）：
+ *   ① **引擎的死亡回避** `Card__death_save_bomb_revive` `0x40a2a0`（原生卡 23 = 死秽回避之药，
+ *      由 `CardEirin__on_player_death_after_deathbomb` `0x40a4f0` 在虚表 `+0x0c` 里调；`+0x0c` 的返回值
+ *      被 `Player__on_tick__body` `0x45c121 or edi,eax` 收集（广播循环 `0x45c114`–`0x45c121`），非 0 ⇒ 跳过 `0x45d090` 的扣命）：
+ *      它在 `0x40a3ed` / `0x40a42c` 各扣 1 发 `CURRENT_BOMBS 0x4ccd58`（每处钳 0、再钳 `MAX_BOMBS 0x4ccd64`），
+ *      **从不写 MAX**，也**不走 consume_bomb** ⇒ `BP_ce_bomb_spent` 完全抓不到它。
+ *      站点 `0x40a44b` 在两次扣之后、`MAX` 尚未被任何东西改之前 ⇒ `spent = MAX − CURRENT` 就是真实花掉的发数。
+ *   ② **卡侧自己扣的 B**（如 108 的「有 106 ⇒ 死决多扣 1」）：那一路直接写 `CURRENT_BOMBS`，
+ *      站点也看不见 ⇒ 由卡在扣完之后调 `ce_death_save_spent_note(n)` 报一次。
+ * 为什么要这条：带「腐化」(70) 时它每帧把 `CURRENT` 钉回 `MAX` ⇒ 不走 consume_bomb 的扣减等于没扣
+ * ⇒ **每次死亡免费、残机永不减**（owner 2026-10-19 定的真 bug）。见 AUDIT §BE `BE-CORRUPTION-DEATHSAVE-2026-10-19`。
+ * 没有卡声明 `on_death_save_spent` ⇒ 一个字都不写（与原生逐位相同）。*/
+static void ce_death_save_spent_dispatch(int32_t spent)
+{
+    uint8_t *mgr;
+    unsigned guard = 0;
+
+    if (spent <= 0) return;
+    mgr = CE_ABILITY_MGR();
+    if (!mgr) return;
+    for (const uint8_t *node = *(const uint8_t *const *)(mgr + CE_MGR_CARD_LIST_FIRST);
+         node && guard < 256;
+         node = *(const uint8_t *const *)(node + CE_NODE_NEXT), ++guard) {
+        uint8_t *card = *(uint8_t *const *)(node + CE_NODE_CARD);
+        if (!card) continue;
+        const ce_hooks_t *h = hooks_of(card);
+        if (h && h->on_death_save_spent) {
+            h->on_death_save_spent((ce_card_t *)card, spent);
+            ce_sdk_trace(ce_card_id(card), 0x7c, "on_death_save_spent");
+        }
+    }
+}
+
+/* 卡侧入口（`sdk/public.h` 有语义约定）：**调用前**已经扣了 B，这里只广播。*/
+void ce_death_save_spent_note(int32_t spent)
+{
+    ce_death_save_spent_dispatch(spent);
+}
+
+/* 站点 0x40a44b：`mov eax,[esi+0x47784]`（6 字节，无相对寻址）。此刻两次扣 B 都做完了、MAX 还没动。*/
+int __cdecl BP_ce_death_save_spent(x86_reg_t *regs, void *bp_info)
+{
+    (void)regs; (void)bp_info;
+    ce_site_trail("ce_death_save_spent");
+    ce_death_save_spent_dispatch(CE_MAX_BOMBS() - CE_CURRENT_BOMBS());
+    return BP_EXEC_ORIGINAL;
+}
+
 /* Player__on_tick__body 0x45c048 的普通炸弹分支：原指令 `test BYTE PTR ds:0x4ca434,0x2`。
  * 任一在场行为卡的 `on_bomb_gate` 返回 1 时，跳过原指令并把 retaddr 指到 0x45c056（**跳过 0x45c051
  * 的 `call do_bomb`**；该调用前后只有 test/je/call 三条）。没有卡要求拦截时返回 1 放行，原版炸弹不受影响。*/
@@ -2670,6 +2725,17 @@ static void ce_integrity_check(void)
         ce_log("integrity[stage %d]: CARD MANAGER INTEGRITY FAILURE — 请把以上行贴给维护者", stage);
 }
 
+/* ★ 2026-10-19（owner 拍板 B）：**符卡练习里自动装 108** 的卡侧入口（实现在 `cards/youkai.c`）。
+ *   为什么需要从**帧点**叫，而不是 108 自己的 `on_ctor` / `on_tick_2`：
+ *   练习模式从**存档的另一个卡组槽**重建牌组（`AbilityManager__reset_cards 0x407DA0`，
+ *   `engine/card/th18/02-lifecycle.md` §6）⇒ 108 不在那个卡组里 ⇒ 它的回调**根本不存在** ✗。
+ *   本帧点（`BP_ce_item_frame`）是**与卡组无关**的、每个正常游玩帧恰好到一次的地方 ⇒ 在这里发一次卡。
+ *   ⚠ 该函数自带全部判据 / 幂等 / 日志：非符卡练习**逐字 no-op**（不读卡表、不发卡）；
+ *     符卡练习里也只在 `0x4cf438 == 5 && 0x4ccd14 >= 0 && CE_PLAYER() && CE_ABILITY_MGR()` 时才动
+ *     （判据一手表见 `cards/youkai.c` 该函数上方的 2026-10-19b 订正段）。
+ *   改共享件登记见 `AUDIT.md` §BE-108-PRACTICE-EQUIP-2026-10-19。*/
+void yk_practice_equip_once(void);
+
 int __cdecl BP_ce_item_frame(x86_reg_t *regs, void *bp_info)
 {
     ce_site_trail("ce_item_frame");
@@ -2943,6 +3009,26 @@ int __cdecl BP_ce_item_frame(x86_reg_t *regs, void *bp_info)
      * 只在比当前计时器更长时才写 ⇒ 不截短别人给的无敌、也不动引擎自己的）。
      * 卡只需要 `ce_invuln_request(id, frames)` 声明，落笔由 SDK 统一做（单一落笔，EVENTS-CONTRACT §1）。*/
     ce_invuln_apply();
+    /* ★★★ 2026-10-15（修 owner 报的「108 + 77 + 71 同装时，左下角**留出了主动卡的位置**」✗）：
+     *   「左下角那块原生『当前（选中）主动卡』UI 在不在」这个标志（`s_hud_card_present` ✓，
+     *   见 `sdk_core.h` 的 `ce_hud_card_set()`）原来**只在认领 HUD 槽那一刻采样一次** ✗ ——
+     *   认领之后牌组 / 当前卡变了**没人再刷** ⇒ 陈旧值 1 ⇒ 货架永远让出 `68..124` 那一段 ⇒
+     *   owner 看到的正是那道**空位** ✓（引擎侧判据 = `ABILITY_MANAGER->+0x38` ✓，为 0 时
+     *   `0x408c30` 对整棵树 `and [vm+0x534],~2` ⇒ 那块 UI **一个像素都不画** ✓
+     *   —— 一手 `engine/card/th18/15-selected-card-hud.md:70` ✓）。
+     *   ⇒ 改在**每帧帧初**重采一次 ✓（同位置先例：`ce_invuln_apply()` / `ce_poc_apply()` ✓）：
+     *     块的**位置仍在认领时算** ✗（HUD-LAYOUT §4.4「认领之外不重排」不动 ✓），
+     *     但**判据不再陈旧** ✓ —— 新一关的认领（`ce_hud_stage_begin` 的纪元 ✓）与卡侧
+     *     "先算宽度"的查询（`ce_hud_row_remaining_w()` ✓）都读到当前真实状态 ✓。
+     *   ⚠ 只**读** `mgr+0x38`（与上方各认领入口同一读法 ✓），不写引擎 ✗；
+     *     `CE_PLAYER()` 为 0（非游玩态）时不动 ✓ —— 与 `ce_invuln_apply()` 的守卫同款 ✓；
+     *     并且**先验可读** ✓（`ce_ptr_readable(CE_ABILITY_MGR(), +0x38 之后 4 字节 ✓)`）——
+     *     这条是从本文件 P26 的教训来的 ✓（那是"守卫写反 ⇒ 静默扫 0 次" ✗；而这里是
+     *     新的**每帧**读写点 ⇒ 按 `sdk_core.h` 的规矩：**涉及引擎指针的新代码先做只读探针** ✓）。
+     *     认领入口那四处没加这道是因为它们只在认领瞬间跑 ✓（那时管理器必然在 ✓）；
+     *     本句是**每帧**跑 ⇒ 菜单/结算等边界也要安全 ✓。*/
+    if (CE_PLAYER() && ce_ptr_readable(CE_ABILITY_MGR(), CE_MGR_SELECTED_ACTIVE + 4))
+        ce_hud_card_refresh();
     /* ★ 2026-09-15：把「PoC 高度层」（收点线 `player+0x47998`）的聚合值落到字段上（每帧一次）。
      *   有声明 ⇒ 写 + 置 `Gui+0x194` bit `0x2000`（开那条开局指示线）；声明全撤 ⇒ 写回基准；都没有 ⇒ 一个字不写。
      *   ★ 本帧点**在道具池 body 之前**（见 `sites.py` 的 `ce_item_frame`）⇒ 引擎自己那四条
@@ -2966,6 +3052,9 @@ int __cdecl BP_ce_item_frame(x86_reg_t *regs, void *bp_info)
             ce_sdk_trace(ce_card_id(card), 0x68, "on_item_frame");
         }
     }
+    /* ★ 2026-10-19（owner 拍板 B）：符卡练习自动装 108 —— **放在卡链遍历之后**（发卡会改链表 / 重建
+     *   HUD 列表，不能在遍历中途动它）。非符卡练习 = 读两个全局（`0x4cf438` / `0x4ccd14`）+ return。*/
+    yk_practice_equip_once();
     return BP_EXEC_ORIGINAL;
 }
 
@@ -3418,6 +3507,9 @@ int ce_sdk_setup(uint8_t *base, int trace)
          *   两条都是 2026-09-16 的「二分（临时）」摘的、**从没回填** ⇒ 静默失效。sitecheck 四项全过。*/
         { "ce_item_score_in", CE_BP_ITEM_SCORE_IN_RVA, 8 },
         { "ce_bomb_spent",  CE_BP_BOMB_SPENT_RVA,  5 },
+        /* ★ 2026-10-19（腐化 70 × 原生 23）：死亡回避的扣 B **不走 consume_bomb** ⇒ 单独一条；
+         *   不挂 = 带 70 时每次死亡免费（原 bug 原样复现）⇒ 必须在这里「挂不上直接 FAIL」。*/
+        { "ce_death_save_spent", CE_BP_DEATH_SAVE_SPENT_RVA, 6 },
         /* ⛔ ce_death_result / ce_poc_gate_a / ce_poc_gate_b / ce_chain_node_guard：仍 park（见 §BE-FE）*/
         { "ce_enemy_drop",  CE_BP_ENEMY_DROP_RVA,  6 },
         /* ★★ 2026-09-22 恢复（本表曾被 2026-09-16/17 的「二分」整片注释掉，但那些站点后来

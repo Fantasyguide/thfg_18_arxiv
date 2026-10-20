@@ -45,10 +45,68 @@ def md5(p):
     return hashlib.md5(open(p, "rb").read()).hexdigest() if os.path.isfile(p) else None
 
 
+# ── ★★ 2026-10-15（DSH agent，登记 AUDIT §BE-PEA-ELEC-2026-10-15）────────────────────────
+# 77 电弹的**前方散射表** `s_rand_spread[]`（`cards/peashooter.c` ✓）也是**生成物** ✓：
+# 卡侧禁 libm ✗ ⇒ 41 个方向是**离线**用 `tools/gen_pea_spread_table.py` 算好贴进 C 里的 ✓
+# （owner 口径：「±20° 之间完全随机」✓）。它和 `patch/*.js` 属同一类风险 ✗ ——
+# **手改表里的数字**（哪怕只改一个 0.0001）没人会发现 ⇒ 与真实物理角度悄悄分叉 ✓。
+# 本段只**读**：跑一次生成器，把它的数据行与 C 文件里那段逐行比对 ✓。
+# ⚠ `--fix` **也不改 C 文件** ✗（写 C 代码不是本工具的活 ✓）⇒ 只打印该跑哪条命令 ✓。
+PEA_CARD = os.path.join(NATIVE, "cards", "peashooter.c")
+PEA_GEN = os.path.join(HERE, "gen_pea_spread_table.py")
+
+
+def pea_table_rows(text):
+    """取 `s_rand_spread[...] = {` 与 `};` 之间的数据行（去掉**行尾注释**与所有空白后逐行比对 ✓）。
+
+    ⚠ 每行数据都带一个行尾注释（`{ … },   /* -20° */` ✓）⇒ 判定前**必须**先砍掉 `/*` 之后的部分 ✗
+    （第一版就是漏了这一步：两侧都解析出 0 行 ⇒ 闸变成"永远假红" ✗，2026-10-15 当场发现 ✓）。"""
+    rows, inside = [], False
+    for ln in text.splitlines():
+        if not inside:
+            if "s_rand_spread" in ln and "={" in ln.replace(" ", ""):
+                inside = True
+            continue
+        s = ln.split("/*", 1)[0].strip()          # ★ 砍掉行尾注释 ✓
+        if s.startswith("};"):
+            break
+        if s.startswith("{") and s.endswith("},"):
+            rows.append("".join(s.split()))
+    return rows
+
+
+def check_pea_spread():
+    """返回 (rc, 消息)。生成器或 C 文件缺了 ⇒ 跳过（rc=0 ✓，不制造无关红灯 ✗）。"""
+    if not os.path.isfile(PEA_GEN) or not os.path.isfile(PEA_CARD):
+        return 0, "⚠ 跳过散射表漂移检查（缺 %s 或 cards/peashooter.c）" % os.path.relpath(PEA_GEN, MOD)
+    r = subprocess.run([sys.executable, PEA_GEN], cwd=HERE, capture_output=True, text=True)
+    if r.returncode != 0:
+        return 1, "❌ `gen_pea_spread_table.py` 自己失败（%d）\n%s" % (r.returncode, (r.stderr or "")[-500:])
+    want = pea_table_rows(r.stdout)
+    have = pea_table_rows(open(PEA_CARD, encoding="utf-8").read())
+    if not want:
+        return 1, "❌ 生成器没吐出任何数据行（生成器坏了 ✗）"
+    if have == want:
+        return 0, "✅ 散射表无漂移（%d 项与 `gen_pea_spread_table.py` 现算的一致）" % len(want)
+    diff = next((i for i, (x, y) in enumerate(zip(have, want)) if x != y), min(len(have), len(want)))
+    return 1, ("❌ 散射表漂移：`cards/peashooter.c` 的 `s_rand_spread[]` ≠ 现算那一份\n"
+               "   工作区 %d 项 · 现算 %d 项 · 第一处不同在第 %d 项\n"
+               "   工作区[%d] = %s\n   现算  [%d] = %s\n"
+               "   ⇒ 表是**生成物** ✗（卡侧禁 libm ✓）⇒ 别手改数字 ✗；重跑\n"
+               "        python3 native/tools/gen_pea_spread_table.py\n"
+               "      用它打印的那段整块替换 `cards/peashooter.c` 里的表 ✓（θ 要改就改生成器的 --half-deg ✓）"
+               % (len(have), len(want), diff,
+                  diff, have[diff] if diff < len(have) else "（缺）",
+                  diff, want[diff] if diff < len(want) else "（缺）"))
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--fix", action="store_true", help="把现算的那份留下（= 刷新生成物）")
     a = ap.parse_args()
+
+    pea_rc, pea_msg = check_pea_spread()
+    print(pea_msg)
 
     for p, _ in TARGETS:
         if not os.path.isfile(p):
@@ -91,7 +149,7 @@ def main():
     bad = [ln for ln in after if after[ln] != before[ln]]
     if not bad:
         print("✅ 生成物无漂移（三份都与 `sites.py gen --rows %d` 现算的一致）" % ROWS)
-        return 0
+        return pea_rc          # ★ 三份 sites 产物没问题 ≠ 散射表没问题 ✓（两件事都过才算过 ✓）
     print("❌ 生成物漂移：%d 份与现算结果不一致" % len(bad))
     for ln in bad:
         print("   %-28s 工作区 %s ≠ 现算 %s" % (ln, (before[ln] or "?")[:12], (after[ln] or "?")[:12]))

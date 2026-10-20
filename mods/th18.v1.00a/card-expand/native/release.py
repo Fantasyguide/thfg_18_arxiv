@@ -51,6 +51,10 @@ MAP = {                                   # dist 里的 → modkit 里的
     "patch-devstage/th18/st06.ecl": "thcrap/repos/Renko_1055/th18_card_expand_devstage/th18/st06.ecl",
     "patch-devstage/th18/st06bs.ecl": "thcrap/repos/Renko_1055/th18_card_expand_devstage/th18/st06bs.ecl",
     "patch-step3/th18/ability.txt": "thcrap/repos/Renko_1055/th18_card_expand_255/th18/ability.txt",
+    # ★ 2026-10-19：`ability.txt` **不是**空白卡说明的唯一来源 —— base_tsa 的 `gentext#card_desc` 会用
+    #   `th18/abilities.js` 把说明 6 行整段换掉（`lang_zh-hans` 自带一份中文原生文本）。我们排在它后面
+    #   ⇒ 同一 key 后合并者胜。两个文件必须一起发（详见 assets/derive_ability_txt.py 头注的一手证据）。
+    "patch-step3/th18/abilities.js": "thcrap/repos/Renko_1055/th18_card_expand_255/th18/abilities.js",
     "patch-step3/th18/voice.js":  "thcrap/repos/Renko_1055/th18_card_expand_255/th18/voice.js",
     "bin/th18_card_expand.dll":   "mods/th18_card_expand.dll",
 }
@@ -175,6 +179,27 @@ def _gate_contract():
 def main():
     _gate_contract()
     _gate_package_scope()
+    # ★★★ 2026-10-17（owner 批准 ✓）：**发布前来源校验** —— 与 `tools/deploy.py` **同一套判据** ✓
+    #   （实现只留一份 ✓：直接 import 同目录的 `deploy` ✓ —— 抄第二遍必然漂移 ✗）。
+    #   事故先例（一手）：2026-10-17 01:04，modkit 的 `th18_card_expand.dll` 从 `600b6d30…`（我 00:58 发的、
+    #   基于共享线）被换成 `f502eaae…`（**从落后 12 条的树**构建的、没有当天修复）⇒ owner 实测
+    #   「大招还是 360° / 还会甩主机弹 / 无敌还是无限」✗（`AUDIT.md` §BE-DEPLOY-RACE-2026-10-17 ✓）。
+    #   ⚠ `release.py` 是**第二条发布通道** ✓（它还会在 modkit 里**自动提交** ✓ ⇒ 落后树更容易把旧件推出去 ✗）
+    #   ⇒ 这道闸必须也有 ✓。判据 = `origin/main` 是 HEAD 的祖先 ✓ ⇒ 落后即**拒绝** ✗（见 `deploy.py` ✓）。
+    sys.path.insert(0, os.path.join(HERE, "tools"))          # ⚠ `deploy.py` 在 `native/tools/` ✓（不是 `native/` ✗ ——
+    import deploy as _dg                                     #    第一版写成 `HERE` 直接报 ModuleNotFoundError ✓）
+    _ok_src, _head_c, _main_c = _dg.guard_source(dry=False)
+    if not _ok_src:
+        raise SystemExit("❌ 来源校验不过（见上）⇒ 拒绝发布 ✗")
+    # ★★★ 2026-10-17（② **发布锁** ✓，与 `tools/deploy.py` 同一套 ✓）：同一时刻只许一个发布者写这个 modkit ✓。
+    #   先例：00:58 我发 `600b6d30…` ⇒ 01:04 被覆盖 ⇒ owner 实测到旧行为 ✗。
+    #   ⚠ 释放用 `atexit` ✓ —— 本函数有**三个出口**（`NO_GIT` 那条 / 「已是最新」那条 / 正常那条 ✓）
+    #     外加可能的 `SystemExit`/异常 ✓ ⇒ `atexit` 保证**任何**退出路径都释放 ✓（不必重排缩进 ✓，
+    #     也不会把别人的发布卡住 ✗）。`FORCE=1` 可抢占新鲜锁 ✓（会记进台账 ✓）。
+    import atexit
+    if not _dg.lock_acquire(MODKIT, os.environ.get("FORCE") == "1", False):
+        raise SystemExit("❌ 发布锁被占（见上）⇒ 拒绝发布 ✗")
+    atexit.register(_dg.lock_release, MODKIT, False)
     push = os.environ.get("PUSH") == "1"
     if not NO_GIT and not os.path.isdir(os.path.join(MODKIT, ".git")):
         raise SystemExit("找不到发布仓库：%s\n先 git clone https://github.com/Renko6626/th18_modkit.git 到 local/vendor/" % MODKIT)
