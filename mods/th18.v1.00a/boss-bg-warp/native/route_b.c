@@ -68,11 +68,22 @@ static float    rb_radius   = 160.0f; /* 网格半径（世界单位） */
 static int      rb_radius_auto;
 static float    rb_power    = 1.0f;   /* 位移倍数 */
 static unsigned rb_alpha    = 255;    /* 圆内 alpha */
-static float    rb_two_off  = 256.0f; /* 第二份的圆心相对偏移（屏幕像素，仅用于验证） */
+static float    rb_two_off  = 256.0f;
+/*
+ * ★★ 重叠区怎么"融合好"（owner 的口径：两者**本质独立**，只在**同时出现**时要融合）：
+ *   我们会采到"已经被 boss 扭过"的画面 ⇒ 若两个盘都全强度，重叠处就是**两次采样**（双影/糊）。
+ *   做法：**软性分域** —— 靠近 boss 那个盘时，我们的**位移与 alpha 平滑收到 0**（让 boss 主导），
+ *   离开它的边界后再回到全强度。两个效果各自独立成立，重叠处只留一份主导 ✓
+ *   `overlap = 0` 关掉（完全不看 boss），`blend` = 过渡带宽度（世界单位）。
+ */
+static int      rb_overlap   = 1;
+static float    rb_blend     = 40.0f;
+static int      rb_ov_ok;             /* 缓存：敌方盘是否有效 */
+static float    rb_ov_cx, rb_ov_cy, rb_ov_r; /* 第二份的圆心相对偏移（屏幕像素，仅用于验证） */
 static unsigned rb_log_every = 300;   /* 每隔多少次画一行日志 */
 
 static int      rb_stub_ok;
-static int      rb_logged_desc, rb_logged_grid, rb_logged_halo, rb_logged_enemy, rb_logged_pts, rb_logged_entry, rb_logged_vms, rb_logged_rt, rb_logged_nohalo, rb_logged_baddev;
+static int      rb_logged_desc, rb_logged_grid, rb_logged_halo, rb_logged_enemy, rb_logged_pts, rb_logged_entry, rb_logged_vms, rb_logged_rt, rb_logged_nohalo, rb_logged_baddev, rb_logged_ov;
 static unsigned rb_frames, rb_drawn;
 static unsigned rb_vp_ok;
 static float    rb_vp_x = 436.0f, rb_vp_y = 244.0f, rb_vp_w = 408.0f, rb_vp_h = 472.0f;
@@ -172,6 +183,9 @@ static void rb_load_ini(void)
     rb_power   = rb_inif("power", 1.0f);
     rb_two_off = rb_inif("two_off", 256.0f);
     rb_radius_auto = rb_inii("radius_auto", 0);
+    rb_overlap     = rb_inii("overlap", 1);
+    rb_blend       = rb_inif("blend", 40.0f);
+    if (rb_blend < 1.0f) rb_blend = 1.0f;
     {   int a = rb_inii("alpha", 255);
         rb_alpha = (a <= 0 || a > 255) ? 255u : (unsigned)a; }
     {   unsigned le = (unsigned)rb_inii("log_every", 300);
@@ -509,11 +523,19 @@ static void rb_draw_grid(void *dev, void **vt, void *tex, int use_halo,
         for (j = 0; j < NN; j++) {
             float wx = sx0 + (float)i * step;              /* 世界坐标 */
             float wy = sy0 + (float)j * step;
-            float dx, dy, pxs, pys, u, v, a;
+            float dx, dy, pxs, pys, u, v, a, ov = 1.0f;
             unsigned col;
             int n = i * NN + j;
 
             rb_field(wx, wy, cx, cy, R, phx, phy, &dx, &dy);
+            /* ★ 重叠区软性分域：进入"敌方那个盘"的范围 ⇒ 我们的位移平滑收到 0（让 boss 主导） */
+            if (rb_overlap && rb_ov_ok) {
+                float dxb = wx - rb_ov_cx, dyb = wy - rb_ov_cy;
+                float db = (float)sqrt((double)(dxb * dxb + dyb * dyb)) - rb_ov_r;
+                if (db <= 0.0f) ov = 0.0f;
+                else if (db < rb_blend) ov = db / rb_blend;
+                dx *= ov; dy *= ov;
+            }
             rb_world_to_screen(wx + dx, wy + dy, &pxs, &pys);
             pxs += off_x; pys += off_y;
 
@@ -539,6 +561,7 @@ static void rb_draw_grid(void *dev, void **vt, void *tex, int use_halo,
                     float e0 = R * (1.0f - rb_fade);
                     if (rr > e0) a *= 1.0f - (rr - e0) / (R - e0);
                 }
+                a *= ov;                         /* 重叠区连透明度一起让位 ⇒ 边界不留硬边 */
             }
             col = (((unsigned)a) << 24) | 0x00FFFFFFu;
             pts[n * 7 + 0] = pxs; pts[n * 7 + 1] = pys; pts[n * 7 + 2] = 0.0f; pts[n * 7 + 3] = 1.0f;
@@ -790,6 +813,19 @@ static void rb_draw(void)
             rb_draw_quad(dev, vt, use_tex, 0.0f, 0.0f);
             if (rb_two) rb_draw_quad(dev, vt, use_tex, 0.0f, 0.0f);
         } else if (rb_player(&px, &py)) {
+            /* 重叠分域要用"敌方那个盘"的位置/半径：每 30 帧刷一次（不每帧走 VM 链） */
+            if (rb_overlap && (rb_frames % 30) == 0) {
+                int nv = 0;
+                float ecx, ecy, eR;
+                rb_ov_ok = rb_enemy_disc(&ecx, &ecy, &eR, &nv) && eR > 8.0f;
+                if (rb_ov_ok) { rb_ov_cx = ecx; rb_ov_cy = ecy; rb_ov_r = eR; }
+                if (!rb_logged_ov) {
+                    rb_logged_ov = 1;
+                    rb_logf("[重叠] 软性分域：%s（敌方盘 %s 圆心=(%.1f,%.1f) R=%.1f 过渡带=%.0f）",
+                            rb_overlap ? "开" : "关", rb_ov_ok ? "有" : "无",
+                            (double)rb_ov_cx, (double)rb_ov_cy, (double)rb_ov_r, (double)rb_blend);
+                }
+            }
             rb_world_to_screen(px, py, &pxs, &pys);
             {   /* ★ radius_auto：把"敌方那个盘的半径"当作我方的半径 ⇒ 放大倍率与敌方一致 */
                 float eR2;
