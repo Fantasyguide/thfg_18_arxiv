@@ -198,3 +198,27 @@ spec 指针 = `laser+0x788`（§6 的 `rep movs` 0x460 B），下面这些是 in
 
 ★ 位置 `+0x00/+0x04/+0x08`、初始角度 `+0x0c`、数量/长度 `+0x10`、标量 `+0x14`、**外观 id `+0x18`**，外加偏置用的 `+0x24`。
 ★ 其余 ~0x430 字节可以**从模板（`mgr+0x69c`，0x420 B）抄默认值** ⇒ ★ 这就是"卡侧最少要填几个字段"的答案雏形。
+
+## 12. ★ manager 的构造/销毁（前置条件定案）
+
+★ **构造**（`0x442c45` 起，引擎在游戏启动时调）：
+
+```
+442c45  push 0x7c4 ; call 0x48dc71        ; ★ operator new(0x7c4)
+442c57  lea ecx,[esi+0xc] ; call 0x448170 ; LaserBaseClass__constructor 给 mgr+0xc
+442c5f  memset(esi, 0, 0x7c4)
+442c6f  [esi+0x79c] = 0x10000             ; ★ 序号初值
+442c79  ds:0x4cf3f4 = esi                 ; ★ 存全局
+442c7f  push 0x4b636c ; push 7 ; call 0x486880
+442c8b  [esi+0x7b8] = …                   ; ★ 精灵表指针（+0x7b8，§6 用）
+```
+
+★ **销毁**（`0x448720` 一带）：`call 0x442480`（destroy_all）→ `ds:0x4cf3f4 = 0` → `[esi+0xc] = 0x4b68ec` → `operator delete`（`push 0x7c4`）。
+
+⇒ ★★ **前置条件结论**：
+* ★ **卡侧不需要初始化 LaserManager** —— 它是引擎在游戏启动时建的**堆单例**（0x7c4 字节），全局指针 `0x4cf3f4`；
+* ★ 卡侧只要**判空**（`*(void**)0x4cf3f4 != 0`）就能安全调用 `allocate_new_laser`；
+* ★ 精灵表在 `mgr+0x7b8`，也是引擎灌好的 ⇒ 不用自己预载；
+* ★ tick 由 `LaserManager__on_tick 0x4488c4` 每帧跑（`ds:0x4cf2a4 == 0` 时先做死亡清扫 `0x448760`）。
+
+★ `0x448760` 不是初始化函数，★ 是**每帧的死亡清扫**（遍历 `mgr+0x14` 链，读节点 `+0xc` 状态位，`(flags&6)>=4` ⇒ `vtable+0x18` + 解链 + `dec [mgr+0x798]`）。
