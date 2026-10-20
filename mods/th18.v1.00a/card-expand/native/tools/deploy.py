@@ -228,8 +228,14 @@ def main():
             if rc:
                 print("❌ 构建失败（%s），已中止，未发布任何文件" % " ".join(cmd))
                 return 1
-    print("② 校验（站点预算 / 双向导出对账 / def 与声明一致）")
-    for cmd in (["python3", "sites.py", "check"], ["python3", "tools/gen_def.py", "--check"]):
+    print("② 校验（站点预算 / 双向导出对账 / def 与声明一致 / 卡表文案）")
+    # ★ 2026-10-20 补：`make cards-check` 原来**不在闸里** ⇒ 有人在 `patch/th18/cards.js` 给 109 的
+    #   `desc` 加了第 7 行，`deploy.py --skip-build` 照发不误 ⇒ 运行时 DLL 自检
+    #   `FAIL: cards: card "109": desc: at most 6 lines` ⇒ `start_deck: disabled` +
+    #   `mitigation: allocator bound restored to retail (56)` ⇒ **整批新 id 停用** ⇒ owner 上机
+    #   看到「所有 mod 卡消失」✗。卡表文案与站点一样属于发布闸（文案条目 0x1c0 = name 0x40 + **6**×0x40，写死 6 行）。
+    for cmd in (["python3", "sites.py", "check"], ["python3", "tools/gen_def.py", "--check"],
+                ["make", "cards-check"]):
         rc = run(cmd, a.dry_run)
         if rc:
             print("❌ 校验失败（%s），已中止，未发布任何文件" % " ".join(cmd))
