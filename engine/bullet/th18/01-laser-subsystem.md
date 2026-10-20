@@ -63,9 +63,29 @@ undefined4 __stdcall LaserManager__allocate_new_laser(int type, int *spec)   // 
 `0x449f40`／`0x44a00b`／`0x44a0d9`／`0x44a1ac`（激光类自身方法区）、`0x451c5b`、
 ★ **`0x435273`／`0x43545f`／`0x4355cb`／`0x435756`（ECL 区 `0x435xxx`，四处）**。
 
-## 5. 待补（下一轮）
+## 5. ★ spec 是怎么来的（一手，ECL 侧调用点）
 
-1. ★ **`spec` 的字段布局** —— 由各类 `vtable+0xc` 消费；Curve 是 `0x44ed70`，读它才知道要填什么。
+ECL 区 `0x435xxx` 的调用点（`0x435273` 那处）逐字：
+
+```
+435251  lea  eax,[ebp-0x548]      ; ★ &spec（栈上）
+435268  push eax                  ; param_2 = &spec
+435269  push 0x0                  ; param_1 = type = 0（Line）
+435273  call 0x448920             ; allocate_new_laser(0, &spec)
+```
+
+★ spec **不是** ECL 参数直接传的，而是**从单位/子弹对象拷**：
+`[edi+esi+0x5a0]`／`+0x5a4`／`+0x5a8`／`+0x5b4`／`+0x5bc`／`+0x9e0`／`+0xa10`／`+0xa14`
+分别落到 spec 的 `+0x10`／`+0x14`／`+0x18`／`+0x1c`／`+0x20`／`+0x2c`／`+0x458`／`+0x45c`（相对 `&spec`）。
+⇒ ★ **spec ≈ 0x460 字节**，字段像是 (x, y, z, angle, speed, length, width, …)。
+
+★ 另一条线索（更省事）：`Bullet__run_ex` 里那处调用先用
+`rep movs` 从 **`[manager+0x69c]`** 拷 **`0x108` dwords（0x420 字节）** 到栈上 spec，再补几个字段
+⇒ ★ **`manager+0x69c` 很可能就是"默认 spec 模板"** —— 卡侧要桥，可以"抄模板 + 改几个字段"，不必从零构造。
+
+## 6. 待补（下一轮）
+
+1. ★ **`spec` 逐字段语义** —— 由各类 `vtable+0xc` 消费；Curve 是 `0x44ed70`，读它才知道每个偏移是什么。
 2. ★ **Curve 的路径怎么表达**（节点数组？折线？逐帧追加？）—— 决定"能不能从卡侧构造路径"。
 3. ★ 前置条件：`ds:0x4cf3f4` 由谁初始化（`on_tick 0x4488c4` 里 `ds:0x4cf2a4` 为 0 时 `call 0x448760` 是嫌疑）、
    精灵预载（TH16 是 `LaserManager::initialize` → `mgr+0x604`，TH18 位置待查）。
