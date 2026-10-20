@@ -273,3 +273,16 @@ static inline unsigned ce_laser_spawn_curve(const void *spec);
 | ④ `check-docs` = 0 | ✅ 516 文件 |
 | ④ `make check` | ⚠ **仅剩环境级红**：10 处 `lang_zh-hans` / `th18_leveledit_sanae_mystia` 同路径冲突（★ 与本次无关，AUDIT §BE 2026-10-19 已记）。★ 本次顺手修的 `capcheck` 红（`ATLAS_POFV109_LASER` 未登记）**已绿** |
 | ⑤ 卡侧改动 + 回归 + 风险 | ✅ §13 |
+
+## 15. 与 TH16 的对照（哪些同构、哪些变了）
+
+| 项 | TH16（[`../th16/03-lasers.md`](../th16/03-lasers.md)） | TH18（本文） | 同构？ |
+| --- | --- | --- | --- |
+| 类 | 5 个（Line/Infinite/Curve/Beam/Data） | ★ **完全一样**（RTTI 名逐字相同） | ✅ |
+| 分配器 | `allocate_new_laser` `th16:0x431760` | ★ `0x448920`（stdcall, `(type, spec)`, `ret 8`） | ✅ 同签名同职责 |
+| type 枚举 | 曲线 = 第 3 类（文档未给数值） | ★ **0=Line 1=Infinite 2=Curve 3=Beam**（跳转表 `0x448e3c` 直读） | ★ TH18 已坐实 |
+| manager | `DAT_004a6ee0`，池 | ★ 全局指针 `0x4cf3f4`，堆单例 `0x7c4` B，上限 512 | ⚠ 布局变、概念同 |
+| 精灵预载 | `mgr+0x604` | ★ `mgr+0x7b8` | ⚠ 偏移变 |
+| 曲线的表达 | 文档提到"每节点 node[3]/node[4] 状态位" | ★ **参数化**：角度 `+0x6c` 每帧加 `+0x12c`，步数 `+0x118`/`+0x148` | ★ TH18 侧已坐实为"蛇"，不是节点数组 |
+| 外观 | 子精灵 body/head/tail | ★ 每条激光内置**一个 anm VM**（`laser+0xbe8`，`0x60c` B） | ⚠ 实现方式变（VM 化了） |
+| 判定/擦弹 | 旋转 OBB、`player_on_death` | ★ `LaserCurve__check_graze_or_kill 0x44f920`（原生） | ✅ 同思路 |
