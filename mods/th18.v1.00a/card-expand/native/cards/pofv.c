@@ -7286,7 +7286,9 @@ static void pofv_c3s_tick(void)
                            b->x + b->rx * t,
                            b->y + b->ry * t, 0.0f);
             /* ★ 2026-10-16 **一手 `rotate(0,0,%RANDRAD)` 的随机自转** ✓（★ 这里按出生基角匀速转 ✓ ❓）*/
-            ce_anm_set_rotation((uint32_t)b->vm, 0.0f, 0.0f, b->rot + 0.05f * (float)b->age);
+            /* 2026-10-21 owner：看到「神秘的在**自转**的针状物」⇒ 一手 script35 只在出生时
+             *   `rotate(0,0,%RANDRAD)` **一次**，没有逐帧角速度 ⇒ 去掉 `+ 0.05f * age` 的自转项。*/
+            ce_anm_set_rotation((uint32_t)b->vm, 0.0f, 0.0f, b->rot);
         }
         pos[0] = b->x; pos[1] = b->y; pos[2] = 0.0f;
         (void)ce_damage_rect(pos, 0.0f, 2, 14.0f, 24.0f, 24.0f);   /* ❓④ */
@@ -7963,12 +7965,12 @@ static int on_tick_2(ce_card_t *c)
              *   ★ 所以按空格**永远不会**放到当前角色的 C3 ✗（★ owner 正是用这个键测魔理沙 C3 ✓
              *   ⇒ ★ 难怪"★ 什么都看不见"✗ —— ★ 他放的是灵梦那套 ✓）。
              *   ⇒ ★ 改成按 `s_aura_kind` 走**角色自己的** C3 ✓。*/
-            /* ★ 2026-10-19 owner：★ **空格改成放 C4**✗ ✓（★ 方便调 C4 ✓）*/
-            if (s_aura_kind == 1)      pofv_c4m_fire();   /* 魔理沙 C4 ✓ */
-            else if (s_aura_kind == 3) pofv_c4s_fire();   /* 早苗 C4 ✓ */
-            else                       pofv_c4_fire();    /* 灵梦/咲夜 C4 ✓ */
+            /* 2026-10-21 owner：空格改回**当前角色的 C3**（前一阵为了调 C4 临时指到 C4）。*/
+            if (s_aura_kind == 1)      pofv_c3m_fire();   /* 魔理沙 C3 */
+            else if (s_aura_kind == 3) pofv_c3s_fire();   /* 早苗 C3 */
+            else                       pofv_c3_fire();    /* 灵梦/咲夜 C3 */
             /* ★ 2026-10-18：把**原始角色号**也打出来（`kind` 是映射后的：1 魔理沙/2 咲夜/3 早苗/0 灵梦）*/
-            ce_log("pofv: [DBG] 空格 ⇒ 放 **C4** ✓（f=%d kind=%d raw_char=%d charge=%.0f）",
+            ce_log("pofv: [DBG] 空格 ⇒ 放 **C3** ✓（f=%d kind=%d raw_char=%d charge=%.0f）",
                    (int)s_card_frames, (int)s_aura_kind,
                    (int)(*(const int32_t *)POFV_ADDR_PLAYER_CHAR), (double)s_aura_charge);
         }
