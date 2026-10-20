@@ -7293,9 +7293,10 @@ static void pofv_c3s_tick(void)
                            b->x + b->rx * t,
                            b->y + b->ry * t, 0.0f);
             /* ★ 2026-10-16 **一手 `rotate(0,0,%RANDRAD)` 的随机自转** ✓（★ 这里按出生基角匀速转 ✓ ❓）*/
-            /* 2026-10-21 owner：看到「神秘的在**自转**的针状物」⇒ 一手 script35 只在出生时
-             *   `rotate(0,0,%RANDRAD)` **一次**，没有逐帧角速度 ⇒ 去掉 `+ 0.05f * age` 的自转项。*/
-            ce_anm_set_rotation((uint32_t)b->vm, 0.0f, 0.0f, b->rot);
+            /* 2026-10-21 owner：「不是竖直的」⇒ 贴图是 **256×16 横条**，必须**固定转 −90°**才是竖的；
+             *   `b->rot` 那个"随机整圈"是给一手的**圆球**（script35 `rotate(0,0,%RANDRAD)`）用的，
+             *   现在换成横条 ⇒ **不能随机转**。只留 `b->yaw`（段 4 的 ±11.25°）做拐弯。*/
+            ce_anm_set_rotation((uint32_t)b->vm, 0.0f, 0.0f, -1.5707963f + b->yaw);
         }
         pos[0] = b->x; pos[1] = b->y; pos[2] = 0.0f;
         (void)ce_damage_rect(pos, 0.0f, 2, 14.0f, 24.0f, 24.0f);   /* ❓④ */
