@@ -57,6 +57,32 @@
 | `bounced < 4` 的「4」 | 🟡 | 第四世代表里 `mode 64` = 触壁反弹（`a`=次数、`b`=6 位墙掩码）；魔理沙 C4 一手**没有** mode 64 ⇒ 需再核三组 `611` |
 | ★ **早苗 C3/C4 的 y 方向** | ⚠ 待 owner 拍板 | 一手"从顶往下"（y≈0／y=96），卡侧两处做了**镜像**（`FIELD_H − …`）⇒ 与 owner 原话相反 |
 
+
+### 4.1 ★ 曲线激光：引擎里是**现成类**，缺的只是"卡侧的桥"（2026-10-21 补）
+
+★ **"沿曲线长做不了" 是错的表述** —— 正确的说法是"**卡侧 SDK 还没桥到激光系统**"：
+
+| 事实 | 出处 |
+| --- | --- |
+| ★ 引擎有 **5 个激光类**，其中 ★ **`LaserCurveInf` = 曲线/蛇** | [`engine/bullet/th16/03-lasers.md`](../../../engine/bullet/th16/03-lasers.md) §0（类名来自 exe 的 MSVC RTTI vtable） |
+| ★ 生成两条路：① 子弹 VM 的 **`EX_LASER` opcode `0x8000000`**（只 line/inf）；② ★ **ECL → `LaserManager::allocate_new_laser`（`th16:0x431760`）`switch(type)` 覆盖 4 类（含 Curve）** | 同上 §0／§1 |
+| ★ 激光精灵**不是单独的 laser.anm**，是 `bullet.anm` 图集里的 sprite（`LaserManager::initialize` 预载到 `g_laser_mgr+0x604`） | 同上 §0 |
+| ★ TH18 同一族也在 | 见下方「TH18 侧地址」 |
+| ★ **卡侧缺的那块** | ★ TH18 的 `allocate_new_laser` 等价物 ＋ LaserCurve 的路径节点结构（详见下方） |
+
+
+**TH18 侧地址**（已记在 `engine/faith/th18/01-point-item-value.md`）：
+`LaserCurve__check_graze_or_kill` `0x44fa53`、`LaserCurve__cancel_as_bomb_circle` `0x4521b0`、
+`LaserManager__cancel_in_radius` `0x449010`、`LaserManager__on_tick` `0x4488c4`、`LaserManager::destroy_all` `0x442480`。
+★ **还缺**：TH18 的 `allocate_new_laser` 等价物（TH16 是 `th16:0x431760`，`switch(type)` 里按类型 `operator_new`
+曲线 `0x1568`／beam `0x1f28`）与 LaserCurve 的**路径节点结构**（TH16 侧节点有 `[3]&8` = 判定模式、`[4]==1` = dying）。
+
+★ 两条路线：
+* ★ **复刻**：找到 TH18 的 allocate + LaserCurve 的节点数组，像 `ce_do_graze` 那样从卡侧调 ⇒ 观感、判定、擦弹全原生；
+* ★ **等效**（现状）：横条 + 路径插值（`ce_anm_set_clip_x` 的 `uv_scale`/`quad` 两字段可独立控制 ⇒ 既能裁切也能伸缩）+ 多 VM 分段/拖影 ⇒ 只能近似观感，**没有**原生判定。
+
+★ 另外 `engine/bullet/th16/02-runtime-vm.md` 记 `LaserManager::ecl_545_impl__cancels_all`（`th16:0x4319e0`）⇒ 激光侧也有 ECL 入口，可作为"卡侧桥"的参考写法。
+
 ## 5. 卡侧下一步（要 owner 点头才动 `native/`）
 
 | 卡 | 改什么（细节见 IMPL） |
