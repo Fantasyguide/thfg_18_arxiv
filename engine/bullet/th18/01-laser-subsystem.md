@@ -222,3 +222,54 @@ spec 指针 = `laser+0x788`（§6 的 `rep movs` 0x460 B），下面这些是 in
 * ★ tick 由 `LaserManager__on_tick 0x4488c4` 每帧跑（`ds:0x4cf2a4 == 0` 时先做死亡清扫 `0x448760`）。
 
 ★ `0x448760` 不是初始化函数，★ 是**每帧的死亡清扫**（遍历 `mgr+0x14` 链，读节点 `+0xc` 状态位，`(flags&6)>=4` ⇒ `vtable+0x18` + 解链 + `dec [mgr+0x798]`）。
+
+## 13. ★★ 若做桥：签名草案 / 卡侧要改哪几处 / 回归 / 风险
+
+### 13.1 桥的签名草案（★ 未实现，等 owner 点头）
+
+```c
+/* sdk.h（共享件 ⇒ 走 AUDIT §BE + 在 sdk.h 里留注释） */
+#define CE_FN_LASER_ALLOCATE 0x448920           /* LaserManager__allocate_new_laser */
+#define CE_ADDR_LASER_MGR    0x4cf3f4           /* LaserManager* 全局 */
+
+typedef unsigned (__attribute__((stdcall)) *ce_fn_laser_allocate_t)(int type, const void *spec);
+
+/* 返回序号（0 = 失败）；spec 至少 0x460 字节，前 0x28 见 §11，其余抄模板 */
+static inline unsigned ce_laser_spawn_curve(const void *spec);
+```
+
+★ 调用前只需 `*(void **)CE_ADDR_LASER_MGR != 0` 判空。
+
+### 13.2 ★ 卡侧要改哪几处（早苗 C3：从"横条等效"换成"原生曲线激光"）
+
+| 文件 | 改什么 |
+| --- | --- |
+| `native/sdk.h` | 加 `ce_laser_spawn_curve()`（★ 共享件 ⇒ AUDIT §BE 登记 + 文件内注释） |
+| `native/cards/pofv.c` 的 `pofv_c3s_*` | ★ 把"自建 VM 横条 + 逐帧路径插值"换成"**造一条原生曲线激光**"：填 spec（位置/角度/角速度/步数/外观 id），`type = 2` |
+| `native/anm_ids.h` / `assets/ability/scripts/465_*` | ★ 保留或退役看路线：走原生后横条脚本可退役（但 `LASER528` 精灵仍被别的观感件用的话要留） |
+| 判定 | ★ 原生激光**自带判定/擦弹**（`LaserCurve__check_graze_or_kill` `0x44f920`）⇒ ★ 卡侧自己那套 `pofv_c3s` 伤害盒要**去掉或改小**，否则双份 |
+
+### 13.3 回归
+
+`make anm`（六门）／`make check`／`make release` 后**四处 DLL 同 md5**（`local/DLL-SYNC.md`）／
+★ 实跑日志按 `local/GAME-LOG.md` 读。★ 若退役 465 脚本，`ORDER.frozen.txt` 与 `MAX_ENTRIES` 门要一起看。
+
+### 13.4 风险
+
+| 风险 | 说明 |
+| --- | --- |
+| ★ 判定/擦弹变原生 | 玩家会被原生激光擦弹/命中 ⇒ 与卡侧现有"自定判定"数值**不一致**，需要 owner 验收手感 |
+| ★ `mgr+0x798` 上限 512 | 早苗 C3 一次最多 18 发、每发 300+ 帧 ⇒ 占用可控；但若同时开别的卡的激光要算总账 |
+| ★ spec 语义未逐字段确证 | 目前只确证前 `0x28`（§11）；其余靠"抄模板" ⇒ ★ 首个实现必须**先用模板跑通一条**，再逐项改 |
+| ★ 世界坐标/镜像 | 卡侧 y 轴与 ECL 的镜像问题（`HANDOVER` §4 那条待拍板）会直接影响激光方向 |
+
+## 14. 收口状态（2026-10-21）
+
+| 判据 | 状态 |
+| --- | --- |
+| ① A/B 每项有地址/偏移 | ★ A 全 ✅；B ✅（"不是节点数组，是参数化蛇"就是答案）；★ 仍 🟡：`+0x118/+0x12c/+0x148` 的**写入点**（分散在 `0x4475c8`/`0x4497ac`/`0x44xxxx` 等，且这些偏移像**基类共享字段**，别的类也在用 ⇒ 未逐个坐实） |
+| ② 文档成型 + 与 TH16 对照 | ✅ 本文 |
+| ③ 可行性判定 | ✅ §8/§12：**可桥**（入口、type=2、manager 单例、精灵/tick 引擎自理） |
+| ④ `check-docs` = 0 | ✅ 516 文件 |
+| ④ `make check` | ⚠ **仅剩环境级红**：10 处 `lang_zh-hans` / `th18_leveledit_sanae_mystia` 同路径冲突（★ 与本次无关，AUDIT §BE 2026-10-19 已记）。★ 本次顺手修的 `capcheck` 红（`ATLAS_POFV109_LASER` 未登记）**已绿** |
+| ⑤ 卡侧改动 + 回归 + 风险 | ✅ §13 |
