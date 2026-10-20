@@ -130,3 +130,21 @@ ECL 区 `0x435xxx` 的调用点（`0x435273` 那处）逐字：
 ★ **能，前提是先有一份能用的 spec** —— 最小可行路径 = **抄一份现成激光的 spec**（例如让引擎先造一条 ECL 激光，或在 ECL 里造一条后把它的 `laser+0x788` 那 0x460 字节读出来当模板），改 `type/sprite/路径/位置/寿命` 后调用分配器。
 
 ★ 风险与回归（若 owner 点头做桥）：见 [`06-...`]（下一轮补：改哪几处、`make anm`／`make check`／四 DLL 同 md5、判定/擦弹变原生对其它卡的影响）。
+
+## 9. ★ `0x41b430` = 激光**内置 anm VM** 的初始化（`laser+0xbe8`，0x60c 字节）
+
+`0x44ed70` 里 `call 0x41b430(esi=laser+0xbe8)` 就是它：
+
+```
+41b436  movq xmm0,[ecx+0x5f0] ; 41b43f ebx=[ecx+0x5f8] ; 41b446 esi=[ecx+0x548] ; 41b44d edi=[ecx+0x18]   ; 先存
+41b450  push 0x60c ; push 0 ; push ecx ; call 0x48f8f0        ; ★ memset(laser+0xbe8, 0, 0x60c)
+41b468  eax = 7 ; WORD [ecx+0x534] = 7                        ; ★ 0x534 = 与卡侧 anm VM 的 flags 同一偏移族
+41b493  [ecx+0x538] &= ~0x20000 ; |= 0x10000
+41b49e  [ecx+0x54] = [ecx+0x58] = [ecx+0x5c] = [ecx+0x60] = [ecx+0x6c] = [ecx+0x70] = 1.0f
+```
+
+⇒ ★★ **`laser+0xbe8` 是一个 anm VM（0x60c 字节）** —— 激光的**外观**就是这个 VM；
+★ 随后 `0x477d60(laser+0xbe8, sprite)` 给它设 sprite（sprite 由 `spec+0x18` 推出来，见 §6）。
+★ 与卡侧的关系：卡侧 `ce_anm_*` 操作的 VM 也是这套字段（`+0x534` flags / `+0x6c` uv_scale）⇒ ★ **同一套 anm VM 结构**。
+
+★ 于是"曲线路径存在哪"的候选缩小为：**spec 拷贝区（`laser+0x788` 起 0x460 B）** 或 laser 对象的其它字段 —— 下一轮定。
