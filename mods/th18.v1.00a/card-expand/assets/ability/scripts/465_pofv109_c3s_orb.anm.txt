@@ -18,8 +18,9 @@ script script465 {
     sprite(@POFV109_C3S_STRIP);
     type(1);
     alpha(128);        /* ★ 一手 ✓ script35 的初值 ✓ */
-    blendMode(0);      /* 2026-10-18: 按 owner「模式似乎不是覆盖模式」=> 普通 alpha(0);
-                        * 一手注释写的是 1(加算) => 冲突, 以 owner 观感为准 ❓ */
+    /* 2026-10-20 owner：「我怀疑他混合模式是**添加**」⇒ 改回 **加算**（一手 script35 也是 blendMode(1) ✓）。
+     *   原来这里写 0（覆盖/普通 alpha），注释里还留着「以 owner 观感为准 ❓」的旧妥协 —— 作废。*/
+    blendMode(1);
     scale(0.1171875f, 0.875f);   /* 256x16 横条 => 场上约 30x14 (owner: 压缩到可能 30*14) */
     stop();
 }

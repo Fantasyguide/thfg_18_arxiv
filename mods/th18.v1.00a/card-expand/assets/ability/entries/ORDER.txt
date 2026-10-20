@@ -1455,3 +1455,6 @@ MG_21                   ability/marigold/MG_21.png                  128x128
 MG_22                   ability/marigold/MG_22.png                  128x128
 MG_23                   ability/marigold/MG_23.png                  128x128
 MG_24                   ability/marigold/MG_24.png                  128x128
+ATLAS ATLAS_POFV109_LASER 256x32@1x2
+POFV109_LASER528      ability/POFV109_LASER528.png          256x16
+POFV109_LASER527      ability/POFV109_LASER527.png          256x16
