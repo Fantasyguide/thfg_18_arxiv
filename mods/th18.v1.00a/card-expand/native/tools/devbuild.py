@@ -129,8 +129,20 @@ def tail(text, n=40):
 
 
 def last_line(text):
+    """最后一条有用输出。
+
+    ⚠ 从 `make dev` 里调用时，子 make 会继承 MAKEFLAGS，末尾多出
+    `make[1]: Leaving directory …` ⇒ 汇总表的「备注」会变成这句噪声。
+    这里跳过 make 的进出目录行，只取真正的结论行。
+    """
     lines = [l.strip() for l in (text or "").splitlines() if l.strip()]
-    return lines[-1] if lines else ""
+    for line in reversed(lines):
+        if re.match(r"^make\[\d+\]:\s+(Entering|Leaving) directory", line):
+            continue
+        if line.startswith("make: "):
+            continue
+        return line
+    return ""
 
 
 def disp_width(s):
