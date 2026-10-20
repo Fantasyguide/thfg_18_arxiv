@@ -23022,3 +23022,49 @@ DOCSTYLE/METHOD ✓ = **别人的** ✓）⇒ ★ **禁止 `git commit -a`** ✗
 > **2026-10-19p（owner 改主意）**：`YK_LE_FAM_HP_FIXED` 改成 **0 = 关** —— owner 逐字「对于米斯蒂亚的使魔，
 > **108 接管的血量也跟没接管一样**，不然太难了」⇒ 接管**不写血量**（保持他们 ECL 原值，实跑 = 20），只做
 > 转伤 / 妖侧外观 / 掐弹 / 关体术。要再提血把该常量改成正数即可。
+
+### §2.0zz-3 2026-10-20（owner 三条实跑）：使魔**无判定** / 出界**不喂** / 转嫁**不跨血条**
+
+| # | 项 | 现取值 | 一句话 |
+| --- | --- | --- | --- |
+| 1 | `YK_FAM_MISS_ON_TOUCH` | **0 = 关** | 人侧撞使魔不再 MISS（详见 §A）。|
+| 2 | `xfam gone` 喂料门 | **只在 KILLED/BOMB_KILL 且 4 帧内** | 出界/ECL delete/killAll 一律不喂（详见 §B）。|
+| 3 | `yk_bar_damage_clamp()` / `yk_xfer_src_make_oneshot()` | **钳到 `life.current` + 一源一结** | 转嫁不再跨血条（详见 §C）。|
+
+#### §A 卡侧「人侧撞使魔 ⇒ MISS」= 关
+
+- owner 2026-10-20 逐字：「**108 的使魔怎么又有判定了**」；期望 = 「妖侧接管的使魔不该有体术/判定」。
+- 这条判据（人侧圆 vs 圆：`hit_r 3.0` + `hurtbox 12.0` → 直接 `Player__die 0x45d3a0`）是
+  **2026-09-22 本卡自造**的（当时按 TH08「人间操术下撞击会 MISS」），实跑原文
+  `youkai: MISS by touching familiar enemy_id 283` 后面紧跟 `PLAYER HIT/STATE 1 -> 4`。
+  ⚠ 283 = 母机 158 的**映射壳**（`CENSUS-DET life=1248` ≈ 母机 HP/2、`slot0=0`、`iv997=0`），
+  **不是** `s_xfam` 的 leveledit 接管条目 —— 所以本修法对「所有使魔」生效，不止接管那批。
+- 现取值 **0**；一行改 `1` 可开回。自机弹打使魔的扣槽/给刻符 / 1/2 转嫁 / 妖侧免伤位**全部不动**。
+
+#### §B 出界/离场不是死亡 ⇒ 不喂转嫁
+
+- owner 2026-10-20 逐字：「使魔被打掉了**会**扣 boss 血（对）；但使魔**出界**了**也会**扣 boss 血 ✗」。
+- 一手：出框/离场走管理器析构 `0x42d220`（`0x42dff2 call [eax+0x14]`，逐指令见
+  `engine/enemy/th18/09-enemy-offscreen-removal.md` §1）⇒ **不经过 `Enemy__die 0x430240`、没有死亡广播**。
+- 现判据 = `on_enemy_death` 记 `(id → kind, frame)`；`xfam gone` 只在 4 帧内见到
+  `CE_EDEATH_KILLED`（`retaddr 0x42f3b7` = `life.current <= 0` 主路）或 `BOMB_KILL` 时才喂；
+  `KILL_ALL`（`enmKillAll`）/ `ECL_DIE`（ECL `delete()`）/ **没有任何广播**（出界）⇒ 不喂。
+- 日志：`xfam gone … death_seen=%d kind=%d feed=YES/NO`；收尾 `youkai/xfer bars: gone feed/drop`。
+
+#### §C 转嫁不跨血条（一根的钳 + 一源一结）
+
+- owner 2026-10-20 逐字：「而且这个扣血还会**直接顺手打穿下一根血条** ✗」。
+- 一手：`life.current`（`enemy+0x6220`）就是**当前这一根**的剩余；引擎在一根被打空时把 `current`
+  钉到中断槽 `hp_value`（`EnemyData__step_game_logic 0x42ed40` ③，
+  `engine/ecl/th18/01-boss-interrupts-and-spellcard.md` §2）⇒ **不结转**。
+- 但 `ce_damage_rect` 的源活 4 帧（`+0x60/+0x64`，推进器 `0x45c3e1` 每帧 `prev = cur; cur--`），
+  结算段（`0x45f0f0`）每帧判「`cur != prev`」⇒ **同一条源会连打好几帧** ⇒ 第一帧打空这一根之后，
+  后面几帧就打到了下一根（这才是「打穿」的真机制；只钳 `amount` 不够）。
+- 现做法：① `yk_bar_damage_clamp(amount, current)`（纯函数，单测 `current=100, amount=500 ⇒ 100`）；
+  ② 建源后 `yk_xfer_src_make_oneshot()` 回读验证并写 `+0x7c = amount`（一手 `0x45f4f0`–`0x45f512`：
+  `cap <= 累计 ⇒ 清 active`）⇒ 一源一结。池满时 `ce_damage_rect` 会「不写槽却返回 > 0」⇒ 必须回读验证。
+
+判据（下一局一眼）：① 碰使魔**不再**出 `MISS by touching familiar`（每局有 `familiar touch-MISS gate = OFF`）；
+② 使魔出界 ⇒ `xfam gone … feed=NO`、`xfer bars: gone feed 0 / drop N`、boss HP **不掉**；
+③ 正常打死使魔 ⇒ `feed=YES`、boss 掉血 ✓；④ `xfer bars: bar clamp > 0` 时 `transfer applied` 的
+`hp_delta` 仍 ≤ 当前这一根的剩余。全文见 `AUDIT.md` 的「2026-10-20 追加」。

@@ -32948,6 +32948,57 @@ youkai: practice auto-equip 108 (ce_owned=1, r=4, spell=8)
     的判据还漏了一条，把那一格补上即可；
   · `hp_delta>0` ⇒ 转嫁真的落地 ✓（`all_delta` 与 `hp_delta` 应同量级）。
 
+#### 2026-10-20 追加（owner 实跑三条：**碰使魔又 MISS** / **出界使魔扣 boss 血** / **打穿下一根血条**）
+
+- **授权**：owner 2026-10-20 三条实跑报告（逐字见下每条的标题）；只动 108 自己的卡（`cards/youkai.c` +
+  `cards/youkai_core.{h,c}` + `tests/test_youkai_core.c`），**不碰共享件**。
+- **一手复核（本轮自己 `objdump` 直读 `th18.exe`，不是文档转述）**：
+  `0042f50d mov ecx,[ebx+0x5130]`（`ebx` = `zEnemyData` = flags_lo）→
+  `0042f51c cmp dword ptr [ebx+0x5108],0` → `0042f523 jg 0x42f69f`（**>0 ⇒ 整段接触致伤跳过**）
+  ⇒ `zEnemyData+0x5108` = **`no_hitbox_timer.current`** = 绝对 `e+0x6334`。
+  ⛔ 因此 `engine/enemy/th18/06-enemy-inert-flag.md:214` 那句「`no_hitbox_timer` 只递减、无人读（死字段）」
+  是**旧结论、错的**（它读的是计时器基址 `0x6330`，真正的读点在 `+0x5108` = `0x6334`）；本条以反汇编为准。
+
+1. **「108 的使魔怎么又有判定了」—— 关掉卡侧「人侧撞使魔 ⇒ MISS」**（`cards/youkai.c`，`yk_fam_collide_tick`）
+   - **根因**：扣命**不是**引擎体术（我们壳的 `no_hitbox_timer` 每帧都写）、也**不是** `if (f)` 取不到对象
+     （`f` = `yk_familiar_by_id(sl->fam_id)`，取不到上一行就 `continue` 了），而是本卡 **2026-09-22 自己加**的
+     判据 `yk_fam_collide_tick`：人侧圆 vs 圆（`hit_r 3.0 + hurtbox 12.0`）→ 直接调 `Player__die 0x45d3a0`。
+     实跑证据：`youkai: MISS by touching familiar enemy_id 283 (human side…)` 下一行就是
+     `PLAYER HIT/STATE 1 -> 4`；283 = 母机 158 的**映射壳**（`CENSUS-DET life=1248` ≈ 母机 HP/2、`slot0=0`、
+     `iv997=0`），**不是** leveledit 的 `s_xfam` 接管条目。
+   - **改法**：新增旋钮 **`YK_FAM_MISS_ON_TOUCH = 0`**（默认关；`1` 一行开回），函数入口早退；每局打一行
+     `familiar touch-MISS gate = OFF` 探针。owner 现口径 = 「使魔不该有体术/判定」。
+   - **不动**：自机弹打使魔照旧扣槽/给刻符（`+0x635c` bit4 按侧分工、P-D 三条一手全部保留）、1/2 转嫁不动。
+2. **「使魔出界了也会扣 boss 血」—— 喂料判据从「消失了」改成「真被打死」**
+   - **根因**：`xfam gone` 那支把「条目从扫描里消失」一律当成「被我们一击打死」，
+     于是把 `last_life` 喂进转嫁（`yk_transfer_feed`）。但**出界/离场不是死亡**：
+     `engine/enemy/th18/09-enemy-offscreen-removal.md` §1 逐指令 = `0x42dfd1 call 0x42fe80` →
+     `0x42dff2 call [eax+0x14]`（= 管理器析构 `0x42d220`，摘链释放）—— **根本不经过 `Enemy__die 0x430240`**
+     ⇒ **一条共享死亡广播都没有**，我们却还是喂了。
+   - **改法**：`on_enemy_death` 在所有 `kind` 门**之前**先记 `(id → kind, frame)`（`yk_xfam_t` 三格）；
+     `xfam gone` 只在「4 帧内收到 `CE_EDEATH_KILLED`（`retaddr 0x42f3b7` = `life.current <= 0` 主路）
+     或 `BOMB_KILL`」时才喂。`KILL_ALL`（`enmKillAll`）/ `ECL_DIE`（ECL `delete()`）/ **没有任何广播**
+     （出界）= **一笔都不喂**（宁可少喂，绝不白扣 boss 血）。消失日志改成
+     `xfam gone … death_seen=%d kind=%d feed=YES/NO`，收尾多一行 `youkai/xfer bars: gone feed/drop …`。
+3. **「扣血顺手打穿下一根血条」—— 一根血条的钳 + 一源一结**
+   - **根因①（直扣）**：`life.current` 是**当前这一根**的剩余；转嫁量是**一笔**（出界那笔 = 整条 `last_life`），
+     原来只做「扣到 0 就停」（`after < 0 ⇒ 0`），没有把 `amount` 本身钳成这一根的剩余。
+   - **根因②（伤害源，真正跨条的那条）**：`ce_damage_rect` 的源**寿命 4 帧**（`+0x60/+0x64` 计时器，
+     玩家侧推进器 `0x45c3e1` 每帧 `prev = cur; cur--`），结算段每帧都判「`cur != prev`」
+     ⇒ **同一条源会连打好几帧**；第一帧把这一根打空后，后面几帧就打到了**下一根**。
+   - **改法**：新增纯函数 **`yk_bar_damage_clamp(amount, bar_left)`**（`youkai_core.{h,c}`，有主机单测：
+     `current=100, amount=500 ⇒ 100`；`bar_left==0 ⇒ 0`）；卡内直扣、卡内建源、无 108 那条**三条路**都先钳。
+     建源之后再调 **`yk_xfer_src_make_oneshot(slot, amount)`**：回读验证这条槽是我们刚建的
+     （`bit0 active` / `+0x74 == amount` / `+0x98 == 0`），然后把 **`+0x7c`（累计上限）钉成 `amount`**
+     ⇒ 一手结算段 `0x45f4f0`–`0x45f512`（`cap <= 累计 ⇒ 清 active`）⇒ **一源一结**，不会打到下一根。
+     （池满时 `0x45dfea` 会「不写槽却返回 > 0」⇒ 必须回读验证，否则会改到别人的源。）
+- **验证**：`make dll` rc=0；`make test-host` rc=0（`test_youkai_core` **12804 checks / 0 failed**，含新增 8 条
+  血条钳断言）；`make dev … --allow-dirty` **19/19 PASS**（DLL md5 `29a1f8c998c15c68083b5d112dd0d553`，
+  源 + modkit 两份部署件三处同 md5）。
+- **下一局一眼判据**：`fam touch-MISS gate = OFF` + 碰使魔**不再**出 `MISS by touching familiar`；
+  `xfam gone … feed=NO` 与 `xfer bars: gone feed 0 / drop N`（出界时 boss HP 不掉）；
+  `xfer bars: bar clamp > 0` 且 `transfer applied … hp_delta <= bar`（不再跨条）。
+
 ### BE-TERMINOLOGY-2026-10-19 · 术语口径：原生 / 原版（禁「零售」）
 
 **owner 口径（`local/*.md` 铁律）**：
@@ -33100,3 +33151,51 @@ owner 给了上面的口径后**改成精确事件**（commit `65c0e178`，本�
   `check_modkit_packages.py` 报的 **9 处同路径冲突**（`th18_leveledit_sanae_mystia` 与
   `lang_zh-hans` / 本包同时启用）—— **与本批无关的环境状态**（改动前后同样红），不是本批引入 ✗；
 - 实跑判据见 §T 末尾「实跑要看的」那一段的补充（撞一次看 `5/5`、连撞到 `1/1`、第 4 次 `0/0`、第 5 次真死）。
+
+### §BE-108-PRACTICE-EQUIP-2026-10-20（2026-10-20，DSH agent，卡 108）：**把「符卡练习自动发 108」加回来 —— 只发一次，retry 后消失是测试特性**
+
+- **授权 / 口径（owner 2026-10-20，逐字）**：「不是，这个是**测试特性**，retry 后 108 没了反而有对比了你知道吗」
+  ⇒ ① 恢复「进符卡练习自动获得 108」（`da946d56` 那段）；② **不做**「防 `reset_cards` 抹掉 / 补发」
+  （`d4bc54ed` 那套）—— 它会把「有 108 / 没 108」的对照抹掉；③ retry 后没有 108 = **预期** ✓。
+- **历史（为什么删过又加回来）**：`da946d56` 实装（判据当时是错的，见下条）→ `a91672a9` 判据订正
+  （`0x4cf438 == 5` + `0x4ccd14 >= 0`）→ `d4bc54ed` 加「被 `reset_cards` 抹掉后补发一次」→
+  `28ff8307` owner 让**整条删掉**（「retry 后 108 就没了」，且它让「仅 DLL」那条在练习里永远 no-op）。
+  **现在 owner 明确**：那个消失正是要的对照态 ⇒ 只恢复「发一次」，补发不要。
+- **改法（只动 108 自己的卡 + 它的纯逻辑层，不碰共享件）**：
+  · `cards/youkai.c` 的 `yk_practice_equip_once()`（调用点是**既有的**、与卡组无关的帧点
+    `sdk.c` `BP_ce_item_frame`，**本批没有改 `sdk.c`**）：
+    判据成立 ⇒ 发一张（走既有路径 `ce_give_card(108u, CE_MODE_SHOP, 0)` = `AbilityManager__allocate_new_card`
+    `0x411460` 的 mode 2，只进本局卡表、不写存档卡组）；`s_practice_given` **只发一次**
+    （失败也不重试；**离开符卡练习**才复位）；刻意**不**用 `CE_TIME_IN_STAGE()` 倒退复位（那会在 retry
+    时重发，把对照特性抹掉）。
+  · **判据 / 发不发**抽成纯函数（主机可测）：
+    `yk_practice_is_spell(start_kind, spell_id, practice_mode, replay_playing)` 与
+    `yk_practice_grant_decision(in_spell_practice, owned, already_granted)`（`cards/youkai_core.{h,c}`）。
+  · 新增一行可核对的日志（retry 后打一次，**不发卡**）：
+    `youkai: practice auto-equip 108 gone (reset_cards after retry) - NOT re-granted (intended: 有/没 108 的对照 …)`。
+- **为什么不能挂在卡自己的回调上**：`ctor` / `on_tick_2` **本身就属于这张卡** —— 108 不在练习卡组里时
+  它们不存在 ⇒ 必须由**与卡组无关**的帧点从外面叫进来（这一条与首版相同，未变）。
+- **对既有卡的影响面**：只有 108 自己的卡 + 它的纯逻辑层（`youkai_core.c` 只**追加**两个函数）
+  + 单测 + 本文件。**共享件（`sdk.c` / `sdk.h` / `engine.h` / `sites.py` / `Makefile`）一个字节都没动**；
+  站点零新增（跳板池零增量）。⇒ 对其余卡行为逐字不变 ✓。
+  ⚠ 唯一可感差异是**符卡练习里手上会多一张 108**（这正是本条的目的），而它在 retry 后会被
+  `reset_cards` 清掉 ⇒ 那时「仅 DLL」的 `yk_le_transfer_standalone()` 接管路径照常生效（对照态 ✓）。
+- **一手判据（不变，见 §BE-108-PRACTICE-EQUIP-2026-10-19b）**：① `0x4cf438 == 5`（启动方式 =
+  符卡练习，唯一写点 `th18:0x46cfce`）② `0x4ccd14 >= 0`（本局练的符卡 id，唯一非负写点 `th18:0x46cffe`）
+  ③ 🟡 兜底 `GAME_FLAGS 0x4cccc8 & 0x30 == 0x20` 且不在回放中（`GT+0xd0 == 0`）。
+- **验证**：
+  · `make test-host` **rc=0**，`./tests/build/test_youkai_core` ⇒ **12837 checks, 0 failed**
+    （新增 **26 条断言**：判据 13 条 + 决策 10 条 + 组合 3 条，含「retry 后（`already_granted=1`）**不发**」）；
+  · `make dll` **rc=0**（无新增 warning）；`strings th18_card_expand.dll` 命中
+    `youkai: practice auto-equip 108 (ce_owned=%d, r=%d, spell=%d)` /
+    `... skipped (already owned, spell=%d)` / `... gone (reset_cards after retry) - NOT re-granted`；
+  · `objdump -dr cards/youkai.o` 实测读 `0x4ccd14` / `mov 0x4cf438,%eax` / `movzbl 0x4cccc8`；
+    `nm cards/youkai.o` = `T yk_practice_equip_once`、`nm cards/youkai_core.o` =
+    `T yk_practice_grant_decision` / `T yk_practice_is_spell` ✓；
+  · `make dev MODKIT_DIR=… --allow-dirty` 全流程 PASS，DLL md5 见交付回报（四处同 md5）。
+- **下一局一眼判据**：
+  · 进符卡练习 ⇒ `youkai: practice auto-equip 108 (ce_owned=1, r=…, spell=…)`（`r >= 0` 即成功，
+    与 `0x411460` 返回值口径一致，**不是** `r=1`）；
+  · 按 R 重开同一张符 ⇒ 108 从手上消失（`reset_cards` 从存档练习槽重建卡组），日志出现**一次**
+    `... gone (reset_cards after retry) - NOT re-granted`，而**不会**再出现 `practice auto-equip 108 (…)`；
+  · 普通关卡 ⇒ 一行都没有（`yk_practice_is_spell()` 先看 `0x4ccd14 < 0` 就返回 0）。

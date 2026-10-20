@@ -1155,6 +1155,24 @@ int32_t yk_transfer_clamp(int32_t pending, int32_t cap)
     return pending;
 }
 
+/* ★★★★ 2026-10-20（owner 实跑：「使魔**出界**了也会扣 boss 血，而且会**顺手打穿下一根血条**」）——
+ *   转嫁落地前把这一笔钳到**当前这一根血条的剩余**（`zEnemyLife.current`）。
+ *   一手与推导见头文件同名声明的长注（引擎在中 interrupt 处钉 `hp_value`、不结转；源本身活 >1 帧）。*/
+int32_t yk_bar_damage_clamp(int32_t amount, int32_t bar_left)
+{
+    if (amount <= 0 || bar_left <= 0) return 0;
+    return (amount > bar_left) ? bar_left : amount;
+}
+
+/* ★★★★ 2026-10-20（owner：「使魔**出界**了**也会**扣 boss 血 ✗」）—— 消失时的喂料门（纯判据）。
+ *   一手/三种死法的对照见头文件同名声明的长注；本函数只认「**收到过死亡广播 ∧ 是被伤害打死 ∧
+ *   在窗口内**」这一种，其余（出界 = 没有广播 / ECL delete / killAll / 过期广播）一律 0。*/
+int yk_xfam_gone_should_feed(int death_seen, int killed_by_damage, uint32_t frame_delta)
+{
+    if (!death_seen || !killed_by_damage) return 0;
+    return (frame_delta <= YK_XFAM_DEATH_FRAME_WINDOW) ? 1 : 0;
+}
+
 int32_t yk_sample_life(yk_slot_t *e, uint32_t fam_id, int32_t life_now)
 {
     int32_t d;
@@ -2451,4 +2469,34 @@ int yk_le_mode(int has_108, int boss_sub274, int boss_anm_main, int iv0)
 {
     if (!has_108) return 0;                          /* ★ owner 口径 ③：没 108 ⇒ 什么都不做 ✗ */
     return yk_le_is_levelledit_fight(boss_sub274, boss_anm_main, iv0);
+}
+
+/* ============================================================ §10 符卡练习：自动发 108 */
+int yk_practice_is_spell(int start_kind, int spell_id, uint32_t practice_mode, int replay_playing)
+{
+    /* ② 是**必要条件**：`0x4ccd14 < 0` ⇒ 本局没选任何符 ⇒ 主游玩 / 回放 / Extra 都不是练习。
+     *   （一手：唯一非负写点 `th18:0x46cffe`，其余路径都写 −1 ⇒ 这一条就能挡掉几乎所有误发。）*/
+    if (spell_id < 0) return 0;
+    /* ① 主判据：启动方式 = 符卡练习（`0x4cf438 == 5`，唯一写点 `th18:0x46cfce`）。
+     *   与旧实现同序 —— ① 成立就直接算，连回放都不再看（回放的启动方式是 2，走不到这里）。*/
+    if (start_kind == YK_PRACTICE_START_KIND_SPELL) return 1;
+    /* ③ 🟡 兜底（只为防「① 被某条路径改写 ⇒ 功能又静默失效」重演）：引擎自己的练习位。
+     *   ⚠ 回放必须先排除：`0x20` 在回放里也可能立着（`ReplayManager__initialize` 按 ② 置），
+     *   而回放里发卡会改回放轨迹 ⇒ 「不在回放」是这条兜底的硬前提。*/
+    if (replay_playing) return 0;
+    return (practice_mode == YK_PRACTICE_MODE_SPELL) ? 1 : 0;
+}
+
+int yk_practice_grant_decision(int in_spell_practice, int owned, int already_granted)
+{
+    /* 非符卡练习（正常关卡 / 关卡练习 / Extra / 回放）⇒ 一个字节都不碰 ✓ */
+    if (!in_spell_practice) return YK_PRACTICE_GRANT_NONE;
+    /* ★ 2026-10-20（owner 口径）**只发一次**：`already_granted` 在离开符卡练习时才清。
+     *   ⇒ retry / 重开时 `reset_cards` 把关卡开场的 108 整副删掉（它从存档的练习槽重建，槽里没有 108）
+     *     而这里**不再发** ⇒ 「有 108 / 没 108」的对比留给 owner ✓（这就是要的测试特性，不是 bug）。
+     *   ⚠ 别在这里加「owned 又变 0 就补发」—— 上一版（`d4bc54ed`）就是那条，它会把对比特性抹掉 ✗。*/
+    if (already_granted) return YK_PRACTICE_GRANT_NONE;
+    /* 练习槽本来就带了 108 ⇒ 不发，只让调用方记一行（`ce_owned` 为真时再发一张会多出一张）*/
+    if (owned) return YK_PRACTICE_GRANT_SKIP_OWNED;
+    return YK_PRACTICE_GRANT_SEND;
 }
