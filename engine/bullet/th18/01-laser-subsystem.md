@@ -83,9 +83,50 @@ ECL 区 `0x435xxx` 的调用点（`0x435273` 那处）逐字：
 `rep movs` 从 **`[manager+0x69c]`** 拷 **`0x108` dwords（0x420 字节）** 到栈上 spec，再补几个字段
 ⇒ ★ **`manager+0x69c` 很可能就是"默认 spec 模板"** —— 卡侧要桥，可以"抄模板 + 改几个字段"，不必从零构造。
 
-## 6. 待补（下一轮）
+## 6. ★★ Curve 的 `vtable+0xc`（`0x44ed70`）—— spec 直接整块拷进对象
 
-1. ★ **`spec` 逐字段语义** —— 由各类 `vtable+0xc` 消费；Curve 是 `0x44ed70`，读它才知道每个偏移是什么。
+```
+44ed7c  ecx = 0x118                 ; ★ 0x118 dwords = 0x460 字节
+44ed82  esi = [ebp+8]               ; ★ spec 指针
+44ed86  edi = ebx+0x788             ; ★ 目标 = 激光对象 +0x788
+44ed8c  rep movs                    ; ★ spec 整块拷进 laser+0x788
+44ed8e  eax = [ebx+0x7a0]           ; = spec+0x18
+44ed9a  [ebx+0x780] = eax           ; （另一个独立字段）
+44eda8  [ebx+0x10] = 2 ; [ebx+0x14] = 2
+44edbc  call 0x41b430               ; 段/节点数组初始化（esi = laser+0xbe8）
+44edcc  cmp [ebx+0x780], 1          ; ★ spec+0x18 == 1 ?
+44edd1     ecx=[mgr+0x7b8] ; eax=0x142          → call 0x477d60(esi=laser+0xbe8, eax)
+44edee     ecx=[mgr+0x7b8] ; eax=(spec+0x18)+0x8e → call 0x477d60(...)
+```
+
+⇒ ★★ **spec 的布局就是 `laser+0x788` 起的那 0x460 字节**（同一份内存）。
+⇒ ★ **`spec+0x18` 是"激光外观/类型 id"**：等于 1 时取 sprite `0x142`，否则取 `spec+0x18 + 0x8e`
+   ⇒ 与"激光精灵来自 `bullet.anm` 预载表 `[mgr+0x7b8]`"这一条吻合（TH16 是 `mgr+0x604`，TH18 是 **`mgr+0x7b8`**）。
+⇒ ★ `0x41b430(laser+0xbe8)` 就是**段/节点数组的初始化** —— 下一轮读它得段结构。
+
+## 7. 待补（下一轮）
+
+1. ★ **`spec` 逐字段语义** —— 已知 `+0x18` = 外观/类型 id（决定 sprite id）；其余偏移待读 `0x41b430` 与绘制路径。
 2. ★ **Curve 的路径怎么表达**（节点数组？折线？逐帧追加？）—— 决定"能不能从卡侧构造路径"。
 3. ★ 前置条件：`ds:0x4cf3f4` 由谁初始化（`on_tick 0x4488c4` 里 `ds:0x4cf2a4` 为 0 时 `call 0x448760` 是嫌疑）、
    精灵预载（TH16 是 `LaserManager::initialize` → `mgr+0x604`，TH18 位置待查）。
+
+## 8. 可行性判定（★ 2026-10-21，基于 A/B 的已知部分）
+
+★ **结论：可桥，但有一处硬前置 —— 必须自己填一份 `spec`（0x460 字节）。**
+
+| 问题 | 一手答案 |
+| --- | --- |
+| ★ 有统一入口吗 | ★ **有**：`LaserManager__allocate_new_laser(type, spec)`（`0x448920`，stdcall，ret 8） |
+| ★ 能指定曲线吗 | ★ **能**：`type = 2` ⇒ `LaserCurveInf`（对象 `0x1844`，vtable `0x4b672c`） |
+| ★ 拿到什么 | ★ **序号**（不是指针）⇒ 要操作它得按序号去 manager 链里找，或直接用 vtable 方法 |
+| ★ manager 要先初始化吗 | ★ 需要：`ds:0x4cf3f4` 非空（`on_tick 0x4488c4` 里 `ds:0x4cf2a4==0` 时 `call 0x448760` 是初始化嫌疑，待验） |
+| ★ 精灵要预载吗 | ★ **不需要自己预载**：精灵表在 `[mgr+0x7b8]`（TH16 是 `mgr+0x604`），由引擎 `initialize` 灌好 |
+| ★ tick 会自己跑吗 | ★ **会**：激光对象入 manager 链（`[mgr+0x794]` 链尾 / `+0x14` 链头），由 `LaserManager__on_tick 0x4488c4` 每帧推进 ⇒ 卡侧**不用**自己 tick |
+| ★ 判定/擦弹是原生的吗 | ★ **是**：`LaserCurve__check_graze_or_kill 0x44fa53` 等由引擎调用 |
+| ★ 硬前置 | ★ **必须构造一份合法的 0x460 字节 spec**（卡侧没有 bullet 单位，不能像 ECL 那样从单位字段拷）；★ 模板在 `mgr+0x69c`（`0x420` 字节）可抄，但**仍需知道要改哪几个字段** |
+
+★ 于是"on_activate 里调一次能不能当场看见一条曲线激光"的答案：
+★ **能，前提是先有一份能用的 spec** —— 最小可行路径 = **抄一份现成激光的 spec**（例如让引擎先造一条 ECL 激光，或在 ECL 里造一条后把它的 `laser+0x788` 那 0x460 字节读出来当模板），改 `type/sprite/路径/位置/寿命` 后调用分配器。
+
+★ 风险与回归（若 owner 点头做桥）：见 [`06-...`]（下一轮补：改哪几处、`make anm`／`make check`／四 DLL 同 md5、判定/擦弹变原生对其它卡的影响）。
