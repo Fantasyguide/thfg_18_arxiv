@@ -661,10 +661,14 @@ static void rb_draw(void)
      *   我们的桩每帧都在渲染链里跑，所以这里把"会从渲染链里调 user32（GetAsyncKeyState）"这件事
      *   挪到**确认在舞台里且模式非 0**之后 ⇒ 标题/加载/菜单阶段一个系统调用都不发。
      */
-    if (rb_mode == 0) return;
+    /* ★★ 顺序不能反：**先判舞台 → 再轮询按键 → 最后按 mode 决定画不画**。
+     *   旧顺序把 `rb_keys()` 放在 `mode==0` 的提前返回**之后** ⇒ mode=0 时永远收不到按键
+     *   ⇒ ini 默认 0 时整个 mod「完全没有任何效果」（2026-10-21 实跑即此现象）。
+     *   不在舞台（加载/标题/菜单）时仍然只做两次内存读，一个调用都不发 ✓ */
     {   float px, py;
-        if (!rb_player(&px, &py)) return; }         /* 只在舞台里（自机存在） */
-    rb_keys();                                      /* 热键也只在舞台里轮询 */
+        if (!rb_player(&px, &py)) return; }         /* 不在舞台：什么都不做（含按键） */
+    rb_keys();                                      /* 在舞台里：先轮询热键（8/9） */
+    if (rb_mode == 0) return;                       /* 关着：不碰 D3D */
     dev = rb_rd(rb_base + RVA_DEVICE, 4) ? *(void **)(rb_base + RVA_DEVICE) : NULL;
     if (!dev || !rb_rd(dev, 0x40)) return;
     vt = *(void ***)dev;
