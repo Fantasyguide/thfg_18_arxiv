@@ -80,7 +80,7 @@ static float    rb_ov_cx, rb_ov_cy, rb_ov_r; /* 第二份的圆心相对偏移�
 static unsigned rb_log_every = 300;   /* 每隔多少次画一行日志 */
 
 static int      rb_stub_ok;
-static int      rb_logged_desc, rb_logged_grid, rb_logged_halo, rb_logged_enemy, rb_logged_pts, rb_logged_entry, rb_logged_vms, rb_logged_rt, rb_logged_nohalo, rb_logged_baddev, rb_logged_ov;
+static int      rb_logged_desc, rb_logged_grid, rb_logged_halo, rb_logged_enemy, rb_logged_pts, rb_logged_entry, rb_logged_vms, rb_logged_rt, rb_logged_nohalo, rb_logged_baddev, rb_logged_ov, rb_logged_src;
 static unsigned rb_frames, rb_drawn;
 static void    *rb_last_dev;
 static unsigned rb_dev_settle;          /* 设备指针稳定了多少帧（Reset 后先冷却） */
