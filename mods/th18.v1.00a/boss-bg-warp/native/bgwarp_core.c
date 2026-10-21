@@ -83,6 +83,8 @@ static int      rb_stub_ok;
 static int      rb_logged_desc, rb_logged_grid, rb_logged_halo, rb_logged_enemy, rb_logged_pts, rb_logged_entry, rb_logged_vms, rb_logged_rt, rb_logged_nohalo, rb_logged_baddev, rb_logged_ov;
 static unsigned rb_frames, rb_drawn;
 static void    *rb_last_dev;
+static unsigned rb_dev_settle;          /* 设备指针稳定了多少帧（Reset 后先冷却） */
+static void    *rb_last_good_surf;      /* 上次成功取过纹理的那张面 */
 static unsigned rb_vp_ok;
 static float    rb_vp_x = 436.0f, rb_vp_y = 244.0f, rb_vp_w = 408.0f, rb_vp_h = 472.0f;
 static void    *rb_scene_tex;         /* 场景面纹理（缓存） */
@@ -440,6 +442,40 @@ static int rb_enemy_disc(float *cx, float *cy, float *R, int *n_vm)
     return 1;
 }
 
+/*
+ * ★★ 更稳的取样路径：**用 anm 的"屏幕特供" VM 的纹理**，而不是 `GetContainer(离屏面)`。
+ *   为什么：设备 Reset/重建后，`[0x4ccfa0]` 那两张**面指针会过期**（已被释放），
+ *   而 `GetContainer` 在过期面上会让 d3d9 访问空指针 ⇒ 闪退（dump th18.exe.35256.dmp：Eip 在 d3d9 内部）。
+ *   屏幕特供 VM（`handle & 0x7fff == 0x7fff`）的纹理由**游戏自己**维护、Reset 后自动换成新纹理 ✓
+ *   所以优先走它；找不到再退回 `GetContainer`（那边有"设备稳定期"保护）。
+ */
+static void *rb_screen_tex_from_vm(void)
+{
+    BYTE *mgr;
+    int li;
+    if (!rb_rd(rb_base + RVA_ANM_MGR, 4)) return NULL;
+    mgr = *(BYTE **)(rb_base + RVA_ANM_MGR);
+    if (!mgr) return NULL;
+    for (li = 0; li < 2; li++) {
+        BYTE *node;
+        int budget = 4096;
+        if (!rb_rd(mgr + VM_LIST_1 + li * 8, 4)) continue;
+        node = *(BYTE **)(mgr + VM_LIST_1 + li * 8);
+        while (node && budget-- > 0) {
+            BYTE *vm;
+            if (!rb_rd(node, 8)) break;
+            vm   = *(BYTE **)(node + 0);
+            node = *(BYTE **)(node + 4);
+            if (!vm || !rb_rd(vm, 0x600)) continue;
+            {   unsigned h = *(unsigned *)(vm + 0x544);
+                if ((h & 0x7fffu) == 0x7fffu)
+                    return rb_tex_of_vm(vm, "屏幕特供VM");
+            }
+        }
+    }
+    return NULL;
+}
+
 /* ================= 绘制 ================= */
 
 static void rb_get_vp(void *dev, void **vt)
@@ -713,12 +749,16 @@ static void rb_draw(void)
      */
     if (dev != rb_last_dev) {
         rb_last_dev = dev;
+        rb_dev_settle = 0;
         rb_scene_tex = NULL;
         rb_halo_tex  = NULL;
+        rb_last_good_surf = NULL;
         rb_logged_desc = 0;
         rb_logged_rt = 0;
-        rb_logf("[设备] 设备指针变化 → %p ⇒ 已清空纹理/面缓存", dev);
+        rb_logf("[设备] 设备指针变化 → %p ⇒ 清空缓存并进入冷却期", dev);
+        return;                                  /* ★ 本帧直接退出：别在新设备刚建好时碰旧资源 */
     }
+    if (rb_dev_settle < 30) { rb_dev_settle++; return; }   /* ★ 复位后的冷却期：30 帧内不碰任何 D3D 资源 */
 
     if (!rb_logged_desc) {
         rb_logged_desc = 1;
@@ -755,9 +795,19 @@ static void rb_draw(void)
     {   void **svt = *(void ***)surf;
         if (!svt || !rb_rd(svt + 12, 4)) return;
         if (!rb_code((const void *)svt[11]) || !rb_code((const void *)svt[12])) return; }
-    if (!rb_scene_tex || (rb_frames % 240) == 0) {
-        void *t2 = rb_surface_tex(surf);
-        if (t2) rb_scene_tex = t2;
+    if (!rb_scene_tex || (surf != rb_last_good_surf)) {
+        void *t2 = rb_screen_tex_from_vm();            /* ★ 优先：游戏自己维护的屏幕纹理 */
+        if (!rb_logged_src) {
+            rb_logged_src = 1;
+            rb_logf("[纹理] 屏幕纹理来源 = %s", t2 ? "屏幕特供VM（游戏维护，最稳）" : "面容器 GetContainer（兜底）");
+        }
+        if (!t2) {
+            if (rb_last_good_surf && surf != rb_last_good_surf) return;  /* 面变了但没新纹理 ⇒ 本帧先不画 */
+            t2 = rb_surface_tex(surf);                 /* 兜底：GetContainer（此时设备已稳定 30 帧） */
+            if (!t2) return;
+        }
+        rb_scene_tex = t2;
+        rb_last_good_surf = surf;
     }
     tex = rb_scene_tex;
     if (!tex) return;
