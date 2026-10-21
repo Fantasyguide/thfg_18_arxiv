@@ -38,3 +38,18 @@ clean:
 	rm -f $(TARGET) *.o
 
 .PHONY: all check verify clean
+
+# 一条命令发布：把产物发到 modkit 的两个位置，并回读校验（四处同 md5 才算发成功）
+#   make deploy [MODKIT=/mnt/d/项目/幻想指南/18/th18_modkit]
+MODKIT ?= /mnt/d/项目/幻想指南/18/th18_modkit
+deploy: $(TARGET)
+	@set -e; \
+	src=$$(md5sum $(TARGET) | cut -d' ' -f1); \
+	cp -f $(TARGET) "$(MODKIT)/mods/$(TARGET)"; \
+	cp -f $(TARGET) "$(MODKIT)/thcrap/bin/mod_$(TARGET)"; \
+	a=$$(md5sum "$(MODKIT)/mods/$(TARGET)" | cut -d' ' -f1); \
+	b=$$(md5sum "$(MODKIT)/thcrap/bin/mod_$(TARGET)" | cut -d' ' -f1); \
+	echo "src      $$src"; echo "mods/    $$a"; echo "bin/     $$b"; \
+	if [ "$$src" = "$$a" ] && [ "$$src" = "$$b" ]; then \
+		echo "✓ 发布成功（三处同 md5）"; \
+	else echo "✗ 回读 md5 不一致，发布失败"; exit 1; fi
