@@ -80,7 +80,8 @@ static float    rb_ov_cx, rb_ov_cy, rb_ov_r; /* 第二份的圆心相对偏移�
 static unsigned rb_log_every = 300;   /* 每隔多少次画一行日志 */
 
 static int      rb_stub_ok;
-static int      rb_logged_desc, rb_logged_grid, rb_logged_halo, rb_logged_enemy, rb_logged_pts, rb_logged_entry, rb_logged_vms, rb_logged_rt, rb_logged_nohalo, rb_logged_baddev, rb_logged_ov, rb_logged_src, rb_logged_lost;
+static int      rb_logged_desc, rb_logged_grid, rb_logged_halo, rb_logged_enemy, rb_logged_pts, rb_logged_entry, rb_logged_vms, rb_logged_rt, rb_logged_nohalo, rb_logged_baddev, rb_logged_ov, rb_logged_src, rb_logged_lost
+static unsigned rb_rescan_fail;
 static unsigned rb_frames, rb_drawn;
 static void    *rb_last_dev;
 static unsigned rb_dev_settle;          /* 设备指针稳定了多少帧（Reset 后先冷却） */
@@ -476,6 +477,45 @@ static void *rb_screen_tex_from_vm(void)
     return NULL;
 }
 
+/*
+ * ★ 诊断：把两条 anm VM 链里**实际有什么**打出来（不按网格判据过滤）。
+ *   用途：boss 光环在场却"找不到网格段 VM"时，分清是
+ *     ① 链里根本没有那些 VM（⇒ 得从 mesh 的 `+0x10` 数组找，不是链）
+ *     ② 在链里，但 `+0x5c8/+0x5cc` 的样子和我猜的不同
+ *   封顶 4096，绝不无界。
+ */
+static void rb_dump_vms(const char *why)
+{
+    BYTE *mgr;
+    int li, shown = 0, total = 0;
+    if (!rb_rd(rb_base + RVA_ANM_MGR, 4)) return;
+    mgr = *(BYTE **)(rb_base + RVA_ANM_MGR);
+    if (!mgr) return;
+    for (li = 0; li < 2; li++) {
+        BYTE *node;
+        int budget = 4096;
+        if (!rb_rd(mgr + VM_LIST_1 + li * 8, 4)) continue;
+        node = *(BYTE **)(mgr + VM_LIST_1 + li * 8);
+        while (node && budget-- > 0) {
+            BYTE *vm;
+            if (!rb_rd(node, 8)) break;
+            vm   = *(BYTE **)(node + 0);
+            node = *(BYTE **)(node + 4);
+            if (!vm || !rb_rd(vm, 0x600)) continue;
+            total++;
+            if (shown < 10) {
+                shown++;
+                rb_logf("[VM链%d] vm=%p buf=%p len=%u handle=%08x sprite=%u scale=%.1f pos=(%.1f,%.1f)",
+                        li, vm, *(void **)(vm + 0x5c8), *(unsigned *)(vm + 0x5cc),
+                        *(unsigned *)(vm + 0x544), *(unsigned *)(vm + 0x560),
+                        (double)*(float *)(vm + 0x568),
+                        (double)*(float *)(vm + 0x230), (double)*(float *)(vm + 0x234));
+            }
+        }
+    }
+    rb_logf("[VM链] %s：共 %d 台（上面列了前 %d 台）", why, total, shown);
+}
+
 /* ================= 绘制 ================= */
 
 static void rb_get_vp(void *dev, void **vt)
@@ -797,6 +837,7 @@ static void rb_draw(void)
                 (double)rb_vp_x, (double)rb_vp_y, (double)rb_vp_w, (double)rb_vp_h);
         {   int cols = 0;
             BYTE *mvm = rb_find_mesh_vm(&cols);
+            if (!mvm) rb_dump_vms("首帧扫描失败");
             if (mvm) {
                 void *ht = rb_tex_of_vm(mvm, "网格段VM");
                 if (ht) rb_halo_tex = ht;
@@ -808,6 +849,21 @@ static void rb_draw(void)
             } else {
                 rb_logf("[光晕] 两条 VM 链上没找到「网格段 VM」（可能这局没有那种网格）");
             }
+        }
+    }
+
+    /* ★ 光晕/敌方盘"随时可能出现"（boss 出场、符卡开始…）⇒ 未解到时定期重扫（不是只扫第一帧） */
+    if ((!rb_halo_tex || !rb_ov_ok) && (rb_frames % 60) == 0) {
+        int cols = 0;
+        BYTE *mvm = rb_find_mesh_vm(&cols);
+        if (mvm) {
+            void *ht = rb_tex_of_vm(mvm, "网格段VM(重扫)");
+            if (ht) {
+                if (!rb_halo_tex) { rb_halo_tex = ht; rb_logf("[光晕] 重扫拿到光晕纹理 %p（第 %u 帧）", ht, rb_frames); }
+            }
+        } else {
+            rb_rescan_fail++;
+            if (rb_rescan_fail == 1 || (rb_rescan_fail % 5) == 0) rb_dump_vms("重扫仍失败");
         }
     }
 
