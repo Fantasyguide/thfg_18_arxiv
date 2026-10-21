@@ -80,7 +80,7 @@ static float    rb_ov_cx, rb_ov_cy, rb_ov_r; /* 第二份的圆心相对偏移�
 static unsigned rb_log_every = 300;   /* 每隔多少次画一行日志 */
 
 static int      rb_stub_ok;
-static int      rb_logged_desc, rb_logged_grid, rb_logged_halo, rb_logged_enemy, rb_logged_pts, rb_logged_entry, rb_logged_vms, rb_logged_rt, rb_logged_nohalo, rb_logged_baddev, rb_logged_ov, rb_logged_src;
+static int      rb_logged_desc, rb_logged_grid, rb_logged_halo, rb_logged_enemy, rb_logged_pts, rb_logged_entry, rb_logged_vms, rb_logged_rt, rb_logged_nohalo, rb_logged_baddev, rb_logged_ov, rb_logged_src, rb_logged_lost;
 static unsigned rb_frames, rb_drawn;
 static void    *rb_last_dev;
 static unsigned rb_dev_settle;          /* 设备指针稳定了多少帧（Reset 后先冷却） */
@@ -742,7 +742,6 @@ static void rb_draw(void)
         }
         return;
     }
-    rb_get_vp(dev, vt);
     /*
      * ★★ 设备指针一变（重建/Reset）⇒ 旧纹理与旧"面"都可能已被释放 ⇒ 必须清缓存。
      *   不清的后果：拿旧 texture 去 SetTexture（D3D 会拒绝）或拿旧面去 GetContainer（可能直接崩）。
@@ -759,6 +758,25 @@ static void rb_draw(void)
         return;                                  /* ★ 本帧直接退出：别在新设备刚建好时碰旧资源 */
     }
     if (rb_dev_settle < 30) { rb_dev_settle++; return; }   /* ★ 复位后的冷却期：30 帧内不碰任何 D3D 资源 */
+    /*
+     * ★★ Reset 期间**设备指针不变**（游戏对同一个 device 调 Reset）⇒ 上面"指针变化"的检查抓不到 ✗
+     *   必须问设备自己：`IDirect3DDevice9::TestCooperativeLevel()`（vtable index 3）——
+     *   非 S_OK（D3DERR_DEVICELOST / DEVICENOTRESET）就说明正在丢/待重置 ⇒ 立刻停、清缓存、进冷却。
+     *   这一条是 2026-10-21 两次 d3d9 内部崩溃（Eip=d3d9+0x11c00c）换来的。
+     */
+    if (rb_code((const void *)vt[0x03])) {
+        long hr = ((long (__stdcall *)(void *))vt[0x03])(dev);
+        if (hr != 0) {
+            rb_dev_settle = 0;
+            rb_scene_tex = NULL; rb_halo_tex = NULL; rb_last_good_surf = NULL;
+            if (!rb_logged_lost) {
+                rb_logged_lost = 1;
+                rb_logf("[设备] TestCooperativeLevel=0x%08x ⇒ 设备丢失/待重置，停止绘制并清缓存", (unsigned)hr);
+            }
+            return;
+        }
+    }
+    rb_get_vp(dev, vt);                             /* ★ 必须放在所有门闸之后：冷却期里绝不调设备 */
 
     if (!rb_logged_desc) {
         rb_logged_desc = 1;
