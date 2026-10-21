@@ -86,6 +86,22 @@ bgwarp_set(0, 0, 0, 0);                       /* C4 结束 / on_delete（本仓�
 目前 `rb_code()` 共 11 处（设备 9 个槽 + 面 2 个槽 + `GetRenderTarget`/`GetViewport`），
 剩下唯一不校验的调用是静态导入的 `GetAsyncKeyState`（不可能指向堆）。
 
+## ★ D3D 调用参数个数对照表（血泪：**缺参**会让 d3d9 崩在内部）
+
+| 槽 | 方法 | 参数（含 this） | 曾错 |
+| --- | --- | --- | --- |
+| +0x0C | `TestCooperativeLevel()` | 1 | |
+| +0x98 | `GetRenderTarget(RenderTargetIndex, ppSurface)` | **3** | ★ **曾经只传 2 个** ⇒ d3d9 写栈垃圾 ⇒ 崩（三次 dump 同 Eip `d3d9+0x11c00c`） |
+| +0xC0 | `GetViewport(pViewport)` | 2 | |
+| +0xE4 / +0xE8 | `SetRenderState(state,value)` / `GetRenderState(state,pValue)` | 3 | |
+| +0x104 | `SetTexture(stage,pTexture)` | 3 | |
+| +0x108 / +0x10C | `GetTextureStageState(stage,type,pValue)` / `SetTextureStageState(stage,type,value)` | **4** | ★ Get 曾经只传 3 |
+| +0x14C | `DrawPrimitiveUP(pt,count,data,stride)` | 5 | |
+| +0x164 | `SetFVF(fvf)` | 2 | |
+| 面 +0x2C / +0x30 | `GetContainer(riid,ppContainer)` / `GetDesc(pDesc)` | 3 / 2 | |
+
+⇒ **改任何一处 D3D 调用，先照这张表数参数**（本类错误已犯 2 次：GetTextureStageState、GetRenderTarget）。
+
 ## 四条血泪教训（都踩过）
 
 1. **用游戏给的东西之前先验证"它是我想的那种东西"** —— `rb_code()` 要求函数指针属于 `MEM_IMAGE` 且可执行；

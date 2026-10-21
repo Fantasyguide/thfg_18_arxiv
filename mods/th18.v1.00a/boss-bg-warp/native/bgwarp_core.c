@@ -680,7 +680,10 @@ static void *rb_pick_surface(void *dev, void **vt)
                ? *(void **)(rb_base + (rb_surf ? RVA_SURF_A : RVA_SURF_B)) : NULL;
     void *rt = NULL;
     if (vt && rb_rd(vt + 0x27, 4) && rb_code((const void *)vt[0x26])) {
-        ((long (__stdcall *)(void *, void **))vt[0x26])(dev, &rt);
+        /* ★ IDirect3DDevice9::GetRenderTarget(RenderTargetIndex, ppRenderTarget) —— **两个参数**。
+         *   这里曾经只传了 (dev, &rt) ⇒ 少一个 ⇒ d3d9 把栈上的垃圾当 ppSurface 写 ⇒ 崩
+         *   （三次 dump 的 Eip 全在 d3d9+0x11c00c，就是这么来的）。 */
+        ((long (__stdcall *)(void *, unsigned, void **))vt[0x26])(dev, 0u, &rt);
     }
     if (rt && surf && rt == surf) {
         void *other = rb_rd(rb_base + (rb_surf ? RVA_SURF_B : RVA_SURF_A), 4)
