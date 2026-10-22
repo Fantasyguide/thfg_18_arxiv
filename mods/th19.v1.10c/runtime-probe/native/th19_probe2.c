@@ -29,6 +29,8 @@ static volatile LONG g_running;
 static FILE *g_log;
 static BYTE *g_base;
 static DWORD g_anchor_rva = 0;     /* ini 里配；0 = 未配置 */
+static int   g_scan_mode  = 0;     /* ini: scan=1 ⇒ 主动搜 ctx */
+static DWORD g_scan_next  = 0;     /* 下次扫描时间 */
 
 static void probe_log(const char *fmt, ...)
 {
@@ -68,9 +70,79 @@ static void dump(const char *tag, DWORD va)
     }
 }
 
+
+/* ------------------------------------------------------------------ *
+ * scan 模式：不动锚点，直接在可写内存里找"像 ECL 上下文"的对象。
+ * 判据（一手倾向，见 engine/bullet/th18/01-laser-subsystem.md §27）：
+ *   · +0x4 是 -1 或小整数（句柄）
+ *   · +0x4e2c 起 16 个 dword 都是小整数，且至少一个非 0（变换序号表）
+ *   · +0x55c8 是一个可读指针（参数 helper 0x50c1b0 会读它）
+ * 找到就把它当 ctx，打 +0x5ac（弹型记录）与 +0x4e2c（序号表）。
+ * ------------------------------------------------------------------ */
+#define SCAN_MAX_STEPS  (12u * 1024u * 1024u)
+
+static BOOL looks_like_ctx(DWORD p)
+{
+    DWORD h, i, any = 0, ptr;
+    if ((p & 3) != 0) return FALSE;
+    if (!readable((const void *)(uintptr_t)p, 0x55d0)) return FALSE;
+
+    h = *(const DWORD *)(uintptr_t)(p + 4);
+    if (h != 0xFFFFFFFFu && h > 0x1000u) return FALSE;
+
+    for (i = 0; i < 16; i++) {
+        DWORD v = *(const DWORD *)(uintptr_t)(p + 0x4e2c + i * 4);
+        if (v > 0x10000u) return FALSE;
+        if (v) any = 1;
+    }
+    if (!any) return FALSE;
+
+    ptr = *(const DWORD *)(uintptr_t)(p + 0x55c8);
+    if (!ptr) return FALSE;
+    if (!readable((const void *)(uintptr_t)ptr, 0x10)) return FALSE;
+    return TRUE;
+}
+
+static void scan_for_ctx(void)
+{
+    MEMORY_BASIC_INFORMATION mbi;
+    const BYTE *addr = (const BYTE *)0x10000;
+    const BYTE *limit = (const BYTE *)0x7fff0000;
+    unsigned steps = 0, found = 0;
+
+    probe_log("[scan] 开始找 ctx ...");
+    while (addr < limit && steps < SCAN_MAX_STEPS && found < 6) {
+        if (!VirtualQuery(addr, &mbi, sizeof(mbi))) break;
+        if (mbi.State == MEM_COMMIT &&
+            (mbi.Protect & (PAGE_READWRITE | PAGE_WRITECOPY | PAGE_EXECUTE_READWRITE)) &&
+            !(mbi.Protect & (PAGE_GUARD | PAGE_NOACCESS))) {
+            const BYTE *p = (const BYTE *)mbi.BaseAddress;
+            const BYTE *end = p + mbi.RegionSize;
+            for (; p + 0x55d0 <= end && steps < SCAN_MAX_STEPS; p += 4, steps++) {
+                if (looks_like_ctx((DWORD)(uintptr_t)p)) {
+                    probe_log("[scan] 候选 ctx = %08x", (DWORD)(uintptr_t)p);
+                    dump("ctx+0x5ac(弹型记录)", (DWORD)(uintptr_t)p + 0x5ac);
+                    dump("ctx+0x4e2c(序号表)", (DWORD)(uintptr_t)p + 0x4e2c);
+                    found++;
+                    if (found >= 6) break;
+                }
+            }
+            addr = end;
+            continue;
+        }
+        addr = (const BYTE *)mbi.BaseAddress + mbi.RegionSize;
+    }
+    probe_log("[scan] 结束：步数 %u，候选 %u", steps, found);
+}
+
 static void poll_once(void)
 {
     DWORD anchor, v;
+    if (g_scan_mode) {
+        DWORD now = GetTickCount();
+        if ((LONG)(now - g_scan_next) >= 0) { g_scan_next = now + 5000; scan_for_ctx(); }
+        return;
+    }
     if (!g_anchor_rva) return;
     anchor = (DWORD)(uintptr_t)(g_base + g_anchor_rva);
 
@@ -140,6 +212,7 @@ int __stdcall thcrap_plugin_init(void)
             unsigned long x;
             if (sscanf(line, "anchor_rva=0x%lx", &x) == 1) g_anchor_rva = (DWORD)x;
             else if (sscanf(line, "anchor_rva=%lx", &x) == 1) g_anchor_rva = (DWORD)x;
+            else if (sscanf(line, "scan=%d", &g_scan_mode) == 1) { /* scan 模式开关 */ }
         }
         fclose(ini);
     }
@@ -157,7 +230,8 @@ int __stdcall thcrap_plugin_init(void)
         fclose(g_log); g_log = NULL; return 1;
     }
     probe_log("[guard] 609 handler 签名匹配，确认 th19.v1.10c。");
-    probe_log("anchor_rva = 0x%x（来自 th19_probe2.ini；0 = 未配置，只打心跳）", g_anchor_rva);
+    probe_log("anchor_rva = 0x%x / scan = %d（th19_probe2.ini；都为 0 时只打心跳）",
+              g_anchor_rva, g_scan_mode);
     probe_log("字段：段表 = ctx+0x5ac → 元素 → +0x28；r=+0x00、s=+0x04；ctx = enemy+0x1230");
 
     InterlockedExchange(&g_running, 1);

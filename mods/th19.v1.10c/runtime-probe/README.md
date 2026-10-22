@@ -74,7 +74,13 @@ make            # 需要 llvm-mingw（i686）+ .def（导出无装饰的 thcrap_
 ★ 那种启动器**不是直接跑 thcrap 命令行**，所以别去猜目录名 —— ★ **以 `thcrap.dll` 为准**：
 ★ **`th19_probe2.dll` 必须和 `thcrap.dll` 在同一个文件夹**（这就是 `<thcrap>/bin`）。
 
-★★ **关键：这个 modkit 的启动器是"勾选式"的** —— 一手依据 [`mods/README.md`](../../../README.md)：
+★★ **对照实机核对（2026-10-23，`D:\项目\幻想指南\18\th19_modkit`）**：
+★ `tools\launch.ps1` 第 22–24 行是 ★ **无条件**把 `mods\*.dll` 拷进 `thcrap\bin`
+（注释原文：*"thcrap unconditionally loads every dll in thcrap\bin exporting thcrap_plugin_init"*）
+⇒ ★ ★ **DLL 没有勾选框** —— ★ 勾选式那套是给 thcrap **patch** 用的，不是给 DLL。
+★ 所以从 DLL 的角度：★ **丢进 `<modkit>\mods\` 就行，启动时自动装进 `bin\`**。
+
+★ 下面这段是**原先**的推断（保留作对照，已被上面的一手核对取代）： —— 一手依据 [`mods/README.md`](../../../README.md)：
 「`mods/*.dll` **勾选式装进 `bin/`**」、以及 `card-expand/README.md` 的「**启动器里 DLL 必勾**」。
 ⇒ ★ 所以**勾选框读的是 `<modkit>\mods\*.dll`**，★ 把 DLL 放 `bin\` 只是"绕过勾选"的兜底。
 
