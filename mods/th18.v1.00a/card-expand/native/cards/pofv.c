@@ -7074,11 +7074,10 @@ static int pofv_curve_spawn(float x, float y, float ang, int steps, int sprite_i
     uint8_t *mgr = *(uint8_t *const *)0x4cf3f4;
     uint8_t spec[0x460];
     typedef int (__attribute__((stdcall)) *ce_fn_laser_alloc_t)(int, void *);
-    if (!mgr) { ce_log("pofv: [CURVE] gate1 mgr=NULL"); return 0; }
-    if (*(int32_t *)(mgr + 0x798) >= 0x200) { ce_log("pofv: [CURVE] gate2 full=%d", (int)*(int32_t *)(mgr + 0x798)); return 0; }
-    if (steps < 1 || steps > 600) { ce_log("pofv: [CURVE] gate3 steps=%d", steps); return 0; }
-    if (sprite_id < 0x8f || sprite_id > 0x8000) { ce_log("pofv: [CURVE] gate4 sprite=%d", sprite_id); return 0; }
-    ce_log("pofv: [CURVE] gates ok mgr=%p count=%d", (void *)mgr, (int)*(int32_t *)(mgr + 0x798));
+    if (!mgr) return 0;
+    if (*(int32_t *)(mgr + 0x798) >= 0x200) return 0;
+    if (steps < 1 || steps > 600) return 0;
+    if (sprite_id < 0x8f || sprite_id > 0x8000) return 0;
     {   const uint8_t *src = mgr + 0x69c; int i;
         for (i = 0; i < 0x420; ++i) spec[i] = src[i];
         for (i = 0x420; i < 0x460; ++i) spec[i] = 0; }
