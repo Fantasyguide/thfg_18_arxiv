@@ -217,12 +217,12 @@ static void poll_once(void)
             dump_n("obj-0x08", g_follow - 0x08, 96);   /* 覆盖 obj+0x00..+0x170：位置/计数器/段数全在里头 */
             return;
         }
-        if ((LONG)(now - g_scan_next) >= 0) { g_scan_next = now + 5000; scan_for_pattern(); }
+        if ((LONG)(now - g_scan_next) >= 0) { g_scan_next = now + 500; scan_for_pattern(); }
         return;
     }
     if (g_scan_mode == 1) {
         DWORD now = GetTickCount();
-        if ((LONG)(now - g_scan_next) >= 0) { g_scan_next = now + 5000; scan_for_ctx(); }
+        if ((LONG)(now - g_scan_next) >= 0) { g_scan_next = now + 500; scan_for_ctx(); }
         return;
     }
     if (!g_anchor_rva) return;
