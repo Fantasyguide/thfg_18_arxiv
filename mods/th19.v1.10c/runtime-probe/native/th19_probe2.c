@@ -172,38 +172,54 @@ static void scan_for_pattern(void)
     const BYTE *limit = (const BYTE *)0x7fff0000;
     unsigned steps = 0;
     int hits = 0;
+    static BYTE buf[0x10000];
 
     probe_log("[pat ] 扫 %d 个特征：%08x %08x %08x %08x", g_pat_n, g_pat[0], g_pat[1], g_pat[2], g_pat[3]);
     while (addr < limit && steps < SCAN_MAX_STEPS && hits < 8) {
+        DWORD rbase, rsize, off;
         if (!VirtualQuery(addr, &mbi, sizeof(mbi))) break;
+        rbase = (DWORD)(uintptr_t)mbi.BaseAddress;
+        rsize = (DWORD)mbi.RegionSize;
         if (mbi.State == MEM_COMMIT && mbi.Type != MEM_IMAGE &&
             (mbi.Protect & (PAGE_READONLY | PAGE_READWRITE | PAGE_WRITECOPY |
                             PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY)) &&
             !(mbi.Protect & (PAGE_GUARD | PAGE_NOACCESS))) {
-            const BYTE *p = (const BYTE *)mbi.BaseAddress;
-            const BYTE *end = p + mbi.RegionSize;
-            for (; p + 4 <= end && steps < SCAN_MAX_STEPS; p += 4, steps++) {
-                { int pi; DWORD dv = *(const DWORD *)p; int hitpi = -1;
-                  for (pi = 0; pi < g_pat_n && pi < 4; pi++) {
-                      if (!g_pat[pi]) continue;
-                      if (dv == g_pat[pi] || dv == (g_pat[pi] ^ 0x80000000u)) { hitpi = pi; break; }
-                  }
-                  if (hitpi >= 0) {
-                    DWORD va = (DWORD)(uintptr_t)p;
-                    probe_log("[pat%d] 命中 %08x  = %g  (region %08x len %08x prot %08x type %08x)",
-                              hitpi, va, *(const float *)p,
-                              (DWORD)(uintptr_t)mbi.BaseAddress, (DWORD)mbi.RegionSize, mbi.Protect, mbi.Type);
-                    dump_n("hit-0x40", va - 0x40, 32);
-                    if (g_follow_on && hitpi == 0 && !g_follow) g_follow = va;
-                    hits++;
-                    if (hits >= 8) break;
-                  }
+            for (off = 0; off + 4 <= rsize && hits < 8; off += sizeof(buf)) {
+                SIZE_T got = 0;
+                DWORD n, i;
+                /* ★ 一律走 ReadProcessMemory：扫描途中该页被释放/解提交时它只返回 FALSE，
+                 * 不会像直接解引用那样就地访问违例把游戏打崩（首跑闪退的嫌疑）。 */
+                if (!ReadProcessMemory(GetCurrentProcess(), (const void *)(uintptr_t)(rbase + off),
+                                       buf, sizeof(buf), &got) || got < 4) {
+                    n = 0;
+                } else {
+                    n = (DWORD)got & ~3u;
+                }
+                for (i = 0; i + 4 <= n; i += 4) {
+                    DWORD dv = *(const DWORD *)(buf + i);
+                    int pi, hitpi = -1;
+                    steps++;
+                    if (steps >= SCAN_MAX_STEPS) break;
+                    for (pi = 0; pi < g_pat_n && pi < 4; pi++) {
+                        if (!g_pat[pi]) continue;
+                        if (dv == g_pat[pi] || dv == (g_pat[pi] ^ 0x80000000u)) { hitpi = pi; break; }
+                    }
+                    if (hitpi < 0) continue;
+                    {
+                        DWORD va = rbase + off + i;
+                        probe_log("[pat%d] 命中 %08x  = %g  (region %08x len %08x prot %08x type %08x)",
+                                  hitpi, va, *(const float *)&dv,
+                                  rbase, rsize, mbi.Protect, mbi.Type);
+                        dump_n("hit-0x40", va - 0x40, 32);
+                        if (g_follow_on && hitpi == 0 && !g_follow) g_follow = va;
+                        hits++;
+                        if (hits >= 8) break;
+                    }
                 }
             }
-            addr = end;
-            continue;
         }
-        addr = (const BYTE *)mbi.BaseAddress + mbi.RegionSize;
+        addr = (const BYTE *)(uintptr_t)(rbase + rsize);
+        if (rsize == 0) break;
     }
     probe_log("[pat ] 结束：步数 %u，命中 %d", steps, hits);
 }
