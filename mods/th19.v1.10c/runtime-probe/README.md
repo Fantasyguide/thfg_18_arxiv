@@ -74,6 +74,10 @@ make            # 需要 llvm-mingw（i686）+ .def（导出无装饰的 thcrap_
 ★ 那种启动器**不是直接跑 thcrap 命令行**，所以别去猜目录名 —— ★ **以 `thcrap.dll` 为准**：
 ★ **`th19_probe2.dll` 必须和 `thcrap.dll` 在同一个文件夹**（这就是 `<thcrap>/bin`）。
 
+★★ **关键：这个 modkit 的启动器是"勾选式"的** —— 一手依据 [`mods/README.md`](../../../README.md)：
+「`mods/*.dll` **勾选式装进 `bin/`**」、以及 `card-expand/README.md` 的「**启动器里 DLL 必勾**」。
+⇒ ★ 所以**勾选框读的是 `<modkit>\mods\*.dll`**，★ 把 DLL 放 `bin\` 只是"绕过勾选"的兜底。
+
 ★ 所以给了一个安装器：★ **`install/install_probe.bat`**（纯 ASCII，cmd 的 OEM 代码页不会乱码）
 
 ```bat
@@ -81,9 +85,12 @@ install_probe.bat "D:\项目\幻想指南\18\th19_modkit"
 ```
 
 ★ 它只做三件事，★ **不删任何文件、不改游戏 exe**：
-1. ★ 在 modkit 目录下 `dir /s /b thcrap.dll` ⇒ ★ 找到就取它的父目录当 `bin`；
-2. ★ 把 `th19_probe2.dll` 拷进那个 `bin`；
+1. ★ 在 modkit 目录下 `dir /s /b thcrap.dll` ⇒ ★ 定位 modkit 根与 `bin`；
+2. ★ **把 `th19_probe2.dll` 拷进 `<modkit>\mods\`**（★ 这样启动器的勾选列表里会出现 **`th19_probe2`**）；
+   ★ 若没有 `mods\` 目录，★ 退回直接拷 `bin\`（★ 能用，但没有勾选框）；
 3. ★ `dir /s /b th19.exe` ⇒ ★ 在游戏目录写 `th19_probe2.ini`（默认 `anchor_rva=0x0`，只打心跳）。
+
+★ 装完后：★ **启动器里把 `th19_probe2` 勾上** ⇒ ★ 它会自己把 DLL 装进 `bin\`。
 
 ★ **如果它报 "thcrap.dll not found"** ⇒ ★ 那个 modkit **不是 thcrap 加载**（可能是别的注入器），
 ★ 那这个探针就用不上 —— ★ 告诉我，我改成"独立 DLL 注入"或换别的路子。
