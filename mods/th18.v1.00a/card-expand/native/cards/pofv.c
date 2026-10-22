@@ -7966,17 +7966,12 @@ static int on_tick_2(ce_card_t *c)
      *   ⇒ ★ **完全复用正式路径** ✓（★ 不是另写一套 ✓）。
      *   ★ 与档位/蓄力**无关** ✓ —— ★ 调试键不受蓄力门槛限制 ✓（★ 正是要能"跳过条件"单独看 C3 ✓）。*/
     {
-        /* ★★★ 2026-10-21：调试键 **F9** ⇒ 试建**一条真曲线激光**（`LaserCurveInf`，桥 = `pofv_curve_spawn`）。
-         *   ★ 参数用最小最温和的一档 ✗：★ 屏幕中央偏上 (0, 300)、★ 朝上 `−π/2`、
-         *   ★ 60 步、★ sprite 902（`laser1.png` 第 5 行 品红）、★ 未知标量 `s14/s24` 先给 0（❓）。
-         *   ★ 返回序号 ⇒ ★ `0` = 被门挡下或 spec 不合法（★ 那就什么都不建，不会崩）。*/
-        static int s_dbg_f9_prev = 0;
-        const int f9 = ce_key_down(0x78) ? 1 : 0;            /* VK_F9 = 0x78 */
-        if (f9 && !s_dbg_f9_prev) {
-            const int r = pofv_curve_spawn(0.0f, 300.0f, -1.5707963f, 60, 902, 0.0f, 0.0f);
-            ce_log("pofv: [CURVE] spawn id=%d (0=失败)", r);
-        }
-        s_dbg_f9_prev = f9;
+        /* ★ 2026-10-21：曲线激光桥（试建 LaserCurveInf）**整段已撤**✗ ——
+         *   ★ owner 实跑按 T **闪退** ✗ ⇒ ★ 先保证游戏能玩 ✓。
+         *   ★ 桥本身（`pofv_curve_spawn`）也一并 revert 了 ✓；★ 以后重做时必须**先解决闪退** ✗：
+         *     ★ 可能原因 ❓：★ spec 模板 `mgr+0x69c` 不是给 Curve 用的 / `+0x14`·`+0x24` 给 0 不合法 /
+         *     ★ `0x4cf3f4` 的读法（这里用了 `*(uint8_t*const*)`）/ 调用时机不在安全上下文 ✓。
+         *   ★ 结论：★ **引擎内部对象不要从卡侧直接 new**✗ ✓（至少现在的证据是这样 ✓）。*/
         static int s_dbg_sp_prev = 0;                       /* ★ 只在按下的那一帧触发 ✓ */
         const int sp = ce_key_down(CE_VK_SPACE) ? 1 : 0;
         if (sp && !s_dbg_sp_prev) {
