@@ -60,13 +60,13 @@ static BOOL readable(const void *p, SIZE_T len)
 }
 
 /* 打印一块内存：dword + 当浮点看 */
-static void dump(const char *tag, DWORD va)
+static void dump_n(const char *tag, DWORD va, int n)
 {
     const BYTE *p = (const BYTE *)(uintptr_t)va;
     int i;
-    if (!readable(p, DUMP_DWORDS * 4)) { probe_log("  %-18s %08x 不可读", tag, va); return; }
+    if (!readable(p, n * 4)) { probe_log("  %-18s %08x 不可读", tag, va); return; }
     probe_log("  %-18s %08x :", tag, va);
-    for (i = 0; i < DUMP_DWORDS; i++) {
+    for (i = 0; i < n; i++) {
         DWORD a = *(const DWORD *)(p + i * 4);
         probe_log("    +%02x  %08x  %11d  %12.4f", i * 4, a, (int)a, *(const float *)(p + i * 4));
     }
@@ -81,7 +81,7 @@ static void dump(const char *tag, DWORD va)
  *   · +0x55c8 是一个可读指针（参数 helper 0x50c1b0 会读它）
  * 找到就把它当 ctx，打 +0x5ac（弹型记录）与 +0x4e2c（序号表）。
  * ------------------------------------------------------------------ */
-#define SCAN_MAX_STEPS  (12u * 1024u * 1024u)
+#define SCAN_MAX_STEPS  (64u * 1024u * 1024u)
 
 static BOOL looks_like_ctx(DWORD p)
 {
@@ -117,6 +117,8 @@ static BOOL looks_like_ctx(DWORD p)
     if (!any) return FALSE;
     return TRUE;
 }
+
+static void dump(const char *tag, DWORD va) { dump_n(tag, va, DUMP_DWORDS); }
 
 static void scan_for_ctx(void)
 {
@@ -167,7 +169,7 @@ static void scan_for_pattern(void)
     probe_log("[pat ] 扫 pattern=%08x ...", g_pattern);
     while (addr < limit && steps < SCAN_MAX_STEPS && hits < 8) {
         if (!VirtualQuery(addr, &mbi, sizeof(mbi))) break;
-        if (mbi.State == MEM_COMMIT &&
+        if (mbi.State == MEM_COMMIT && mbi.Type != MEM_IMAGE &&
             (mbi.Protect & (PAGE_READONLY | PAGE_READWRITE | PAGE_WRITECOPY |
                             PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY)) &&
             !(mbi.Protect & (PAGE_GUARD | PAGE_NOACCESS))) {
@@ -177,10 +179,10 @@ static void scan_for_pattern(void)
                 if (*(const DWORD *)p == g_pattern ||
                     *(const DWORD *)p == (g_pattern ^ 0x80000000u)) {
                     DWORD va = (DWORD)(uintptr_t)p;
-                    probe_log("[pat ] 命中 %08x  = %g  (region %08x len %08x prot %08x)",
+                    probe_log("[pat ] 命中 %08x  = %g  (region %08x len %08x prot %08x type %08x)",
                               va, *(const float *)p,
-                              (DWORD)(uintptr_t)mbi.BaseAddress, (DWORD)mbi.RegionSize, mbi.Protect);
-                    dump("hit-0x40", va - 0x40);
+                              (DWORD)(uintptr_t)mbi.BaseAddress, (DWORD)mbi.RegionSize, mbi.Protect, mbi.Type);
+                    dump_n("hit-0x40", va - 0x40, 32);
                     hits++;
                     if (hits >= 8) break;
                 }
