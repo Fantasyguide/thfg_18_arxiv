@@ -288,6 +288,9 @@ static void *rb_surface_tex(void *surf)
  *   tex = [p4 + i2*0x18]
  * 每一步都先校验可读；解不出来就把卡在哪一步写进日志（绝不硬调）。
  */
+static float rb_uv_u0, rb_uv_v0, rb_uv_du = 1.0f, rb_uv_dv = 1.0f;   /* sprite 的 UV 矩形（条目 +36..+48） */
+static int   rb_uv_ok;
+
 static void *rb_tex_of_vm(BYTE *vm, const char *tag)
 {
     BYTE *mgr;
@@ -325,6 +328,17 @@ static void *rb_tex_of_vm(BYTE *vm, const char *tag)
     if (!p4 || !rb_rd(p4 + (SIZE_T)i2 * 0x18, 4)) { rb_logf("[贴图] %s：第7步 p4=%p", tag, (void *)p4); return NULL; }
     tex = *(void **)(p4 + (SIZE_T)i2 * 0x18);
     rb_logf("[贴图] %s：组=%u 索引=%u → handle=%08x → 纹理 %p", tag, grp, idx, handle, tex);
+    /* ★ 顺手记下 sprite 的 UV 矩形：条目 +36/+40/+44/+48 是**预计算好**的 u0,v0,du,dv
+     *   （实跑一手：x=116 y=4 w=524 h=476、图集 960×1280 ⇒ u0=116/1280 v0=4/960 du=524/1280 dv=476/960） */
+    {   BYTE *e = p2 + (SIZE_T)idx * 68;
+        float u0 = *(float *)(e + 0x24), v0 = *(float *)(e + 0x28);
+        float du = *(float *)(e + 0x2c), dv = *(float *)(e + 0x30);
+        if (du > 0.0f && du <= 1.0f && dv > 0.0f && dv <= 1.0f &&
+            u0 >= 0.0f && u0 < 1.0f && v0 >= 0.0f && v0 < 1.0f) {
+            rb_uv_u0 = u0; rb_uv_v0 = v0; rb_uv_du = du; rb_uv_dv = dv; rb_uv_ok = 1;
+            rb_logf("[光晕] sprite UV 矩形 = u0=%.4f v0=%.4f du=%.4f dv=%.4f", (double)u0, (double)v0, (double)du, (double)dv);
+        }
+    }
     /*
      * ★ 把那条 68 字节的 sprite 条目**原样转储**：贴图里的 u/v/w/h（sprite 矩形）就在里面，
      *   字段位置未知 ⇒ 先看数（float 与 int 各解一遍），才能把"光晕 sprite 的 UV 矩形"写对。
@@ -606,7 +620,12 @@ static void rb_draw_grid(void *dev, void **vt, void *tex, int use_halo,
             rb_world_to_screen(wx + dx, wy + dy, &pxs, &pys);
             pxs += off_x; pys += off_y;
 
-            if (use_halo == 2) {
+            if (use_halo == 3 && rb_uv_ok) {
+                /* ★ 光晕测试：把 sprite 的 UV 矩形**铺满**圆盘 ⇒ 直接看清那张贴图是什么
+                 *   （一手：条目 +36/+40/+44/+48 是预计算好的 u0,v0,du,dv） */
+                u = rb_uv_u0 + (float)i / (float)(NN - 1) * rb_uv_du;
+                v = rb_uv_v0 + (float)j / (float)(NN - 1) * rb_uv_dv;
+            } else if (use_halo == 2) {
                 /* ★ 整图 UV（0..1）：用来回答"这张纹理到底是什么" —— 若是光晕，会看到完整的环/光斑 */
                 u = (float)i / (float)(NN - 1);
                 v = (float)j / (float)(NN - 1);
@@ -982,8 +1001,8 @@ static void rb_draw(void)
                 rb_power = pwsave;
             } else if (rb_mode == 5) {   /* mode 5：光晕纹理 + 整图 UV（"这张纹理是什么"） */
                 rb_draw_grid(dev, vt, use_tex, 2, px, py, rb_radius, 0.0f, 0.0f);
-            } else {   /* mode 3：光晕纹理 + 屏幕 UV（照引擎那套） */
-                rb_draw_grid(dev, vt, use_tex, 1, px, py, rb_radius, 0.0f, 0.0f);
+            } else {   /* mode 3：光晕纹理 + sprite 矩形 UV（看清这张贴图） */
+                rb_draw_grid(dev, vt, use_tex, 3, px, py, rb_radius, 0.0f, 0.0f);
             }
             if (rb_two) {                     /* ★ 第二份：优先画在**敌方那个圆盘**上 */
                 int uv = (rb_mode == 5) ? 2 : (rb_mode == 3);
