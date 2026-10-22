@@ -1503,3 +1503,33 @@ script script145 { ins_302(1); ins_100([10000], 0); ins_300(sprite524); ins_3();
 
 ★ ❗ ★ **这一步是把"读错引擎"纠正过来** —— ★ 前面 §16–§23 关于 TH18 激光对象的结论**仍然是一手**（对象/段/分配器/音效 id/判定尺寸），
 ★ 但 **"曲线的转弯与长度"必须去 TH19 读**，★ 不能再用 TH18 推。
+
+## 25. ★ TH19 侧：激光类的 RTTI / vtable 已定位（一手）
+
+★ 用与 §1 同样的方法（RTTI 名 → TypeDescriptor → COL → vtable）在 `th19.exe`（md5 见 `games/th19/INDEX.md`）里：
+
+| 类 | TypeDescriptor | COL | **vtable** |
+| --- | --- | --- | --- |
+| ★ `LaserCurveInf` | `0x5cf118` | `0x5afe7c`／`0x5afefc` | ★ ★ **`0x5a87cc`** |
+| `LaserLineInf` | `0x5cf134` | `0x5aff04`／`0x5aff48` | `0x5a885c` |
+| `LaserInfiniteInf` | `0x5cf0f8` | `0x5afe60`／`0x5afee8` | `0x5a873c` |
+| `LaserBeamInf` | `0x5cf0dc` | `0x5afe44`／`0x5afed4` | `0x5a86ac` |
+
+★ `LaserCurveInf` 的 16 个槽（一手直读）：
+```
++0x00 0x416160  +0x04 0x4159a0  +0x08 0x525d50  +0x0c 0x416190
++0x10 0x5279d0  +0x14 0x5286c0  +0x18 0x527ef0  +0x1c 0x527e40
++0x20 0x526990  +0x24 0x5284a0  +0x28 0x524ba0  +0x2c 0x524fc0
++0x30 0x524930  +0x34 0x5246a0  +0x38 0x525270  +0x3c 0x524160
+```
+
+★★ **但槽位含义与 TH18 不同**（一手反证）：★ `+0x0c = 0x416190` 只是 `ret 4`（空桩），
+★ 而在 TH18 里 `+0x0c` 是 `initialize` ⇒ ★ **TH19 的槽位布局与 TH18 不一致**，★ **不能直接照搬 §16 的映射**。
+
+★ 另：TH19 里**搜不到** TH18 那个 `mov ecx,0x118 ; rep movs`（spec 拷贝 0x460 字节）的模式
+⇒ ★ TH19 的 spec 尺寸/拷贝方式也不同。
+
+★ ❓ 下一步（TH19 侧）：
+1. ★ 由 `+0x00`/`+0x04` 两个槽（`0x416160`／`0x4159a0`）反推真正的 `run_ex`/`initialize`；
+2. ★ 或在 `th19.exe` 里搜"谁写 `609` 段表 `+0x00/+0x04`"（一手：TH19 的 `609` handler `0x5027a3` 落段表），
+★ 再顺着段表消费者找"角增量"字段 —— ★ 这条路**不依赖** TH18/TH19 的槽位对照。
