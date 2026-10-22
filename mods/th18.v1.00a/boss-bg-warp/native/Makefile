@@ -25,6 +25,7 @@ $(TARGET): $(SRC) $(DEF)
 # 把源码里写死的 RVA / 签名字节 / 结构偏移拿去和真 exe 逐字节对账（换 build 后先跑这个）
 check:
 	python3 check_constants.py
+	python3 check_d3d.py
 
 verify: $(TARGET)
 	@echo "--- 位数 / 类型 ---"

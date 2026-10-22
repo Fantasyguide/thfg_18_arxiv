@@ -283,8 +283,8 @@ static void *rb_surface_tex(void *surf)
 {
     void *tex = NULL;
     if (!rb_surf_ready(surf)) return NULL;
-    {   void **vt = *(void ***)surf;
-        ((long (__stdcall *)(void *, const void *, void **))vt[11])(surf, RB_IID_TEX, &tex);
+    {   void **svt = *(void ***)surf;      /* 面（surface）的 vtable —— 叫 svt 让静态检查认得出接口 */
+        ((long (__stdcall *)(void *, const void *, void **))svt[11])(surf, RB_IID_TEX, &tex);
     }
     return tex;
 }
@@ -663,78 +663,6 @@ static void rb_dump_lenses(const char *why)
     }
 }
 
-/*
- * ★ 屏幕副本（第 1 小步：只"建纹理 + 校验"，不改画面）
- *
- * 为什么要它：我们现在**直接采当前渲染目标** ⇒ D3D9 每次都要做一次隐式整屏拷贝
- *   ⇒ 实测每份绘制 +10~20 ms（两份 ⇒ 27~37 ms），而且会采到"半帧/上一帧"的内容（叠影）。
- * 做法（第 2 小步才接）：帧末（引擎 EndScene 之后）用 StretchRect 把 RT 拷进这张普通纹理，
- *   我们的网格改采它 ⇒ 不再有隐式拷贝、也不再采到不干净的帧。
- *
- * 本小步只验证：CreateTexture(A8R8G8B8, RENDERTARGET, DEFAULT) + GetSurfaceLevel 能不能成。
- */
-static void *rb_copy_tex, *rb_copy_surf;
-static unsigned rb_copy_w, rb_copy_h;
-static int   rb_copy_failed, rb_copy_logged;
-
-#define RB_D3DUSAGE_RENDERTARGET 0x1u
-#define RB_D3DFMT_A8R8G8B8       21u
-#define RB_D3DPOOL_DEFAULT       0u
-
-static void rb_release(void *obj)
-{
-    if (!obj || !rb_rd(obj, 0x10)) return;
-    {   void **vt = *(void ***)obj;
-        if (vt && rb_rd(vt + 3, 4) && rb_code((const void *)vt[2]))
-            ((unsigned (__stdcall *)(void *))vt[2])(obj);   /* IUnknown::Release = index 2 */
-    }
-}
-
-static void rb_ensure_copy_tex(void *dev, void **vt, unsigned w, unsigned h)
-{
-    long hr;
-    void *tex = NULL, *surf = NULL;
-    if (rb_copy_failed || !dev || !vt || !w || !h) return;
-    if (rb_copy_tex && rb_copy_w == w && rb_copy_h == h) return;   /* 已有且尺寸对 */
-    if (!rb_code((const void *)vt[0x17])) { rb_copy_failed = 1; rb_logf("[副本] ★ vt[0x17](CreateTexture) 非代码 ⇒ 放弃"); return; }
-
-    if (rb_copy_tex) { rb_release(rb_copy_surf); rb_release(rb_copy_tex); rb_copy_tex = rb_copy_surf = NULL; }
-
-    /* CreateTexture(Width, Height, Levels=1, Usage=RENDERTARGET, Fmt=A8R8G8B8, Pool=DEFAULT, &tex, NULL) */
-    hr = ((long (__stdcall *)(void *, unsigned, unsigned, unsigned, unsigned, unsigned,
-                              unsigned, void **, void *))vt[0x17])
-         (dev, w, h, 1u, RB_D3DUSAGE_RENDERTARGET, RB_D3DFMT_A8R8G8B8, RB_D3DPOOL_DEFAULT, &tex, NULL);
-    if (hr != 0 || !tex) {
-        rb_copy_failed = 1;
-        rb_logf("[副本] ★ CreateTexture 失败 hr=0x%08x（%ux%u）⇒ 回退为直接采 RT", (unsigned)hr, w, h);
-        return;
-    }
-    {   void **tvt = *(void ***)tex;
-        if (!tvt || !rb_rd(tvt + 16, 4) || !rb_code((const void *)tvt[15])) {
-            rb_copy_failed = 1;
-            rb_logf("[副本] ★ 纹理 vtable 不可用 ⇒ 放弃");
-            rb_release(tex);
-            return;
-        }
-        /* ★ IDirect3DTexture9 vtable：11 SetLOD / 12 GetLOD / 13 GetLevelCount() /
-         *   14 GetLevelDesc(desc*) / **15 GetSurfaceLevel(level, ppSurface)**。
-         *   曾经错写成 13（= GetLevelCount，不收参数）却按 2 个参数调 ⇒ stdcall 栈不平衡 ⇒ 返回地址被踩 ⇒ 崩。 */
-        hr = ((long (__stdcall *)(void *, unsigned, void **))tvt[15])(tex, 0u, &surf);
-    }
-    if (hr != 0 || !surf) {
-        rb_copy_failed = 1;
-        rb_logf("[副本] ★ GetSurfaceLevel 失败 hr=0x%08x ⇒ 放弃", (unsigned)hr);
-        rb_release(tex);
-        return;
-    }
-    rb_copy_tex = tex; rb_copy_surf = surf; rb_copy_w = w; rb_copy_h = h;
-    if (!rb_copy_logged) {
-        rb_copy_logged = 1;
-        rb_logf("[副本] ✓ 屏幕副本纹理已建：%ux%u tex=%p surf=%p（下一步才接 StretchRect）",
-                w, h, tex, surf);
-    }
-}
-
 /* ================= 绘制 ================= */
 
 static void rb_get_vp(void *dev, void **vt)
@@ -1040,8 +968,6 @@ static void rb_draw(void)
         if (hr != 0) {
             rb_dev_settle = 0;
             rb_scene_tex = NULL; rb_halo_tex = NULL; rb_last_good_surf = NULL;
-        rb_release(rb_copy_surf); rb_release(rb_copy_tex); rb_copy_tex = rb_copy_surf = NULL;
-        rb_copy_w = rb_copy_h = 0; rb_copy_failed = 0; rb_copy_logged = 0;
             if (!rb_logged_lost) {
                 rb_logged_lost = 1;
                 rb_logf("[设备] TestCooperativeLevel=0x%08x ⇒ 设备丢失/待重置，停止绘制并清缓存", (unsigned)hr);
@@ -1053,7 +979,6 @@ static void rb_draw(void)
 
     if (!rb_logged_desc) {
         rb_logged_desc = 1;
-        rb_ensure_copy_tex(dev, vt, 1280u, 960u);
         rb_dump_lenses("首帧");
         surf = rb_pick_surface(dev, vt);
         if (surf && rb_rd(surf, 0x40)) {
