@@ -33173,3 +33173,15 @@ owner 给了上面的口径后**改成精确事件**（commit `65c0e178`，本�
   · 按 R 重开同一张符 ⇒ 108 从手上消失（`reset_cards` 从存档练习槽重建卡组），日志出现**一次**
     `... gone (reset_cards after retry) - NOT re-granted`，而**不会**再出现 `practice auto-equip 108 (…)`；
   · 普通关卡 ⇒ 一行都没有（`yk_practice_is_spell()` 先看 `0x4ccd14 < 0` 就返回 0）。
+
+## §BE-109-20261022 ★ 早苗 C3 运动学重写（含共享脚本改动）
+
+- **文件 → 改了什么**：`assets/ability/scripts/465_pofv109_c3s_orb.anm.txt` 的 `scale(0.1171875, 0.875)`
+  → `scale(0.03125, 0.5)`（256×16 ⇒ 场上 **8×8**）。
+- **为什么**：owner 2026-10-22「先把运动学把握准，贴图先用"啥都不是"的近似」——
+  把贴图压成 8×8 占位，实跑时只观察运动。
+- **谁改的**：另一个 agent（提交 `535daac5`），复核人：本 agent。
+- **对既有卡的影响面**：`465` 只被卡 109 的 `pofv_c3s_*` 引用（`CE_ANM_ABILITY_SCRIPT_POFV109_C3S_ORB`），
+  没有别的卡用它 ⇒ **影响面 = 卡 109 自己**；但按 `CLAUDE.md` 规矩 `assets/ability/scripts/**` 属共享件 ⇒ 必须登记。
+- **怎么验证的**：`make rc=0` + `make dev` 全绿；owner 实跑看运动（不走贴图判断）。
+- **注意**：这是**临时占位**，运动学定稿后要换回正式外观（会再登记一次）。
