@@ -453,6 +453,25 @@ static BYTE *rb_find_mesh_vm(int *out_cols)
  *   坐标是"网格空间" = 世界 + (640,256)）⇒ 把所有这类 VM 的缓冲扫一遍取包围盒
  *   ⇒ 中心/半径就出来了。链表是引擎的 ⇒ **必须封顶**。
  */
+static int rb_enemy_disc(float *cx, float *cy, float *R, int *n_vm);   /* 前置声明 */
+static unsigned rb_enemy_tick;
+static int      rb_enemy_cached;
+static float    rb_enemy_cx, rb_enemy_cy, rb_enemy_r;
+
+/* ★ 带 30 帧缓存的包装：每帧调用 2 次 → 每 30 帧真正扫 1 次 */
+static int rb_enemy_disc_cached(float *cx, float *cy, float *R, int *n_vm)
+{
+    if (!rb_enemy_cached || (rb_frames - rb_enemy_tick) >= 30) {
+        rb_enemy_tick = rb_frames;
+        rb_enemy_cached = rb_enemy_disc(&rb_enemy_cx, &rb_enemy_cy, &rb_enemy_r, n_vm);
+    } else if (n_vm) {
+        *n_vm = 0;
+    }
+    if (!rb_enemy_cached) return 0;
+    *cx = rb_enemy_cx; *cy = rb_enemy_cy; *R = rb_enemy_r;
+    return 1;
+}
+
 static int rb_enemy_disc(float *cx, float *cy, float *R, int *n_vm)
 {
     BYTE *mgr;
@@ -785,6 +804,7 @@ static void *rb_pick_surface(void *dev, void **vt)
     void *surf = rb_rd(rb_base + (rb_surf ? RVA_SURF_A : RVA_SURF_B), 4)
                ? *(void **)(rb_base + (rb_surf ? RVA_SURF_A : RVA_SURF_B)) : NULL;
     void *rt = NULL;
+    if (!rb_avoid_rt) return surf;                  /* ★ 不换面时**连 GetRenderTarget 都不调**（每帧省一次 D3D 调用） */
     if (vt && rb_rd(vt + 0x27, 4) && rb_code((const void *)vt[0x26])) {
         /* ★ IDirect3DDevice9::GetRenderTarget(RenderTargetIndex, ppRenderTarget) —— **两个参数**。
          *   这里曾经只传了 (dev, &rt) ⇒ 少一个 ⇒ d3d9 把栈上的垃圾当 ppSurface 写 ⇒ 崩
@@ -1014,7 +1034,7 @@ static void rb_draw(void)
             if (rb_overlap && (rb_frames % 30) == 0) {
                 int nv = 0;
                 float ecx, ecy, eR;
-                rb_ov_ok = rb_enemy_disc(&ecx, &ecy, &eR, &nv) && eR > 8.0f;
+                rb_ov_ok = rb_enemy_disc_cached(&ecx, &ecy, &eR, &nv) && eR > 8.0f;
                 if (rb_ov_ok) { rb_ov_cx = ecx; rb_ov_cy = ecy; rb_ov_r = eR; }
                 if (!rb_logged_ov) {
                     rb_logged_ov = 1;
@@ -1029,7 +1049,7 @@ static void rb_draw(void)
                 if (rb_radius_auto) {
                     float ex2, ey2;
                     int nv2 = 0;
-                    if (rb_enemy_disc(&ex2, &ey2, &eR2, &nv2) && eR2 > 8.0f) {
+                    if (rb_enemy_disc_cached(&ex2, &ey2, &eR2, &nv2) && eR2 > 8.0f) {
                         if (!rb_logged_enemy) {
                             rb_logged_enemy = 1;
                             rb_logf("[敌方] 半径跟敌方：R=%.1f（由 %d 台 VM 反推）", (double)eR2, nv2);
@@ -1089,6 +1109,16 @@ done_states_early:
     }
     rb_frames++;
     rb_drawn++;
+    {   /* ★ 实测耗时：每 300 次画算一次平均（下次判断"是不是我们拖慢"靠这个，不靠猜） */
+        static DWORD t_last; static unsigned n_last;
+        DWORD now = GetTickCount();
+        if (t_last && rb_drawn - n_last >= 300) {
+            double ms = (double)(now - t_last) / (double)(rb_drawn - n_last);
+            rb_logf("[耗时] 我们每次绘制平均 %.2f ms（%.1f fps 上限）", ms, ms > 0 ? 1000.0 / ms : 0.0);
+            t_last = now; n_last = rb_drawn;
+        }
+        if (!t_last) { t_last = now; n_last = rb_drawn; }
+    }
     if (rb_log_every && (rb_drawn % rb_log_every) == 0)
         rb_logf("[画] 第 %u 次（模式 %d，源纹理 %p，光晕纹理 %p，两份=%d，N=%d，R=%.0f 强度=%.2f）",
                 rb_drawn, rb_mode, tex, rb_halo_tex, rb_two, rb_n, (double)rb_radius, (double)rb_power);
