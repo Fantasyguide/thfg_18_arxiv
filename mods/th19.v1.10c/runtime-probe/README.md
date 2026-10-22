@@ -68,3 +68,22 @@ make            # 需要 llvm-mingw（i686）+ .def（导出无装饰的 thcrap_
 
 * 产物必须是 **32 位**（thcrap 会拒绝位数不符）；
 * `.def` 里 `thcrap_plugin_init` **绝不能带装饰**（`@0` 之类）—— thcrap 在 LoadLibrary 之前就扫 PE 导出表。
+
+## ★ 装到 modkit（owner 用的是「启动TH19mod.bat」那套 modkit）
+
+★ 那种启动器**不是直接跑 thcrap 命令行**，所以别去猜目录名 —— ★ **以 `thcrap.dll` 为准**：
+★ **`th19_probe2.dll` 必须和 `thcrap.dll` 在同一个文件夹**（这就是 `<thcrap>/bin`）。
+
+★ 所以给了一个安装器：★ **`install/install_probe.bat`**（纯 ASCII，cmd 的 OEM 代码页不会乱码）
+
+```bat
+install_probe.bat "D:\项目\幻想指南\18\th19_modkit"
+```
+
+★ 它只做三件事，★ **不删任何文件、不改游戏 exe**：
+1. ★ 在 modkit 目录下 `dir /s /b thcrap.dll` ⇒ ★ 找到就取它的父目录当 `bin`；
+2. ★ 把 `th19_probe2.dll` 拷进那个 `bin`；
+3. ★ `dir /s /b th19.exe` ⇒ ★ 在游戏目录写 `th19_probe2.ini`（默认 `anchor_rva=0x0`，只打心跳）。
+
+★ **如果它报 "thcrap.dll not found"** ⇒ ★ 那个 modkit **不是 thcrap 加载**（可能是别的注入器），
+★ 那这个探针就用不上 —— ★ 告诉我，我改成"独立 DLL 注入"或换别的路子。
