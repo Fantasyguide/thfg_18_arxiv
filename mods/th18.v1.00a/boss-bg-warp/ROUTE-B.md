@@ -100,6 +100,16 @@ bgwarp_set(0, 0, 0, 0);                       /* C4 结束 / on_delete（本仓�
 | +0x164 | `SetFVF(fvf)` | 2 | |
 | 面 +0x2C / +0x30 | `GetContainer(riid,ppContainer)` / `GetDesc(pDesc)` | 3 / 2 | |
 
+### 纹理 / 设备侧（2026-10-22 又踩一次）
+
+| 槽 | 方法 | 参数（含 this） | 曾错 |
+| --- | --- | --- | --- |
+| 设备 +0x5C | `CreateTexture(w,h,levels,usage,fmt,pool,ppTex,pShared)` | **9** | ✓ |
+| 纹理 **15** | `GetSurfaceLevel(level, ppSurface)` | **3** | ★ 曾错写成 **13**（= `GetLevelCount()`，**不收参数**）却按 2 参数调 ⇒ stdcall 栈不平衡 ⇒ 返回地址被踩 ⇒ 崩 |
+| 纹理 14 | `GetLevelDesc(pDesc)` | 2 | — |
+| 纹理 13 | `GetLevelCount()` | **1** | — |
+| 任意 COM 2 | `Release()` | **1** | — |
+
 ⇒ **改任何一处 D3D 调用，先照这张表数参数**（本类错误已犯 2 次：GetTextureStageState、GetRenderTarget）。
 
 ## 四条血泪教训（都踩过）
