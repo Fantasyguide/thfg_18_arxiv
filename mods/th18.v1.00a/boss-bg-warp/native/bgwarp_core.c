@@ -594,6 +594,75 @@ static void rb_dump_vms(const char *why)
     rb_logf("[VM链] %s：共 %d 台（上面列了前 %d 台）", why, total, shown);
 }
 
+/*
+ * ★ 第 1 步（只读）：枚举"当前有几个扭曲透镜"。
+ *   判据：网格段 VM（`+0x5c8` 非空、`+0x5cc % 56 == 0`），按 **`+0x5fc`（mesh 反指针）分组** ——
+ *   一个 mesh = 一个透镜。每组用它的顶点缓冲算包围盒 ⇒ 圆心/半径（网格空间 = 世界 + (640,256)）。
+ *   目的：确认"两个 629 ⇒ 两个 mesh ⇒ 两个透镜"能被我们正确识别，再往下做融合。
+ */
+static void rb_dump_lenses(const char *why)
+{
+    BYTE *mgr;
+    int li, ngrp = 0;
+    struct grp { BYTE *mesh; int n_vm; float minx, miny, maxx, maxy; } g[16];
+    if (!rb_rd(rb_base + RVA_ANM_MGR, 4)) return;
+    mgr = *(BYTE **)(rb_base + RVA_ANM_MGR);
+    if (!mgr) return;
+    memset(g, 0, sizeof g);
+    for (li = 0; li < 2 && ngrp < 16; li++) {
+        BYTE *node;
+        int budget = 4096;
+        if (!rb_rd(mgr + VM_LIST_1 + li * 8, 4)) continue;
+        node = *(BYTE **)(mgr + VM_LIST_1 + li * 8);
+        while (node && budget-- > 0) {
+            BYTE *vm, *buf, *mesh;
+            unsigned sz;
+            if (!rb_rd(node, 8)) break;
+            vm   = *(BYTE **)(node + 0);
+            node = *(BYTE **)(node + 4);
+            if (!vm || !rb_rd(vm, 0x600)) continue;
+            sz  = *(unsigned *)(vm + 0x5cc);
+            buf = *(BYTE **)(vm + 0x5c8);
+            if (!buf || sz < 34 * 28 || sz > 64 * 28 || (sz % 56) != 0) continue;
+            if (!rb_rd(buf, sz)) continue;
+            mesh = *(BYTE **)(vm + 0x5fc);
+            {   int gi, found = -1;
+                for (gi = 0; gi < ngrp; gi++) if (g[gi].mesh == mesh) { found = gi; break; }
+                if (found < 0) {
+                    if (ngrp >= 16) continue;
+                    found = ngrp++;
+                    g[found].mesh = mesh; g[found].n_vm = 0;
+                    g[found].minx = g[found].miny = 1e30f;
+                    g[found].maxx = g[found].maxy = -1e30f;
+                }
+                g[found].n_vm++;
+                {   int k, nv = (int)(sz / 28);
+                    for (k = 0; k < nv; k++) {
+                        float x = *(float *)(buf + k * 28 + 0), y = *(float *)(buf + k * 28 + 4);
+                        if (!(x == x) || !(y == y) || fabsf(x) > 4000.0f || fabsf(y) > 4000.0f) continue;
+                        if (x < g[found].minx) g[found].minx = x;
+                        if (x > g[found].maxx) g[found].maxx = x;
+                        if (y < g[found].miny) g[found].miny = y;
+                        if (y > g[found].maxy) g[found].maxy = y;
+                    }
+                }
+            }
+        }
+    }
+    rb_logf("[透镜] %s：共 %d 个（按 mesh 分组）", why, ngrp);
+    {   int gi;
+        for (gi = 0; gi < ngrp; gi++) {
+            if (g[gi].maxx <= g[gi].minx) { rb_logf("   #%d mesh=%p VMs=%d（无有效顶点）", gi, g[gi].mesh, g[gi].n_vm); continue; }
+            rb_logf("   #%d mesh=%p VMs=%d 世界圆心=(%.1f,%.1f) R=%.1f",
+                    gi, g[gi].mesh, g[gi].n_vm,
+                    (double)(0.5f * (g[gi].minx + g[gi].maxx) - 640.0f),
+                    (double)(0.5f * (g[gi].miny + g[gi].maxy) - 256.0f),
+                    (double)(0.5f * ((g[gi].maxx - g[gi].minx) > (g[gi].maxy - g[gi].miny)
+                                     ? (g[gi].maxx - g[gi].minx) : (g[gi].maxy - g[gi].miny))));
+        }
+    }
+}
+
 /* ================= 绘制 ================= */
 
 static void rb_get_vp(void *dev, void **vt)
@@ -910,6 +979,7 @@ static void rb_draw(void)
 
     if (!rb_logged_desc) {
         rb_logged_desc = 1;
+        rb_dump_lenses("首帧");
         surf = rb_pick_surface(dev, vt);
         if (surf && rb_rd(surf, 0x40)) {
             struct { unsigned fmt, type, usage, pool, multi, msq, w, h; } d;
@@ -1123,6 +1193,7 @@ done_states_early:
     if (rb_log_every && (rb_drawn % rb_log_every) == 0)
         rb_logf("[画] 第 %u 次（模式 %d，源纹理 %p，光晕纹理 %p，两份=%d，N=%d，R=%.0f 强度=%.2f）",
                 rb_drawn, rb_mode, tex, rb_halo_tex, rb_two, rb_n, (double)rb_radius, (double)rb_power);
+    if (rb_log_every && rb_drawn && (rb_drawn % 120) == 0) rb_dump_lenses("周期");
     if (!rb_logged_grid) {
         rb_logged_grid = 1;
         rb_logf("[网格] N=%d R=%.0f fade=%.2f 视口=%.0f,%.0f %.0fx%.0f", rb_n, (double)rb_radius,
