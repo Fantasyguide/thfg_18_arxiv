@@ -55,7 +55,7 @@ static int      rb_surf;              /* ini surf：0=[0x4ccfa0] 1=[0x4ccf9c] */
 static int      rb_n        = 33;     /* 网格分辨率（奇数 3..65） */
 static float    rb_shift    = 64.0f;  /* M1 平移像素 */
 static float    rb_fade     = 0.15f;  /* 圆盘外圈羽化比例 */
-static float    rb_radius   = 160.0f; /* 网格半径（世界单位） */
+static float    rb_radius   = 112.0f; /* 网格半径（世界单位）★ 一手阈值 [stage+0x3414] = 112.0f；原 160 明显大于 boss 那个盘 */
 /*
  * ini radius_auto：**默认 0**。
  *   ★ 为什么默认关（owner 2026-10-21 指出）：boss 的 VM 网格**随时可能创建/销毁**（光环出现/消失），
