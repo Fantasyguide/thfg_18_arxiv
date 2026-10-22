@@ -31,7 +31,8 @@ static BYTE *g_base;
 static DWORD g_anchor_rva = 0;     /* ini 里配；0 = 未配置 */
 static int   g_scan_mode  = 0;     /* ini: scan=1 ⇒ 主动搜 ctx */
 static DWORD g_scan_next  = 0;     /* 下次扫描时间 */
-static DWORD g_pattern     = 0;    /* ini: pattern=0xXXXXXXXX ⇒ scan=2 用的 dword 特征 */
+static DWORD g_pat[3]      = {0, 0, 0};  /* ini: pattern / pattern2 / pattern3 */
+static int   g_pat_n       = 0;
 static DWORD g_follow      = 0;    /* scan=2 找到的第一个命中：之后每轮盯着它打 */
 static int   g_follow_on   = 0;    /* ini: follow=1 */
 
@@ -168,7 +169,7 @@ static void scan_for_pattern(void)
     unsigned steps = 0;
     int hits = 0;
 
-    probe_log("[pat ] 扫 pattern=%08x ...", g_pattern);
+    probe_log("[pat ] 扫 %d 个特征：%08x %08x %08x ...", g_pat_n, g_pat[0], g_pat[1], g_pat[2]);
     while (addr < limit && steps < SCAN_MAX_STEPS && hits < 8) {
         if (!VirtualQuery(addr, &mbi, sizeof(mbi))) break;
         if (mbi.State == MEM_COMMIT && mbi.Type != MEM_IMAGE &&
@@ -178,16 +179,21 @@ static void scan_for_pattern(void)
             const BYTE *p = (const BYTE *)mbi.BaseAddress;
             const BYTE *end = p + mbi.RegionSize;
             for (; p + 4 <= end && steps < SCAN_MAX_STEPS; p += 4, steps++) {
-                if (*(const DWORD *)p == g_pattern ||
-                    *(const DWORD *)p == (g_pattern ^ 0x80000000u)) {
+                { int pi; DWORD dv = *(const DWORD *)p; int hitpi = -1;
+                  for (pi = 0; pi < g_pat_n; pi++) {
+                      if (!g_pat[pi]) continue;
+                      if (dv == g_pat[pi] || dv == (g_pat[pi] ^ 0x80000000u)) { hitpi = pi; break; }
+                  }
+                  if (hitpi >= 0) {
                     DWORD va = (DWORD)(uintptr_t)p;
-                    probe_log("[pat ] 命中 %08x  = %g  (region %08x len %08x prot %08x type %08x)",
-                              va, *(const float *)p,
+                    probe_log("[pat%d] 命中 %08x  = %g  (region %08x len %08x prot %08x type %08x)",
+                              hitpi, va, *(const float *)p,
                               (DWORD)(uintptr_t)mbi.BaseAddress, (DWORD)mbi.RegionSize, mbi.Protect, mbi.Type);
                     dump_n("hit-0x40", va - 0x40, 32);
-                    if (g_follow_on && !g_follow) g_follow = va;
+                    if (g_follow_on && hitpi == 0 && !g_follow) g_follow = va;
                     hits++;
                     if (hits >= 8) break;
+                  }
                 }
             }
             addr = end;
@@ -286,7 +292,9 @@ int __stdcall thcrap_plugin_init(void)
             if (sscanf(line, "anchor_rva=0x%lx", &x) == 1) g_anchor_rva = (DWORD)x;
             else if (sscanf(line, "anchor_rva=%lx", &x) == 1) g_anchor_rva = (DWORD)x;
             else if (sscanf(line, "scan=%d", &g_scan_mode) == 1) { /* scan 模式开关 */ }
-            else if (sscanf(line, "pattern=0x%lx", &x) == 1) g_pattern = (DWORD)x;
+            else if (sscanf(line, "pattern=0x%lx", &x) == 1)  { g_pat[0] = (DWORD)x; }
+            else if (sscanf(line, "pattern2=0x%lx", &x) == 1) { g_pat[1] = (DWORD)x; }
+            else if (sscanf(line, "pattern3=0x%lx", &x) == 1) { g_pat[2] = (DWORD)x; }
             else if (sscanf(line, "follow=%d", &g_follow_on) == 1) { /* 命中后持续跟踪 */ }
         }
         fclose(ini);
@@ -305,8 +313,10 @@ int __stdcall thcrap_plugin_init(void)
         fclose(g_log); g_log = NULL; return 1;
     }
     probe_log("[guard] 609 handler 签名匹配，确认 th19.v1.10c。");
-    probe_log("anchor_rva = 0x%x / scan = %d / pattern = %08x / follow = %d",
-              g_anchor_rva, g_scan_mode, g_pattern, g_follow_on);
+    g_pat_n = 0;
+    { int i; for (i = 0; i < 3; i++) if (g_pat[i]) g_pat_n = i + 1; }
+    probe_log("anchor_rva = 0x%x / scan = %d / pat = %08x %08x %08x / follow = %d",
+              g_anchor_rva, g_scan_mode, g_pat[0], g_pat[1], g_pat[2], g_follow_on);
     probe_log("字段：段表 = ctx+0x5ac → 元素 → +0x28；r=+0x00、s=+0x04；ctx = enemy+0x1230");
 
     InterlockedExchange(&g_running, 1);
