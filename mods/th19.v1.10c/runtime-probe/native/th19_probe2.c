@@ -31,10 +31,11 @@ static BYTE *g_base;
 static DWORD g_anchor_rva = 0;     /* ini 里配；0 = 未配置 */
 static int   g_scan_mode  = 0;     /* ini: scan=1 ⇒ 主动搜 ctx */
 static DWORD g_scan_next  = 0;     /* 下次扫描时间 */
-static DWORD g_pat[3]      = {0, 0, 0};  /* ini: pattern / pattern2 / pattern3 */
+static DWORD g_pat[4]      = {0, 0, 0, 0};  /* ini: pattern / pattern2 / pattern3 */
 static DWORD g_pat_rel     = 0;
 static DWORD g_pat_rel2    = 0;
-static DWORD g_pat_rel3    = 0;          /* ini: pattern_rel=0x… ⇒ pattern = base + 该 RVA（找 vtable 用）*/
+static DWORD g_pat_rel3    = 0;
+static DWORD g_pat_rel4    = 0;          /* ini: pattern_rel=0x… ⇒ pattern = base + 该 RVA（找 vtable 用）*/
 static int   g_pat_n       = 0;
 static DWORD g_follow      = 0;    /* scan=2 找到的第一个命中：之后每轮盯着它打 */
 static int   g_follow_on   = 0;    /* ini: follow=1 */
@@ -172,7 +173,7 @@ static void scan_for_pattern(void)
     unsigned steps = 0;
     int hits = 0;
 
-    probe_log("[pat ] 扫 %d 个特征：%08x %08x %08x ...", g_pat_n, g_pat[0], g_pat[1], g_pat[2]);
+    probe_log("[pat ] 扫 %d 个特征：%08x %08x %08x %08x", g_pat_n, g_pat[0], g_pat[1], g_pat[2], g_pat[3]);
     while (addr < limit && steps < SCAN_MAX_STEPS && hits < 8) {
         if (!VirtualQuery(addr, &mbi, sizeof(mbi))) break;
         if (mbi.State == MEM_COMMIT && mbi.Type != MEM_IMAGE &&
@@ -183,7 +184,7 @@ static void scan_for_pattern(void)
             const BYTE *end = p + mbi.RegionSize;
             for (; p + 4 <= end && steps < SCAN_MAX_STEPS; p += 4, steps++) {
                 { int pi; DWORD dv = *(const DWORD *)p; int hitpi = -1;
-                  for (pi = 0; pi < g_pat_n; pi++) {
+                  for (pi = 0; pi < g_pat_n && pi < 4; pi++) {
                       if (!g_pat[pi]) continue;
                       if (dv == g_pat[pi] || dv == (g_pat[pi] ^ 0x80000000u)) { hitpi = pi; break; }
                   }
@@ -301,6 +302,7 @@ int __stdcall thcrap_plugin_init(void)
             else if (sscanf(line, "pattern_rel=0x%lx", &x) == 1)  { g_pat_rel = (DWORD)x; }
             else if (sscanf(line, "pattern2_rel=0x%lx", &x) == 1) { g_pat_rel2 = (DWORD)x; }
             else if (sscanf(line, "pattern3_rel=0x%lx", &x) == 1) { g_pat_rel3 = (DWORD)x; }
+            else if (sscanf(line, "pattern4_rel=0x%lx", &x) == 1) { g_pat_rel4 = (DWORD)x; }
             else if (sscanf(line, "follow=%d", &g_follow_on) == 1) { /* 命中后持续跟踪 */ }
         }
         fclose(ini);
@@ -322,8 +324,9 @@ int __stdcall thcrap_plugin_init(void)
     if (g_pat_rel)  g_pat[0] = (DWORD)(uintptr_t)(g_base + g_pat_rel);
     if (g_pat_rel2) g_pat[1] = (DWORD)(uintptr_t)(g_base + g_pat_rel2);
     if (g_pat_rel3) g_pat[2] = (DWORD)(uintptr_t)(g_base + g_pat_rel3);
+    if (g_pat_rel4) g_pat[3] = (DWORD)(uintptr_t)(g_base + g_pat_rel4);
     g_pat_n = 0;
-    { int i; for (i = 0; i < 3; i++) if (g_pat[i]) g_pat_n = i + 1; }
+    { int i; for (i = 0; i < 4; i++) if (g_pat[i]) g_pat_n = i + 1; }
     probe_log("anchor_rva = 0x%x / scan = %d / pat = %08x %08x %08x / follow = %d",
               g_anchor_rva, g_scan_mode, g_pat[0], g_pat[1], g_pat[2], g_follow_on);
     probe_log("字段：段表 = ctx+0x5ac → 元素 → +0x28；r=+0x00、s=+0x04；ctx = enemy+0x1230");
