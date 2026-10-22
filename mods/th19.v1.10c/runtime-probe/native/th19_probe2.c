@@ -31,7 +31,8 @@ static FILE *g_log;
 static BYTE *g_base;
 static DWORD g_anchor_rva = 0;     /* ini 里配；0 = 未配置 */
 static int   g_scan_mode  = 0;     /* ini: scan=1 ⇒ 主动搜 ctx */
-static DWORD g_scan_next  = 0;     /* 下次扫描时间 */
+static DWORD g_scan_next  = 0;
+static int   g_scan_left  = 30;   /* ★ 扫描预算：最多 30 次，用完就停（防止长时间占用/扰动） */     /* 下次扫描时间 */
 static DWORD g_pat[4]      = {0, 0, 0, 0};  /* ini: pattern / pattern2 / pattern3 */
 static DWORD g_pat_rel     = 0;
 static DWORD g_pat_rel2    = 0;
@@ -156,13 +157,19 @@ static void poll_once(void)
 {
     DWORD anchor, v;
     if (g_scan_mode == 2) {
-        /* now 不再需要 */
+        DWORD now = GetTickCount();
         if (g_follow) {
             /* 命中值是 entry+0x04（一手：§26.2 的 r=+0x00 / s=+0x04），entry 步长 0x30 */
             dump_n("obj-0x08", g_follow - 0x08, 96);   /* 覆盖 obj+0x00..+0x170：位置/计数器/段数全在里头 */
             return;
         }
-        if ((LONG)(now - g_scan_next) >= 0) { g_scan_next = now + 500; scan_for_pattern(); }
+        if (g_scan_next == 0) g_scan_next = now + 3000;   /* ★ 头 3 秒不动，先让游戏启动起来 */
+        if (g_scan_left > 0 && (LONG)(now - g_scan_next) >= 0) {
+            g_scan_next = now + 500;
+            g_scan_left--;
+            scan_for_pattern();
+            if (g_scan_left == 0) probe_log("[pat ] 扫描预算用完（30 次），停止扫描。");
+        }
         return;
     }
     if (g_scan_mode == 1) {
