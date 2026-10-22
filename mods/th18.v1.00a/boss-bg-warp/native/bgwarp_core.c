@@ -75,6 +75,14 @@ static float    rb_two_off  = 256.0f;
  */
 static int      rb_overlap   = 1;
 static float    rb_blend     = 40.0f;
+static float    rb_ov_floor  = 0.4f;
+/*
+ * ★ avoid_rt（默认 **0**）：是否在"采的那张 == 当前渲染目标"时自动换另一张。
+ *   owner 实测：开了这个之后**模式 2 出现重影** ✗ —— 因为换过去的那张面装的是别的内容/上一帧合成
+ *   ⇒ 圆盘里显示的画面与周围错开 ⇒ 双影。默认关掉后回到"很自然"那版的观感（只采 [0x4ccfa0]）✓
+ *   只有在确实看到"越套越小"的递归时才把它设 1。
+ */
+static int      rb_avoid_rt;    /* 重叠区内保留的比例（0=完全让位，1=不让位） */
 static int      rb_ov_ok;             /* 缓存：敌方盘是否有效 */
 static float    rb_ov_cx, rb_ov_cy, rb_ov_r; /* 第二份的圆心相对偏移（屏幕像素，仅用于验证） */
 static unsigned rb_log_every = 300;   /* 每隔多少次画一行日志 */
@@ -649,8 +657,11 @@ static void rb_draw_grid(void *dev, void **vt, void *tex, int use_halo,
             if (rb_overlap && rb_ov_ok && !rb_test_no_overlap) {
                 float dxb = wx - rb_ov_cx, dyb = wy - rb_ov_cy;
                 float db = (float)sqrt((double)(dxb * dxb + dyb * dyb)) - rb_ov_r;
-                if (db <= 0.0f) ov = 0.0f;
-                else if (db < rb_blend) ov = db / rb_blend;
+                /* ★ 让位**不归零**：重叠区内仍保留 `floor` 比例（默认 0.4）——
+                 *   owner 实测「boss 附近我们的改动依旧失效」= 我把让位写成了 0 ✗
+                 *   现在：里面 = floor，过渡带 = floor → 1，外面 = 1 ⇒ 两边都看得见、boss 仍主导 ✓ */
+                if (db <= 0.0f) ov = rb_ov_floor;
+                else if (db < rb_blend) ov = rb_ov_floor + (1.0f - rb_ov_floor) * (db / rb_blend);
                 dx *= ov; dy *= ov;
             }
             rb_world_to_screen(wx + dx, wy + dy, &pxs, &pys);
@@ -780,7 +791,7 @@ static void *rb_pick_surface(void *dev, void **vt)
          *   （三次 dump 的 Eip 全在 d3d9+0x11c00c，就是这么来的）。 */
         ((long (__stdcall *)(void *, unsigned, void **))vt[0x26])(dev, 0u, &rt);
     }
-    if (rt && surf && rt == surf) {
+    if (rb_avoid_rt && rt && surf && rt == surf) {
         void *other = rb_rd(rb_base + (rb_surf ? RVA_SURF_B : RVA_SURF_A), 4)
                     ? *(void **)(rb_base + (rb_surf ? RVA_SURF_B : RVA_SURF_A)) : NULL;
         if (other && other != rt) {
