@@ -10,9 +10,9 @@
 | # | 文件 | 读完你会知道 |
 | ---: | --- | --- |
 | 1 | [`HANDOFF-109-SANAE-C3-KINEMATICS.md`](HANDOFF-109-SANAE-C3-KINEMATICS.md) | ★ **运动学定稿**：五段 `a`/`b`/`r`/`s`、速度曲线、卡侧配方、作废清单、待拍板的 4 件事 |
-| 2 | [`../../engine/bullet/th19/01-curve-laser-kinematics.md`](../../engine/bullet/th19/01-curve-laser-kinematics.md) | ★ 同上，engine 层版本（带一手证据与置信度标注） |
-| 3 | [`../../engine/bullet/th18/01-laser-subsystem.md`](../../engine/bullet/th18/01-laser-subsystem.md) **§26** | ★ TH19 `609` 的 8 个参数在内存里各落哪里（段表 `+0x00`=r、`+0x04`=s） |
-| 4 | [`../../mods/th19.v1.10c/runtime-probe/README.md`](../../mods/th19.v1.10c/runtime-probe/README.md) | ★ 运行时探针怎么用（只读，装进 modkit 的 `mods\` 即可） |
+| 2 | [`../../engine/bullet/th19/01-curve-laser-kinematics.md`](../../../engine/bullet/th19/01-curve-laser-kinematics.md) | ★ 同上，engine 层版本（带一手证据与置信度标注） |
+| 3 | [`../../engine/bullet/th18/01-laser-subsystem.md`](../../../engine/bullet/th18/01-laser-subsystem.md) **§26** | ★ TH19 `609` 的 8 个参数在内存里各落哪里（段表 `+0x00`=r、`+0x04`=s） |
+| 4 | [`../../mods/th19.v1.10c/runtime-probe/README.md`](../../../mods/th19.v1.10c/runtime-probe/README.md) | ★ 运行时探针怎么用（只读，装进 modkit 的 `mods\` 即可） |
 
 ## 2. 三句话结论（先记住这个）
 
