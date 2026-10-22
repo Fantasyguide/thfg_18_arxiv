@@ -32,6 +32,8 @@ static DWORD g_anchor_rva = 0;     /* ini 里配；0 = 未配置 */
 static int   g_scan_mode  = 0;     /* ini: scan=1 ⇒ 主动搜 ctx */
 static DWORD g_scan_next  = 0;     /* 下次扫描时间 */
 static DWORD g_pattern     = 0;    /* ini: pattern=0xXXXXXXXX ⇒ scan=2 用的 dword 特征 */
+static DWORD g_follow      = 0;    /* scan=2 找到的第一个命中：之后每轮盯着它打 */
+static int   g_follow_on   = 0;    /* ini: follow=1 */
 
 
 static void probe_log(const char *fmt, ...)
@@ -183,6 +185,7 @@ static void scan_for_pattern(void)
                               va, *(const float *)p,
                               (DWORD)(uintptr_t)mbi.BaseAddress, (DWORD)mbi.RegionSize, mbi.Protect, mbi.Type);
                     dump_n("hit-0x40", va - 0x40, 32);
+                    if (g_follow_on && !g_follow) g_follow = va;
                     hits++;
                     if (hits >= 8) break;
                 }
@@ -200,6 +203,11 @@ static void poll_once(void)
     DWORD anchor, v;
     if (g_scan_mode == 2) {
         DWORD now = GetTickCount();
+        if (g_follow) {
+            /* 命中值是 entry+0x04（一手：§26.2 的 r=+0x00 / s=+0x04），entry 步长 0x30 */
+            dump_n("entry-0x30", g_follow - 0x34, 48);
+            return;
+        }
         if ((LONG)(now - g_scan_next) >= 0) { g_scan_next = now + 5000; scan_for_pattern(); }
         return;
     }
@@ -279,6 +287,7 @@ int __stdcall thcrap_plugin_init(void)
             else if (sscanf(line, "anchor_rva=%lx", &x) == 1) g_anchor_rva = (DWORD)x;
             else if (sscanf(line, "scan=%d", &g_scan_mode) == 1) { /* scan 模式开关 */ }
             else if (sscanf(line, "pattern=0x%lx", &x) == 1) g_pattern = (DWORD)x;
+            else if (sscanf(line, "follow=%d", &g_follow_on) == 1) { /* 命中后持续跟踪 */ }
         }
         fclose(ini);
     }
@@ -296,8 +305,8 @@ int __stdcall thcrap_plugin_init(void)
         fclose(g_log); g_log = NULL; return 1;
     }
     probe_log("[guard] 609 handler 签名匹配，确认 th19.v1.10c。");
-    probe_log("anchor_rva = 0x%x / scan = %d（th19_probe2.ini；都为 0 时只打心跳）",
-              g_anchor_rva, g_scan_mode);
+    probe_log("anchor_rva = 0x%x / scan = %d / pattern = %08x / follow = %d",
+              g_anchor_rva, g_scan_mode, g_pattern, g_follow_on);
     probe_log("字段：段表 = ctx+0x5ac → 元素 → +0x28；r=+0x00、s=+0x04；ctx = enemy+0x1230");
 
     InterlockedExchange(&g_running, 1);
