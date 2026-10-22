@@ -18,6 +18,7 @@
 #include <string.h>
 
 #define POLL_MS      100
+#define SCAN_MAX_STEPS (64u * 1024u * 1024u)
 #define DUMP_DWORDS  16
 
 /* 版本守卫：609 handler 开头 5 字节（一手：0x5027a3 = 6a 00 8b cf e8） */
@@ -69,102 +70,29 @@ static BOOL readable(const void *p, SIZE_T len)
 /* 打印一块内存：dword + 当浮点看 */
 static void dump_n(const char *tag, DWORD va, int n)
 {
-    const BYTE *p = (const BYTE *)(uintptr_t)va;
-    int i;
-    if (!readable(p, n * 4)) { probe_log("  %-18s %08x 不可读", tag, va); return; }
+    static DWORD buf[256];
+    SIZE_T got = 0;
+    int i, cnt;
+    /* ★ 同样走 ReadProcessMemory：readable() 通过之后该页仍可能被释放（竞态），
+     * 直接解引用会访问违例崩游戏（三次 minidump 都指向本 DLL，见 HANDOFF §10）。 */
+    if (n > 256) n = 256;
+    if (!ReadProcessMemory(GetCurrentProcess(), (const void *)(uintptr_t)va, buf, (SIZE_T)n * 4, &got)
+        || got < 4) {
+        probe_log("  %-18s %08x 不可读", tag, va);
+        return;
+    }
+    cnt = (int)(got / 4);
     probe_log("  %-18s %08x :", tag, va);
-    for (i = 0; i < n; i++) {
-        DWORD a = *(const DWORD *)(p + i * 4);
-        probe_log("    +%02x  %08x  %11d  %12.4f", i * 4, a, (int)a, *(const float *)(p + i * 4));
+    for (i = 0; i < cnt; i++) {
+        float fv;
+        memcpy(&fv, &buf[i], 4);
+        probe_log("    +%02x  %08x  %11d  %12.4f", i * 4, buf[i],
+                  (int)buf[i], (double)fv);
     }
-}
-
-
-/* ------------------------------------------------------------------ *
- * scan 模式：不动锚点，直接在可写内存里找"像 ECL 上下文"的对象。
- * 判据（一手倾向，见 engine/bullet/th18/01-laser-subsystem.md §27）：
- *   · +0x4 是 -1 或小整数（句柄）
- *   · +0x4e2c 起 16 个 dword 都是小整数，且至少一个非 0（变换序号表）
- *   · +0x55c8 是一个可读指针（参数 helper 0x50c1b0 会读它）
- * 找到就把它当 ctx，打 +0x5ac（弹型记录）与 +0x4e2c（序号表）。
- * ------------------------------------------------------------------ */
-#define SCAN_MAX_STEPS  (64u * 1024u * 1024u)
-
-static BOOL looks_like_ctx(DWORD p)
-{
-    DWORD h, i, any = 0, ptr;
-    if ((p & 3) != 0) return FALSE;
-    if (!readable((const void *)(uintptr_t)p, 0x55d0)) return FALSE;
-
-    h = *(const DWORD *)(uintptr_t)(p + 4);
-    if (h != 0xFFFFFFFFu && h > 0x1000u) return FALSE;
-
-    for (i = 0; i < 16; i++) {
-        DWORD v = *(const DWORD *)(uintptr_t)(p + 0x4e2c + i * 4);
-        if (v > 0x10000u) return FALSE;
-        if (v) any = 1;
-    }
-    if (!any) return FALSE;
-
-    ptr = *(const DWORD *)(uintptr_t)(p + 0x55c8);
-    if (!ptr) return FALSE;
-    if (!readable((const void *)(uintptr_t)ptr, 0x10)) return FALSE;
-
-    /* ★ 关键判据：+0x5ac 是"弹型记录"的指针（handler 用 0x40ebd0 从它取元素） */
-    ptr = *(const DWORD *)(uintptr_t)(p + 0x5ac);
-    if (!ptr) return FALSE;
-    if (!readable((const void *)(uintptr_t)ptr, 0x40)) return FALSE;
-
-    /* 序号表里应至少有一个像计数器的值 */
-    any = 0;
-    for (i = 0; i < 16; i++) {
-        DWORD v = *(const DWORD *)(uintptr_t)(p + 0x4e2c + i * 4);
-        if (v >= 1u && v <= 0x1000u) any = 1;
-    }
-    if (!any) return FALSE;
-    return TRUE;
 }
 
 static void dump(const char *tag, DWORD va) { dump_n(tag, va, DUMP_DWORDS); }
 
-static void scan_for_ctx(void)
-{
-    MEMORY_BASIC_INFORMATION mbi;
-    const BYTE *addr = (const BYTE *)0x10000;
-    const BYTE *limit = (const BYTE *)0x7fff0000;
-    unsigned steps = 0, found = 0;
-
-    probe_log("[scan] 开始找 ctx ...");
-    while (addr < limit && steps < SCAN_MAX_STEPS && found < 6) {
-        if (!VirtualQuery(addr, &mbi, sizeof(mbi))) break;
-        if (mbi.State == MEM_COMMIT &&
-            (mbi.Protect & (PAGE_READWRITE | PAGE_WRITECOPY | PAGE_EXECUTE_READWRITE)) &&
-            !(mbi.Protect & (PAGE_GUARD | PAGE_NOACCESS))) {
-            const BYTE *p = (const BYTE *)mbi.BaseAddress;
-            const BYTE *end = p + mbi.RegionSize;
-            for (; p + 0x55d0 <= end && steps < SCAN_MAX_STEPS; p += 4, steps++) {
-                if (looks_like_ctx((DWORD)(uintptr_t)p)) {
-                    probe_log("[scan] 候选 ctx = %08x", (DWORD)(uintptr_t)p);
-                    dump("ctx+0x5ac(弹型记录)", (DWORD)(uintptr_t)p + 0x5ac);
-                    dump("ctx+0x4e2c(序号表)", (DWORD)(uintptr_t)p + 0x4e2c);
-                    found++;
-                    if (found >= 6) break;
-                }
-            }
-            addr = end;
-            continue;
-        }
-        addr = (const BYTE *)mbi.BaseAddress + mbi.RegionSize;
-    }
-    probe_log("[scan] 结束：步数 %u，候选 %u", steps, found);
-}
-
-
-/* ------------------------------------------------------------------ *
- * scan=2：按"特征 dword"扫内存（默认搜 Sanae C3 段4 的 s = -0.19634955
- * 的位模式 0xBE490FDB / +0.19634955 的 0x3E490FDB）。
- * 命中处前后各打 0x40 字节 —— 就能看出 r/s 到底落在什么对象的什么偏移上。
- * ------------------------------------------------------------------ */
 static void scan_for_pattern(void)
 {
     MEMORY_BASIC_INFORMATION mbi;
@@ -228,7 +156,7 @@ static void poll_once(void)
 {
     DWORD anchor, v;
     if (g_scan_mode == 2) {
-        DWORD now = GetTickCount();
+        /* now 不再需要 */
         if (g_follow) {
             /* 命中值是 entry+0x04（一手：§26.2 的 r=+0x00 / s=+0x04），entry 步长 0x30 */
             dump_n("obj-0x08", g_follow - 0x08, 96);   /* 覆盖 obj+0x00..+0x170：位置/计数器/段数全在里头 */
@@ -238,9 +166,8 @@ static void poll_once(void)
         return;
     }
     if (g_scan_mode == 1) {
-        DWORD now = GetTickCount();
-        if ((LONG)(now - g_scan_next) >= 0) { g_scan_next = now + 500; scan_for_ctx(); }
-        return;
+        /* now 不再需要 */
+        return;   /* scan=1（找 ctx）已废弃，统一用 scan=2 */
     }
     if (!g_anchor_rva) return;
     anchor = (DWORD)(uintptr_t)(g_base + g_anchor_rva);
