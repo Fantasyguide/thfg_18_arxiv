@@ -97,4 +97,6 @@ for each laser:
 
 * ★ 段表在内存里的落点与 `609` 的 8 个参数：`engine/bullet/th18/01-laser-subsystem.md` §26；
 * ★ TH19 的 `609/610/611/612` 语义对照：`engine/ecl/th19/03-thbwiki-4thgen-compare.md` §5；
-* ★ ECL 原文：`local/th19.v1.10c/_ext/ecl/pl02.txt`（`ExAttackFunc2`）。
+* ★ ECL 原文：`ExAttackFunc2` 的完整反编译已**内联**在
+  [`HANDOFF-109-SANAE-C3-KINEMATICS.md`](../../../mods/th18.v1.00a/card-expand/HANDOFF-109-SANAE-C3-KINEMATICS.md) §2
+  （`local/` 是 gitignored 的本机目录，不能当引用源）。
