@@ -1742,8 +1742,16 @@ script script145 { ins_302(1); ins_100([10000], 0); ins_300(sprite524); ins_3();
 | 资产 | 结论 |
 | --- | --- |
 | ★ `mods/th18.v1.00a/runtime-probe/native/th18_probe.c` ＋ `Makefile` ＋ `.def` | ★ ★ **有源码**，是**只读 thcrap 插件模板**（llvm-mingw i686；`probe_log()` 写游戏目录 `*.log`；`[guard]` 读原字节做版本自检；`.def` 导出**无装饰**的 `thcrap_plugin_init`） |
-| ★ `mods/th19.v1.10c/runtime-probe/native/th19_probe.dll` | ★ **只有 DLL、无源码**；`strings` 一手：★ **`th19_probe v22 (anm slots + barrier)`**，日志格式 `[%7u ms] side=%d slot=%p player=%08x …`；★ 它会读 `local/th19.v1.10c/th19-rtti.json`（★ **本机两个检出都没有此文件**，只有 `th19-funcs.json`，而后者全是 `FUN_xxx` 匿名名） |
+| ★ `mods/th18.v1.00a/runtime-probe/native/` | ★ **有源码**：只读 thcrap 插件模板（详见下方 27.3a） |
 | ★ 位置 | ★ 上述都在**主检出** `/home/nipporita/renkolab/mods/`；★ 本 worktree **没有** `mods/th19.v1.10c`（需新建） |
+
+
+#### 27.3a TH18 探针模板的要点（一手）
+
+* ★ 工具链：★ llvm-mingw i686（`-shared -static-libgcc -lkernel32`），★ 产物必须是 32 位（thcrap 会拒绝位数不符）；
+* ★ `.def` 必须导出**无装饰**的 `thcrap_plugin_init`（否则 thcrap 静默判"不是插件"，因为它先扫 PE 导出表）；
+* ★ 日志走 `probe_log()`，写**游戏目录**下的 `*.log`；★ 读内存前先问 OS 能不能读（关卡切换时指针可能是野值）；
+* ★ 带 `[guard]`：★ 读关键 RVA 的**原字节**比对，不匹配就**自我卸载** ⇒ ★ 版本守卫。
 
 ### 27.3 探针第一版的锚点（一手）
 
