@@ -710,13 +710,16 @@ static void rb_ensure_copy_tex(void *dev, void **vt, unsigned w, unsigned h)
         return;
     }
     {   void **tvt = *(void ***)tex;
-        if (!tvt || !rb_rd(tvt + 14, 4) || !rb_code((const void *)tvt[13])) {
+        if (!tvt || !rb_rd(tvt + 16, 4) || !rb_code((const void *)tvt[15])) {
             rb_copy_failed = 1;
             rb_logf("[副本] ★ 纹理 vtable 不可用 ⇒ 放弃");
             rb_release(tex);
             return;
         }
-        hr = ((long (__stdcall *)(void *, unsigned, void **))tvt[13])(tex, 0u, &surf);
+        /* ★ IDirect3DTexture9 vtable：11 SetLOD / 12 GetLOD / 13 GetLevelCount() /
+         *   14 GetLevelDesc(desc*) / **15 GetSurfaceLevel(level, ppSurface)**。
+         *   曾经错写成 13（= GetLevelCount，不收参数）却按 2 个参数调 ⇒ stdcall 栈不平衡 ⇒ 返回地址被踩 ⇒ 崩。 */
+        hr = ((long (__stdcall *)(void *, unsigned, void **))tvt[15])(tex, 0u, &surf);
     }
     if (hr != 0 || !surf) {
         rb_copy_failed = 1;
