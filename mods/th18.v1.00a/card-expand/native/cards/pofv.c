@@ -7260,7 +7260,8 @@ static void pofv_c3s_tick(void)
                 b->spd += a;
                 if (b->spd < 0.0f) b->spd = 0.0f;
                 if (ag > tt + 10.0f && ag <= tt + 18.0f)        /* 段4: 8 帧 × ±11.25° = ±90° */
-                    b->ang += (b->side >= 0 ? 1.0f : -1.0f) * 0.19634955f;
+                    /* 2026-10-22 owner「后续运动反了，应该向内」⇒ 符号对调（左列 +、右列 −）。*/
+                    b->ang += (b->side >= 0 ? -1.0f : 1.0f) * 0.19634955f;
                 {   const int di = (int)(b->ang * (36.0f / 6.2831853f)) % 36;
                     const int dj = (di < 0) ? di + 36 : di;
                     b->x += s_c2_dir36[dj][0] * b->spd;
@@ -7304,7 +7305,8 @@ static void pofv_c3s_tick(void)
             /* 2026-10-21 owner：「不是竖直的」⇒ 贴图是 **256×16 横条**，必须**固定转 −90°**才是竖的；
              *   `b->rot` 那个"随机整圈"是给一手的**圆球**（script35 `rotate(0,0,%RANDRAD)`）用的，
              *   现在换成横条 ⇒ **不能随机转**。只留 `b->yaw`（段 4 的 ±11.25°）做拐弯。*/
-            ce_anm_set_rotation((uint32_t)b->vm, 0.0f, 0.0f, -1.5707963f + b->yaw);
+            /* 2026-10-22 owner「图像没有旋转」⇒ 旋转量改用 b->ang 本身（yaw 已不再更新）。*/
+            ce_anm_set_rotation((uint32_t)b->vm, 0.0f, 0.0f, b->ang);
         }
         pos[0] = b->x; pos[1] = b->y; pos[2] = 0.0f;
         (void)ce_damage_rect(pos, 0.0f, 2, 14.0f, 24.0f, 24.0f);   /* ❓④ */
