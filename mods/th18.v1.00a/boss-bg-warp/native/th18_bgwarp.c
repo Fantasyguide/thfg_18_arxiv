@@ -125,15 +125,6 @@ static float    g_phase0_y = 0.0f;
 static float    g_phase_step_x = ONE_PHASE_STEP_X;
 static float    g_phase_step_y = ONE_PHASE_STEP_Y;
 static int      g_hide_outside = 1;   /* 一手：圆外 alpha=0 */
-/*
- * ★ retire（默认 0）：把这份网格的**所有顶点 alpha 置 0** ⇒ 引擎那份 aura 既不再扭、也看不见
- *   = "退休"。给 C 方案用：由 route_b（bgwarp_core）一个 pass 画两处透镜（自机 + 敌方），
- *   这样两份效果**只被采样一次** ⇒ 不会有"透明度叠影"。
- *   （注：`amp_mul = 0` 做不到退休 —— inject_swirl 里径向项 `t*nx` 不受 amp_mul 缩放。）
- *   ★ 这是对本文件（另一支）的唯一一处改动，register 在 boss-bg-warp/AUDIT.md §Q。
- */
-static int      g_retire;
-static int      g_retire_logged;
 static int      g_touch_enemy_mesh = 0; /* 敌人 ECL-629 那份（残迹）默认只记不改 */
 static float    g_phase_drift = 0.02f;
 static int      g_log_every = 64;     /* 每 N 次上传记一行（0 = 只记变化） */
@@ -440,26 +431,6 @@ static void hook_upload(x86_reg_t *r)
     }
 
     /* ---- 注入必须在引擎拷贝之前（我们就在拷贝函数的入口） ---- */
-    if (g_retire && (is_stage || g_touch_enemy_mesh)) {
-        /* ★ C 方案：退休 —— 所有顶点 alpha=0（不再扭、也看不见） */
-        int n = *(int *)(mesh + OFF_MESH_N), m = *(int *)(mesh + OFF_MESH_M);
-        BYTE *v = *(BYTE **)(mesh + OFF_MESH_VERT);
-        if (n > 0 && m > 0 && n <= 64 && m <= 64 && readable(v, (SIZE_T)n * m * VERT_STRIDE)) {
-            int k;
-            for (k = 0; k < n * m; k++) {
-                unsigned c;
-                BYTE *pv = v + (SIZE_T)k * VERT_STRIDE;
-                memcpy(&c, pv + 16, 4);
-                c &= 0x00ffffffu;                 /* alpha = 0 */
-                memcpy(pv + 16, &c, 4);
-            }
-            if (g_retire_logged < 8) {
-                g_retire_logged++;
-                bgw_log("[退休%d] mesh=%p %dx%d 全部 alpha=0（is_stage=%d）", g_retire_logged, mesh, n, m, is_stage);
-            }
-        }
-        return;                                    /* 退休后不必再做别的注入 */
-    }
     if (g_mode >= 2 && (is_stage || g_touch_enemy_mesh)) {
         inject_swirl(mesh, g_mode >= 3 ? g_amp_mul : 1.0f);
         g_phase += g_phase_drift;
@@ -555,7 +526,6 @@ static void load_ini(void)
     g_amp_mul       = ini_f("amp_mul", 1.0f);
     g_phase_drift   = ini_f("phase_drift", 0.02f);
     g_hide_outside  = GetPrivateProfileIntA("warp", "hide_outside", 1, g_ini);
-    g_retire        = GetPrivateProfileIntA("warp", "retire", 0, g_ini);
     g_touch_enemy_mesh = GetPrivateProfileIntA("warp", "touch_enemy_mesh", 0, g_ini);
     g_log_every     = GetPrivateProfileIntA("warp", "log_every", 64, g_ini);
     g_toggle_vk     = GetPrivateProfileIntA("warp", "toggle_vk", VK_F5, g_ini);
