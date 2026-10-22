@@ -7280,6 +7280,11 @@ static void pofv_c3s_tick(void)
                     const int dj = (di < 0) ? di + 36 : di;
                     b->x += s_c2_dir36[dj][0] * b->spd;
                     b->y += s_c2_dir36[dj][1] * b->spd; }
+                /* 2026-10-22 调试：owner 说"弹幕中心没在动" ⇒ 先把积分结果打出来定位 */
+                if ((b->age % 10) == 0)
+                    ce_log("pofv: [C3S] age=%d a=%.2f spd=%.2f ang=%.3f x=%.1f y=%.1f",
+                           (int)b->age, (double)a, (double)b->spd, (double)b->ang,
+                           (double)b->x, (double)b->y);
             }
         }
             /* ★★★ 2026-10-21：★ 一手是"★ 束**一头长出来**✗"，不是整张图缩放 ✗ ⇒
