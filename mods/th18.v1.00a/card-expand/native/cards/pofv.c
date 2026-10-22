@@ -7056,42 +7056,6 @@ typedef struct { int live, age, life, side; float x, y; float rx, ry, rot; float
 static pofv_c3s_t s_c3s[POFV_C3S_MAX];
 static struct { int active, wave, step, timer, level, side; float f0; } s_c3s_st;
 
-/* ★★★ 2026-10-21（owner 批 ⓐ）：把 TH18 **自己的曲线激光**借出来 —— 桥**放在卡自己的文件里**，
- *   不动 `sdk.h`/`sdk.c`（那样会重编所有卡、还要登记 AUDIT）。
- * 一手 = `engine/bullet/th18/01-laser-subsystem.md`：
- *   · manager 在 `ds:0x4cf3f4`；分配器 `LaserManager__allocate_new_laser` @`0x448920`
- *     （stdcall，ret 8，**返回序号**不是指针）；`type = 2` ⇒ `LaserCurveInf`
- *   · spec 整块 **0x460 B** 被 `rep movs` 拷进 `laser+0x788`（§6）⇒ spec 布局 = 对象内存布局
- *   · 最小字段（§11）：`+0x00/04/08` 位置 xyz、`+0x0c` 初始角、`+0x10` 数量/长度、`+0x18` 外观 id
- *   · 其余 ~0x430 B 从**模板 `mgr+0x69c`（0x420 B）**抄默认值（§11.1）
- *   · 外观 id：sprite = `spec+0x18 + 0x8e`（`==1` 时特判 `0x142`）（§6）
- *   · 入链后 tick/判定/擦弹**全原生**（§8）
- * ❓ `+0x14`/`+0x24` 语义 §7 标"待读 0x41b4xx" ⇒ 由调用方给，默认 0。
- * ⚠ 四道门全过才建；否则返回 0、什么都不做（宁可没效果，不许崩）。*/
-static int pofv_curve_spawn(float x, float y, float ang, int steps, int sprite_id,
-                            float s14, float s24)
-{
-    uint8_t *mgr = *(uint8_t *const *)0x4cf3f4;
-    uint8_t spec[0x460];
-    typedef int (__attribute__((stdcall)) *ce_fn_laser_alloc_t)(int, void *);
-    if (!mgr) return 0;
-    if (*(int32_t *)(mgr + 0x798) >= 0x200) return 0;
-    if (steps < 1 || steps > 600) return 0;
-    if (sprite_id < 0x8f || sprite_id > 0x8000) return 0;
-    {   const uint8_t *src = mgr + 0x69c; int i;
-        for (i = 0; i < 0x420; ++i) spec[i] = src[i];
-        for (i = 0x420; i < 0x460; ++i) spec[i] = 0; }
-    *(float   *)(spec + 0x00) = x;
-    *(float   *)(spec + 0x04) = y;
-    *(float   *)(spec + 0x08) = 0.0f;
-    *(float   *)(spec + 0x0c) = ang;
-    *(int32_t *)(spec + 0x10) = steps;
-    *(int32_t *)(spec + 0x18) = (sprite_id == 0x142) ? 1 : (sprite_id - 0x8e);
-    *(float   *)(spec + 0x14) = s14;
-    *(float   *)(spec + 0x24) = s24;
-    return ((ce_fn_laser_alloc_t)0x448920)(2, spec);
-}
-
 static void pofv_c3s_clear(void)
 {
     int k;
