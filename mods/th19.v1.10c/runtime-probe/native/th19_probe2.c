@@ -1,0 +1,171 @@
+/* th19_probe2 —— TH19 v1.10c 只读运行时探针（段表探索）
+ *
+ * 目的：把「609 的 r/s 写进段表之后，运行时到底变成了什么」抓下来。
+ * 一手依据（engine/bullet/th18/01-laser-subsystem.md §26）：
+ *   · TH19 的 609/610/611/612 共用 handler = 0x5027a3；
+ *   · 段表挂 [ctx+0x5ac] → 元素 → +0x28；r → +0x00、s → +0x04；
+ *   · ctx 是 ECL 运行上下文，敌机对象 +0x1230 就是它（vtable 桩 0x5058b0 = add ecx,0x1230）。
+ *
+ * 设计：**地址可配置**（th19_probe2.ini），不必重编译就能换锚点 ——
+ *   因为锚点（哪个全局是"当前 ctx / 当前敌机"）还没定，先用一跑把它试出来。
+ *
+ * 只读：不写游戏内存、不装 binhack、不挂钩子。每 POLL_MS 读一次，写 th19_probe2.log。
+ */
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <stdio.h>
+#include <stdarg.h>
+#include <string.h>
+
+#define POLL_MS      100
+#define DUMP_DWORDS  16
+
+/* 版本守卫：609 handler 开头 5 字节（一手：0x5027a3 = 6a 00 8b cf e8） */
+#define RVA_SIG      0x1027a3u
+static const BYTE SIG[] = { 0x6a, 0x00, 0x8b, 0xcf, 0xe8 };
+
+static HANDLE g_thread;
+static volatile LONG g_running;
+static FILE *g_log;
+static BYTE *g_base;
+static DWORD g_anchor_rva = 0;     /* ini 里配；0 = 未配置 */
+
+static void probe_log(const char *fmt, ...)
+{
+    va_list ap;
+    if (!g_log) return;
+    va_start(ap, fmt); vfprintf(g_log, fmt, ap); va_end(ap);
+    fputc('\n', g_log); fflush(g_log);
+}
+
+static BOOL readable(const void *p, SIZE_T len)
+{
+    MEMORY_BASIC_INFORMATION mbi;
+    const BYTE *cur = (const BYTE *)p, *end = cur + len;
+    if (!p) return FALSE;
+    while (cur < end) {
+        if (!VirtualQuery(cur, &mbi, sizeof(mbi))) return FALSE;
+        if (mbi.State != MEM_COMMIT) return FALSE;
+        if (mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD)) return FALSE;
+        if (!(mbi.Protect & (PAGE_READONLY | PAGE_READWRITE | PAGE_WRITECOPY |
+                             PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE |
+                             PAGE_EXECUTE_WRITECOPY))) return FALSE;
+        cur = (const BYTE *)mbi.BaseAddress + mbi.RegionSize;
+    }
+    return TRUE;
+}
+
+/* 打印一块内存：dword + 当浮点看 */
+static void dump(const char *tag, DWORD va)
+{
+    const BYTE *p = (const BYTE *)(uintptr_t)va;
+    int i;
+    if (!readable(p, DUMP_DWORDS * 4)) { probe_log("  %-18s %08x 不可读", tag, va); return; }
+    probe_log("  %-18s %08x :", tag, va);
+    for (i = 0; i < DUMP_DWORDS; i += 4) {
+        DWORD a = *(const DWORD *)(p + i * 4);
+        probe_log("    +%02x  %08x  %11d  %12.4f", i * 4, a, (int)a, *(const float *)(p + i * 4));
+    }
+}
+
+static void poll_once(void)
+{
+    DWORD anchor, v;
+    if (!g_anchor_rva) return;
+    anchor = (DWORD)(uintptr_t)(g_base + g_anchor_rva);
+
+    if (!readable((void *)(uintptr_t)anchor, 4)) { probe_log("anchor %08x 不可读", anchor); return; }
+    v = *(const DWORD *)(uintptr_t)anchor;
+
+    probe_log("[anchor] rva=%x  va=%08x  *va=%08x", g_anchor_rva, anchor, v);
+
+    /* 三种解释都打：① anchor 处本体；② 把 *va 当 ctx；③ 把 *va 当敌机（+0x1230 = ctx） */
+    dump("at-anchor", anchor);
+    if (readable((void *)(uintptr_t)v, 0x10)) {
+        if (readable((void *)(uintptr_t)(v + 0x5ac), 0x10)) {
+            probe_log("-- 当 ctx：%08x", v);
+            dump("ctx+0x5ac(弹型记录)", v + 0x5ac);
+            dump("ctx+0x4e2c(变换表)", v + 0x4e2c);
+        }
+        if (readable((void *)(uintptr_t)(v + 0x1230 + 0x5ac), 0x10)) {
+            probe_log("-- 当敌机：ctx = %08x", v + 0x1230);
+            dump("enemy+0x1230+0x5ac", v + 0x1230 + 0x5ac);
+            dump("enemy+0x1230+0x4e2c", v + 0x1230 + 0x4e2c);
+        }
+    }
+}
+
+static DWORD WINAPI poll_thread(LPVOID unused)
+{
+    DWORD t0 = GetTickCount();
+    (void)unused;
+    while (InterlockedCompareExchange(&g_running, 1, 1)) {
+        probe_log("[%7u ms] ----", GetTickCount() - t0);
+        poll_once();
+        Sleep(POLL_MS);
+    }
+    return 0;
+}
+
+int __stdcall thcrap_plugin_init(void)
+{
+    char exe[MAX_PATH], log_path[MAX_PATH], ini_path[MAX_PATH];
+    char *slash, line[128];
+    FILE *ini;
+    SYSTEMTIME st;
+
+    g_base = (BYTE *)GetModuleHandleW(NULL);
+    if (!GetModuleFileNameA(NULL, exe, MAX_PATH)) return 1;
+
+    lstrcpynA(log_path, exe, MAX_PATH);
+    slash = strrchr(log_path, '\\');
+    lstrcpynA(slash ? slash + 1 : log_path, "th19_probe2.log",
+              MAX_PATH - (int)(slash ? slash + 1 - log_path : 0));
+    g_log = fopen(log_path, "a");
+    if (!g_log) {
+        DWORD n = GetTempPathA(MAX_PATH, log_path);
+        if (n == 0 || n >= MAX_PATH - 16) return 1;
+        lstrcatA(log_path, "th19_probe2.log");
+        g_log = fopen(log_path, "a");
+        if (!g_log) return 1;
+    }
+
+    /* ini 与 exe 同目录：anchor_rva=0x12345678 */
+    lstrcpynA(ini_path, exe, MAX_PATH);
+    slash = strrchr(ini_path, '\\');
+    lstrcpynA(slash ? slash + 1 : ini_path, "th19_probe2.ini",
+              MAX_PATH - (int)(slash ? slash + 1 - ini_path : 0));
+    if ((ini = fopen(ini_path, "r")) != NULL) {
+        while (fgets(line, sizeof(line), ini)) {
+            unsigned long x;
+            if (sscanf(line, "anchor_rva=0x%lx", &x) == 1) g_anchor_rva = (DWORD)x;
+            else if (sscanf(line, "anchor_rva=%lx", &x) == 1) g_anchor_rva = (DWORD)x;
+        }
+        fclose(ini);
+    }
+
+    GetLocalTime(&st);
+    probe_log("");
+    probe_log("=== th19_probe2 起 %04d-%02d-%02d %02d:%02d:%02d ===",
+              st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
+    probe_log("exe  = %s", exe);
+    probe_log("base = %p", (void *)g_base);
+
+    if (!readable(g_base + RVA_SIG, sizeof(SIG)) ||
+        memcmp(g_base + RVA_SIG, SIG, sizeof(SIG)) != 0) {
+        probe_log("[guard] 0x%x 签名不匹配 —— 不是 th19.v1.10c，探针自我卸载。", RVA_SIG);
+        fclose(g_log); g_log = NULL; return 1;
+    }
+    probe_log("[guard] 609 handler 签名匹配，确认 th19.v1.10c。");
+    probe_log("anchor_rva = 0x%x（来自 th19_probe2.ini；0 = 未配置，只打心跳）", g_anchor_rva);
+    probe_log("字段：段表 = ctx+0x5ac → 元素 → +0x28；r=+0x00、s=+0x04；ctx = enemy+0x1230");
+
+    InterlockedExchange(&g_running, 1);
+    g_thread = CreateThread(NULL, 0, poll_thread, NULL, 0, NULL);
+    if (!g_thread) {
+        probe_log("[fatal] CreateThread 失败：%lu", GetLastError());
+        InterlockedExchange(&g_running, 0);
+        fclose(g_log); g_log = NULL; return 1;
+    }
+    return 0;
+}
