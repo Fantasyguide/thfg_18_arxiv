@@ -214,7 +214,7 @@ static void poll_once(void)
         DWORD now = GetTickCount();
         if (g_follow) {
             /* 命中值是 entry+0x04（一手：§26.2 的 r=+0x00 / s=+0x04），entry 步长 0x30 */
-            dump_n("entry-0x30", g_follow - 0x34, 48);
+            dump_n("obj-0x08", g_follow - 0x08, 96);   /* 覆盖 obj+0x00..+0x170：位置/计数器/段数全在里头 */
             return;
         }
         if ((LONG)(now - g_scan_next) >= 0) { g_scan_next = now + 5000; scan_for_pattern(); }
