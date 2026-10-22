@@ -64,7 +64,7 @@ static void dump(const char *tag, DWORD va)
     int i;
     if (!readable(p, DUMP_DWORDS * 4)) { probe_log("  %-18s %08x 不可读", tag, va); return; }
     probe_log("  %-18s %08x :", tag, va);
-    for (i = 0; i < DUMP_DWORDS; i += 4) {
+    for (i = 0; i < DUMP_DWORDS; i++) {
         DWORD a = *(const DWORD *)(p + i * 4);
         probe_log("    +%02x  %08x  %11d  %12.4f", i * 4, a, (int)a, *(const float *)(p + i * 4));
     }
@@ -100,6 +100,19 @@ static BOOL looks_like_ctx(DWORD p)
     ptr = *(const DWORD *)(uintptr_t)(p + 0x55c8);
     if (!ptr) return FALSE;
     if (!readable((const void *)(uintptr_t)ptr, 0x10)) return FALSE;
+
+    /* ★ 关键判据：+0x5ac 是"弹型记录"的指针（handler 用 0x40ebd0 从它取元素） */
+    ptr = *(const DWORD *)(uintptr_t)(p + 0x5ac);
+    if (!ptr) return FALSE;
+    if (!readable((const void *)(uintptr_t)ptr, 0x40)) return FALSE;
+
+    /* 序号表里应至少有一个像计数器的值 */
+    any = 0;
+    for (i = 0; i < 16; i++) {
+        DWORD v = *(const DWORD *)(uintptr_t)(p + 0x4e2c + i * 4);
+        if (v >= 1u && v <= 0x1000u) any = 1;
+    }
+    if (!any) return FALSE;
     return TRUE;
 }
 
