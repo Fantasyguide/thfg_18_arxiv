@@ -134,3 +134,14 @@ for seg in segments[1..5]:
 * ★ 段表与 `609` 的 8 个参数落点：`engine/bullet/th18/01-laser-subsystem.md` §26
 * ★ 运行时探针（TH19 只读）：`mods/th19.v1.10c/runtime-probe/README.md`
 * ★ ECL 原文：已**内联在 §2**（本机副本 `local/th19.v1.10c/_ext/ecl/pl02.txt`，gitignored）
+
+## 8. ★★ 量纲矛盾（未定，别写成"已定"）
+
+★ 按 `r` = px/帧² 算，到第 130 帧行程 **440 px**（段1 80 + 段2 360）；
+★ 但实测观感是 **≈1/3 屏 ≈149 px** ⇒ ★ **差 2.95 倍**，比值 **149/440 = 0.339**。
+
+⇒ ★ **`k ≈ 0.34` 就是这个比例**，★ 它**不是瞎标定**，★ 但**也不是一手 px**。
+★ 卡侧落地时请写成 ★ `POFV_C3S_SCREEN_FRAC = 0.34`（**屏高比例**），★ 注释注明"❓ 比例对齐，非一手 px"。
+
+★ 定死它的办法（探针已就绪）：★ 用 `pattern_rel=0x1a87cc`（Curve vtable 的 RVA）扫堆找到激光对象，
+★ `follow=1` 每 100ms 记录它的位置 ⇒ ★ **真实 px/帧**。
