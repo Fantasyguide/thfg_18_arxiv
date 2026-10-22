@@ -82,6 +82,8 @@ static unsigned rb_log_every = 300;   /* 每隔多少次画一行日志 */
 static int      rb_stub_ok;
 static int      rb_logged_desc, rb_logged_grid, rb_logged_halo, rb_logged_enemy, rb_logged_pts, rb_logged_entry, rb_logged_vms, rb_logged_rt, rb_logged_nohalo, rb_logged_baddev, rb_logged_ov, rb_logged_src, rb_logged_lost;
 static unsigned rb_rescan_fail;
+static int      rb_dumped_all;
+static int      rb_test_no_overlap;   /* 测试模式（3/4/5）临时关掉重叠分域，免得遮住要看的画面 */
 static unsigned rb_frames, rb_drawn;
 static void    *rb_last_dev;
 static unsigned rb_dev_settle;          /* 设备指针稳定了多少帧（Reset 后先冷却） */
@@ -361,6 +363,40 @@ static void *rb_tex_of_vm(BYTE *vm, const char *tag)
  *   用它去解光晕贴图。链表是引擎的 ⇒ **必须封顶**（曾经因为不封顶卡死过）。
  *   返回找到的 VM 指针（同时把网格的 `+0x10` 数组里第一台留作样本）。
  */
+/* 把所有"网格段 VM"的 handle 都解一遍（最多 8 台），用来挑出真正的那张 sprite */
+static void rb_dump_all_candidates(void)
+{
+    BYTE *mgr;
+    int li, shown = 0;
+    if (!rb_rd(rb_base + RVA_ANM_MGR, 4)) return;
+    mgr = *(BYTE **)(rb_base + RVA_ANM_MGR);
+    if (!mgr) return;
+    for (li = 0; li < 2; li++) {
+        BYTE *node;
+        int budget = 4096;
+        if (!rb_rd(mgr + VM_LIST_1 + li * 8, 4)) continue;
+        node = *(BYTE **)(mgr + VM_LIST_1 + li * 8);
+        while (node && budget-- > 0 && shown < 8) {
+            BYTE *vm;
+            if (!rb_rd(node, 8)) break;
+            vm   = *(BYTE **)(node + 0);
+            node = *(BYTE **)(node + 4);
+            if (!vm || !rb_rd(vm, 0x600)) continue;
+            {   unsigned buf = *(unsigned *)(vm + 0x5cc);
+                if (*(void **)(vm + 0x5c8) && buf >= 34 * 28 && buf <= 64 * 28 && (buf % 56) == 0) {
+                    char tag[48];
+                    float su0 = rb_uv_u0, sv0 = rb_uv_v0, sdu = rb_uv_du, sdv = rb_uv_dv;
+                    int   sok = rb_uv_ok;
+                    shown++;
+                    _snprintf(tag, sizeof tag, "候选%d", shown);
+                    rb_tex_of_vm(vm, tag);            /* 会打 [贴图] 与 [光晕] sprite UV 矩形 */
+                    rb_uv_u0 = su0; rb_uv_v0 = sv0; rb_uv_du = sdu; rb_uv_dv = sdv; rb_uv_ok = sok;
+                }
+            }
+        }
+    }
+}
+
 static BYTE *rb_find_mesh_vm(int *out_cols)
 {
     BYTE *mgr;
@@ -610,7 +646,7 @@ static void rb_draw_grid(void *dev, void **vt, void *tex, int use_halo,
 
             rb_field(wx, wy, cx, cy, R, phx, phy, &dx, &dy);
             /* ★ 重叠区软性分域：进入"敌方那个盘"的范围 ⇒ 我们的位移平滑收到 0（让 boss 主导） */
-            if (rb_overlap && rb_ov_ok) {
+            if (rb_overlap && rb_ov_ok && !rb_test_no_overlap) {
                 float dxb = wx - rb_ov_cx, dyb = wy - rb_ov_cy;
                 float db = (float)sqrt((double)(dxb * dxb + dyb * dyb)) - rb_ov_r;
                 if (db <= 0.0f) ov = 0.0f;
@@ -879,6 +915,7 @@ static void rb_draw(void)
             void *ht = rb_tex_of_vm(mvm, "网格段VM(重扫)");
             if (ht) {
                 if (!rb_halo_tex) { rb_halo_tex = ht; rb_logf("[光晕] 重扫拿到光晕纹理 %p（第 %u 帧）", ht, rb_frames); }
+                if (!rb_dumped_all) { rb_dumped_all = 1; rb_dump_all_candidates(); }
             }
         } else {
             rb_rescan_fail++;
