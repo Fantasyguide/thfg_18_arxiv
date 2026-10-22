@@ -31,6 +31,8 @@ static BYTE *g_base;
 static DWORD g_anchor_rva = 0;     /* ini 里配；0 = 未配置 */
 static int   g_scan_mode  = 0;     /* ini: scan=1 ⇒ 主动搜 ctx */
 static DWORD g_scan_next  = 0;     /* 下次扫描时间 */
+static DWORD g_pattern     = 0;    /* ini: pattern=0xXXXXXXXX ⇒ scan=2 用的 dword 特征 */
+
 
 static void probe_log(const char *fmt, ...)
 {
@@ -148,10 +150,58 @@ static void scan_for_ctx(void)
     probe_log("[scan] 结束：步数 %u，候选 %u", steps, found);
 }
 
+
+/* ------------------------------------------------------------------ *
+ * scan=2：按"特征 dword"扫内存（默认搜 Sanae C3 段4 的 s = -0.19634955
+ * 的位模式 0xBE490FDB / +0.19634955 的 0x3E490FDB）。
+ * 命中处前后各打 0x40 字节 —— 就能看出 r/s 到底落在什么对象的什么偏移上。
+ * ------------------------------------------------------------------ */
+static void scan_for_pattern(void)
+{
+    MEMORY_BASIC_INFORMATION mbi;
+    const BYTE *addr = (const BYTE *)0x10000;
+    const BYTE *limit = (const BYTE *)0x7fff0000;
+    unsigned steps = 0;
+    int hits = 0;
+
+    probe_log("[pat ] 扫 pattern=%08x ...", g_pattern);
+    while (addr < limit && steps < SCAN_MAX_STEPS && hits < 8) {
+        if (!VirtualQuery(addr, &mbi, sizeof(mbi))) break;
+        if (mbi.State == MEM_COMMIT &&
+            (mbi.Protect & (PAGE_READONLY | PAGE_READWRITE | PAGE_WRITECOPY |
+                            PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY)) &&
+            !(mbi.Protect & (PAGE_GUARD | PAGE_NOACCESS))) {
+            const BYTE *p = (const BYTE *)mbi.BaseAddress;
+            const BYTE *end = p + mbi.RegionSize;
+            for (; p + 4 <= end && steps < SCAN_MAX_STEPS; p += 4, steps++) {
+                if (*(const DWORD *)p == g_pattern ||
+                    *(const DWORD *)p == (g_pattern ^ 0x80000000u)) {
+                    DWORD va = (DWORD)(uintptr_t)p;
+                    probe_log("[pat ] 命中 %08x  = %g  (region %08x len %08x prot %08x)",
+                              va, *(const float *)p,
+                              (DWORD)(uintptr_t)mbi.BaseAddress, (DWORD)mbi.RegionSize, mbi.Protect);
+                    dump("hit-0x40", va - 0x40);
+                    hits++;
+                    if (hits >= 8) break;
+                }
+            }
+            addr = end;
+            continue;
+        }
+        addr = (const BYTE *)mbi.BaseAddress + mbi.RegionSize;
+    }
+    probe_log("[pat ] 结束：步数 %u，命中 %d", steps, hits);
+}
+
 static void poll_once(void)
 {
     DWORD anchor, v;
-    if (g_scan_mode) {
+    if (g_scan_mode == 2) {
+        DWORD now = GetTickCount();
+        if ((LONG)(now - g_scan_next) >= 0) { g_scan_next = now + 5000; scan_for_pattern(); }
+        return;
+    }
+    if (g_scan_mode == 1) {
         DWORD now = GetTickCount();
         if ((LONG)(now - g_scan_next) >= 0) { g_scan_next = now + 5000; scan_for_ctx(); }
         return;
@@ -226,6 +276,7 @@ int __stdcall thcrap_plugin_init(void)
             if (sscanf(line, "anchor_rva=0x%lx", &x) == 1) g_anchor_rva = (DWORD)x;
             else if (sscanf(line, "anchor_rva=%lx", &x) == 1) g_anchor_rva = (DWORD)x;
             else if (sscanf(line, "scan=%d", &g_scan_mode) == 1) { /* scan 模式开关 */ }
+            else if (sscanf(line, "pattern=0x%lx", &x) == 1) g_pattern = (DWORD)x;
         }
         fclose(ini);
     }
