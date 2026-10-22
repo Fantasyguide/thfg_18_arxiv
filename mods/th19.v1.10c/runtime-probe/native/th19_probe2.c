@@ -32,7 +32,9 @@ static DWORD g_anchor_rva = 0;     /* ini 里配；0 = 未配置 */
 static int   g_scan_mode  = 0;     /* ini: scan=1 ⇒ 主动搜 ctx */
 static DWORD g_scan_next  = 0;     /* 下次扫描时间 */
 static DWORD g_pat[3]      = {0, 0, 0};  /* ini: pattern / pattern2 / pattern3 */
-static DWORD g_pat_rel     = 0;          /* ini: pattern_rel=0x… ⇒ pattern = base + 该 RVA（找 vtable 用）*/
+static DWORD g_pat_rel     = 0;
+static DWORD g_pat_rel2    = 0;
+static DWORD g_pat_rel3    = 0;          /* ini: pattern_rel=0x… ⇒ pattern = base + 该 RVA（找 vtable 用）*/
 static int   g_pat_n       = 0;
 static DWORD g_follow      = 0;    /* scan=2 找到的第一个命中：之后每轮盯着它打 */
 static int   g_follow_on   = 0;    /* ini: follow=1 */
@@ -296,7 +298,9 @@ int __stdcall thcrap_plugin_init(void)
             else if (sscanf(line, "pattern=0x%lx", &x) == 1)  { g_pat[0] = (DWORD)x; }
             else if (sscanf(line, "pattern2=0x%lx", &x) == 1) { g_pat[1] = (DWORD)x; }
             else if (sscanf(line, "pattern3=0x%lx", &x) == 1) { g_pat[2] = (DWORD)x; }
-            else if (sscanf(line, "pattern_rel=0x%lx", &x) == 1) { g_pat_rel = (DWORD)x; }
+            else if (sscanf(line, "pattern_rel=0x%lx", &x) == 1)  { g_pat_rel = (DWORD)x; }
+            else if (sscanf(line, "pattern2_rel=0x%lx", &x) == 1) { g_pat_rel2 = (DWORD)x; }
+            else if (sscanf(line, "pattern3_rel=0x%lx", &x) == 1) { g_pat_rel3 = (DWORD)x; }
             else if (sscanf(line, "follow=%d", &g_follow_on) == 1) { /* 命中后持续跟踪 */ }
         }
         fclose(ini);
@@ -315,7 +319,9 @@ int __stdcall thcrap_plugin_init(void)
         fclose(g_log); g_log = NULL; return 1;
     }
     probe_log("[guard] 609 handler 签名匹配，确认 th19.v1.10c。");
-    if (g_pat_rel) g_pat[0] = (DWORD)(uintptr_t)(g_base + g_pat_rel);
+    if (g_pat_rel)  g_pat[0] = (DWORD)(uintptr_t)(g_base + g_pat_rel);
+    if (g_pat_rel2) g_pat[1] = (DWORD)(uintptr_t)(g_base + g_pat_rel2);
+    if (g_pat_rel3) g_pat[2] = (DWORD)(uintptr_t)(g_base + g_pat_rel3);
     g_pat_n = 0;
     { int i; for (i = 0; i < 3; i++) if (g_pat[i]) g_pat_n = i + 1; }
     probe_log("anchor_rva = 0x%x / scan = %d / pat = %08x %08x %08x / follow = %d",
