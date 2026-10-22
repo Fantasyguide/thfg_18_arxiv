@@ -59,15 +59,33 @@ static int      rb_n        = 33;     /* 网格分辨率（奇数 3..65） */
 static float    rb_shift    = 64.0f;  /* M1 平移像素 */
 static float    rb_fade     = 0.15f;  /* 圆盘外圈羽化比例 */
 static float    rb_radius   = 160.0f; /* 网格半径（世界单位） */
-static int      rb_radius_auto;       /* ini radius_auto：1 = 用"反推出来的敌方半径"当我方半径（观感对齐敌方） */
+/*
+ * ini radius_auto：**默认 0**。
+ *   ★ 为什么默认关（owner 2026-10-21 指出）：boss 的 VM 网格**随时可能创建/销毁**（光环出现/消失），
+ *     若我方半径跟着它走，半径会随光环出现而**跳变** ✗。我方那个盘必须**只由自己的 ini 决定** ⇒
+ *     "boss 不出现也照常工作"。
+ */
+static int      rb_radius_auto;
 static float    rb_power    = 1.0f;   /* 位移倍数 */
 static unsigned rb_alpha    = 255;    /* 圆内 alpha */
-static float    rb_two_off  = 256.0f; /* 第二份的圆心相对偏移（屏幕像素，仅用于验证） */
+static float    rb_two_off  = 256.0f;
+/*
+ * ★★ 重叠区怎么"融合好"（owner 的口径：两者**本质独立**，只在**同时出现**时要融合）：
+ *   我们会采到"已经被 boss 扭过"的画面 ⇒ 若两个盘都全强度，重叠处就是**两次采样**（双影/糊）。
+ *   做法：**软性分域** —— 靠近 boss 那个盘时，我们的**位移与 alpha 平滑收到 0**（让 boss 主导），
+ *   离开它的边界后再回到全强度。两个效果各自独立成立，重叠处只留一份主导 ✓
+ *   `overlap = 0` 关掉（完全不看 boss），`blend` = 过渡带宽度（世界单位）。
+ */
+static int      rb_overlap   = 1;
+static float    rb_blend     = 40.0f;
+static int      rb_ov_ok;             /* 缓存：敌方盘是否有效 */
+static float    rb_ov_cx, rb_ov_cy, rb_ov_r; /* 第二份的圆心相对偏移（屏幕像素，仅用于验证） */
 static unsigned rb_log_every = 300;   /* 每隔多少次画一行日志 */
 
 static int      rb_stub_ok;
-static int      rb_logged_desc, rb_logged_grid, rb_logged_halo, rb_logged_enemy, rb_logged_pts, rb_logged_entry, rb_logged_vms, rb_logged_rt, rb_logged_nohalo, rb_logged_baddev;
+static int      rb_logged_desc, rb_logged_grid, rb_logged_halo, rb_logged_enemy, rb_logged_pts, rb_logged_entry, rb_logged_vms, rb_logged_rt, rb_logged_nohalo, rb_logged_baddev, rb_logged_ov;
 static unsigned rb_frames, rb_drawn;
+static void    *rb_last_dev;
 static unsigned rb_vp_ok;
 static float    rb_vp_x = 436.0f, rb_vp_y = 244.0f, rb_vp_w = 408.0f, rb_vp_h = 472.0f;
 static void    *rb_scene_tex;         /* 场景面纹理（缓存） */
@@ -166,6 +184,9 @@ static void rb_load_ini(void)
     rb_power   = rb_inif("power", 1.0f);
     rb_two_off = rb_inif("two_off", 256.0f);
     rb_radius_auto = rb_inii("radius_auto", 0);
+    rb_overlap     = rb_inii("overlap", 1);
+    rb_blend       = rb_inif("blend", 40.0f);
+    if (rb_blend < 1.0f) rb_blend = 1.0f;
     {   int a = rb_inii("alpha", 255);
         rb_alpha = (a <= 0 || a > 255) ? 255u : (unsigned)a; }
     {   unsigned le = (unsigned)rb_inii("log_every", 300);
@@ -253,12 +274,27 @@ static const unsigned char RB_IID_TEX[16] = {
     0x27, 0x12, 0xc3, 0x85, 0xe5, 0x3d, 0x00, 0x4f,
     0x9b, 0x3a, 0xf1, 0x1a, 0xc3, 0x8c, 0x18, 0xb5
 };
+/*
+ * ★★ 面的 vtable 也必须过 `rb_code()` —— 这是 2026-10-21 血案的直接原因：
+ *   上一版这里只做了 `rb_rd(vt[11], 1)`（可读）就 `call`，而"过期面"的 vtable 槽是**堆上的值** ⇒
+ *   `Eip` 跳到堆地址（dump th18.exe.84840.dmp：Eip=0x8e43efc 不在模块、栈上是我们的层 6 桩）。
+ */
+static BOOL rb_surf_ready(void *surf)
+{
+    void **svt;
+    if (!surf || !rb_rd(surf, 0x40)) return FALSE;
+    svt = *(void ***)surf;
+    if (!svt || !rb_rd(svt + 13, 4)) return FALSE;
+    if (!rb_code((const void *)svt[11])) return FALSE;   /* GetContainer */
+    if (!rb_code((const void *)svt[12])) return FALSE;   /* GetDesc */
+    return TRUE;
+}
+
 static void *rb_surface_tex(void *surf)
 {
     void *tex = NULL;
-    if (!surf || !rb_rd(surf, 0x40)) return NULL;
+    if (!rb_surf_ready(surf)) return NULL;
     {   void **vt = *(void ***)surf;
-        if (!vt || !rb_rd(vt + 11, 4) || !rb_rd((const void *)vt[11], 1)) return NULL;
         ((long (__stdcall *)(void *, const void *, void **))vt[11])(surf, RB_IID_TEX, &tex);
     }
     return tex;
@@ -503,11 +539,19 @@ static void rb_draw_grid(void *dev, void **vt, void *tex, int use_halo,
         for (j = 0; j < NN; j++) {
             float wx = sx0 + (float)i * step;              /* 世界坐标 */
             float wy = sy0 + (float)j * step;
-            float dx, dy, pxs, pys, u, v, a;
+            float dx, dy, pxs, pys, u, v, a, ov = 1.0f;
             unsigned col;
             int n = i * NN + j;
 
             rb_field(wx, wy, cx, cy, R, phx, phy, &dx, &dy);
+            /* ★ 重叠区软性分域：进入"敌方那个盘"的范围 ⇒ 我们的位移平滑收到 0（让 boss 主导） */
+            if (rb_overlap && rb_ov_ok) {
+                float dxb = wx - rb_ov_cx, dyb = wy - rb_ov_cy;
+                float db = (float)sqrt((double)(dxb * dxb + dyb * dyb)) - rb_ov_r;
+                if (db <= 0.0f) ov = 0.0f;
+                else if (db < rb_blend) ov = db / rb_blend;
+                dx *= ov; dy *= ov;
+            }
             rb_world_to_screen(wx + dx, wy + dy, &pxs, &pys);
             pxs += off_x; pys += off_y;
 
@@ -533,6 +577,7 @@ static void rb_draw_grid(void *dev, void **vt, void *tex, int use_halo,
                     float e0 = R * (1.0f - rb_fade);
                     if (rr > e0) a *= 1.0f - (rr - e0) / (R - e0);
                 }
+                a *= ov;                         /* 重叠区连透明度一起让位 ⇒ 边界不留硬边 */
             }
             col = (((unsigned)a) << 24) | 0x00FFFFFFu;
             pts[n * 7 + 0] = pxs; pts[n * 7 + 1] = pys; pts[n * 7 + 2] = 0.0f; pts[n * 7 + 3] = 1.0f;
@@ -623,7 +668,7 @@ static void *rb_pick_surface(void *dev, void **vt)
     void *surf = rb_rd(rb_base + (rb_surf ? RVA_SURF_A : RVA_SURF_B), 4)
                ? *(void **)(rb_base + (rb_surf ? RVA_SURF_A : RVA_SURF_B)) : NULL;
     void *rt = NULL;
-    if (vt && rb_rd(vt + 0x26, 4)) {
+    if (vt && rb_rd(vt + 0x27, 4) && rb_code((const void *)vt[0x26])) {
         ((long (__stdcall *)(void *, void **))vt[0x26])(dev, &rt);
     }
     if (rt && surf && rt == surf) {
@@ -687,15 +732,27 @@ static void rb_draw(void)
         return;
     }
     rb_get_vp(dev, vt);
+    /*
+     * ★★ 设备指针一变（重建/Reset）⇒ 旧纹理与旧"面"都可能已被释放 ⇒ 必须清缓存。
+     *   不清的后果：拿旧 texture 去 SetTexture（D3D 会拒绝）或拿旧面去 GetContainer（可能直接崩）。
+     */
+    if (dev != rb_last_dev) {
+        rb_last_dev = dev;
+        rb_scene_tex = NULL;
+        rb_halo_tex  = NULL;
+        rb_logged_desc = 0;
+        rb_logged_rt = 0;
+        rb_logf("[设备] 设备指针变化 → %p ⇒ 已清空纹理/面缓存", dev);
+    }
 
     if (!rb_logged_desc) {
         rb_logged_desc = 1;
         surf = rb_pick_surface(dev, vt);
         if (surf && rb_rd(surf, 0x40)) {
             struct { unsigned fmt, type, usage, pool, multi, msq, w, h; } d;
-            void **svt = *(void ***)surf;
             memset(&d, 0, sizeof d);
-            if (svt && rb_rd(svt + 12, 4)) ((long (__stdcall *)(void *, void *))svt[12])(surf, &d);
+            if (rb_surf_ready(surf))
+                ((long (__stdcall *)(void *, void *))(*(void ***)surf)[12])(surf, &d);
             rb_logf("[面] 源面 %s = %p → %ux%u format=%u", rb_surf ? "A[0x4ccf9c]" : "B[0x4ccfa0]",
                     surf, d.w, d.h, d.fmt);
         }
@@ -784,6 +841,19 @@ static void rb_draw(void)
             rb_draw_quad(dev, vt, use_tex, 0.0f, 0.0f);
             if (rb_two) rb_draw_quad(dev, vt, use_tex, 0.0f, 0.0f);
         } else if (rb_player(&px, &py)) {
+            /* 重叠分域要用"敌方那个盘"的位置/半径：每 30 帧刷一次（不每帧走 VM 链） */
+            if (rb_overlap && (rb_frames % 30) == 0) {
+                int nv = 0;
+                float ecx, ecy, eR;
+                rb_ov_ok = rb_enemy_disc(&ecx, &ecy, &eR, &nv) && eR > 8.0f;
+                if (rb_ov_ok) { rb_ov_cx = ecx; rb_ov_cy = ecy; rb_ov_r = eR; }
+                if (!rb_logged_ov) {
+                    rb_logged_ov = 1;
+                    rb_logf("[重叠] 软性分域：%s（敌方盘 %s 圆心=(%.1f,%.1f) R=%.1f 过渡带=%.0f）",
+                            rb_overlap ? "开" : "关", rb_ov_ok ? "有" : "无",
+                            (double)rb_ov_cx, (double)rb_ov_cy, (double)rb_ov_r, (double)rb_blend);
+                }
+            }
             rb_world_to_screen(px, py, &pxs, &pys);
             {   /* ★ radius_auto：把"敌方那个盘的半径"当作我方的半径 ⇒ 放大倍率与敌方一致 */
                 float eR2;
