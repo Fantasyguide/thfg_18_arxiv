@@ -82,7 +82,8 @@ static float    rb_ov_floor  = 0.4f;
  *   ⇒ 圆盘里显示的画面与周围错开 ⇒ 双影。默认关掉后回到"很自然"那版的观感（只采 [0x4ccfa0]）✓
  *   只有在确实看到"越套越小"的递归时才把它设 1。
  */
-static int      rb_avoid_rt;    /* 重叠区内保留的比例（0=完全让位，1=不让位） */
+static int      rb_avoid_rt;
+static int      rb_no_blend;    /* ini no_blend：1 = 完全不开 alpha 混合（诊断"叠影是不是混合造成的"） */    /* 重叠区内保留的比例（0=完全让位，1=不让位） */
 static int      rb_ov_ok;             /* 缓存：敌方盘是否有效 */
 static float    rb_ov_cx, rb_ov_cy, rb_ov_r; /* 第二份的圆心相对偏移（屏幕像素，仅用于验证） */
 static unsigned rb_log_every = 300;   /* 每隔多少次画一行日志 */
@@ -996,7 +997,7 @@ static void rb_draw(void)
     ((void (__stdcall *)(void *, unsigned, unsigned, unsigned *))vt[0x42])(dev, 0u, RB_TSS_ALPHAOP, &ao_old);
     ((void (__stdcall *)(void *, unsigned, unsigned, unsigned *))vt[0x42])(dev, 0u, RB_TSS_ALPHAARG1, &aa1_old);
     ((void (__stdcall *)(void *, unsigned, unsigned, unsigned *))vt[0x42])(dev, 0u, RB_TSS_ALPHAARG2, &aa2_old);
-    ((void (__stdcall *)(void *, unsigned, unsigned))vt[0x39])(dev, RB_RS_ALPHABLENDENABLE, 1u);
+    ((void (__stdcall *)(void *, unsigned, unsigned))vt[0x39])(dev, RB_RS_ALPHABLENDENABLE, rb_no_blend ? 0u : 1u);
     ((void (__stdcall *)(void *, unsigned, unsigned))vt[0x39])(dev, RB_RS_SRCBLEND, RB_BLEND_SRCALPHA);
     ((void (__stdcall *)(void *, unsigned, unsigned))vt[0x39])(dev, RB_RS_DESTBLEND, RB_BLEND_INVSRCALPHA);
     ((void (__stdcall *)(void *, unsigned, unsigned, unsigned))vt[0x43])(dev, 0u, RB_TSS_COLOROP, RB_TOP_SELECTARG1);

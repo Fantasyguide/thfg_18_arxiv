@@ -453,7 +453,10 @@ static void hook_upload(x86_reg_t *r)
                 c &= 0x00ffffffu;                 /* alpha = 0 */
                 memcpy(pv + 16, &c, 4);
             }
-            if (!g_retire_logged) { g_retire_logged = 1; bgw_log("[退休] retire=1 ⇒ 网格 %dx%d 全部 alpha=0（引擎那份失效）", n, m); }
+            if (g_retire_logged < 8) {
+                g_retire_logged++;
+                bgw_log("[退休%d] mesh=%p %dx%d 全部 alpha=0（is_stage=%d）", g_retire_logged, mesh, n, m, is_stage);
+            }
         }
         return;                                    /* 退休后不必再做别的注入 */
     }
