@@ -4055,10 +4055,16 @@ static void pofv_emit_group(int set, int from)
            (unsigned)set, from, from + 12, n);
 }
 
-/* ★ 2026-10-18（owner 定案）：C2 的青蛙改走**引擎原生子机**（set 0x0e = SANAE_OP）*/
-static ce_option_t s_c2s_opt;
-static ce_card_t  *s_c2s_card;
-#define POFV109_SHT_SET_SANAE_OP  0x0e   /* 一手 engine/sht/th18/01-...-index.md §4：SANAE_OP，组内 2 条 */
+/* ★★★★ 2026-10-25（owner 实跑：「早苗 C2 和一手不符 —— 现在是用引擎侧弹幕，但**发弹的数量和角度**
+ *   和一手不一致；C1 应该已经是引擎侧弹幕了，并且**接管了初始发弹的角度和数量**」✓）
+ *   ⇒ **C2（青蛙）也走 C1（蛇）那条路** ✓ = `pofv_emit_group(set, half)` 直接调引擎按
+ *     **一手 `pl02.sht` 逐字节抄来的 set11（`0x69`）** 发弹 ⇒ **数量/角度由引擎的弹表决定** ✓，
+ *     卡侧不再自己决定任何一发 ✓。
+ *   ✗ 作废（2026-10-18 那版）：青蛙改走**原生子机**（`set 0x0e = SANAE_OP`，组内只有 **2 行**）
+ *     —— 那正是 owner 现在说的"数量和角度不对" ✗（一手 set11 是 **26 行**，每半圈 13 行）
+ *   ⇒ 这里把子机那套（`s_c2s_opt` / `ce_option_get` / `ce_tick_shooters_for_card`）**整段删掉** ✓。
+ *   剩下的窗口节奏与蛇完全同构：**每 8 帧一个半圈**、13 行/半圈 ⇒
+ *     青蛙 60 帧 = 8 个半圈 = **4 圈**（一手 ✓）；蛇 30 帧 = 4 个半圈 = **2 圈**（一手 ✓）。*/
 
 static void pofv_c1_window_tick(void)
 {
@@ -4074,12 +4080,6 @@ static void pofv_c1_window_tick(void)
     if (s_c2s_win > 0) {                       /* ★ 早苗 C2 的 60 帧窗口 ✓（一手 ✓）*/
         if (--s_c2s_win == 0) {                /* ★ 窗口尽 ⇒ 切回 set10 ✓ */
             s_c1_set_sel = 0;
-            /* ★ 2026-10-18 重验修：★ 这里**必须收子机** ✗ —— 否则那只原生子机会**常驻**自机中心 ✓、
-             *   永久占 12 槽之一 ✓，★ 直到换关/删卡才回收 ✗（重验第 4 条 ✓）。
-             *   ★ 用 `o->ptr` 判空 ✓，不依赖 `s_c2s_card` 是否陈旧 ✓（`sdk.c:668` 自己不判 c ✓）。*/
-            { int had = s_c2s_opt.ptr ? 1 : 0;
-              if (s_c2s_opt.ptr) ce_option_drop(s_c2s_card, &s_c2s_opt);
-              ce_log("pofv: [C2N] window end -> drop (had_opt=%d)", had); }
             ce_log("pofv: C2 窗口尽 ⇒ 切回 set10（下一次问认领会回 none）");
         }
     }
@@ -4098,26 +4098,10 @@ static void pofv_c1_window_tick(void)
          *   （★ 蛇 30 帧同理：1/9/17/25 = 4 个半圈 = **2 圈** ✓，与上面注释一致 ✓）。*/
         if (s_c1_win_age % 8 == 1 && s_c1_win_age < win_n) {
             s_c1_sanae_half ^= 1;
-            if (s_c1_set_sel) {
-                /* set 0x0e 的两行 fire_rate2 = 40（反汇编 0x40aa40/0x40aa56）=> 引擎只看 long % 40
-                 * => 必须传 long = 0（peashooter.c:532 / season.c:1626 / signal.c:2698 同款）；short 用不到。
-                 * ❓ 113/117 的 option 闸（sdk.c:2132）只在它们自己激活时否决 0x0a..0x15 => 同卡组才可能吞。*/
-                uint8_t *opt = ce_option_get(s_c2s_card, &s_c2s_opt, 0,
-                                             CE_ANM_ABILITY_SCRIPT_POFV109_C2S_FROG, 30, "pofv109");
-                if (opt) {
-                    ce_tick_shooters_for_card(opt, 0, 0, POFV109_SHT_SET_SANAE_OP);
-                    /* ★ debug：只在状态变化时打一行 ✓（每 8 帧一行会刷屏 ✗）*/
-                    if (s_c1_win_age == 1)   /* ★ 每个窗口的第一圈打一次 ✓（不用静态 ✗）*/
-                        ce_log("pofv: [C2N] native tick ok set=0x%02x opt=%p age=%d win=%d",
-                               (unsigned)POFV109_SHT_SET_SANAE_OP, (void*)opt, s_c1_win_age, s_c2s_win);
-                } else {
-                    if (s_c1_win_age == 1)
-                        ce_log("pofv: [C2N] option NULL (card=%p slot 满或未就绪) age=%d win=%d",
-                               (void*)s_c2s_card, s_c1_win_age, s_c2s_win);
-                }
-            } else {
-                pofv_emit_group(CE_SHT_SET_POFV109_SNAKE, s_c1_sanae_half ? 13 : 0);
-            }
+            /* ★ 蛇 ⇒ set10（`0x68`）、青蛙 ⇒ set11（`0x69`）—— **两条都走 `pofv_emit_group`** ✓
+             *   （= 引擎按一手弹表发，**数量/角度归引擎** ✓；owner 2026-10-25 的口径 ✓）。*/
+            pofv_emit_group(s_c1_set_sel ? CE_SHT_SET_POFV109_FROG : CE_SHT_SET_POFV109_SNAKE,
+                            s_c1_sanae_half ? 13 : 0);
         }
     }
 }
@@ -7214,10 +7198,7 @@ static void pofv_c2s_clear(void)
         s_c2s[k].live = 0; s_c2s[k].age = 0;
     }
     s_c2s_st.active = 0; s_c2s_st.ring = 0; s_c2s_st.timer = 0;
-    /* 2026-10-18：收起那只原生子机（ce_option_drop 删 VM + 清 flags）并置 0 防陈旧指针 */
-    /* ★ 2026-10-18 重验：判空用 `o->ptr` ✓（与窗口尽那处一致 ✓）—— `s_c2s_card` 可能是陈旧指针 ✗ */
-    if (s_c2s_opt.ptr) ce_option_drop(s_c2s_card, &s_c2s_opt);
-    s_c2s_card = 0;
+    /* 2026-10-25：原生子机那套已删（青蛙改走 `pofv_emit_group(FROG, …)` ✓）⇒ 这里没有要收的子机 ✓ */
 }
 
 static void pofv_c2s_fire(void)
@@ -8283,7 +8264,6 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
 
 static int on_tick_2(ce_card_t *c)
 {
-    s_c2s_card = c;      /* 2026-10-18：C2 的原生子机要用卡指针 */
     int i;
     /* ★★★★★ 2026-10-13 owner 要求：★ **按空格 = 放 C3**（**调试用** ✓）——
      *   ★ 接口 = `ce_key_down(CE_VK_SPACE)` ✓（`native/sdk.h:838` ✓）；★ 那个头文件里连
