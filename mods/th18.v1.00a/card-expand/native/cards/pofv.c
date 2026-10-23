@@ -1530,6 +1530,22 @@ static int pofv_charge_key(void)
     return ce_key_down(CE_VK_C) ? 1 : 0;      /* ★ 蓄力：**只认 C**（Shift 不算蓄力 ✓）*/
 }
 
+/* ★★★★ 2026-10-25（owner 实跑，两条 bug）：
+ *   ① 「C 的蓄力得在**主动卡是 109** 的时候才行，现在是**只要有 109**、主动卡是其他的也能蓄力」✗
+ *   ② 「蓄力途中按 **D**，如果主动卡切换走了，**认为放开蓄力**」✓
+ *   ⇒ 两道都用**同一道闸**：`ABILITY_MGR->+0x38`（= **当前选中的主动卡对象**，`engine.h:444`）
+ *     **就是本卡自己**（对象指针比较，`elytra_mace.c:244` 同款先例 ✓）——
+ *     ⚠ 别用卡号比：同一张卡可能同时在多个槽里，只有**对象指针**能表达"当前这一张" ✓。
+ *   ⇒ 闸一加，② 自然成立：切走的那一帧 `chg_held` 变 0 ⇒ 走"松手沿"
+ *     （`s_chg_prev && !chg_held`）⇒ **按放开蓄力处理**（照常定档/发招/扣灵力）✓。
+ *   ★ 一手依据：一手的蓄力是**主动卡的动作**（`AbilityManager` 只给"选中的主动卡"跑 C 分派）✓。*/
+static int pofv_charge_owned(ce_card_t *c)
+{
+    uint8_t *mgr = CE_ABILITY_MGR();
+    void *sel = mgr ? *(void **)(mgr + CE_MGR_SELECTED_ACTIVE) : 0;
+    return (sel && c && sel == (void *)c) ? 1 : 0;
+}
+
 static int pofv_aura_key(void)
 {
     /* ⚠⚠ 2026-10-08 **血的教训**保留：先前这里被误写成自调 ⇒ **无限递归** ⇒ 实跑**卡死（进不了画面）** ✗。
@@ -8782,8 +8798,15 @@ static int on_tick_2(ce_card_t *c)
      *     Shift 单独按住且从未用 C 蓄力（`s_aura_charge == 0`）时 ⇒ 半径走**满蓄力**兜底
      *     （= 旧版 Shift 的观感，**不回退** ✓；该兜底标 **❓自定**，已登记 `TUNING.md` ✓）。*/
     {
-    const int chg_held  = pofv_charge_key();   /* ★ 蓄力 = C only ✓ */
-    const int aura_held = pofv_aura_key();     /* ★ 结界 = C ∨ Shift ✓ */
+    const int chg_held  = pofv_charge_owned(c) && pofv_charge_key();
+                                              /* ★ 蓄力 = C only **且 109 是选中的主动卡** ✓
+                                               *   （2026-10-25 owner：切走 ⇒ 当帧变 0 ⇒ 按"放开"处理 ✓）*/
+    const int aura_held = pofv_charge_owned(c) && pofv_aura_key();
+                                              /* ★ 结界 = C ∨ Shift **且 109 是选中的主动卡** ✓
+                                               *   ⚠ 这一道**也必须加**：否则"按着 C 直接按 D 切走"时
+                                               *   `chg_held=0 ∧ aura_held=1` ⇒ 落进"保持"那一支 ⇒
+                                               *   松开沿**永远不触发**、蓄力值也一直不归零 ✗
+                                               *   （owner 2026-10-25 ②：「切走 ⇒ 认为放开蓄力」）*/
     /* ★ 蓄力音（一手 ✓）：★ 按下 C 的**上升沿**起一次 `0x2c` ✓（卡侧无循环接口 ✗ ⇒ 不循环 ✓）*/
     if (chg_held && !s_chg_se_prev) ce_play_sound(POFV_SE_CHARGE, ce_player_x());
     s_chg_se_prev = chg_held;
