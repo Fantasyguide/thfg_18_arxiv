@@ -7314,6 +7314,14 @@ static void pofv_c2s_tick(void)
                                      * 曾短暂改成 100 帧（当时用 4 px/帧 的错模型），已回一手值。*/
 #define POFV_C3S_Y2     0.0f       /* ★ 一手 y 基准 = 0 ✓（y = `[-9987] × 32` ∈ [−32,32] ✓，`pl02:419`）
                                     *   ★ 卡侧镜像 ⇒ 出生 `y = POFV_FIELD_H − (基准 + ry)` ✓ */
+/* ★★★ 2026-10-25 一手 `ExAttackFunc()` 的两个系数（`pl02.txt:324`）：
+ *   · `%A`：一手 `[-9888]` 是全局（疑似难度/rank），**值没 dump 到** ⇒ 卡侧先取 **0.5**
+ *     ⇒ `a = 24 + 32×0.5 = 40`（带子最长 40 px，v=1 时）；`r5 = (0.03 + %A×0.03)` ⇒ 0.045
+ *   · `k`：把一手 `r`（`%B = 0.1`）换成 **px/帧²** 的比例。一手实测 ≈**1 px/帧**（`HANDOFF §9`）：
+ *     段1 40 帧 × (0.1×k) = 1 ⇒ **`k = 0.25`** ✓（`HANDOFF §10.3` 同值）
+ *   ⇒ 这两个数**只影响手感/长度**，换掉不改变结构（都标 ❓，可一行改）。*/
+#define POFV_C3S_APARAM  0.5f
+#define POFV_C3S_K       0.25f
 /* ★ 2026-10-18（收尾 ✓）：★ 删掉 `POFV_C3S_Y = 96.0f` ✗ —— ★ 它是"❓③ y = RANDF2×32 未定位"那个旧口径的遗留 ✓，
  *   ★ 自 `f04bb503` 起**已无任何引用** ✗（★ 现在 y 走 `POFV_C3S_Y2` ＋ `ry` ✓）。*/
 
@@ -7345,7 +7353,11 @@ static const unsigned char s_c3s_wait[8] = { 15,15,13,13,12,11,10,10 };   /* $G 
  *       ★ 速度 **0.1 / 0 / (−40×0.1)/10 / 0 / 0.05** ✓、★ **±11.25° 左右镜像** ✓）」✓
  *   ⇒ ★ 所以本卡要能表达：★ **下落**（朝下 ✓）＋ ★ **分段加速/偏转**（★ 每段带自己的时长与加速度 ✓）
  *     ⇒ ★ 加 `spd`（当前速度 ✓）、`ang`（当前朝向 ✓）、`yaw`（段 4 那种一次性偏转的累计 ✓）。*/
-typedef struct { int live, age, life, side; float x, y; float rx, ry, rot; float spd, ang, yaw; int32_t vm; } pofv_c3s_t;
+typedef struct { int live, age, life, side; float x, y; float rx, ry, rot; float spd, ang, yaw;
+                 float C;    /* ★ 2026-10-25：**本条的转向帧**（一手 `$C = 60 + ([-10000]%100)` ✓，每条各自抽）*/
+                 float a;    /* ★ 长度系数（一手 `ins_701(0, 24 + 32×%A, …)` ✓）*/
+                 float len;  /* ★ 每帧现算：`len = a × spd` ✓（一手口径，见 HANDOFF §10.2）*/
+                 int32_t vm; } pofv_c3s_t;
 static pofv_c3s_t s_c3s[POFV_C3S_MAX];
 static struct { int active, wave, step, timer, level, side; float f0; } s_c3s_st;
 
@@ -7390,6 +7402,17 @@ static void pofv_c3s_spawn(float x, float y)
                                                                    *   （`s_c2_dir36[9] = (0,+1)` ⇒ +90° = +y = 下 ✓；
                                                                    *    2026-10-25 owner 纠正：上一版写 −π/2 = 朝上 ✗）*/
     s_c3s[k].spd  = 0.0f;                                         /* ★ 一手 ✓ 初速 0 */
+    /* ★★★ 2026-10-25 一手 `ExAttackFunc()`（`pl02.txt:324`）：
+     *   · **`$C = 60 + ([-10000] % 100)`** ⇒ 每条激光**自己抽**一个转向帧（60..159）✓
+     *     —— 这就是 owner 说的「**每条不一样**」✓（不是按档、也不是按丛的固定值）；
+     *   · **`a = 24 + 32 × %A`**（`ins_701`）⇒ `%A` 是一手的全局（`[-9888]`，疑似难度/rank，值没 dump 到）
+     *     ⇒ 卡侧先取 **%A = 0.5 ⇒ a = 40**（❓自定，登记 TUNING），它只影响"带子多长"。*/
+    s_c3s[k].C = 60.0f + (float)(ce_rand() % 100u);               /* ★ 一手 ✓ 60..159 */
+    s_c3s[k].a = 24.0f + 32.0f * POFV_C3S_APARAM;                 /* ★ 一手 ✓（%A 取 ❓0.5 ⇒ 40）*/
+    s_c3s[k].len = 0.0f;
+    /* ★ 寿命要**跟这条的转向帧走** ✗ —— 五段总长 = `40 + (C−40) + 10 + 8 + 120 = C + 138`
+     *   ⇒ 原来固定 220 在 `C > 82` 时会把段 5 砍掉 ✗ ⇒ 改成 `C + 150`（留 12 帧余量 ✓）。*/
+    s_c3s[k].life = (int)s_c3s[k].C + 150;
     s_c3s[k].yaw  = 0.0f;
     s_c3s[k].side = (s_c3s_st.side >= 0) ? 1 : -1;
     s_c3s[k].rx = (float)(ce_rand() % 13u);                        /* ★ 一手 ✓ [0,12] */
@@ -7543,33 +7566,17 @@ static void pofv_c3s_tick(void)
              *   ★ `ins_605(0,0,0)` = **速度 0**✗ ⇒ ★ **它不该"飞"**✗ ✓；
              *   ★ 观感上的"走半个版面"= ★ **它真的在走**✗ ✓（owner 2026-10-22：「先搞运动学」✓）。
              *   ⇒ ★ 本笔**恢复位移**✗ ✓，并按一手改成**加速度积分**（★ 见上表的六段 ✓）。*/
-            {   const float tt = POFV_C3S_SEG0;                 /* ★ $D = [-9985] = 130 ✓ */
-                /* ★★★ 2026-10-22 owner 定标：★「从上往下的话，转向大概在 **1/3 屏高**」✗
-                 *   ⇒ 体长 = 448/3 ≈ **149 px** ✗ ／ 130 帧 ⇒ **平均 1.15 px/帧** ✗
-                 *   ⇒ 一手那组 `r`（0.1/−0.4/0.05）当 px/帧² 会走 **440 px**（≈一屏）⇒ **偏大 2.95 倍** ✗
-                 *   ⇒ 统一乘 **0.34**（帧数 40/90/10/8/120 **不动** ⇒ 节奏不变 ✓）
-                 *   ★ 独立佐证：另一个 agent 的 §17.5 也标定出 **1.15 px/帧 / 体长 149 px** ✓
-                 *   ★ ❓ 这是**按观感标定的系数**，不是一手原值（`r` 的量纲仍未定）。*/
-                /* ★★★ 2026-10-22 一手实测（`engine/bullet/th19/01-curve-laser-kinematics.md` §9 ✓）：
-                 *   ★ TH19 运行时探针扫堆找到 Curve 对象（vtable RVA `0x1a87cc`），
-                 *   ★ `obj+0x2c` / `obj+0x54` 从 **67 → 285**（★ 218 单位 / 222 帧 ✓）
-                 *   ⇒ ★ **真实平均 ≈ 0.98 px/帧 ≈ 1 px/帧** ✗（**不是** `r` 直接当 px/帧² 的 4 px/帧）
-                 *   ⇒ ★ 「4 px/帧 / 440 px」快了约 **4 倍**；`r` 的**数值**是一手 ✓，
-                 *     ★ 但**纵向尺度**卡侧与一手不同 ⇒ 按 **屏高比例 `0.34`** 换算 ❓（比例本身有实测支撑 ✓）。
-                 *   ★ 换算后：段1 到 1.36 px/帧、段2 走 122 px、合计 ≈ **149 px ≈ 448 的 1/3** ✓
-                 *     ⇒ ★ 与 owner 实测「转向点在 1/3 屏」**吻合** ✓。*/
-                const float sr = POFV_C3S_SCREEN_FRAC;
+            {   const float tt = b->C;                          /* ★★★ 2026-10-25：**每条的转向帧** ✓
+                                                                 *   （一手 `$C = 60 + rand%100` ⇒ 60..159，
+                                                                 *     不是全局常数 ✗ —— 见 spawn 处注释）*/
+                const float kk = POFV_C3S_K;                    /* ★ 一手 `r` → px/帧² 的标定（0.25）*/
                 float a = 0.0f;
-                if (ag <= 40.0f)            a =  0.10f * sr;    /* 段1: 加速到 ≈1.36 px/帧 */
-                else if (ag <= tt)          a =  0.00f;         /* 段2: 匀速（90 帧 ≈ 122 px）*/
-                else if (ag <= tt + 10.0f)  a = -0.40f * sr;    /* 段3: 刹到 0（不是转向）*/
-                else if (ag <= tt + 18.0f)  a =  0.00f;         /* 段4: 只转向（s = ±11.25°/帧）*/
-                else                        a =  0.20f;        /* ★ 2026-10-25 owner：「转向后**没有走完整个剩余 x**」✗
-                                                                   *   ⇒ 段5 由 `0.05×0.34 = 0.017`（几乎不动 ✗）
-                                                                   *     改成 **0.20 px/帧²**：转向后 ~60 帧内加速到 ≈12 px/帧，
-                                                                   *     足以从 x=±140 走到**对侧边界**（≈332 px）✓
-                                                                   *   ❓ 这个数是**按"走完剩余 x"标定的**，不是一手原值
-                                                                   *     （一手 `%B` 是哨兵 ⇒ 段5 的真实量纲仍未定 ✓）。*/
+                /* 五段（一手 `ExAttackFunc()` 逐字 ✓）：40 / $C−40 / 10 / 8 / 120 */
+                if (ag <= 40.0f)            a =  0.10f * kk;                                  /* 段1 加速 */
+                else if (ag <= tt)          a =  0.00f;                                       /* 段2 匀速 */
+                else if (ag <= tt + 10.0f)  a = -0.40f * kk;                                  /* 段3 刹停 */
+                else if (ag <= tt + 18.0f)  a =  0.00f;                                       /* 段4 只转 */
+                else                        a = (0.03f + POFV_C3S_APARAM * 0.03f) * kk;       /* 段5 横向 */
                 b->spd += a;
                 if (b->spd < 0.0f) b->spd = 0.0f;
                 if (ag > tt + 10.0f && ag <= tt + 18.0f)        /* 段4: 8 帧 × ±11.25° = ±90° */
@@ -7581,11 +7588,15 @@ static void pofv_c3s_tick(void)
                     const int dj = (di < 0) ? di + 36 : di;
                     b->x += s_c2_dir36[dj][0] * b->spd;
                     b->y += s_c2_dir36[dj][1] * b->spd; }
-                /* 2026-10-22 调试：owner 说"弹幕中心没在动" ⇒ 先把积分结果打出来定位 */
-                if ((b->age % 10) == 0)
-                    ce_log("pofv: [C3S] age=%d a=%.2f spd=%.2f ang=%.3f x=%.1f y=%.1f",
-                           (int)b->age, (double)a, (double)b->spd, (double)b->ang,
-                           (double)b->x, (double)b->y);
+                /* ★★ 一手 `HANDOFF §10.2`：**长度逐帧现算** `length = a × v` ✓ ——
+                 *   v≈0 时长度≈0（几乎看不见）、加速后拉长、段3 刹停时缩成方块、段5 再拉长 ✓ */
+                b->len = b->a * b->spd;
+                /* ★ `[C3L]` 日志（owner 要对：拉长 → 缩成方块 → 转 90° → 再拉长）：头 3 帧 + 转向前后 + 每 30 帧 */
+                if (b->age <= 3 || b->age == (int)tt || b->age == (int)tt + 9 ||
+                    b->age == (int)tt + 18 || (b->age % 30) == 0)
+                    ce_log("pofv: [C3L] i=%d age=%d C=%.0f a=%.0f v=%.3f th=%.3f len=%.1f pos=(%.1f,%.1f)",
+                           (int)k, (int)b->age, (double)b->C, (double)b->a, (double)b->spd,
+                           (double)b->ang, (double)b->len, (double)b->x, (double)b->y);
             }
         }
             /* ★★★ 2026-10-21：★ 一手是"★ 束**一头长出来**✗"，不是整张图缩放 ✗ ⇒
@@ -7615,7 +7626,20 @@ static void pofv_c3s_tick(void)
              *   `b->rot` 那个"随机整圈"是给一手的**圆球**（script35 `rotate(0,0,%RANDRAD)`）用的，
              *   现在换成横条 ⇒ **不能随机转**。只留 `b->yaw`（段 4 的 ±11.25°）做拐弯。*/
             /* 2026-10-22 owner「图像没有旋转」⇒ 旋转量改用 b->ang 本身（yaw 已不再更新）。*/
-            ce_anm_set_rotation((uint32_t)b->vm, 0.0f, 0.0f, b->ang);
+            /* ★★★ 2026-10-25（`HANDOFF-109-SANAE-C3-KINEMATICS.md` §4.1/§10.2 ✓）——
+             *   · 贴图 = **`POFV109_C3S_STRIP`（256×16 横条）** ✓；
+             *   · **长度逐帧现算** `len = a × v` ⇒ `scale.x = len / 256` ✓
+             *     （一手 §10.2：v≈0 时长度≈0、加速后拉长、刹停缩成方块、转后再拉长 ✓）；
+             *   · 宽 = **24 px**（一手 `ins_700(0,-1,-1,-1,24)`）⇒ `scale.y = 24 / 16` ✓；
+             *   · 图里的条是**横的** ⇒ `rotation = 段角 + 90°` ✓（一手 §4.1）；
+             *   · `len < 2` 时给个下限（= 刹停时的"方块"），免得 scale 归零后整台不可见 ✓。*/
+            {
+                const float len = (b->len > 2.0f) ? b->len : 2.0f;
+                ce_anm_set_sprite(CE_ABILITY_ANM(), (uint32_t)b->vm,
+                                  (uint32_t)CE_ANM_ABILITY_SPRITE_POFV109_C3S_STRIP);
+                ce_anm_set_scale((uint32_t)b->vm, len / 256.0f, 24.0f / 16.0f);
+                ce_anm_set_rotation((uint32_t)b->vm, 0.0f, 0.0f, b->ang + 1.5707963f);
+            }
         }
         pos[0] = b->x; pos[1] = b->y; pos[2] = 0.0f;
         (void)ce_damage_rect(pos, 0.0f, 2, 14.0f, 24.0f, 24.0f);   /* ❓④ */
