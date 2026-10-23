@@ -273,11 +273,11 @@ static DWORD WINAPI poll_thread(LPVOID unused)
     int space_down = 0;
     (void)unused;
     while (InterlockedCompareExchange(&g_running, 1, 1)) {
-        /* 调试键标记（只读）：按下空格打一行，用来把日志和"我放 C3 了"对齐。
-         * 不是"用空格发 C3"——那要写游戏状态（binhack），本探针不做。 */
+        /* 调试键标记（只读）：C3 是 **X 键松手（电平）** 触发 ⇒ 记录 X 的**下降沿**。
+         * 只写日志，不写游戏内存。 */
         {
-            int down = (GetAsyncKeyState(VK_SPACE) & 0x8000) != 0;
-            if (down && !space_down) probe_log("[key] SPACE  %u ms", GetTickCount() - t0);
+            int down = (GetAsyncKeyState('X') & 0x8000) != 0;
+            if (!down && space_down) probe_log("[key] X-up  %u ms", GetTickCount() - t0);
             space_down = down;
         }
         probe_log("[%7u ms] ----", GetTickCount() - t0);
