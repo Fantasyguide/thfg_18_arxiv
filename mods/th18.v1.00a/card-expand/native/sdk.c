@@ -1001,9 +1001,20 @@ void ce_hud_vm_probe(const char *tag, uint32_t id)
  *   ⚠ 关掉它：把下面这个宏改成 0（调试完成后一行）。*/
 /* ★★★ 2026-10-03z57（owner：「**然后你可以拆框了**」）—— 声明块调试覆盖层**关掉**。
  *   它已完成使命（113 的 100+px 偏差、110/111 的墨迹溢出、108 的底部溢出都是靠它定位的 ✓）。
- *   要再用就把这里改成 1（其余代码原样保留 ✓）。*/
+ *   要再用就把这里改成 1（其余代码原样保留 ✓）。
+ *
+ * ★★★★★ 2026-10-24（owner：「**把 hud 货架系统的框重新打开**」）—— **重新打开 = 1** ✓。
+ *   · 这是**调试覆盖层**（玩家看不见 ✓）：它不参与 HUD 的显隐/淡化/排布，只**多画几支
+ *     `stock_rect` VM** 把"分配器以为的框"描出来 ✓；
+ *   · 上一轮（z57）按 owner 的话关掉、这一次按 owner 的话开回来 ⇒ **同一个开关，一行** ✓；
+ *   · 新增一档：★ **共享带的包围盒**（`ce_hud_band_rect()` = 所有已认领块 ∪ 原生卡面）
+ *     单独用**品红**描一圈 ✓ —— owner 指认的就是这个东西（「候选 2 = `ce_hud_band`」），
+ *     每块自己的 4 条边仍是 绿(货架)/黄(PINNED)/青(RIGHT) ✓；
+ *   · ⚠ **只读**：不碰 `ce_hud_band_dim_tick/dimmed/alpha` 的任何判据与数值 ✓
+ *     （owner 明令：那是玩家可见的 HUD，不许为了调试去动它 ✗）。
+ *   ⚠ **发布前置 0**：正式发包 / `make release` 之前把这里改回 **0**（一行，其余代码保留 ✓）。*/
 #ifndef CE_HUD_DEBUG_BLOCKS
-#define CE_HUD_DEBUG_BLOCKS 0
+#define CE_HUD_DEBUG_BLOCKS 1
 #endif
 
 #if CE_HUD_DEBUG_BLOCKS
@@ -1013,6 +1024,11 @@ static int      s_dbg_rows;                      /* 已经建好的行数（按*
 static int32_t  s_dbg_stage = -1;               /* ★ z25：池子对应的关卡号（换关要整池重建）*/
 static int32_t  s_dbg_retry[CE_HUD_DBG_MAX];    /* ★ z32：每行每 30 帧最多重建一次（不洪水）*/
 static int32_t  s_dbg_last_id[CE_HUD_DBG_MAX]; /* ★ z32：每行上次打日志时的卡 id（换卡就再打一次）*/
+/* ★ 2026-10-24：**共享带的包围盒**（`ce_hud_band_rect()` 的矩形）——1 圈 4 条边，颜色**品红**。
+ *   与"每块"那套分开存：块数上限 16 与本框无关（带永远只有 1 个）✓。*/
+static uint32_t s_dbg_band_edge[4];
+static int32_t  s_dbg_band_retry;              /* 同 `s_dbg_retry`：最多每 30 帧重建一次 */
+static int32_t  s_dbg_band_logged;             /* 上次打日志时的带宽（-1 = 还没打过）*/
 
 static uint32_t hud_dbg_spawn_edge(const float *p)
 {
@@ -1039,6 +1055,9 @@ void ce_hud_debug_blocks_tick(void)
         for (i = 0; i < CE_HUD_DBG_MAX; ++i)
             for (e = 0; e < 4; ++e) s_dbg_edge[i][e] = 0;   /* 引擎已清 ⇒ 只作废句柄 */
         s_dbg_rows = 0;
+        for (e = 0; e < 4; ++e) s_dbg_band_edge[e] = 0;     /* ★ 2026-10-24：带的框同样整池作废 */
+        s_dbg_band_retry = 0;
+        s_dbg_band_logged = -1;
     }
     if (n > s_dbg_rows) {                        /* 按**实际块数**懒惰加行（不预开 257 行）*/
         const float org[3] = { 0.0f, 0.0f, 0.0f };
@@ -1055,8 +1074,8 @@ void ce_hud_debug_blocks_tick(void)
         }
         s_dbg_rows = n;
     }
-    if (!s_dbg_rows) return;
-
+    /* ★ 2026-10-24：这里原来有一条 `if (!s_dbg_rows) return;` —— 打开"带的框"之后**不能早退** ✗
+     *   （块数为 0 时带也可能有矩形，比如只剩原生卡面在场）⇒ 改成 `s_dbg_rows == 0` 时循环空转 ✓。*/
     for (i = 0; i < s_dbg_rows; ++i) {
         uint32_t col;
         /* ★★★ 2026-10-03z32（owner：「**不可能被画面盖住，因为它大体是透明的**」）——
@@ -1115,7 +1134,69 @@ void ce_hud_debug_blocks_tick(void)
             ce_anm_set_color(s_dbg_edge[i][3], col);
         }
     }
-    (void)bx; (void)by; (void)bw; (void)bh;
+    /* ════════════════════════════════════════════════════════════════════════════
+     * ★★★★★ 2026-10-24（owner：「**把 hud 货架系统的框重新打开**」）——
+     *   **共享带（货架包围盒）的框**：`ce_hud_band_rect()` 给的矩形 = **所有已认领块的并集
+     *   ∪ 原生「当前主动卡」卡面**（`sdk_core.c` 的 `hud_band_union()`），也就是"整条左下角 HUD
+     *   在分配器眼里占的那一块" ⇒ 品红一圈画出来，与每块自己的 绿/黄/青 区分开 ✓。
+     *
+     *   ⚠ **纯只读 + 纯调试**：
+     *     · 不读也不写 `ce_hud_band_dim_*`（判据 / dimmed / alpha 一个字节都不动 ✓，
+     *       owner 明令「不要动 ce_hud_band 的 alpha/判据」）；
+     *     · 只多起 4 支 `stock_rect`（脚本 104）VM，玩家版把 `CE_HUD_DEBUG_BLOCKS` 改回 0 就一支都不建 ✓。
+     *   ⚠ 生命周期与"每块"那套**同款**：按关卡整池作废、句柄查不到才重建（每 30 帧最多一次，
+     *     不洪水 ✓）；带为空时把四条边**透明隐藏**（不删）✓。
+     *   ════════════════════════════════════════════════════════════════════════════ */
+    {
+        const float t = 2.0f;                    /* 边宽 2 表面 px（与每块那套同宽）*/
+        const uint32_t col_band = 0xB0FF00FFu;   /* A=0xB0（与每块同透明度）+ 品红 */
+        ce_hud_band_rect(&bx, &by, &bw, &bh);    /* 表面 px；(bx,by) = **左下角**，y 向下增大 */
+        for (e = 0; e < 4; ++e) {
+            if (s_dbg_band_edge[e] && ce_anm_get_vm(s_dbg_band_edge[e])) continue;
+            if (s_dbg_band_retry > 0) { --s_dbg_band_retry; continue; }
+            {
+                const float org[3] = { 0.0f, 0.0f, 0.0f };
+                s_dbg_band_edge[e] = hud_dbg_spawn_edge(org);
+                s_dbg_band_retry = 30;
+            }
+        }
+        if (bw > 0.0f && bh > 0.0f) {
+            /* 边心口径与"每块"那套逐字一致（`drawRect` 以 VM 位置为中心画）*/
+            if (s_dbg_band_edge[0]) {            /* 上边：中心 = (x+w/2, y−h) */
+                ce_anm_set_pos(s_dbg_band_edge[0], bx + bw * 0.5f, by - bh, 0.0f);
+                ce_anm_set_scale(s_dbg_band_edge[0], bw, t);
+                ce_anm_set_color(s_dbg_band_edge[0], col_band);
+            }
+            if (s_dbg_band_edge[1]) {            /* 下边：中心 = (x+w/2, y) */
+                ce_anm_set_pos(s_dbg_band_edge[1], bx + bw * 0.5f, by, 0.0f);
+                ce_anm_set_scale(s_dbg_band_edge[1], bw, t);
+                ce_anm_set_color(s_dbg_band_edge[1], col_band);
+            }
+            if (s_dbg_band_edge[2]) {            /* 左边：中心 = (x, y−h/2) */
+                ce_anm_set_pos(s_dbg_band_edge[2], bx, by - bh * 0.5f, 0.0f);
+                ce_anm_set_scale(s_dbg_band_edge[2], t, bh);
+                ce_anm_set_color(s_dbg_band_edge[2], col_band);
+            }
+            if (s_dbg_band_edge[3]) {            /* 右边：中心 = (x+w, y−h/2) */
+                ce_anm_set_pos(s_dbg_band_edge[3], bx + bw, by - bh * 0.5f, 0.0f);
+                ce_anm_set_scale(s_dbg_band_edge[3], t, bh);
+                ce_anm_set_color(s_dbg_band_edge[3], col_band);
+            }
+        }
+        else {
+            for (e = 0; e < 4; ++e)
+                if (s_dbg_band_edge[e]) ce_anm_set_color(s_dbg_band_edge[e], 0x00ffffffu);
+        }
+        /* 日志：带的矩形变了才打一行（不刷屏）⇒ 这一行就是"框画在哪"的机器判据 ✓ */
+        if (s_dbg_band_logged != (int32_t)bw) {
+            s_dbg_band_logged = (int32_t)bw;
+            ce_log("hud: debug band frame（**品红**）= 货架包围盒 x %.0f..%.0f y %.0f..%.0f (%.0fx%.0f) "
+                   "| dim=%d alpha=%d（本行只读：框不参与淡化判据）",
+                   (double)bx, (double)(bx + bw), (double)(by - bh), (double)by,
+                   (double)bw, (double)bh,
+                   ce_hud_band_dim_dimmed(), (int)ce_hud_band_dim_alpha());
+        }
+    }
 }
 #else
 void ce_hud_debug_blocks_tick(void) { }
