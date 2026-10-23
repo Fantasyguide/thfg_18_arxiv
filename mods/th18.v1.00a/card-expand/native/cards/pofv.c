@@ -1148,11 +1148,33 @@ static void pofv_hud_charge_bar(float fx, float fy, float ratio_rei, float ratio
      *   ★ ❓ 位置（刻度下方 4）与 `N` 的取值（`s_c3_lv_n`，0..7）都是我**自定** ✓，等 owner 实跑校。
      *   ★ C4 的 `BOSS lvN` 还没做（★ 要确认是否与这条**同一行** ✓）。*/
     {
-        char buf[16];
+        char buf[24];
         const int lv = (s_c3_lv_n < 0) ? 0 : ((s_c3_lv_n > 9) ? 9 : s_c3_lv_n);
-        const float tx = fx + POFV_HUD_CHG_FILL_W * POFV_HUD_CHG_TICK_AT(kind, 2);
+        const float tx3 = fx + POFV_HUD_CHG_FILL_W * POFV_HUD_CHG_TICK_AT(kind, 2);
+        const float tx4 = fx + POFV_HUD_CHG_FILL_W * POFV_HUD_CHG_TICK_AT(kind, 3);
+        /* ④ 常驻：C3 刻度下方 `lvN`（C4 刻度下方 `BOSS lvN` 待 owner 确认后再加）*/
         buf[0] = 'l'; buf[1] = 'v'; buf[2] = (char)('0' + lv); buf[3] = 0;
-        hud_text_draw(tx, fy + POFV_HUD_CHG_BLOCK_H_SURF + 4.0f, buf, 0.45f, 0xffffffu);
+        hud_text_draw(tx3, fy + POFV_HUD_CHG_BLOCK_H_SURF + 4.0f, buf, 0.45f, 0xffffffu);
+        /* ③ 蓄到刻度时，刻度**正上方**弹一行（同一时刻只显示最高的一档）：
+         *   C4 ⇒ `BOSS lvN` / C3 ⇒ `Ex Attack lvN` / C2 ⇒ `skill`
+         *   ❓ `[]` 的写法（`Ex Attack lv3` 还是 `Ex Attack lv[3]`）与 C4 的 `BOSS` 都待 owner 校。*/
+        {
+            const char *up = 0;
+            float ux = 0.0f;
+            if (fc >= POFV_HUD_CHG_TICK_AT(kind, 3)) {
+                up = "BOSS lv";   ux = tx4;
+            } else if (fc >= POFV_HUD_CHG_TICK_AT(kind, 2)) {
+                up = "Ex Attack lv"; ux = tx3;
+            } else if (fc >= POFV_HUD_CHG_TICK_AT(kind, 1)) {
+                up = "skill";     ux = fx + POFV_HUD_CHG_FILL_W * POFV_HUD_CHG_TICK_AT(kind, 1);
+            }
+            if (up) {
+                char t[24]; int n2 = 0;
+                while (up[n2] && n2 < 20) { t[n2] = up[n2]; ++n2; }
+                t[n2++] = (char)('0' + lv); t[n2] = 0;
+                hud_text_draw(ux, fy - 20.0f, t, 0.5f, 0xffffffu);
+            }
+        }
     }
     /* ④ **C1..C4 四枚标**（规格 ⑤⑥ ✓；形状 = 一手 `ins_617(1.0f,4)` ⇒ 脚本 425 的**贴图**）
      *    ★★ **三档**（一手 `interruptLabel` 的 4 / 3 / 2 三态；推法见 `TUNING.md` 本轮 §①②）：
