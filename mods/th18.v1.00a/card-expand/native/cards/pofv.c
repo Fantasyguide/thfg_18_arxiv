@@ -7681,10 +7681,22 @@ static void pofv_c3s_tick(void)
                  *     （贴图长轴本来就沿 +x ⇒ 旋转 θ 后正好指向运动方向 ✓，尾巴在身后 ✓）。*/
                 const int di = (int)(b->ang * (36.0f / 6.2831853f)) % 36;
                 const int dj = (di < 0) ? di + 36 : di;
-                ce_anm_set_sprite(CE_ABILITY_ANM(), (uint32_t)b->vm,
-                                  (uint32_t)CE_ANM_ABILITY_SPRITE_POFV109_C3S_STRIP);
-                ce_anm_set_pos((uint32_t)b->vm, b->x, b->y, 0.0f);   /* ★ 回到弹头本体（不做偏移 ✓）*/
-                ce_anm_set_scale((uint32_t)b->vm, len / 256.0f, 24.0f / 16.0f);
+                /* ★★★ 2026-10-25 owner：「激光条转向前**转向后全都是水平的**」✗
+                 *   ⇒ 结论 = **`ce_anm_set_rotation` 在这台 VM 上根本不生效** ✗（换过 θ / θ−90° 都一样）
+                 *   ⇒ 换方案：**不靠运行时旋转**，用**两张贴图**表示那 90°：
+                 *     · 竖条 `POFV109_C3S_STRIP_V`(16×256) = 转向**前**（上升段）✓
+                 *     · 横条 `POFV109_C3S_STRIP`  (256×16) = 转向**后**（横移段）✓
+                 *     切换点 = 段 4 结束（`ag > tt + 18`）✓ —— 一手那里正好转了 90° ✓。*/
+                {
+                    const int vert = ((float)b->age <= b->C + 18.0f);   /* 段4 结束前 = 竖条 ✓ */
+                    ce_anm_set_sprite(CE_ABILITY_ANM(), (uint32_t)b->vm,
+                                      (uint32_t)(vert ? CE_ANM_ABILITY_SPRITE_POFV109_C3S_STRIP_V
+                                                      : CE_ANM_ABILITY_SPRITE_POFV109_C3S_STRIP));
+                    ce_anm_set_scale((uint32_t)b->vm,
+                                     vert ? (24.0f / 16.0f) : (len / 256.0f),
+                                     vert ? (len / 256.0f) : (24.0f / 16.0f));
+                }
+                ce_anm_set_pos((uint32_t)b->vm, b->x, b->y, 0.0f);   /* ★ 弹头本体（不做偏移 ✓）*/
                 /* ★★★ 2026-10-25 owner：「全jb错位了：上升段是**横着上升**，转向后没问题，
                  *   但是**上升和转向看着不挨着**」✗
                  *   ⇒ 两处实验一起撤掉，回到最朴素的一组：
@@ -8899,7 +8911,13 @@ static int on_tick_2(ce_card_t *c)
     const int chg_held  = pofv_charge_owned(c) && pofv_charge_key();
                                               /* ★ 蓄力 = C only **且 109 是选中的主动卡** ✓
                                                *   （2026-10-25 owner：切走 ⇒ 当帧变 0 ⇒ 按"放开"处理 ✓）*/
-    const int aura_held = pofv_charge_owned(c) && pofv_aura_key();
+    /* ★★★ 2026-10-25 owner：「**按 Shift 张开结界的能力本身在任何时候都能做**！
+     *   只有**蓄力**要求 109 是选中的主动卡」✓（C 键 = 一个键挂两个用途：结界 + 蓄力）
+     *   ⇒ `aura_held` **不接** `owned` ✓（结界随时可用）；
+     *     "保持结界"那一支才接 `owned`（见下面 `else if (aura_held && owned)`）——
+     *     这样"按着 C 直接按 D 切走"时：`chg_held=0`、保持支不成立 ⇒ 落到释放支 ⇒ 按放开蓄力处理 ✓，
+     *     而结界块仍按 `aura_held` 继续维持 ✓。*/
+    const int aura_held = pofv_aura_key();
                                               /* ★ 结界 = C ∨ Shift **且 109 是选中的主动卡** ✓
                                                *   ⚠ 这一道**也必须加**：否则"按着 C 直接按 D 切走"时
                                                *   `chg_held=0 ∧ aura_held=1` ⇒ 落进"保持"那一支 ⇒
@@ -8997,7 +9015,7 @@ static int on_tick_2(ce_card_t *c)
             }
             if (s_aura_charge > cap) s_aura_charge = cap;
         }
-    } else if (aura_held) {
+    } else if (aura_held && pofv_charge_owned(c)) {   /* ★ 保持蓄力/结界那一支才要 owned ✓ */
         /* ★★ 2026-10-10：门**去掉 `&& s_aura_charge > 0.0f`** ✗ —— 否则「按 Shift 但没蓄过力」
          *   （`s_aura_charge == 0`）会**掉进第三支** ⇒ 按住期间**每帧拆自己的领域** ✗✗。
          *   ⇒ 现在「**只要结界键还按着 ⇒ 一律不收束**」✓（= owner「按 shift 只管张开结界」✓）。
