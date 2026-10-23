@@ -8490,10 +8490,13 @@ static void pofv_se_probe(void)
     const int32_t *q = (const int32_t *)POFV_SE_QUEUE_ADDR;
     int i;
     for (i = 0; i < POFV_SE_QUEUE_N; ++i) {
+        /* ★ 队列语义（反汇编 `0x476c70` 实证 ✓）：槽里是 **id**，**负数 = 空位**
+         *   （`0x476ca9  js 0x476ce6` 遇到负值即结束扫描）⇒ 只记 `0 < v <= 0x53` 的槽 ✓ */
         const int v = (int)q[i];
-        if (!inited || v != last[i]) {
-            if (v) ce_log("pofv: [SE] slot%d = 0x%02x", i, (unsigned)v);
-            last[i] = v;
+        const int ok = (v > 0 && v <= 0x53) ? v : 0;
+        if (!inited || ok != last[i]) {
+            if (ok) ce_log("pofv: [SE] slot%d = 0x%02x", i, (unsigned)ok);
+            last[i] = ok;
         }
     }
     inited = 1;
