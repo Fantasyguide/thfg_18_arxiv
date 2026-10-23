@@ -228,6 +228,19 @@ static void poll_once(void)
         probe_log("[cnt] 609-612 = %u   711 = %u", g_cnt609, g_cnt711);
         return;
     }
+    if (g_hook_on && g_hook_sel == 12 && g_ctx) {
+        /* ★ 遍历元素 i=0..15：elem = ctx+0x5ac + i*0x2c，看哪条 elem+0x28 不是 -9999994 */
+        char buf[600]; int n = 0, i;
+        for (i = 0; i < 16; i++) {
+            DWORD p = g_ctx + 0x5ac + i * 0x2c + 0x28;
+            DWORD v = 0;
+            if (readable((const void *)(uintptr_t)p, 4)) v = *(const DWORD *)(uintptr_t)p;
+            n += snprintf(buf + n, sizeof(buf) - n, " %x=%08x", i, v);
+            if (n > 500) break;
+        }
+        probe_log("[elem+28]%s", buf);
+        return;
+    }
     if (g_hook_on && g_ctx) {
         probe_log("[ctx] %08x  | [w4] %08x  [w8] %08x", g_ctx, g_w4, g_w8);
         dump_n("ctx+0x5ac", g_ctx + 0x5ac, 24);
@@ -633,6 +646,7 @@ int __stdcall thcrap_plugin_init(void)
         if (g_hook_sel == 0 || g_hook_sel == 3) hook_store5(0x102a60u, EC, &g_wc, "+0c");
         if (g_hook_sel == 0 || g_hook_sel == 4) install_hook();
         if (g_hook_sel == 0 || g_hook_sel == 8) install_hook711();
+        if (g_hook_sel == 12) install_hook711();   /* 抓 ctx，然后遍历元素 dump */
         if (g_hook_sel == 0 || g_hook_sel == 11) {
             /* ★ 全 opcode 直方图：把 300..1042 里出现的**每个不同组**都装上计数器，
              * 一次运行就能看出这台机器到底跑了哪些 handler（不预设任何 opcode）。 */
