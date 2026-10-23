@@ -5974,7 +5974,10 @@ static void pofv_c4_fog_tick(void)
          *   写成了顶点色 ⇒ 在 `blendMode(4)`（`INVDESTCOLOR × INVSRCCOLOR + ADD`）下
          *   深红几乎乘没了 ⇒ 什么都看不见 ✗。
          *   ⇒ 顶点色固定 **白**（与一手一致 ✓），颜色由**混合模式与底色**决定 ✓。*/
-        ce_anm_set_color((uint32_t)s_c4_aura_vm, 0xFFFFFFFFu);
+        /* ★ 2026-10-25 owner：「**怎么是白色的**」⇒ 上一笔为 `blendMode(4)` 把顶点色写成纯白 ✗，
+         *   现在回到**普通混合（layer 5 那套）** ⇒ 顶点色就该是 **boss 的 fog 颜色** ✓
+         *   （日志实测 `last_c=0xF00F80` 深红 ⇒ 画出来就是暗红雾 ✓）。*/
+        ce_anm_set_color((uint32_t)s_c4_aura_vm, 0xFF000000u | (s_fog_c_last & 0x00FFFFFFu));
     }
 }
 
