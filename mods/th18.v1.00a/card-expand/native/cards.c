@@ -247,6 +247,16 @@ int ce_cards_load(uint8_t *base, uint8_t *cave, unsigned rows)
         s_initial_unlocked[i] = (uint8_t)d->initial_unlocked;
     }
 
+    /* ★ 发版卡池（owner 2026-10-24）：原生卡 id 0..56 退场 —— 一次性从
+     *   「初始可携带」/「贪欲之壶发牌池」/「商店可购买」三处摘掉，例外 = 商店固定上架的资源卡。
+     * 只改 staged 拷贝：容量检查通过才 memcpy 回 cave（与其它所有步骤同一个「全有或全无」）。
+     * ★ 放在 cards.js 成功解析之后：栈里没有本 mod 的卡池却把原生卡全摘了 = 空商店。
+     * 语义 / 为什么 weight 是 6 不是 0 见 cards_def.h 的 ce_native_retire 注释。*/
+    unsigned retired = ce_native_retire(staged, rows);
+    ce_log("retire: native 0..%u — %u row(s) retired (weight:=%u = never in pool, deck_visible:=0, "
+           "initial_unlocked:=0, dmode 1..5 -> 0); kept 0 BLANK / 1,2,5,6 fixed shop stock / 56 NULL",
+           (unsigned)CE_RETAIL_LAST_ID, retired, (unsigned)CE_SHOP_NEVER_WEIGHT);
+
     load_dev_config(staged, rows);                 /* 权重覆盖要在容量检查之前 */
     unsigned pool = 0, guaranteed = 0;
     if (!ce_shop_capacity_check(staged, rows, &pool, &guaranteed, err, sizeof err)) {
