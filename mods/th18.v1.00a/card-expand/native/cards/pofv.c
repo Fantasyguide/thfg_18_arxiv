@@ -9099,7 +9099,11 @@ static int on_tick_2(ce_card_t *c)
             }
             if (s_aura_charge > cap) s_aura_charge = cap;
         }
-    } else if (aura_held && pofv_charge_owned(c)) {   /* ★ 保持蓄力/结界那一支才要 owned ✓ */
+    } else if (aura_held && (pofv_charge_owned(c) || ce_key_down(CE_VK_SHIFT))) {
+        /* ★★★ 2026-10-25 owner：「**shift 没有张开结界**」✗
+         *   ⇒ 上一版把"保持结界"那一支也接了 `owned` ⇒ **只有 109 被选中时 Shift 才管用** ✗
+         *   ⇒ 改成：**按住 Shift 永远进这一支**（张/维持结界 ✓）；按 C 时才要求 owned ✓
+         *     （这样"按着 C 切卡"仍然落到释放支 ⇒ 按放开蓄力处理 ✓）。*/
         /* ★★ 2026-10-10：门**去掉 `&& s_aura_charge > 0.0f`** ✗ —— 否则「按 Shift 但没蓄过力」
          *   （`s_aura_charge == 0`）会**掉进第三支** ⇒ 按住期间**每帧拆自己的领域** ✗✗。
          *   ⇒ 现在「**只要结界键还按着 ⇒ 一律不收束**」✓（= owner「按 shift 只管张开结界」✓）。
