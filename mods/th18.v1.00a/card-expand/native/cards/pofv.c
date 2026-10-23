@@ -8498,21 +8498,10 @@ static int on_tick_2(ce_card_t *c)
          *   ★ 结论：★ **引擎内部对象不要从卡侧直接 new**✗ ✓（至少现在的证据是这样 ✓）。*/
         static int s_dbg_sp_prev = 0;                       /* ★ 只在按下的那一帧触发 ✓ */
         const int sp = ce_key_down(CE_VK_SPACE) ? 1 : 0;
-        if (sp && !s_dbg_sp_prev) {
-            /* ⚠ 2026-10-18 修：★ 原来这里写死 `pofv_c3_fire()` ✗ = **灵梦的 C3** ✓，
-             *   ★ 所以按空格**永远不会**放到当前角色的 C3 ✗（★ owner 正是用这个键测魔理沙 C3 ✓
-             *   ⇒ ★ 难怪"★ 什么都看不见"✗ —— ★ 他放的是灵梦那套 ✓）。
-             *   ⇒ ★ 改成按 `s_aura_kind` 走**角色自己的** C3 ✓。*/
-            /* 2026-10-21 owner：空格改回**当前角色的 C3**（前一阵为了调 C4 临时指到 C4）。*/
-            if (s_aura_kind == 1)      pofv_c3m_fire();   /* 魔理沙 C3 */
-            else if (s_aura_kind == 3) pofv_c3s_fire();   /* 早苗 C3 */
-            else                       pofv_c3_fire();    /* 灵梦/咲夜 C3 */
-            /* ★ 2026-10-18：把**原始角色号**也打出来（`kind` 是映射后的：1 魔理沙/2 咲夜/3 早苗/0 灵梦）*/
-            ce_log("pofv: [DBG] 空格 ⇒ 放 **C3** ✓（f=%d kind=%d raw_char=%d charge=%.0f）",
-                   (int)s_card_frames, (int)s_aura_kind,
-                   (int)(*(const int32_t *)POFV_ADDR_PLAYER_CHAR), (double)s_aura_charge);
-        }
-        s_dbg_sp_prev = sp;
+        /* ★★★ 2026-10-25 owner：「**空格换 C4**」✓ ⇒ 这里那个"放当前角色 C3"的旧处理器**撤掉** ✗
+         *   （它和 `on_tick_2` 里那个"空格 ⇒ C4"的处理器**同时挂在空格上** ⇒ 一按就同时放 C3+C4 ✗）。
+         *   空格现在**只在 `on_tick_2` 里**处理，且只放 C4 ✓。*/
+        (void)sp; (void)s_dbg_sp_prev;
     }
     (void)c;
     /* ★★ A 路：出队**生成真敌机灵**（安全上下文 = 这里；死亡栈里只入过队）。
