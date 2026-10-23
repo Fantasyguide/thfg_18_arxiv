@@ -8476,6 +8476,29 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
 /* ★★★ 2026-10-25（owner：「**空格换成 C4**」✓）：调试键 = **直接放 C4**（不是只把蓄力顶到阈值）。
  *   一手口径里 C4 的派发就是这四支（与释放支 `tier_rel >= 4` 那一段**同一组调用** ✓）；
  *   抽成一个函数，**释放支照旧**、调试键复用它 ⇒ 不会出现"两套 C4" ✗。*/
+/* ★★★★ 2026-10-25 goal「侦测被弹音是哪个 SE」—— **零风险轮询**，不 hook 任何东西 ✓：
+ *   一手 `engine/_shared/th18-sound-table.md` §1：`SoundManager` 全局 `0x56ad7c`，
+ *   **本帧播放队列 = `0x56ad9c`（12 槽 × 4 字节，存音效 id）**、每槽计数 `0x56adcc`。
+ *   `play_sound`(`0x476c70`) 就是把 id 填进这个队列 ⇒ **每帧读队列、只在变化时打一行日志**，
+ *   就能看到"破罩那一帧前后到底播了哪些 SE" ✓（不屏蔽、不改行为 ✓）。*/
+#define POFV_SE_QUEUE_ADDR  0x56ad9cu
+#define POFV_SE_QUEUE_N     12
+static void pofv_se_probe(void)
+{
+    static int last[POFV_SE_QUEUE_N];
+    static int inited;
+    const int32_t *q = (const int32_t *)POFV_SE_QUEUE_ADDR;
+    int i;
+    for (i = 0; i < POFV_SE_QUEUE_N; ++i) {
+        const int v = (int)q[i];
+        if (!inited || v != last[i]) {
+            if (v) ce_log("pofv: [SE] slot%d = 0x%02x", i, (unsigned)v);
+            last[i] = v;
+        }
+    }
+    inited = 1;
+}
+
 static void pofv_c3_dispatch(void)
 {
     if (s_aura_kind == 1)      pofv_c3m_fire();
@@ -9009,6 +9032,7 @@ static int on_tick_2(ce_card_t *c)
      *   主动卡是这张**」✓ ⇒ 结界键拆成两半：
      *     · **Shift 恒可用** ✓（与卡是否被选中无关）；
      *     · **C 只有在 109 被选中时**才算"张结界" ✓（它同时是蓄力键，两个用途都归 109 ✓）。*/
+    pofv_se_probe();   /* ★ goal：SE 侦测（只记录 ✓）*/
     const int aura_held = ce_key_down(CE_VK_SHIFT)
                         || (pofv_charge_owned(c) && ce_key_down(CE_VK_C));
                                               /* ★ 结界 = C ∨ Shift **且 109 是选中的主动卡** ✓
@@ -11322,6 +11346,7 @@ static int pofv_on_death_before_deathbomb(ce_card_t *c)
      *     **`0x1b = se_tan00.wav`** ✓（同一族，正是你给的第一支）⇒ 直接播 **0x1b** ✓。
      *   ⚠ 引擎自己那一下**被弹音**在命中时已经播过（我们是在死亡流程里撤销的）⇒
      *     现在会"被弹音 + 破罩音"两声；要压掉被弹音得 hook SE 播放（共享件，另案 ✓）。*/
+    ce_log("pofv: [SE] ==== 破罩这一帧开始（下面紧跟的 [SE] slot 行就是引擎/我们播的音）====");
     {   const float *bp = ce_player_pos();
         ce_play_sound(POFV_BARRIER_BREAK_SE, bp ? bp[0] : 0.0f);
     }
