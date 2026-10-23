@@ -2052,7 +2052,12 @@ static void pofv_spark_tick(void)
     }
 }
 
-static int cancel_white_in_circle(const float *pos, float r, int max_count, int mode)
+/* ★★★★ 2026-10-25 owner（定稿）：「**C1-C4 的那个消弹得是无条件消弹**，不是暴风的那个有条件消弹」✓
+ *   ⇒ 本函数加一个 `white_only` 门：
+ *     · `white_only = 0` ⇒ **无条件**（不看弹种，圈内全消）→ **C1–C4 的消弹环** 用它 ✓
+ *     · `white_only = 1` ⇒ **有条件**（只消"可消弹"，`pofv_is_white_bullet`）→ **暴风** 用它 ✓
+ *   （此前两处都走有条件版 ⇒ C1–C4 的环其实一直在按暴风的规则消 ✗ —— 这正是 owner 说的那句。）*/
+static int cancel_white_in_circle(const float *pos, float r, int max_count, int mode, int white_only)
 {
     uint8_t *bm = CE_BULLET_MGR();
     uint32_t i;
@@ -2064,7 +2069,7 @@ static int cancel_white_in_circle(const float *pos, float r, int max_count, int 
         float br, dx, dy, rr;
         if (state != 1 && state != 2) continue;        /* 0 = 空槽；3 / 4 = 别的状态 */
         br = *(const float *)(b + POFV_BULLET_RADIUS_OFF);
-        if (!pofv_is_white_bullet(br)) continue;       /* ★ 可消弹判据（哨兵弹种在这里被跳掉）*/
+        if (white_only && !pofv_is_white_bullet(br)) continue;   /* ★ 仅暴风走这条（条件消弹）✓ */
         dx = *(const float *)(b + CE_BULLET_POS) - pos[0];
         dy = *(const float *)(b + CE_BULLET_POS + 4) - pos[1];
         rr = br * 0.5f + r;                            /* 照 0x429370 的判定式 */
@@ -3280,7 +3285,7 @@ static void pofv_ca_ring_tick(void)
          *     · ★ **暴风 = 击破敌人那一下的触发效果** ✓（不属于 C 系列 ✓）★ ⇒ `do_storm_frame()` 的消弹
          *       也是**对的** ✓，不要给它加"条件门" ✗。*/
         if (R->r > 0.0f) {
-            n = cancel_white_in_circle(pos, R->r, POFV_CANCEL_MAX, POFV_BULLET_CANCEL_MODE);
+            n = cancel_white_in_circle(pos, R->r, POFV_CANCEL_MAX, POFV_BULLET_CANCEL_MODE, 0);   /* ★ C1–C4：**无条件** ✓ */
             if (n > 0)
                 ce_log("pofv: [CA_RING] slot=%d kind=%d r=%.1f 消掉 %d 颗（一手：逐帧点测试 ✓）",
                        i, R->kind, (double)R->r, n);
@@ -3457,7 +3462,7 @@ static void do_storm_frame(const pofv_storm_t *bl)
     if (r <= 0.0f) return;
     pos[0] = bl->x; pos[1] = bl->y; pos[2] = 0.0f;
 
-    n = cancel_white_in_circle(pos, r, POFV_CANCEL_MAX, POFV_BULLET_CANCEL_MODE);
+    n = cancel_white_in_circle(pos, r, POFV_CANCEL_MAX, POFV_BULLET_CANCEL_MODE, 1);   /* ★ 暴风：**有条件** ✓ */
     /* ★★★★ 2026-10-10 TH19 連撃：暴风**每消掉一颗小弹 ⇒ combo +1**（一手 `0x51cb91`：
      *   `FUN_0051c8c0`（暴风 tick）的消弹循环里调 `FUN_00549780(实参 0)` ✓ —— 实参 0 ⇒ **窗口不加** ✓）。
      *   这是 combo 的**第二个**（也是唯一另一个）来源 ✓；一手对「除霊オーラ（结界）消弹」**不加** ✗
