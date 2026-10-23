@@ -1165,7 +1165,7 @@ static void pofv_hud_charge_bar(float fx, float fy, float ratio_rei, float ratio
              *   ⚠ 一手的 `interruptLabel(3)`（那 0.4×24 的细针态）**本卡不再复刻** ✗ ⇒ ❓已登记 TUNING。*/
             ce_anm_set_scale(vm, POFV_HUD_CHG_DIA_SCALE, POFV_HUD_CHG_DIA_SCALE);
             ce_anm_set_color(vm, tdim | (POFV_HUD_CHG_MARK_COL & 0xffffffu));
-            ce_anm_set_color2(vm, POFV_HUD_CHG_MARK_COL);
+            ce_anm_set_color2(vm, tdim | (POFV_HUD_CHG_MARK_COL & 0xffffffu));   /* 2026-10-23: 接入 HUD 统一调暗 */
             ce_anm_set_sprite(CE_ABILITY_ANM(), vm, POFV_HUD_CHG_MARK_SPR[i]);      /* 4 色 4 张 ✓ */
         }
         if (reached) {                                       /* ★ 电平：蓄力 ≥ 标位 ⇒ 该标带光晕 ✓ */
@@ -1176,7 +1176,7 @@ static void pofv_hud_charge_bar(float fx, float fy, float ratio_rei, float ratio
             if (s_hud_chg_halo_vm[i]) {                      /* 位置/选图/白顶点色：每帧写（脚本的 `sprite()` 只执行一次，
                                                               * 逐帧写才与段位色绑定无关 ✓；动画全在脚本里 ✓）*/
                 ce_anm_set_pos((uint32_t)s_hud_chg_halo_vm[i], tx, ty, 0.0f);
-                ce_anm_set_color((uint32_t)s_hud_chg_halo_vm[i], POFV_HUD_CHG_MARK_COL);
+                ce_anm_set_color((uint32_t)s_hud_chg_halo_vm[i], tdim | (POFV_HUD_CHG_MARK_COL & 0xffffffu));   /* 同上 */
                 ce_anm_set_color2((uint32_t)s_hud_chg_halo_vm[i], POFV_HUD_CHG_MARK_COL);
                 ce_anm_set_sprite(CE_ABILITY_ANM(), (uint32_t)s_hud_chg_halo_vm[i], POFV_HUD_CHG_GLOW_SPR[i]);
             }

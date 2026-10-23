@@ -33295,3 +33295,23 @@ owner 给了上面的口径后**改成精确事件**（commit `65c0e178`，本�
   另有 `:699`「HUD 在它 `< 1` 时黄/灰闪」。
 - **谁改的**：本 agent。**影响面**：只有卡 109 蓄力条的灵力段。
 - **怎么验证的**：`make rc=0`；`make dev` 全绿；owner 实跑看"灵力段 3 帧黄 / 3 帧蓝"。
+
+## §BE-109-20261023l ★ 蓄力条：把剩下两处颜色接入 HUD 统一调暗（`tdim`）
+
+- **文件 → 改了什么**：`native/cards/pofv.c` `pofv_hud_charge_bar()`：
+  · 菱形标的 `ce_anm_set_color2(vm, MARK_COL)` → `tdim | (MARK_COL & 0xffffff)`；
+  · 光晕的 `ce_anm_set_color(halo, MARK_COL)` → `tdim | (MARK_COL & 0xffffff)`。
+- **为什么**：owner 2026-10-23「**这些都得接入 HUD 的透明度**」。原先只有 `color` 那一路接了 `tdim`，
+  `color2` 与光晕两路没接 ⇒ HUD 变暗时它们不跟着暗。
+- **谁改的**：本 agent。**影响面**：只有卡 109 蓄力条的菱形标与光晕。
+- **怎么验证的**：`make rc=0`；`make dev` 全绿；owner 实跑看"HUD 变暗时菱形/光晕一起变暗"。
+
+## §BE-109-20261023m ★ 颜色字节序结论（回应 owner 的怀疑）
+
+- **`ce_anm_set_color(id, v)` 是 `0xAARRGGBB`（A 在高字节）**，不是 BGR：
+  · `sdk.h` 的 `ce_anm_set_color(uint32_t id, uint32_t rgba)` 只把 `v` **原样**写进 `vm+CE_ANM_VM_COLOR1`；
+  · 现有代码用 `0xffffff80`（白 + alpha 0x80）、`tdim | 0x00ffffff`（alpha 0 ⇒ 隐）⇒ **A 必在高字节**；
+  · ⇒ ★ `0xffffff00` = **A=FF, R=FF, G=FF, B=00** = **纯黄** ✓（若真按 BGR 读会变成青，与"发橙"不符）。
+- **BGR 那条结论只适用于 `.anm` 脚本里的 `color(a,b,c)`**（`engine/versus/th19/07-enemy-death-and-cancel.md` §9，
+  `thecl` 落盘整字反转）——★ **不适用于这个 C API**。
+- **结论**：本卡的颜色**没有 BGR/RGB 问题**；"发橙"更可能是 `blendMode(1)` 加算 + 白段叠色，待实跑再看。
