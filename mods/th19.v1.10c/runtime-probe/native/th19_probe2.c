@@ -521,6 +521,16 @@ int __stdcall thcrap_plugin_init(void)
         if (g_hook_sel == 0 || g_hook_sel == 2) hook_store5(0x102a24u, E8, &g_w8, "+08");
         if (g_hook_sel == 0 || g_hook_sel == 3) hook_store5(0x102a60u, EC, &g_wc, "+0c");
         if (g_hook_sel == 0 || g_hook_sel == 4) install_hook();
+        /* ★★ 真正的 609 handler（th19:0x502432）里的两个 float store：
+         *   0x502493  f3 0f 10 44 24 28   movss xmm0,[esp+0x28]   ← r（5 字节整）
+         *   0x5024af  f3 0f 11 40 04      movss [eax+0x4],xmm0    ← s（5 字节整）
+         * 段表容器在 ctx+0x4e6c（不是 +0x5ac）。 */
+        {
+            static const BYTE ER[5] = {0xf3,0x0f,0x10,0x44,0x24};   /* 0x502493..0x502497 前 5 字节 */
+            static const BYTE ES[5] = {0xf3,0x0f,0x11,0x40,0x04};
+            if (g_hook_sel == 0 || g_hook_sel == 5) hook_store5(0x102493u, ER, &g_w0, "r@493");
+            if (g_hook_sel == 0 || g_hook_sel == 6) hook_store5(0x1024afu, ES, &g_w4, "s@4af");
+        }
     }
 
     InterlockedExchange(&g_running, 1);
