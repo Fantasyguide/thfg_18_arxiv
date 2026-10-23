@@ -774,71 +774,6 @@ static uint32_t hud_vm_spawn(int script, float x640, float y640)
     return ce_anm_spawn_ui(CE_ABILITY_ANM(), script, p);
 }
 
-/* ★★★ 2026-10-23 卡 109：HUD 文字（TH19 字形，sprite 904..930）。
- *   一手：TH19 `data/ANM/ascii/ascii_1280.png` 的 sprite(ord(c)-32)，28x28 一格。
- *   卡里只切了 27 个字符（entry 上限 256 已用 227）：
- *     s k i l E x A t a c B O S v [ ] n 0 1 2 3 4 5 6 7 8 9
- *   ⇒ sprite = 904 + 序号。★ 每字一台 VM，复用 HUD_CHARGE 脚本，每帧盖写 sprite/pos/scale/color。*/
-static int hud_asc_idx(char c)
-{
-    switch (c) {
-    case 's': return 0;  case 'k': return 1;  case 'i': return 2;  case 'l': return 3;
-    case 'E': return 4;  case 'x': return 5;  case 'A': return 6;  case 't': return 7;
-    case 'a': return 8;  case 'c': return 9;  case 'B': return 10; case 'O': return 11;
-    case 'S': return 12; case 'v': return 13; case '[': return 14; case ']': return 15;
-    case 'n': return 16;
-    default: return (c >= '0' && c <= '9') ? (17 + (c - '0')) : -1;
-    }
-}
-#define POFV_HUD_TXT_MAX 24
-#define POFV_HUD_TXT_POOLS 3
-static int32_t s_hud_txt_vm[POFV_HUD_TXT_POOLS][POFV_HUD_TXT_MAX];
-static int     s_hud_txt_n[POFV_HUD_TXT_POOLS];
-/* 2026-10-23：C3/C4 等级（定义在文件后半）⇒ HUD 文字要先声明才能读 */
-static int s_c3_lv_n, s_c4_lv_n;
-/* ★ 2026-10-23：`s_c3_lv_n` / `s_c4_lv_n` 定义在文件后半（2575 行）⇒ HUD 文字要读它，先声明 ✓ */
-static void hud_text_draw(int pool, float x640, float y640, const char *str, float sc, uint32_t rgb)
-{
-    int32_t *vmp; int *pn;
-    if (pool < 0 || pool >= POFV_HUD_TXT_POOLS) pool = 0;
-    vmp = s_hud_txt_vm[pool]; pn = &s_hud_txt_n[pool];
-    (void)pn;
-    const int BASE = CE_ANM_ABILITY_SPRITE_POFV109_ASC_LS;      /* = 904 */
-    int i = 0, used = 0;
-    if (sc <= 0.0f) sc = 1.0f;
-    for (; str[i] && used < POFV_HUD_TXT_MAX; ++i) {
-        const int idx = hud_asc_idx(str[i]);
-        if (idx < 0) continue;
-        if (!vmp[used]) {
-            vmp[used] = (int32_t)hud_vm_spawn(
-                CE_ANM_ABILITY_SCRIPT_POFV109_HUD_CHARGE,
-                x640 + (float)used * 28.0f * sc, y640);
-        }
-        if (vmp[used]) {
-            const uint32_t v = (uint32_t)vmp[used];
-            ce_anm_set_sprite(CE_ABILITY_ANM(), v, BASE + idx);
-            ce_anm_set_pos(v, x640 + (float)used * 28.0f * sc, y640, 0.0f);
-            ce_anm_set_scale(v, sc, sc);
-            ce_anm_set_color(v, 0xff000000u | (rgb & 0xffffffu));
-        }
-        ++used;
-    }
-    for (i = used; i < POFV_HUD_TXT_MAX; ++i)          /* 剩下的藏起来 */
-        if (vmp[i]) ce_anm_set_scale((uint32_t)vmp[i], 0.0f, 0.0f);
-    *pn = used;
-    /* 2026-10-23 调试：每 60 帧打一次，确认 VM 建出来了、sprite id 与坐标对不对 */
-    if (used > 0 && ((s_card_frames % 60u) == 0u)) {
-        const uint32_t v0 = (uint32_t)vmp[0];
-        int32_t sp0 = -1;
-        if (v0) {   /* 头一个字的 sprite id（从 VM 里读不到，就报我们写进去的那个）*/
-            int i2 = 0; while (str[i2] && hud_asc_idx(str[i2]) < 0) ++i2;
-            sp0 = BASE + (hud_asc_idx(str[i2]) < 0 ? 0 : hud_asc_idx(str[i2]));
-        }
-        ce_log("pofv: [HUDTXT] pool=%d n=%d vm0=%u sprite0=%d str=%s x=%.1f y=%.1f sc=%.2f",
-               pool, used, (unsigned)v0, (int)sp0, str, (double)x640, (double)y640, (double)sc);
-    }
-}
-
 static ce_hud_number_t s_hud_sp_num;
 static ce_hud_number_t s_hud_c2_num;   /* ★ TH09 連擊槽显示句柄（数字 ❓自定 ✓）*/
 static ce_hud_number_t s_hud_ag_num;   /* ★ TH19 攻撃ランク数字句柄 ✓ */   /* ★ 由 32 → 44：避让 110/111 信仰块（y≤30）✓ */
@@ -1157,48 +1092,6 @@ static void pofv_hud_charge_bar(float fx, float fy, float ratio_rei, float ratio
                          POFV_HUD_CHG_BLOCK_W_SURF + 2.0f, POFV_HUD_CHG_BLOCK_H_SURF + 2.0f);
         ce_anm_set_color((uint32_t)s_hud_chg_white_vm, tdim | 0x00ffffffu);
         ce_anm_set_color2((uint32_t)s_hud_chg_white_vm, tdim | 0x00ffffffu);
-    }
-    /* ★★ 2026-10-23 ④ **常驻 `lvN`**（owner：「C3 和 C4 位置的下部会常驻有 lvn 以指示」✗）：
-     *   ★ 在 **C3 刻度**下方 4 px 处，始终显示 ★ `lv` + 当前等级 ✗。
-     *   ★ ❓ 位置（刻度下方 4）与 `N` 的取值（`s_c3_lv_n`，0..7）都是我**自定** ✓，等 owner 实跑校。
-     *   ★ C4 的 `BOSS lvN` 还没做（★ 要确认是否与这条**同一行** ✓）。*/
-    {
-        char buf[24];
-        const int lv = (s_c3_lv_n < 0) ? 0 : ((s_c3_lv_n > 9) ? 9 : s_c3_lv_n);
-        const float tx3 = fx + POFV_HUD_CHG_FILL_W * POFV_HUD_CHG_TICK_AT(kind, 2);
-        const float tx4 = fx + POFV_HUD_CHG_FILL_W * POFV_HUD_CHG_TICK_AT(kind, 3);
-        /* ④ 常驻：C3 刻度下方 `lvN`（C4 刻度下方 `BOSS lvN` 待 owner 确认后再加）*/
-        buf[0] = 'l'; buf[1] = 'v'; buf[2] = (char)('0' + lv); buf[3] = 0;
-        hud_text_draw(1, tx3, fy + POFV_HUD_CHG_BLOCK_H_SURF + 4.0f, buf, 0.45f, 0xffffffu);
-        {   /* ④b：C4 刻度下方常驻 `BOSS lvN`（owner：「C4 也有 BOSS lv[]」）*/
-            char b2[16]; int k2 = 0;
-            b2[k2++]='B'; b2[k2++]='O'; b2[k2++]='S'; b2[k2++]='S'; b2[k2++]=' ';
-            b2[k2++]='l'; b2[k2++]='v'; b2[k2++]=(char)('0'+lv); b2[k2]=0;
-            hud_text_draw(2, tx4, fy + POFV_HUD_CHG_BLOCK_H_SURF + 4.0f, b2, 0.45f, 0xffffffu);
-        }
-        /* ③ 蓄到刻度时，刻度**正上方**弹一行（同一时刻只显示最高的一档）：
-         *   C4 ⇒ `BOSS lvN` / C3 ⇒ `Ex Attack lvN` / C2 ⇒ `skill`
-         *   ❓ `[]` 的写法（`Ex Attack lv3` 还是 `Ex Attack lv[3]`）与 C4 的 `BOSS` 都待 owner 校。*/
-        {
-            const char *up = 0;
-            float ux = 0.0f;
-            if (fc >= POFV_HUD_CHG_TICK_AT(kind, 3)) {
-                up = "BOSS lv";   ux = tx4;
-            } else if (fc >= POFV_HUD_CHG_TICK_AT(kind, 2)) {
-                up = "Ex Attack lv"; ux = tx3;
-            } else if (fc >= POFV_HUD_CHG_TICK_AT(kind, 1)) {
-                up = "skill";     ux = fx + POFV_HUD_CHG_FILL_W * POFV_HUD_CHG_TICK_AT(kind, 1);
-            }
-            if (up) {
-                char t[24]; int n2 = 0;
-                while (up[n2] && n2 < 20) { t[n2] = up[n2]; ++n2; }
-                /* ★ 2026-10-23：★ **`skill` 不带数字**✗（owner 原话就是 `skill` ✓）；
-                 * 其它两档才拼等级 ✓。*/
-                if (!(t[0] == 's' && t[1] == 'k')) t[n2++] = (char)('0' + lv);
-                t[n2] = 0;
-                hud_text_draw(0, ux, fy - 20.0f, t, 0.5f, 0xffffffu);
-            }
-        }
     }
     /* ④ **C1..C4 四枚标**（规格 ⑤⑥ ✓；形状 = 一手 `ins_617(1.0f,4)` ⇒ 脚本 425 的**贴图**）
      *    ★★ **三档**（一手 `interruptLabel` 的 4 / 3 / 2 三态；推法见 `TUNING.md` 本轮 §①②）：
