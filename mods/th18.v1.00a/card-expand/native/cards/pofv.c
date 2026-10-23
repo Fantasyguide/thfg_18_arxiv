@@ -1029,7 +1029,8 @@ static void pofv_hud_chg_claim(void)
  *     「哦，确实是**没越过才画**」⇒ 本卡**照一手**（越过就不画）✓
  *   ⚠ **位置锚点**是 ❓自定：一手把到点提示的**左边**对齐标位 x（左对齐，上下文 `0x197a4 = 0`）——
  *     在本卡 448 px 宽的条上 `"Ex.Attack Lv1"`（13 字 × 16 = 208 px）从 0.68 标位（304 px）起会
- *     **溢出条右端 64 px** ⇒ 本卡改成**以条心居中**（到点提示）/ **以该标为中心**（常驻 lv）✓
+ *     **溢出条右端 64 px** ⇒ 本卡改成**居中**（到点提示 / 常驻 lv 都以**对应的那枚标**为心 ✓
+ *     —— owner 2026-10-24：「上面位置应当是对应的 **CN 标**的上面」+「`Lv d` 在标下面」）✓
  *   字号 = **1:1 不缩放**（一手就是这 16 px 一档；`resolutionMode(2)` 下 1 texel = 1 表面 px）✓
  *   ⚠ 这些 VM 都**接 HUD 透明度**（`tdim` ＝ 共享带的 alpha，和底槽/填充/标同款）✓ */
 #define POFV_HUD_TXT_VMS     24      /* 字形 VM 池（到点提示最多 13 字 + 常驻 2×4 字 + 余量）*/
@@ -1141,17 +1142,21 @@ static void pofv_hud_txt_frame(float bx, float fy, float fc, int kind, uint32_t 
     /* ① 到点提示：只有**越到第 2 档及以后**才有名字（第 1 档一手也不画 ✓）。
      *   ★ 第 2 档 = 放手放 C2 ⇒ `"Skill"`；第 3 档 = C3 ⇒ `"Ex.Attack Lv d"`；
      *     第 4 档 = C4 ⇒ `"Boss Lv d"`（一手三条格式串逐字 ✓）。
-     *   ★ 等级取 `s_c3_lv_n` / `s_c4_lv_n`（0..7）**+1** —— 一手是 `(int)piVar7 + 1` ✓。*/
+     *   ★ 等级取 `s_c3_lv_n` / `s_c4_lv_n`（0..7）**+1** —— 一手是 `(int)piVar7 + 1` ✓。
+     *   ★★ owner 2026-10-24：「**上面位置应当是对应的 CN 标的上面**」✓
+     *     ⇒ 水平位置 = **该档自己的标位 x**（C2/C3/C4 三枚菱形之一），**字符串以它为心** ✓
+     *     —— 所以换个档时这句话会**跟着标跳过去**（不是恒在条心 ✗）；
+     *     ⚠ `Boss Lv d`（8 字 = 128 px）以 1.00 的 C4 标为心 ⇒ 右侧溢出条 64 px（一手同样溢出 ✓）。*/
     if (tier == 2) {
-        pofv_hud_txt_center_lv(bx + fw * 0.5f, fy - POFV_HUD_TXT_UP, "Skill", -1,
-                               POFV_HUD_TXT_SKILL_COL, tdim, &used);
+        pofv_hud_txt_center_lv(bx + fw * POFV_HUD_CHG_TICK_AT(kind, 1), fy - POFV_HUD_TXT_UP,
+                               "Skill", -1, POFV_HUD_TXT_SKILL_COL, tdim, &used);
     } else if (tier == 3) {
         const int lv3 = (s_c3_lv_n < 0 ? 0 : (s_c3_lv_n > 7 ? 7 : s_c3_lv_n)) + 1;
-        pofv_hud_txt_center_lv(bx + fw * 0.5f, fy - POFV_HUD_TXT_UP,
+        pofv_hud_txt_center_lv(bx + fw * POFV_HUD_CHG_TICK_AT(kind, 2), fy - POFV_HUD_TXT_UP,
                                "Ex.Attack Lv", lv3, POFV_HUD_TXT_EX_COL, tdim, &used);
     } else if (tier >= POFV_HUD_CHG_TICKS) {
         const int lv4 = (s_c4_lv_n < 0 ? 0 : (s_c4_lv_n > 7 ? 7 : s_c4_lv_n)) + 1;
-        pofv_hud_txt_center_lv(bx + fw * 0.5f, fy - POFV_HUD_TXT_UP,
+        pofv_hud_txt_center_lv(bx + fw * POFV_HUD_CHG_TICK_AT(kind, 3), fy - POFV_HUD_TXT_UP,
                                "Boss Lv", lv4, POFV_HUD_TXT_BOSS_COL, tdim, &used);
     }
 
