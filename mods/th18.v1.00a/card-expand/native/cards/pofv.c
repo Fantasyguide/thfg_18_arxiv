@@ -4674,7 +4674,10 @@ static void pofv_barrier_dir_from(float dx, float dy)
 }
 
 /* ★ 罩子「有没有」✓：★ 就是那个**标识 VM** ✓ —— owner：「它只是**一个标识我有罩子保护的 VM**」✓，★ 没有碰撞箱 ✓。*/
-static int pofv_barrier_have(void) { return s_barrier_vm_disc != 0; }
+/* 2026-10-23 owner: '有罩子的时候也在黄蓝闪' => 判据一直是假。
+ *   原因: s_barrier_vm_disc 在 4708 被**永久置 0**（整罩已烤进 446）⇒ 它永远为 0。
+ *   真正反映"盾在不在"的是 s_barrier_on（4625 行声明，在本函数之前）⇒ 改用它 ✓。*/
+static int pofv_barrier_have(void) { return s_barrier_on != 0 || s_barrier_vm_disc != 0; }
 
 static void pofv_barrier_clear(void)
 {

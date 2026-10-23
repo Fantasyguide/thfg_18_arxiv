@@ -33315,3 +33315,16 @@ owner 给了上面的口径后**改成精确事件**（commit `65c0e178`，本�
 - **BGR 那条结论只适用于 `.anm` 脚本里的 `color(a,b,c)`**（`engine/versus/th19/07-enemy-death-and-cancel.md` §9，
   `thecl` 落盘整字反转）——★ **不适用于这个 C API**。
 - **结论**：本卡的颜色**没有 BGR/RGB 问题**；"发橙"更可能是 `blendMode(1)` 加算 + 白段叠色，待实跑再看。
+
+## §BE-109-20261023n ★ 修「有罩子也在闪」：`pofv_barrier_have()` 判据一直是假
+
+- **文件 → 改了什么**：`native/cards/pofv.c` 的 `pofv_barrier_have()` 从
+  `return s_barrier_vm_disc != 0;` 改成 **`return s_barrier_on != 0 || s_barrier_vm_disc != 0;`**。
+- **为什么**：owner 2026-10-23「**有罩子的时候也在黄蓝闪**」。查证：`s_barrier_vm_disc` 在
+  `pofv.c:4708` 被注释着「整罩已烤进 446，这里留着同位置再平涂一层」而**永久置 0**
+  ⇒ 那个标识 VM 早已废弃 ⇒ `pofv_barrier_have()` 永远返回假 ⇒ 灵力段的黄蓝闪**在任何时候**都触发。
+  真正反映"盾在不在"的是 `s_barrier_on`（`pofv.c:4625`，注释「盾在不在」）。
+- **谁改的**：本 agent。**影响面**：这个谓词被蓄力条（闪）与 `pofv_hud_chg_claim` 等共用，
+  修好之后那些"有罩时的抑制"才真正生效。
+- **怎么验证的**：`make rc=0`（前一次改坏了定义导致 link 错误，已修）；`make dev` 全绿；
+  owner 实跑看"有罩子时不再黄蓝闪"。
