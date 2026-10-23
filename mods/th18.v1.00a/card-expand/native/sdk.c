@@ -1014,7 +1014,7 @@ void ce_hud_vm_probe(const char *tag, uint32_t id)
  *     （owner 明令：那是玩家可见的 HUD，不许为了调试去动它 ✗）。
  *   ⚠ **发布前置 0**：正式发包 / `make release` 之前把这里改回 **0**（一行，其余代码保留 ✓）。*/
 #ifndef CE_HUD_DEBUG_BLOCKS
-#define CE_HUD_DEBUG_BLOCKS 1
+#define CE_HUD_DEBUG_BLOCKS 0
 #endif
 
 #if CE_HUD_DEBUG_BLOCKS
