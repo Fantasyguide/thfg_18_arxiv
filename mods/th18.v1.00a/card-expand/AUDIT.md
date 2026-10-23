@@ -33225,3 +33225,17 @@ owner 给了上面的口径后**改成精确事件**（commit `65c0e178`，本�
 - **为什么**：owner 2026-10-23「109 蓄力条的 HUD 文字必须用 TH19 那套字」；原画法贴图不对。
 - **谁改的**：本 agent。**影响面**：只增资源（还没接进 `ORDER`、还没被任何脚本引用）⇒ **对现有卡零影响**。
 - **怎么验证的**：切出的 sprite 1/2/3 = `!` `"` `#`、sprite0 = 空格；拼 "Ex Attack lv3" 目视正确（见 preview）。
+
+## §BE-109-20261023e ★ 27 个 TH19 ASCII 字形进 `ability.anm`（sprite 904..930）
+
+- **文件 → 改了什么**：新增 `assets/ability/ascii/POFV109_ASC_*.png`（**27 个 28×28**，白字透明底）
+  ＋ `ORDER.txt` 追加 `ATLAS ATLAS_POFV109_ASC 168x140@6x5` ＋ 27 个成员行。
+- **字符集**（按此顺序 = sprite 顺序）：`s k i l E x A t a c B O S v [ ] n 0 1 2 3 4 5 6 7 8 9`
+- **来源**：TH19 `data/ANM/ascii/ascii_1280.png` 的 `sprite (ord(c)-32)`，rect `(i%18*28, i/18*28, 28, 28)`，
+  墨 = `alpha>0 && R<128`（`thanm -l` 解出的 rect 为一手）。
+- **为什么只切 27 个**：`ability.anm` 的 **entry 上限 256**，当前已用 **227** ⇒ **只剩 29** 个名额；
+  全切 95 个**放不下**。27 个覆盖 `skill` / `Ex Attack lv[]` / `BOSS lv[]` / `lvn` / 数字。
+- **谁改的**：本 agent。**影响面**：新增 entry（227→228），**既有 entry 编号不变**；
+  目前**没有脚本引用**这 27 个 sprite ⇒ 对现有卡零影响。
+- **怎么验证的**：`rebuild_safe` **六道门全过**；`anm_ids.h` 里 `ATLAS_POFV109_ASC_0 = 904`、
+  `…_17 = 921`（= 字符 `0`），与切图顺序一致。
