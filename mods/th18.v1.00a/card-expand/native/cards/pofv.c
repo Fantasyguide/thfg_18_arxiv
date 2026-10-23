@@ -8481,35 +8481,6 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
  *   **本帧播放队列 = `0x56ad9c`（12 槽 × 4 字节，存音效 id）**、每槽计数 `0x56adcc`。
  *   `play_sound`(`0x476c70`) 就是把 id 填进这个队列 ⇒ **每帧读队列、只在变化时打一行日志**，
  *   就能看到"破罩那一帧前后到底播了哪些 SE" ✓（不屏蔽、不改行为 ✓）。*/
-/* ★★★★ 2026-10-25 goal「侦测被弹音」—— **轮询 slot 数组**（v2；v1 轮询播放队列失败 ✗：
- *   实跑日志里一条 `slot` 都没出 ⇒ 队列 `0x56ad9c` 在 `on_tick_2` 之前就被消费/清空了 ✗）。
- *   一手 `engine/_shared/th18-sound-table.md` §1/§3：`slot` 数组 = **`0x56c804`，84 × 0x18**，
- *     · `+0x04` = 优先级/音量 word，**初值 `0xFFFFFFFF` = 空闲**；
- *     · `+0x08` = **&cfg 行**，而 cfg 行 `+0x00` = **音效 id** ✓
- *   ⇒ 每帧扫 84 槽：**空闲→忙** 的那一刻把该槽的 `id` 打出来（只在变化时打 ✓ 不刷屏）。
- *   仍然**零 hook、零行为改动** ✓。*/
-#define POFV_SE_SLOT_BASE   0x56c804u
-#define POFV_SE_SLOT_N      84
-#define POFV_SE_SLOT_STRIDE 0x18
-static void pofv_se_probe(void)
-{
-    static int last[POFV_SE_SLOT_N];
-    static int inited;
-    int k;
-    for (k = 0; k < POFV_SE_SLOT_N; ++k) {
-        const uint8_t *sl = (const uint8_t *)(POFV_SE_SLOT_BASE + (uint32_t)k * POFV_SE_SLOT_STRIDE);
-        const int32_t prio = *(const int32_t *)(sl + 4);
-        const uint8_t *row  = *(const uint8_t *const *)(sl + 8);
-        int id = -1;
-        if (prio != -1 && row) id = *(const int32_t *)row;
-        if (!inited || id != last[k]) {
-            if (id >= 0 && id <= 0x53) ce_log("pofv: [SE] slot%d busy id=0x%02x (t=%d)", k, (unsigned)id, (int)s_card_frames);
-            last[k] = id;
-        }
-    }
-    inited = 1;
-}
-
 static void pofv_c3_dispatch(void)
 {
     if (s_aura_kind == 1)      pofv_c3m_fire();
@@ -9043,7 +9014,6 @@ static int on_tick_2(ce_card_t *c)
      *   主动卡是这张**」✓ ⇒ 结界键拆成两半：
      *     · **Shift 恒可用** ✓（与卡是否被选中无关）；
      *     · **C 只有在 109 被选中时**才算"张结界" ✓（它同时是蓄力键，两个用途都归 109 ✓）。*/
-    pofv_se_probe();   /* ★ goal：SE 侦测（只记录 ✓）*/
     const int aura_held = ce_key_down(CE_VK_SHIFT)
                         || (pofv_charge_owned(c) && ce_key_down(CE_VK_C));
                                               /* ★ 结界 = C ∨ Shift **且 109 是选中的主动卡** ✓
@@ -11357,7 +11327,6 @@ static int pofv_on_death_before_deathbomb(ce_card_t *c)
      *     **`0x1b = se_tan00.wav`** ✓（同一族，正是你给的第一支）⇒ 直接播 **0x1b** ✓。
      *   ⚠ 引擎自己那一下**被弹音**在命中时已经播过（我们是在死亡流程里撤销的）⇒
      *     现在会"被弹音 + 破罩音"两声；要压掉被弹音得 hook SE 播放（共享件，另案 ✓）。*/
-    ce_log("pofv: [SE] ==== 破罩这一帧开始（下面紧跟的 [SE] slot 行就是引擎/我们播的音）====");
     {   const float *bp = ce_player_pos();
         ce_play_sound(POFV_BARRIER_BREAK_SE, bp ? bp[0] : 0.0f);
     }
