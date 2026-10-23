@@ -11175,7 +11175,7 @@ static int on_draw(ce_card_t *c)
                  *   ⇒ 一手那两个字面量 (272,150) 应当配的是**另一种对齐**（我更可能把 `+0x19250`
                  *     的语义用反了）⇒ 先按观感把 x 从 **272 收到 248**（−24 ≈ 两个整数宽度 ✓），
                  *     align 仍居中、scale 0.6（这两个是反汇编实读 ✓）。*/
-                ce_hud_text_ex(232.0f, 454.0f, tdim4 | 0xFFFFFFu, 0u, 4, 2, 0, 0.6f, "%02d", (int)frm);
+                ce_hud_text_ex(236.0f, 454.0f, tdim4 | 0xFFFFFFu, 0u, 4, 2, 0, 0.6f, "%02d", (int)frm);
                 /* 2026-10-23 卡 109 调试（owner：先试 ce_hud_text_ex 是不是那套字体）：
                  *   在同上下文画一行 `Ex Attack lv3` / 一行 `skill` / 一行 `BOSS lv2`。
                  *   font_id 试 2（一手 TH18 ascii 的 2/3 号字体）。*/
