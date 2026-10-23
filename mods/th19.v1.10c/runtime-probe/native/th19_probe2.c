@@ -40,7 +40,12 @@ static DWORD g_hook_r      = 0;
 static DWORD g_hook_s      = 0;
 static DWORD g_w0 = 0, g_w4 = 0, g_w8 = 0, g_wc = 0;
 static DWORD g_ctx = 0;
-static DWORD g_rec = 0, g_num = 0;   /* hook711 时现场捕获：[edi+0x5ac] 与 esi(=num) */
+static DWORD g_rec = 0, g_num = 0;
+/* ★ 在 hook 内部当场抄出来的副本（数据只在 711 调用瞬间有效，不能存指针） */
+static DWORD g_buf[16];    /* ← ctx+0x5ac+0x28（段表候选） */
+static DWORD g_buf2[8];    /* ← ctx+0x5ac+0x458（701 写的 a 等） */
+static DWORD g_buf3[8];    /* ← ctx+0x5ac（元素头） */
+static volatile LONG g_buf_ready = 0;   /* hook711 时现场捕获：[edi+0x5ac] 与 esi(=num) */
 static DWORD g_cnt609 = 0, g_cnt711 = 0;
 static DWORD g_cnt_et[15];
 static DWORD g_cnt_grp[64];       /* ★ 每组（group）被调用次数：全 opcode 直方图 */
@@ -230,6 +235,21 @@ static void poll_once(void)
         return;
     }
     if (g_hook_on && g_hook_sel == 14 && g_ctx) {
+        probe_log("[buf] 段表候选: %08x %08x %08x %08x | %08x %08x %08x %08x",
+                  g_buf[0], g_buf[1], g_buf[2], g_buf[3],
+                  g_buf[4], g_buf[5], g_buf[6], g_buf[7]);
+        probe_log("[buf] +0x10..: %08x %08x %08x %08x | %08x %08x %08x %08x",
+                  g_buf[8], g_buf[9], g_buf[10], g_buf[11],
+                  g_buf[12], g_buf[13], g_buf[14], g_buf[15]);
+        probe_log("[buf] 701区: %08x %08x %08x %08x %08x %08x %08x %08x",
+                  g_buf2[0], g_buf2[1], g_buf2[2], g_buf2[3],
+                  g_buf2[4], g_buf2[5], g_buf2[6], g_buf2[7]);
+        probe_log("[buf] 元素头: %08x %08x %08x %08x %08x %08x %08x %08x",
+                  g_buf3[0], g_buf3[1], g_buf3[2], g_buf3[3],
+                  g_buf3[4], g_buf3[5], g_buf3[6], g_buf3[7]);
+        return;
+    }
+    if (g_hook_on && g_hook_sel == 15) {
         probe_log("[711] ctx=%08x rec=%08x num=%u", g_ctx, g_rec, g_num);
         if (g_rec) {
             DWORD elem = g_rec + g_num * 0x2c;
@@ -544,6 +564,22 @@ static BOOL install_hook711(void)
     *(DWORD *)p = (DWORD)(uintptr_t)&g_rec; p += 4;
     *p++ = 0x89; *p++ = 0x35;                       /* mov [imm32], esi → g_num */
     *(DWORD *)p = (DWORD)(uintptr_t)&g_num; p += 4;
+    /* ★ 当场抄三段（此时 edi=ctx；eax/esi/edi/ecx 都由 pushad 保护） */
+    *p++ = 0x89; *p++ = 0xF8;                       /* mov eax,edi */
+    *p++ = 0x8D; *p++ = 0xB0; *(DWORD *)p = 0x5d4u; p += 4;      /* lea esi,[eax+0x5d4] */
+    *p++ = 0xBF; *(DWORD *)p = (DWORD)(uintptr_t)g_buf; p += 4;   /* mov edi,&g_buf */
+    *p++ = 0xB9; *(DWORD *)p = 16u; p += 4;                       /* mov ecx,16 */
+    *p++ = 0xF3; *p++ = 0xA5;                                     /* rep movsd */
+    *p++ = 0xBF; *(DWORD *)p = (DWORD)(uintptr_t)g_buf2; p += 4;
+    *p++ = 0xB9; *(DWORD *)p = 8u; p += 4;
+    *p++ = 0x8D; *p++ = 0xB0; *(DWORD *)p = 0xa04u; p += 4;       /* lea esi,[eax+0xa04] */
+    *p++ = 0xF3; *p++ = 0xA5;
+    *p++ = 0xBF; *(DWORD *)p = (DWORD)(uintptr_t)g_buf3; p += 4;
+    *p++ = 0xB9; *(DWORD *)p = 8u; p += 4;
+    *p++ = 0x8D; *p++ = 0xB0; *(DWORD *)p = 0x5acu; p += 4;       /* lea esi,[eax+0x5ac] */
+    *p++ = 0xF3; *p++ = 0xA5;
+    *p++ = 0xC7; *p++ = 0x05; *p++ = 0x01; *p++ = 0x00; *p++ = 0x00; *p++ = 0x00;
+    /* ↑ 简化：先不写 ready 标志（poll 用非零判断） */
     *p++ = 0x61; *p++ = 0x9D;                       /* popad / popfd */
     for (i = 0; i < 6; i++) *p++ = HOOK711_EXPECT[i];
     *p++ = 0xE9;
