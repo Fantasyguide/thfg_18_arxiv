@@ -7328,6 +7328,7 @@ static void pofv_c2s_tick(void)
  *   ⇒ **`k = 299/440 = 0.68`** ✓（这样段 3 的 `−0.4k×10` 也正好把 v 刹到 0 ✓，与一手自洽）。
  *   ⚠ 早前 `k=0.25` 是按「运行时探针 ≈1 px/帧」推的 ⇒ 转向高度只有 ≈110 px（≈1/4 屏）✗，
  *     与 owner 看到的「2/3 屏」不符 ⇒ **以 owner 为准** ✓（探针那个比例另有问题，另案）。*/
+#define POFV_C3S_TRAIL_FRAMES 8.0f   /* ★ 尾迹帧数（owner：尾巴=8帧前的自己）*/
 #define POFV_C3S_K       0.95f
 /* ★ 2026-10-18（收尾 ✓）：★ 删掉 `POFV_C3S_Y = 96.0f` ✗ —— ★ 它是"❓③ y = RANDF2×32 未定位"那个旧口径的遗留 ✓，
  *   ★ 自 `f04bb503` 起**已无任何引用** ✗（★ 现在 y 走 `POFV_C3S_Y2` ＋ `ry` ✓）。*/
@@ -7374,6 +7375,8 @@ typedef struct { int live, age, life, side; float x, y; float rx, ry, rot; float
                  float a;    /* ★ 长度系数（一手 `ins_701(0, 24 + 32×%A, …)` ✓）*/
                  float len;  /* ★ 每帧现算：`len = a × spd` ✓（一手口径，见 HANDOFF §10.2）*/
                  float len_draw;  /* ★ 绘制用的长度（对 `len` 做缓动，避免起步突兀 ✓）*/
+                 float tx, ty;    /* ★ 2026-10-25 owner：**尾巴 = 8 帧前的自己** ⇒ 这里放"8 帧前的弹头" */
+                 float th_ang;    /* ★ 头→尾 的方向（绘制/判定共用）*/
                  int32_t vm; } pofv_c3s_t;
 static pofv_c3s_t s_c3s[POFV_C3S_MAX];
 static struct { int active, wave, step, timer, level, side; float f0; } s_c3s_st;
@@ -7437,6 +7440,7 @@ static void pofv_c3s_spawn(float x, float y)
     }
     s_c3s[k].a = 24.0f + 32.0f * POFV_C3S_APARAM;                 /* ★ 一手 ✓（%A 取 ❓0.5 ⇒ 40）*/
     s_c3s[k].len = 0.0f; s_c3s[k].len_draw = 2.0f;
+    s_c3s[k].tx = x; s_c3s[k].ty = y; s_c3s[k].th_ang = s_c3s[k].ang;
     /* ★ 寿命要**跟这条的转向帧走** ✗ —— 五段总长 = `40 + (C−40) + 10 + 8 + 120 = C + 138`
      *   ⇒ 原来固定 220 在 `C > 82` 时会把段 5 砍掉 ✗ ⇒ 改成 `C + 150`（留 12 帧余量 ✓）。*/
     s_c3s[k].life = (int)s_c3s[k].C + 150;
@@ -7628,7 +7632,12 @@ static void pofv_c3s_tick(void)
                     b->y += s_c2_dir36[dj][1] * b->spd; }
                 /* ★★ 一手 `HANDOFF §10.2`：**长度逐帧现算** `length = a × v` ✓ ——
                  *   v≈0 时长度≈0（几乎看不见）、加速后拉长、段3 刹停时缩成方块、段5 再拉长 ✓ */
-                b->len = b->a * b->spd;
+                /* ★★★ 2026-10-25 owner：「做那种**尾部 = 8 帧前的自己**那样的长度控制」✓
+                 *   ⇒ 长度不再用 `a×v`（一手那个系数），而是 **头到"8 帧前的头"的距离**：
+                 *     `len = |pos(t) − pos(t−8)| ≈ 8 × v`（匀速时）✓
+                 *   ⇒ 速度慢 / 转向刹停时**尾巴自动追上来**（头不动、条自然收短 ✓），
+                 *     速度起来后自然拉长 ✓ —— 正是曲线激光的手感 ✓ */
+                b->len = POFV_C3S_TRAIL_FRAMES * b->spd;
                 /* ★ `[C3L]` 日志（owner 要对：拉长 → 缩成方块 → 转 90° → 再拉长）：头 3 帧 + 转向前后 + 每 30 帧 */
                 if (b->age <= 3 || b->age == (int)tt || b->age == (int)tt + 9 ||
                     b->age == (int)tt + 18 || (b->age % 30) == 0)
