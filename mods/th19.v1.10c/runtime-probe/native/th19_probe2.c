@@ -18,7 +18,7 @@
 #include <string.h>
 
 #define POLL_MS      100
-#define SCAN_MAX_STEPS (64u * 1024u * 1024u)
+#define SCAN_MAX_STEPS (200u * 1024u * 1024u)
 #define DUMP_DWORDS  16
 
 /* 版本守卫：609 handler 开头 5 字节（一手：0x5027a3 = 6a 00 8b cf e8） */
@@ -101,6 +101,8 @@ static void scan_for_pattern(void)
     const BYTE *limit = (const BYTE *)0x7fff0000;
     unsigned steps = 0;
     int hits = 0;
+    int regions = 0;
+    DWORD last = 0;
     static BYTE buf[0x10000];
 
     probe_log("[pat ] 扫 %d 个特征：%08x %08x %08x %08x", g_pat_n, g_pat[0], g_pat[1], g_pat[2], g_pat[3]);
@@ -147,10 +149,13 @@ static void scan_for_pattern(void)
                 }
             }
         }
-        addr = (const BYTE *)(uintptr_t)(rbase + rsize);
+        last = rbase + rsize;
+        regions++;
+        addr = (const BYTE *)(uintptr_t)last;
         if (rsize == 0) break;
     }
-    probe_log("[pat ] 结束：步数 %u，命中 %d", steps, hits);
+    probe_log("[pat ] 结束：步数 %u，region %d，最后地址 %08x，命中 %d",
+              steps, regions, last, hits);
 }
 
 static void poll_once(void)
