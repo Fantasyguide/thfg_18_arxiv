@@ -19,10 +19,11 @@
 #include <stdint.h>
 #include "sites_gen.h"
 #include "cards_def.h"
+#include "sdk/public.h"     /* ★ 日志总闸 `CE_DEV_DUMP` + `ce_log`/`ce_log_key` 宏（唯一定义处）*/
 
 /* 日志：一律写自己的文件 th18_card_expand.log（游戏目录，写不了退到 %TEMP%）。
- * ce_verdict 额外把那一行镜像进 thcrap 的日志——只镜像结论，不刷屏。*/
-void ce_log(const char *fmt, ...);
+ * ★ `ce_log` 现在是 `sdk/public.h` 里的**宏**（`CE_DEV_DUMP` 闸；发布默认编译成空），
+ *   实现层叫 `ce_log_impl`。`ce_verdict` 额外把那一行镜像进 thcrap 的日志——只镜像结论，不刷屏。*/
 void ce_verdict(const char *fmt, ...);
 
 /* thcrap 导出（GetProcAddress 取得，可能为 NULL） */

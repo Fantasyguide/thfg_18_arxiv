@@ -138,6 +138,10 @@ int ce_give_card(uint32_t id, uint32_t mode, uint32_t notify)
 }
 
 /* ---- trace ---- */
+/* ★ 2026-10-24（日志总闸）：trace 探针**函数**只在 `CE_DEV_DUMP >= 2` 时才存在 —— 它嵌在 `CE_STUB*` 里，
+ *   **每帧每张卡都调**。0/1 档时 sdk.h 把调用点编译成 `((void)0)`，这里连函数都不编。
+ *   （`s_trace`/`s_seen` 留着：它们是**状态**，`ce_sdk_setup` 会清零 `s_seen`（sdk.c 后面），
+ *     且 5 KB 只在 .bss、不占文件字节 ⇒ 守闸反而要拆一处 memset，不如留着。）*/
 static int      s_trace;
 #define CE_TRACE_SLOTS 40                  /* 21 个虚表槽 + 事件 0x54..0x88（槽号/4 当数组下标 ⇒ 40 覆盖到 0x9c）*/
                                           /* 后四个 = collect-2x 事件（伪偏移，无虚表槽，仅 trace 记首次命中用）*/
@@ -146,7 +150,8 @@ static uint8_t  s_seen[CE_SDK_MAX_BEHAVIORS][CE_TRACE_SLOTS];
 
 void ce_sdk_set_trace(int on) { s_trace = on; }
 
-void ce_sdk_trace(uint32_t id, unsigned slot, const char *name)
+#if CE_DEV_DUMP >= 2
+void ce_sdk_trace_impl(uint32_t id, unsigned slot, const char *name)
 {
     if (!s_trace) return;
     unsigned k = 0, n = ce_sdk_behavior_count();
@@ -156,6 +161,7 @@ void ce_sdk_trace(uint32_t id, unsigned slot, const char *name)
     s_seen[k][slot / 4] = 1;
     ce_log("trace: card %u %s (+0x%02x) first hit", id, name, slot);
 }
+#endif
 
 void ce_sdk_register_or_log(const ce_behavior_t *b)
 {
@@ -958,8 +964,10 @@ static const hud_font_t HUD_FONTS[] = {
  *   **墨迹探针**：把一支 HUD VM 的**真实绘制依据**一次打全 ——
  *   · 有效落点 = 脚本 pos(+0x30) + pos2(+0x4e4) + 实体 pos(+0x5f0)（引擎就是这么算的）；
  *   · **贴图尺寸** `+0x74/+0x78`（zAnmVmPrefix.sprite_size）+ 缩放 `+0x54` + 层 `+0x18`。
- *   ⇒ 有了"落点 + 贴图尺寸×缩放"，**声明块该多大就是算出来的**，不再靠推。*/
-void ce_hud_vm_probe(const char *tag, uint32_t id)
+ *   ⇒ 有了"落点 + 贴图尺寸×缩放"，**声明块该多大就是算出来的**，不再靠推。
+ * ★ 2026-10-24：受日志总闸管 —— 只在 `CE_DEV_DUMP >= 2` 时存在（`sdk.h` 里 0/1 档调用点编译成空）。*/
+#if CE_DEV_DUMP >= 2
+void ce_hud_vm_probe_impl(const char *tag, uint32_t id)
 {
     const uint8_t *vm = id ? (const uint8_t *)ce_anm_get_vm(id) : 0;
     if (!vm) { ce_log("hud.vm %s id %u: (no VM)", tag ? tag : "?", (unsigned)id); return; }
@@ -988,6 +996,7 @@ void ce_hud_vm_probe(const char *tag, uint32_t id)
                (double)(sp[0] + p2[0] + ep[0]), (double)(sp[1] + p2[1] + ep[1]));
     }
 }
+#endif  /* CE_DEV_DUMP >= 2 */
 
 /* ★★★★ 2026-10-03z17（owner：「**你能不能把声明块画出来？**」）——
  *   **把分配器"以为的"块直接画在屏幕上**（4 条边 = 4 支 `stock_rect` VM）：这样
@@ -1359,6 +1368,7 @@ void ce_bullet_scan_probe(void)
 
 void ce_hud_slot_log_all(const char *tag)
 {
+#if CE_DEV_DUMP >= 2                 /* ★ 2026-10-24：纯日志函数 ⇒ 受总闸管（0/1 档整个体编译掉）*/
     int i, n = ce_hud_slot_count();
     float bx, by, bw, bh;
     const int card_face = hud_card_present(*(void *const *)(CE_ABILITY_MGR() + CE_MGR_SELECTED_ACTIVE));
@@ -1395,6 +1405,9 @@ void ce_hud_slot_log_all(const char *tag)
                (double)ui, (int)sw, (int)sh);
     }
     ce_log("hud: ===== end =====");
+#else
+    (void)tag;
+#endif
 }
 
 void ce_hud_vm_text_set(ce_hud_vm_text_t *t, float x, float y, uint32_t bgra,
@@ -1583,7 +1596,9 @@ static int32_t  s_score_in_total;        /* 这一颗我们真正落下去的 G�
 /* ★★ 2026-09-16zl：**站点命中轨迹**（头号崩溃的下一把刀）。
  * 每次命中的站点与上一次不同就打一行 —— `ce_log` 每行都 open/write/close（必 flush），
  * 所以**崩溃前最后一行 = 直接点名是哪条站点命中之后跳错的**，不用再靠时序夹逼。
- * 只读、零内存写；命中的站点名是编译期字符串常量 ⇒ 指针比较就够。*/
+ * 只读、零内存写；命中的站点名是编译期字符串常量 ⇒ 指针比较就够。
+ * ★ 2026-10-24：受日志总闸管 —— 只在 `CE_DEV_DUMP >= 2` 时存在；0/1 档整个调用编译成 `((void)0)`。*/
+#if CE_DEV_DUMP >= 2
 static const char *s_site_last;
 static unsigned  s_site_hits;
 static void ce_site_trail(const char *name)
@@ -1593,6 +1608,9 @@ static void ce_site_trail(const char *name)
     s_site_last = name;
     ce_log("site: %s（累计第 %u 次命中）", name, s_site_hits);
 }
+#else
+#define ce_site_trail(name) ((void)0)
+#endif
 
 /* ★★ 站点自检门（2026-09-18）：把「一手不变量」在**运行期**查一遍，对不上就记一行（每个调用点只记一次）。
  * 它是**证据门**，不是拦截器：默认不改任何行为（少数几处另加 fail-safe，见各自注释）。
@@ -1606,7 +1624,7 @@ void ce_assume_fail(const char *what)
     for (i = 0; i < s_n; ++i) if (s_seen[i] == what) return;
     if (s_n < 32u) {
         s_seen[s_n++] = what;
-        ce_log("★ assume FAIL: %s（站点自检不成立；只记一次、行为不变）", what);
+        ce_log_key("★ assume FAIL: %s（站点自检不成立；只记一次、行为不变）", what);
     }
 }
 
@@ -1642,7 +1660,7 @@ static void ce_retaddr_set(x86_reg_t *regs, uint32_t target)
         static unsigned s_bad_n;
         if (s_bad_n < 8u) {
             ++s_bad_n;
-            ce_log("★ retaddr 拒绝：0x%08x 不是「模块映像内的可执行页」（第 %u 次）—— 保持原返回地址"
+            ce_log_key("★ retaddr 拒绝：0x%08x 不是「模块映像内的可执行页」（第 %u 次）—— 保持原返回地址"
                    "（池页/MEM_PRIVATE 一律拒收：那是 thcrap 断点池，跳进去就是头号崩溃）",
                    (unsigned)target, s_bad_n);
         }
@@ -2611,7 +2629,7 @@ static void ce_cave_overlap(void)
             if (b > a && b < a + 0x30u) {
                 ++s_cave_ovl;
                 if (s_cave_ovl <= 10)
-                    ce_log("★★ CAVE OVERLAP #%u: [%s] %08x 与 [%s] %08x 落进同一格（差 %d 字节）",
+                    ce_log_key("★★ CAVE OVERLAP #%u: [%s] %08x 与 [%s] %08x 落进同一格（差 %d 字节）",
                            s_cave_ovl, s_caves[i].name, a, s_caves[k].name, b, (int)(b - a));
             }
         }
@@ -2630,7 +2648,7 @@ static void ce_cave_watch(void)
             if (*(const uint8_t *)(uintptr_t)(c->cave + k) != c->head[k]) {
                 ++s_cave_clobber;
                 if (s_cave_clobber <= 20)
-                    ce_log("★★ CAVE CLOBBERED #%u: [%s] cave %08x 第 %u 字节 %02x -> %02x（帧 %u）"
+                    ce_log_key("★★ CAVE CLOBBERED #%u: [%s] cave %08x 第 %u 字节 %02x -> %02x（帧 %u）"
                            "—— 这个 cave 的代码被谁改了/清零了",
                            s_cave_clobber, c->name, c->cave, k, c->head[k],
                            *(const uint8_t *)(uintptr_t)(c->cave + k), s_cave_ticks);
@@ -2835,7 +2853,7 @@ int __cdecl BP_ce_item_frame(x86_reg_t *regs, void *bp_info)
         static uint32_t s_bomb_prev;
         uint32_t bomb_now = *(volatile uint32_t *)(uintptr_t)CE_ADDR_BOMB_MGR;
         if (s_bomb_prev && !bomb_now)
-            ce_log("★ bomb ptr 归零（帧 %u）：BOMB_PTR 0x%08x -> 0（历史崩点 do_bomb+0x8c 的前置条件）",
+            ce_log_key("★ bomb ptr 归零（帧 %u）：BOMB_PTR 0x%08x -> 0（历史崩点 do_bomb+0x8c 的前置条件）",
                    (unsigned)ce_sdk_frame(), (unsigned)s_bomb_prev);
         s_bomb_prev = bomb_now;
     }
@@ -3645,7 +3663,7 @@ int ce_sdk_setup(uint8_t *base, int trace)
         char hex[3 * 16];
         char *q = hex;
         for (unsigned k = 0; k < bps[i].len; ++k) q += sprintf(q, "%02x ", p[k]);
-        ce_log("FAIL: sdk: breakpoint %s not applied (%u bytes at +%08x: %s)",
+        ce_log_key("FAIL: sdk: breakpoint %s not applied (%u bytes at +%08x: %s)",
                bps[i].name, bps[i].len, bps[i].rva, hex);
         ++n_bp_fail;
     }
@@ -3682,7 +3700,7 @@ int ce_sdk_setup(uint8_t *base, int trace)
         const uint8_t *p = base + CE_BH_SHT_DBASE_RVA;
         uint32_t got = (uint32_t)p[2] | ((uint32_t)p[3] << 8) | ((uint32_t)p[4] << 16) | ((uint32_t)p[5] << 24);
         if (p[0] != 0x8d || p[1] != 0x82 || got != (uint32_t)CE_SHT_DATA_BASE) {
-            ce_log("FAIL: sdk: pl0X.sht 96-slot expansion binhack not applied "
+            ce_log_key("FAIL: sdk: pl0X.sht 96-slot expansion binhack not applied "
                    "(+%08x: %02x %02x imm32=%#x, expected 8d 82 imm32=%#x) — pl0X.sht 是 %d 格影像，"
                    "基点还是 %#x 的话主炮会按错位 0x%x 字节读组",
                    CE_BH_SHT_DBASE_RVA, p[0], p[1], got, (unsigned)CE_SHT_DATA_BASE,
@@ -3873,7 +3891,7 @@ int __cdecl BP_ce_bullet_damage_final(x86_reg_t *regs, void *bp_info)
             *cb = 0;
             ++s_bullet_cb_guarded;
             if (s_bullet_cb_guarded <= 5 || (s_bullet_cb_guarded % 500) == 0)
-                ce_log("★ bullet +0xe8 guard: 弹 %08x 的 +0xe8 = %08x 不是合法代码地址 ⇒ 清 0"
+                ce_log_key("★ bullet +0xe8 guard: 弹 %08x 的 +0xe8 = %08x 不是合法代码地址 ⇒ 清 0"
                        "（否则 0x45e8c0 call eax ⇒ 0xC0000005，见 crashdumps）（#%u）",
                        (unsigned)regs->edi, (unsigned)cbv, s_bullet_cb_guarded);
         }
@@ -4063,7 +4081,7 @@ int __cdecl BP_ce_chain_node_guard(x86_reg_t *regs, void *bp_info)
          *   只有炸弹/屏幕特效/奖杯通知那几家；对照上下文一行就能区分。）*/
         ++s_chain_changed;
         if (s_chain_changed <= 20)
-            ce_log("★ chain CHANGED #%u: node %08x on_tick %08x -> %08x , this %08x -> %08x",
+            ce_log_key("★ chain CHANGED #%u: node %08x on_tick %08x -> %08x , this %08x -> %08x",
                    s_chain_changed, node, sl->tick, tick, sl->thisp, thisp);
         sl->tick = tick; sl->thisp = thisp;
         verify = 1;
@@ -4074,7 +4092,7 @@ int __cdecl BP_ce_chain_node_guard(x86_reg_t *regs, void *bp_info)
         if (!ce_addr_exec(tick)) {
             ++s_chain_bad;
             if (s_chain_bad <= 10 || (s_chain_bad % 100) == 0)
-                ce_log("★★ chain guard #%u（槽位表已满、无监视）: node %08x 的 on_tick = %08x 不可执行 ⇒ 跳过 call",
+                ce_log_key("★★ chain guard #%u（槽位表已满、无监视）: node %08x 的 on_tick = %08x 不可执行 ⇒ 跳过 call",
                        s_chain_bad, node, tick);
             regs->eax = CE_CHAIN_SKIP_EAX;
             ce_retaddr_set(regs, CE_CHAIN_RESUME);
@@ -4103,7 +4121,7 @@ int __cdecl BP_ce_chain_node_guard(x86_reg_t *regs, void *bp_info)
         if (s_chain_bad <= 10 || (s_chain_bad % 100) == 0) {
             ce_mod_desc(tick, m_tick, sizeof m_tick);
             ce_mod_desc(thisp, m_this, sizeof m_this);
-            ce_log("★★ chain guard #%u: node %08x 的 on_tick = %08x (%s) 不是可执行地址 ⇒ 本帧跳过这次 call"
+            ce_log_key("★★ chain guard #%u: node %08x 的 on_tick = %08x (%s) 不是可执行地址 ⇒ 本帧跳过这次 call"
                    "（否则 0x401355 call eax = 0xC0000005；返回 1 走 0x4013b7 空转）"
                    " order=%d flags=%#x this=%08x (%s) visit=%u changed=%u",
                    s_chain_bad, node, tick, m_tick,
@@ -4231,7 +4249,7 @@ static int ce_poc_gate_common(x86_reg_t *regs, uint32_t fall_through)
         } else {
             static int warned;
             if (!warned) { warned = 1;
-                ce_log("WARN: poc-gate: 可疑操作数 (line %.1f, player.y %.1f) @esi=%p — 本次按"
+                ce_log_key("WARN: poc-gate: 可疑操作数 (line %.1f, player.y %.1f) @esi=%p — 本次按"
                        "「不吸」处理（见 AUDIT §BE-EP）", (double)line, (double)py, (const void *)pl); }
         }
     }
@@ -4358,7 +4376,7 @@ int __cdecl BP_ce_enemy_damage(x86_reg_t *regs, void *bp_info)
     if (!s_enemy_damage_selfcheck) {
         s_enemy_damage_selfcheck = 1;
         if (ev.enemy != (void *)(data - 0x122c))
-            ce_log("WARN: sdk: ce_enemy_damage selfcheck: full=%p data=%p (expect full = data - 0x122c)",
+            ce_log_key("WARN: sdk: ce_enemy_damage selfcheck: full=%p data=%p (expect full = data - 0x122c)",
                    ev.enemy, (void *)data);
     }
 

@@ -23787,3 +23787,34 @@ owner 原话：「★ 它的行为实际上就是 **TH18 早苗原生高速子�
 另：一手「`Skill` 的 x 跟着**当前充能值**滑动」（另两条用固定标位）—— 本卡因为改成居中，
 这条**滑动手感**没有复刻；要的话把 `pofv_hud_txt_frame()` 里 `Skill` 的 `bx + fw*0.5f`
 换成 `bx + fw*fc` 即可（一行）。
+
+### ★ 2026-10-24 日志总闸 `CE_DEV_DUMP`（发布默认 **0** = 全部编译成空）
+
+- **一句话**：`ce_log` 从**函数**改成**宏**（定义在 `native/sdk/public.h`），开关 `CE_DEV_DUMP`
+  **0 = 全关（发布默认）** / **1 = 只留关键行（机师/实跑诊断）** / **2 = 全部（= 改造前的行为）**。
+  0 档时**全仓 1112 个调用点**全部编译成 `((void)0)` ⇒ **参数不求值、格式化串不进二进制、一次文件 I/O 都没有**。
+- **为什么**：热路径 `ce_log` 每行都 `open/append/close`（必 flush）；owner 实跑一局 **11–23 MB**。
+  函数版只能在运行时"少写"，参数字符串仍占 `.rdata`；**宏版是编译期删干净**（这才是零开销）。
+- **怎么开**：`make dll CE_DEV_DUMP=2`（`1` = 关键行）。改值后 `build/.dev_dump` 戳会让**所有 `.o` 重编**
+  —— make 不跟踪命令行变量，没有这个戳就会「刚编过 0 档，再 `CE_DEV_DUMP=2` 静默什么都不做」。
+- **关键行（1 档只有这些，每局 ≤ 20 行）**：
+
+  | # | 行 | 位置 |
+  | --- | --- | --- |
+  | 1 | `youkai: build <编译戳> …`（现场报告先看这条）| `cards/youkai.c` `on_load` |
+  | 2–4 | `youkai: practice auto-equip 108 …`（发 / 已有跳过 / retry 后 gone）| `cards/youkai.c` `yk_practice_equip_once` |
+  | 5 | `youkai/leveledit: xfam gone … feed=` | `cards/youkai.c` `yk_transfer_tick` |
+  | 6 | `FAIL:` / `WARN:` / `★` 一族（站点守卫、链守卫、retail 签名…）| `sdk.c`（13 条）+ `ce_verdict` 全部 |
+  | 7 | `thcrap exports:` / `guard: retail table signature ok` | `dll_main.c` |
+
+  ⇒ 其余 **~1090 条**都在 2 档。`trance-bgm: seek` 那两条**暂未**收进 1 档：`cards/trance_bgm.c` 正被
+  BGM 那条线重写（冲突）—— 它落地后把 `同时间点 seek` / `起播对齐` 两行的 `ce_log` 改成 `ce_log_key` 即可。
+- **0 档的硬失败通道**：`ce_verdict` 的**文件行**编译掉，但结论**仍镜像进 thcrap 的日志**（`log_printf`）
+  ⇒「本 DLL 被卸掉 / 没装上」永远看得到，且不写我们自己的日志文件。
+- **发布态一局写多少行**：**0 行 / 0 字节**（连启动横幅和日志文件创建都在 0 档编译掉）。
+  要看现场就用 `CE_DEV_DUMP=1` 的构建（1 行横幅 + ≤20 关键行）或 `2`。
+- **⚠ 依赖日志的旧工具**：`native/tools/verify.py` / `autoplay.py` / `autoplay_win.py` 读
+  `th18_card_expand.log` 做判据 ⇒ 它们必须配 **2 档**构建跑（`make dev` / devbuild 不读日志，不受影响）。
+- **代价**：0 档构建多出约 **470 条 `-Wunused-*` 警告**（那些变量/函数原本只被日志用过；行为不变，
+  只是不再被读）。2 档构建的警告数不变。想静音只能在 0 档构建加 `-Wno-unused-*`，但那会连带盖住真问题
+  ⇒ 本仓**默认不静音**。

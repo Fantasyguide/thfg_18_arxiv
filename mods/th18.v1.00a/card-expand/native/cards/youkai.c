@@ -5224,7 +5224,7 @@ static void __attribute__((noinline)) yk_transfer_tick(yk_card_t *s)
                         }
                         if (s_xfam[i].le && s_xfam_gone_logged < 12u) {
                             ++s_xfam_gone_logged;
-                            ce_log("youkai/leveledit: xfam gone id=%u last_life=%d hits=%u frame=%u "
+                            ce_log_key("youkai/leveledit: xfam gone id=%u last_life=%d hits=%u frame=%u "
                                    "death_seen=%d kind=%d feed=%s (feed only when a %s death event was "
                                    "seen within 4 frames: KILLED/BOMB_KILL = killed by damage; "
                                    "no event = off-screen removal / manager sweep, ECL_DIE / KILL_ALL = "
@@ -8734,13 +8734,13 @@ void yk_practice_equip_once(void)
     if (dec == YK_PRACTICE_GRANT_SEND) {
         s_practice_given = 1;           /* 先立标志 ⇒ 失败也不重试（owner 口径）*/
         r = ce_give_card(108u, CE_MODE_SHOP, 0);
-        ce_log("youkai: practice auto-equip 108 (ce_owned=%d, r=%d, spell=%d)",
+        ce_log_key("youkai: practice auto-equip 108 (ce_owned=%d, r=%d, spell=%d)",
                (int)ce_owned(108u), r, (int)sid);
         return;
     }
     if (dec == YK_PRACTICE_GRANT_SKIP_OWNED) {
         s_practice_given = 1;
-        ce_log("youkai: practice auto-equip 108 skipped (already owned, spell=%d)", (int)sid);
+        ce_log_key("youkai: practice auto-equip 108 skipped (already owned, spell=%d)", (int)sid);
         return;
     }
     /* dec == NONE：本帧不发。两种情形都要能一眼分辨（下一局日志即证据）：
@@ -8749,7 +8749,7 @@ void yk_practice_equip_once(void)
      *   ② 已经发过且手上仍有 ⇒ 静默（无日志）。*/
     if (s_practice_given && !ce_owned(108u) && !s_practice_gone_logged) {
         s_practice_gone_logged = 1;
-        ce_log("youkai: practice auto-equip 108 gone (reset_cards after retry) - NOT re-granted "
+        ce_log_key("youkai: practice auto-equip 108 gone (reset_cards after retry) - NOT re-granted "
                "(intended: 有/没 108 的对照, owner 2026-10-20; spell=%d)", (int)sid);
     }
 }
@@ -8760,7 +8760,7 @@ static int on_load(ce_card_t *c)
     static int s_stamp_logged;
     if (!s_stamp_logged) {
         s_stamp_logged = 1;
-        ce_log("youkai: build " YK_BUILD_STAMP " (card 108; compile-time stamp - check this line "
+        ce_log_key("youkai: build " YK_BUILD_STAMP " (card 108; compile-time stamp - check this line "
                "FIRST in any field report)");
     }
     return on_ctor(c);
