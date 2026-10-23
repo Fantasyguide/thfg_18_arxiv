@@ -1108,14 +1108,17 @@ static float pofv_hud_txt_put_int(float x, float y, int v, uint32_t col,
     return pofv_hud_txt_put(x, y, b, col, tdim, used);
 }
 
-/* `"前缀" + 数字`：以 `cx` 为**中心**摆（到点提示用条心、常驻 lv 用标位）✓ */
+/* `"前缀" + 数字`：以 `cx` 为**中心**摆（到点提示用条心、常驻 lv 用标位）✓
+ * ★ `v < 0` ⇒ **不画数字**（"Skill" 那一档没有等级！）—— 2026-10-24 自审抓到的 bug：
+ *   原来无条件调 `put_int(v)` ⇒ `"Skill"` 会被画成 **`"Skill0"`** ✗。*/
 static void pofv_hud_txt_center_lv(float cx, float y, const char *pre, int v,
                                    uint32_t col, uint32_t tdim, int *used)
 {
-    const int nd = (v >= 10) ? 2 : 1;
+    const int nd = (v < 0) ? 0 : ((v >= 10) ? 2 : 1);
     const float wd = POFV_HUD_TXT_W * (float)(pofv_hud_txt_len(pre) + nd);
     const float x0 = cx - wd * 0.5f;
-    pofv_hud_txt_put_int(pofv_hud_txt_put(x0, y, pre, col, tdim, used), y, v, col, tdim, used);
+    const float x1 = pofv_hud_txt_put(x0, y, pre, col, tdim, used);
+    if (v >= 0) pofv_hud_txt_put_int(x1, y, v, col, tdim, used);
 }
 
 /* ① 到点提示（条上方、**条心居中**）+ ② 常驻 lv（**C3 / C4 标的正下方、以标为中心**）✓
@@ -1140,7 +1143,7 @@ static void pofv_hud_txt_frame(float bx, float fy, float fc, int kind, uint32_t 
      *     第 4 档 = C4 ⇒ `"Boss Lv d"`（一手三条格式串逐字 ✓）。
      *   ★ 等级取 `s_c3_lv_n` / `s_c4_lv_n`（0..7）**+1** —— 一手是 `(int)piVar7 + 1` ✓。*/
     if (tier == 2) {
-        pofv_hud_txt_center_lv(bx + fw * 0.5f, fy - POFV_HUD_TXT_UP, "Skill", 0,
+        pofv_hud_txt_center_lv(bx + fw * 0.5f, fy - POFV_HUD_TXT_UP, "Skill", -1,
                                POFV_HUD_TXT_SKILL_COL, tdim, &used);
     } else if (tier == 3) {
         const int lv3 = (s_c3_lv_n < 0 ? 0 : (s_c3_lv_n > 7 ? 7 : s_c3_lv_n)) + 1;
