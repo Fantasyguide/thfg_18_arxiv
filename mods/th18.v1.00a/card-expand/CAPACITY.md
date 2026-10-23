@@ -1352,3 +1352,12 @@ CE_ANM_ABILITY_SPRITE 宏 1385 个，号 109..829
 - 尾插 ⇒ 既有 entry/sprite/script 号**零位移**（`build_ability.py` 重排检测通过）。
 
 
+
+- **★ 2026-10-25 新增卡 109 早苗 C4 的三型弹**（各 **1 个单图 entry**，不是图集段）：
+  `POFV109_C4S_OFUDA`（entry **229**，16×16，sprite **1001**）＝一手 `bullet1.png (128,112)` **札弹**；
+  `POFV109_C4S_SMALL`（entry **230**，**8×8**，sprite **1002**）＝`bullet1.png **(56,240)**` **小彩弹**；
+  `POFV109_C4S_BIG`（entry **231**，**32×32**，sprite **1003**）＝`bullet2.png **(32,32)**` **中玉**。
+  依据 = `engine/ecl/th19/02-bullet-types.md` §2（`ins_602(num, type, color)` 的 type 11/1/18）＋
+  owner 2026-10-25 逐格指认（**16px 格**；`bullet2.png` 是 **8×8 格**）。
+  ⇒ `ability.anm` **entry 229 → 232**（原生 7 + 追加 225），**余 24**；
+  使用方 = `pofv.c` 的 `pofv_c4s_emit(..., lane)`（路 0/1/2）✓。
