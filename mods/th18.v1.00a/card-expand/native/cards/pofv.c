@@ -4815,6 +4815,7 @@ static ce_hud_vm_text_t s_c4_timer_txt;
 #define POFV_C4_FOG_FALLBACK_C 0x00F00F80u   /* ★ 关底颜色 `0xF00F80` ✓（R240 G15 B128 ✓）*/
 #define POFV_C4_THRESH         2500.0f
 #define POFV_BARRIER_R          40.0f
+#define POFV_BARRIER_BREAK_SE   0x1bu   /* ★ 一手破罩 SE 0x1b = TH18 `se_tan00.wav` ✓ */
 /* ★★ 2026-10-10 owner 实跑订正：「半径上感觉**大了 1.5 倍**」✗ —— 真因 = 外层曾写
  *   `scale = k × (128/96)` ✗（把"贴图是 128 px"错当成"要画得更大"），它的**外缘**于是落在
  *   `64 × 0.833 × 1.333 = 71` 单位 = **判定半径的 1.78 倍** ✗。
@@ -11316,6 +11317,15 @@ static int pofv_on_death_before_deathbomb(ce_card_t *c)
         s_barrier_vm_glow = 0;
     }
     pofv_barrier_break_fx();                  /* ★ 三层爆发 ✓（见该函数头注释 ✓）*/
+    /* ★★★ 2026-10-25 owner：破罩音效「好像是这三个之一 se_tan00/01/02」✓
+     *   ⇒ 一手破罩 SE = `0x1b`；TH18 的 SE 表（`engine/_shared/th18-sound-table.md:187`）里
+     *     **`0x1b = se_tan00.wav`** ✓（同一族，正是你给的第一支）⇒ 直接播 **0x1b** ✓。
+     *   ⚠ 引擎自己那一下**被弹音**在命中时已经播过（我们是在死亡流程里撤销的）⇒
+     *     现在会"被弹音 + 破罩音"两声；要压掉被弹音得 hook SE 播放（共享件，另案 ✓）。*/
+    {   const float *bp = ce_player_pos();
+        ce_play_sound(POFV_BARRIER_BREAK_SE, bp ? bp[0] : 0.0f);
+    }
+    ce_log("pofv: [BARRIER] 破罩音 SE=0x%02x（se_tan00）", POFV_BARRIER_BREAK_SE);
     s_barrier_brk = POFV_BARRIER_BREAK_N;     /* ★ 破罩演出：40 帧禁主动移动 + 位移 ✓（一手常数 ✓）*/
     {
         float hx = 0.0f, hy = 0.0f;
