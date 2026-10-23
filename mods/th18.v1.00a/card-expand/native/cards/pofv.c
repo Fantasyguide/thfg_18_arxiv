@@ -7645,9 +7645,16 @@ static void pofv_c3s_tick(void)
              *   段5 再长回来）⇒ ★ 与"运动学"无关，是**长度动画**在干扰观察 ✗。
              *   ⇒ ★ 本笔**停掉长度动画**✗：贴图固定 8×8 占位（`465` 里的 scale 已经压好了），
              *   这里**不再调 `clip_x`** ⇒ 只留运动 ✓。外观定稿时再单独做长度 ✓。*/
-            /* ★ 一手 `alpha(128)` ⇒ 第 8 帧起 `alpha(20)` ✓（写 ARGB 的 AA 位 ✓）*/
-            ce_anm_set_color((uint32_t)b->vm,
-                             (b->age < 8) ? 0xffffff80u : 0xffffff14u);
+            /* ★ 一手 `alpha(128)` ⇒ 第 8 帧起 `alpha(20)` ✓（写 ARGB 的 AA 位 ✓）
+             * ★★★ 2026-10-25 owner：「细长条，但颜色是**红橙**」✗ —— 素材是品红 (242,106,254)，
+             *   红橙 = **蓝通道被乘成 0**（品红×黄 = 242,106,0 ✓）⇒ 是**第二色**在染色。
+             *   ⇒ `color` / `color2` **两路都写白**（本仓 HUD 的老规矩：引擎按两路判/用 ✓），
+             *     并且脚本 465 已把 `type(1)` 改成 `type(0)`（不再走第二色通道 ✓）。*/
+            {
+                const uint32_t cc = (b->age < 8) ? 0xffffff80u : 0xffffff14u;
+                ce_anm_set_color((uint32_t)b->vm, cc);
+                ce_anm_set_color2((uint32_t)b->vm, cc);
+            }
         }
         if (b->vm) {
             /* ★ 2026-10-16 **一手 `posTime(28, 0, %F0, %F1, 0)` 的线性飘动** ✓：
