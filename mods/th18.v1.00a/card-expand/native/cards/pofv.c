@@ -7716,6 +7716,20 @@ static void pofv_c3s_tick(void)
                  *       "上升段和转向不挨着"的来源：段3 减速时 len 缩到 0、段5 再长回来，头尾会跳 ✗）；
                  *     · **旋转 = θ**（引擎噪声最小的一组，一手纹理长轴 = +x ✓）。*/
                 ce_anm_set_rotation((uint32_t)b->vm, 0.0f, 0.0f, b->ang);   /* ★ 基准在脚本里 ✓ */
+                /* ★★★ 2026-10-25 owner：「**你该加 log 了**」✓ —— 把"我们写进去的角度"与
+                 *   "VM 里实际留着的 rz（`vm+0x3c`，见 `AUDIT.md:10721`）"对照着打出来：
+                 *   · 若 `rz_read` ≠ `th_write` ⇒ 引擎没接这个写入（或者下一秒被覆盖）✗
+                 *   · 若 `rz_read` == 写入值但画面仍水平 ⇒ 旋转不参与这个脚本的绘制 ✗（要换路子）
+                 *   · `spr` 一起打，确认画的确实是 768（C3S_STRIP）而不是别的 ✓ */
+                if (k == 0 && (b->age <= 3 || (b->age % 20) == 0 ||
+                               (b->age >= (int)b->C + 9 && b->age <= (int)b->C + 20))) {
+                    uint8_t *vmp = (uint8_t *)ce_anm_get_vm((uint32_t)b->vm);
+                    const float rz = vmp ? *(float *)(vmp + 0x3c) : -9.9f;
+                    ce_log("pofv: [C3ROT] age=%d th_w=%.3f rz_vm=%.3f spin=%.3f pos=(%.1f,%.1f) spr=%d",
+                           (int)b->age, (double)b->ang, (double)rz, (double)b->spd,
+                           (double)b->x, (double)b->y,
+                           (int)CE_ANM_ABILITY_SPRITE_POFV109_C3S_STRIP);
+                }
             }
         }
         pos[0] = b->x; pos[1] = b->y; pos[2] = 0.0f;
