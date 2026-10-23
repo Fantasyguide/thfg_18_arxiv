@@ -39,6 +39,7 @@ static DWORD g_hook_field  = 0;
 static DWORD g_hook_r      = 0;
 static DWORD g_hook_s      = 0;
 static DWORD g_w0 = 0, g_w4 = 0, g_w8 = 0, g_wc = 0;
+static DWORD g_ctx = 0;      /* 711 handler 里捕获的 edi = ECL 上下文 */
 
 static void probe_log(const char *fmt, ...);   /* 前置声明（restore_all_patches 会用到） */
 
@@ -199,6 +200,11 @@ static void scan_for_pattern(void)
 static void poll_once(void)
 {
     DWORD anchor, v;
+    if (g_hook_on && g_ctx) {
+        probe_log("[ctx] %08x  | [w4] %08x  [w8] %08x", g_ctx, g_w4, g_w8);
+        dump_n("ctx+0x5ac", g_ctx + 0x5ac, 24);
+        return;
+    }
     if (g_hook_on) {
         probe_log("[arg1] %08x  [arg2] %08x  | [w4] %08x  [w8] %08x  [wc] %08x",
                   g_hook_r, g_hook_s, g_w4, g_w8, g_wc);
@@ -421,6 +427,47 @@ static BOOL hook_store5(DWORD rva, const BYTE exp[5], DWORD *slot, const char *t
     return TRUE;
 }
 
+
+/* ★ hook711：711 handler（th19:0x50388c）里的
+ *     th19:0x5038b5  8d 8f ac 05 00 00   lea ecx,[edi+0x5ac]
+ * 这条 6 字节整指令不涉及 rel32 ⇒ 可以安全搬进 trampoline 重放。
+ * 顺手把 edi（= ECL 上下文）记下来：段表 = [edi+0x5ac] → 元素（0x2c 步长）→ +0x28。 */
+#define HOOK711_RVA 0x1038b5u
+static const BYTE HOOK711_EXPECT[6] = { 0x8d,0x8f,0xac,0x05,0x00,0x00 };
+
+static BOOL install_hook711(void)
+{
+    BYTE *at = g_base + HOOK711_RVA;
+    BYTE *stub, *p;
+    DWORD old;
+    int i;
+
+    if (!readable(at, 6) || memcmp(at, HOOK711_EXPECT, 6) != 0) {
+        probe_log("[hook711] 0x%x 原字节不匹配，跳过。", HOOK711_RVA);
+        return FALSE;
+    }
+    stub = (BYTE *)VirtualAlloc(NULL, 4096, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    if (!stub) return FALSE;
+    p = stub;
+    *p++ = 0x9C; *p++ = 0x60;                       /* pushfd / pushad */
+    *p++ = 0x89; *p++ = 0x3D;                       /* mov [imm32], edi */
+    *(DWORD *)p = (DWORD)(uintptr_t)&g_ctx; p += 4;
+    *p++ = 0x61; *p++ = 0x9D;                       /* popad / popfd */
+    for (i = 0; i < 6; i++) *p++ = HOOK711_EXPECT[i];
+    *p++ = 0xE9;
+    *(DWORD *)p = (DWORD)((SIZE_T)(at + 6) - (SIZE_T)(p + 4));
+
+    remember_patch(HOOK711_RVA, HOOK711_EXPECT, 6);
+    if (!VirtualProtect(at, 6, PAGE_EXECUTE_READWRITE, &old)) { VirtualFree(stub, 0, MEM_RELEASE); return FALSE; }
+    at[0] = 0xE9;
+    *(DWORD *)(at + 1) = (DWORD)((SIZE_T)stub - ((SIZE_T)at + 5));
+    at[5] = 0x90;
+    VirtualProtect(at, 6, old, &old);
+    FlushInstructionCache(GetCurrentProcess(), at, 6);
+    probe_log("[hook711] 已安装 @ base+0x%x → %p（记录 edi=ctx）", HOOK711_RVA, (void *)stub);
+    return TRUE;
+}
+
 static DWORD WINAPI poll_thread(LPVOID unused)
 {
     DWORD t0 = GetTickCount();
@@ -521,6 +568,7 @@ int __stdcall thcrap_plugin_init(void)
         if (g_hook_sel == 0 || g_hook_sel == 2) hook_store5(0x102a24u, E8, &g_w8, "+08");
         if (g_hook_sel == 0 || g_hook_sel == 3) hook_store5(0x102a60u, EC, &g_wc, "+0c");
         if (g_hook_sel == 0 || g_hook_sel == 4) install_hook();
+        if (g_hook_sel == 0 || g_hook_sel == 8) install_hook711();
         /* ★★ 真正的 609 handler（th19:0x502432）里的两个 float store：
          *   0x502493  f3 0f 10 44 24 28   movss xmm0,[esp+0x28]   ← r（5 字节整）
          *   0x5024af  f3 0f 11 40 04      movss [eax+0x4],xmm0    ← s（5 字节整）
