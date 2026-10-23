@@ -10589,6 +10589,12 @@ static int on_draw(ce_card_t *c)
                  *      ★ ⇒ 不会再跑到"整数全尺寸矩形"的右上角 ✗（那是半尺寸 + 居中对齐导致的 ✓）。*/
                 ce_hud_text_ex(248.0f, 448.0f, 0xFFFFFFFFu, 0u, 4, 2, 2, 0.0f, "%02d.", (int)sec);
                 ce_hud_text_ex(272.0f, 452.0f, 0xFFFFFFFFu, 0u, 4, 2, 0, 0.5f, "%02d", (int)frm);
+                /* 2026-10-23 卡 109 调试（owner：先试 ce_hud_text_ex 是不是那套字体）：
+                 *   在同上下文画一行 `Ex Attack lv3` / 一行 `skill` / 一行 `BOSS lv2`。
+                 *   font_id 试 2（一手 TH18 ascii 的 2/3 号字体）。*/
+                ce_hud_text_ex(200.0f, 400.0f, 0xFFFFFFFFu, 0u, 2, 2, 0, 1.0f, "Ex Attack lv%d", 3);
+                ce_hud_text_ex(200.0f, 420.0f, 0xFFFFFFFFu, 0u, 2, 2, 0, 1.0f, "skill");
+                ce_hud_text_ex(200.0f, 440.0f, 0xFFFFFFFFu, 0u, 2, 2, 0, 1.0f, "BOSS lv%d", 2);
                 /* ★ 2026-10-16 owner 实跑订正（原话）：「★ **你小数部分改更靠右了何意味呢 —— 错了，
                  *   比对之后是你整数部分太靠左了，但是你小数部分是上沿对齐整数部分，应当是下沿**」✓
                  *   ⇒ ★ ① **主块 x 224 → 248**（整数整体往右 ✓）；★ ② **小数块 y 448 → 452**
