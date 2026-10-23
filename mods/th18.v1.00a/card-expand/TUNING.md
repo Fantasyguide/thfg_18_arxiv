@@ -250,7 +250,7 @@ shooterset ⇒ 另开一单 ✓）。
 | **素材上限 / 上限满了怎么办** | `TRANCE_BGM_MAX_PCM` = **24 MiB**（=  | `native/cards/trance_bgm_core.h` +  | 见文末「长行详录 #17」 |
 | **素材放哪** | **三处都要**：`<modkit>/thcrap/bin/bgm`（**真正被 | `bash local/sync_modkit_dll.sh`（一次同步三处并校 | 见文末「长行详录 #18」 |
 | **电平一致性** | 14 首里 13 首整轨电平在 ±1.7 dB；**例外 = 2 面关底  | 同上 | 见文末「长行详录 #19」 |
-| **素材只留循环段** | 丢掉 intro（`[intro_size, track_size)`）（❓自定）| 同上 | 想要"从 intro 起播"就得把 intro 也写进文件并把 `intro_size` 填回 fmt（第二路从字节 0 起播 ⇒ 会在文件头听到 intro）|
+| **素材带 intro**（★ 2026-10-24 方案 A，替代旧的"只留循环段"）| 成品 = `P = intro_game − start` 秒**静音** + 从 MIDI 0 截到 `intro_game + 循环体`；**循环点 = `intro_game`**（= 原曲 fmt 的 `intro_size`，一手值）⇒ DLL 把我们 fmt 的 `intro_size` 填成该值（TH13 的 `NNb` 轨口径）| `tools/make_trance_rearr.py` + `native/cards/trance_bgm.c` / `trance_bgm_core.c` | 旧口径（只装循环体 + `intro_size = 0`）的代价：主曲还在 intro 段时被 clamp 到循环起点，一手日志实测两路差 **17.1 s**。回老口径 = 生成器不给 intro + `trance_bgm_fmt_init(..., intro_bytes=0, ...)`（代码两条路都还在）|
 | `TRANCE_BGM_XFADE_FRAMES` | **20 帧 ≈ 0.33 s**（❓自定）| `native/cards/trance_bgm_core.h` | 嫌切换突兀就加大、嫌两首叠太久就改小（**原版 TH13 是硬切，这是加料**）|
 | **同时间点 seek（第十二轮落地）** | **做**：进灵界时对齐到主曲此刻的音乐位置（TH13  | `cards/trance_bgm.c` +  | 见文末「长行详录 #20」 |
 | **素材起点对齐** | 生成器 `fine_align`：小节线估计 **±0.8 s** 内取 **c | `tools/make_trance_rearr.py` | 见文末「长行详录 #21」 |
@@ -553,6 +553,52 @@ AUDIT.md#cn-91-一手真身4032d0-是一套目的地-alpha-遮罩)。它靠本�
 2. **13 的 2k–8k 只兑现 −1.5 dB，>8k 才是 −3.35 dB**（架式斜率）。同口径更狠两档：
    `-3@3000` → 2k–8k **−2.07**；`-4@2500` → **−3.10**（>8k −4.30）。**建议先听 −3@4k**
    —— 要压的「刺」通常在 4–8k 以上；再狠会把它压到比原曲暗 9–11 dB（同响度下本来就已低 7.2 dB）。
+
+
+### 2.0h-4 ★★ **唯一例外：leveledit 的 `th18_06b`（2026-10-24）**
+
+> **`th18_06b` 例外：与 leveledit 的 `th18_06`（105.2904 s）等长，不是零售的 112.0537 s。**
+> leveledit 包把二面 boss 的主曲换成了 `th18_06.ogg`（intro）+ `th18_06.loop.ogg`（循环体）；
+> thcrap bgmmod 的 `track_pcm_t`（`thcrap_bgmmod/src/bgmmod.hpp`）把 `intro_size` 取成
+> **第一个文件的解码字节** ⇒ 主曲时间轴 = **30.9678 s intro + 74.3226 s loop = 105.2904 s**
+> （= 4,643,306 采样 @44100 = **2,321,653 帧 @22050**）。灵界版必须**同长、同 intro
+> （682,839 帧）**，否则 `engine_intro_bytes()` 算出的循环点与主曲错位。其余 17 首仍按零售
+> `thbgm.fmt`（`th18_06` 零售 = intro 6.5074 + loop 105.5463 = 112.0537 s）。
+
+**素材**：owner 给的 `th08_05_tr.mid`（TH08 二面 boss 曲的 trance 版；SMF **format 0 / 1 轨 /
+11 通道 / 480 ppq / 155.000 BPM / 113.308 s**，无 bank select、无 sysex；md5 `e2a25a30…`）
+⇒ `local/th18.v1.00a/midi/th08_05_tr.mid`（`MANIFEST.tsv` 已登记「leveledit 二面 boss 灵界版专用」）。
+
+**出盘命令**（THfont + 现行全部调音；`--midi-map` / `--ref-*` 是本次新增的**外部入口**，
+默认不给时 17 首行为不变）：
+
+```bash
+python3 tools/make_trance_rearr.py --stem th18_06 \
+  --midi-map th18_06=th08_05_tr.mid \
+  --ref-intro  <leveledit>/th18/th18_06.ogg \
+  --ref-loop   <leveledit>/th18/th18_06.loop.ogg \
+  --eq master --loudness-match original --intro-loudness-match ref \
+  --out local/th18.v1.00a/trance_bgm
+```
+
+* **调音**：鼓 kit **25**（ch9：118→25）、ZUN 号本来已是 **56**（ch4 Trumpet，无需 remap）、
+  鼓 **+2.5 dB**、倍斯 **+4.1 dB**、母带低架 **+4 dB @100 Hz**；`th18_06` 无 `PER_TRACK` /
+  `PER_TRACK_EQ` 例外。format 0 单轨 ⇒ 主旋律按**通道**判（本次新增；否则整条轨被当旋律），
+  命中 **ch3**（prog 75 Pan Flute，占音符能量仅 2% ⇒ 压 −9.1 dB 对整体影响很小，灵界版的
+  听感差异主要来自这份 MIDI 本身的编曲）。
+* **对齐**：`fine_align` 起点 **+31.02 s**，chroma **r = 0.948**（相对 leveledit loop）；
+  成品循环体对主曲 loop 的 lag = **0.000 s**（r = 0.939）⇒ 同时间点 seek 对得上。
+* **长度**：intro **682,839 帧** + 循环体 **1,638,814 帧** = **2,321,653 帧 / 105.290385 s**；
+  文件 **22050 Hz / 2ch / 16 bit**，峰值 **−0.30 dBFS**。
+* **响度**（`--intro-loudness-match ref`：intro 段单独匹配主曲 intro；主曲 intro/loop 本身差 1.85 LU）：
+  整首 **−13.415 vs 主曲 −13.407（Δ−0.008）**；intro **Δ−0.001**；loop **Δ−0.002**（全部 ≤0.5）。
+* **落盘**：`<modkit>/thcrap/bin/bgm/` + `<modkit>/mods/bgm/` + `<modkit>/game/bgm/` +
+  `local/th18.v1.00a/trance_bgm/`，四处 md5 = **`6cea0dd44640a197fa939e822f7dfc8e`**。
+* **备份**：零售 112.05 s 那份 = `th18_06b_rearr.wav.bak-20261024` **并另存**
+  `th18_06b_rearr.retail-112s.bak`（`thcrap/bin/bgm/` 与 `local/…/trance_bgm/`，md5 `339597e4…`）；
+  `mods/bgm` / `game/bgm` 的旧件（2,327,296 帧的循环体口径）备份为 `.bak-20261024`。
+* **⚠ 下一轮别再按零售口径重渲 `th18_06b`**：`da5d8ef9` 那条「17 首统一带 intro」是**零售**口径，
+  对 `th18_06b` **不适用**（主曲已被 leveledit 换掉）。
 
 
 ### 2.0b ★ 113 的**灵界主炮组**（TH13 灵界 set10 复刻，2026-09-13）

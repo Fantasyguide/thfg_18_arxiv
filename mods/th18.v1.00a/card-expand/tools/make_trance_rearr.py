@@ -83,9 +83,40 @@ TH13 的 `NN`/`NNb` 对**时长严格相等、时间轴零延迟对齐**（能�
        **轨名没有依据的轨一律不动**（本批 61 全部带 `Romantic Tp` 轨名，故 61→56 的命中面 = 这些轨）。
      · `--no-program-override` 关掉这张表（A/B 对照、或出"改版前 pre-norm 峰值"用）。
 4. **对齐**（`fine_align`）：把渲染结果与**原曲循环体**的 chroma 时间序列做相关，取最佳延迟 ⇒
-   以那个偏移为起点、截取**与原曲循环体严格等长**的一段（`--xfade` 加末尾 500 ms 交叉淡化）
-   ⇒ 时长/循环点与原曲一致（我们刚修好的"同时间点 seek"继续有效）。
+   以那个偏移为起点，`rendered[start_]` 就是原曲的**循环点**（= MIDI 时间轴上的 `start_sec`）。
    ★ 两条渲染路径共用同一个 `fine_align`/截断/归一化尾巴 —— 换音色**不动时间轴**。
+5. ★★ **成品带 intro**（2026-10-24 方案 A，对齐 TH13 的 `NNb` 轨口径）：
+   以前成品**只有循环体**（`intro_size = 0`）⇒ 主曲还在 intro 段时开灵界，DLL 只能把位置
+   clamp 到 0（= 循环起点），两路差一整个"intro 剩余长度"（一手日志实测 **17.1 s**）。
+   TH13 的 b 轨 intro/loop 与正常轨**逐列相等**（`engine/_shared/th13-th18-trance-bgm-research.md`
+   §1.5-C）⇒ 现在照它来：
+
+   ```
+   P      = intro_game − start_sec          （0.37–0.80 s：MIDI 的 intro 比游戏里的短）
+   成品   = P 秒静音 + rendered[0 … ] 截到 (intro_game + loop)   （循环点 = intro_game）
+   ```
+
+   逐项含义：`intro_game = 原曲 fmt 的 intro_size /（44100×2ch×2B）`（**一手值**，不猜）；
+   `P` 那段静音是"MIDI 没有的那 0.4–0.8 s"—— **循环点因此仍逐采样落在原曲循环点上**
+   （lag ≈ 0，见 §1 的实测表），intro 段内容只比原曲晚 P 秒（听感上就是同一段）。
+   循环体那一段**与旧成品逐采样相同**（母带链照旧只作用在循环体上，intro 段套同一组 EQ 滤波器
+   + 同一个增益，峰值超上限时单独缩）⇒ 旧母带口径（响度对原曲）继续成立。
+
+## ★★ 唯一的长度例外：leveledit 的 `th18_06b`（2026-10-24）
+**`th18_06b` 例外：与 leveledit 的 `th18_06`（105.2904 s）等长，不是零售的 112.0537 s。**
+leveledit 包把二面 boss 的主曲换成了 `th18_06.ogg`（30.9678 s intro）+ `th18_06.loop.ogg`
+（74.3226 s 循环体）= **4,643,306 采样 @44100 = 2,321,653 帧 @22050**；thcrap bgmmod 的
+`track_pcm_t` 把 `intro_size` 取成第一个文件的解码字节（`thcrap_bgmmod/src/bgmmod.hpp`），
+所以灵界版必须**同长、同 intro（682,839 帧）**，否则 `engine_intro_bytes` 算出的循环点与
+主曲错位。**其余 17 首仍按零售 `thbgm.fmt` 的 intro+loop（例 `th18_06` 零售 = 112.0537 s）**。
+出盘命令（MIDI = owner 给的 TH08 二面 boss trance 版；除新增的 `--midi-map` / `--ref-*` /
+format-0 按通道判旋律外，调音表一个不改）：
+
+    python3 tools/make_trance_rearr.py --stem th18_06 \
+        --midi-map th18_06=th08_05_tr.mid \
+        --ref-intro  <leveledit>/th18_06.ogg --ref-loop <leveledit>/th18_06.loop.ogg \
+        --eq master --loudness-match original --intro-loudness-match ref \
+        --out local/th18.v1.00a/trance_bgm
 
 ## 授权与存放
 MIDI 是**第三方同人作品**（来源、编曲者署名、逐文件 md5 见 `local/th18.v1.00a/midi/MANIFEST.tsv`；
@@ -560,6 +591,38 @@ def pick_melody(tracks, t2s):
     return {ranked[0][0]}, stats
 
 
+def pick_melody_parts(tracks, t2s, drum_chs=(9,)):
+    """★ 2026-10-24：format-0（**单轨、多通道**）的主旋律判定 —— 把每个 `(轨, 通道)` 当成
+    一件乐器，用与 `pick_melody` **完全相同**的打分选一件。→ `(melody_tracks, melody_channels, stats)`。
+
+    为什么需要：`make_trance_rearr.py` 原来的 `pick_melody` 是**按轨**判的；leveledit 这次给的
+    `th08_05_tr.mid` 是 **format 0 / 1 条轨 / 11 个通道** ⇒ 整条轨被当成"主旋律"，
+    `--melody-db`（默认 −9.1 dB）会压**所有**非鼓乐器（再由响度匹配整体抬回来 ⇒ 实际只等于
+    "鼓 +9.1 dB"），按音色的 `prog_db` / 倍斯 / 低音区规则也永远轮不到。按通道判才恢复原语义。
+
+    只在 `len(tracks) == 1 且 ≥2 个非鼓通道` 时返回结果；其余（既有 17 首全是 format 1 多轨）
+    返回 `None` ⇒ 调用方原样走 `pick_melody`，**既有产物零变化**。
+    """
+    if len(tracks) != 1:
+        return None
+    chans = sorted({ch for _t, k, ch, _a, _b in tracks[0] if k in ("on", "off")})
+    chans = [ch for ch in chans if ch not in drum_chs]
+    if len(chans) <= 1:
+        return None
+    pseudo, keys = [], []
+    for ch in chans:
+        evs = [ev for ev in tracks[0] if ev[2] == ch]
+        if sum(1 for ev in evs if ev[1] == "on") < 8:
+            continue
+        pseudo.append(evs); keys.append(ch)
+    if not pseudo:
+        return None
+    mel_i, stats = pick_melody(pseudo, t2s)
+    if not mel_i:
+        return None
+    return {0}, {keys[sorted(mel_i)[0]]}, stats
+
+
 # ---------------------------------------------------------------- 合成
 def adsr(n, a, d, s, r, sr=SR):
     e = np.zeros(n, dtype=np.float32)
@@ -765,6 +828,24 @@ def read_wav_pcm(path, want_sr=RENDER_SR):
     return a, sr
 
 
+def load_ref_audio(path, want_sr=RENDER_SR):
+    """外部"原曲"参考音轨 → float32 (n, 2) @ 44100。
+
+    ★ 2026-10-24：leveledit 的 `th18_06.ogg` / `th18_06.loop.ogg` 是 thcrap bgmmod 的
+    "intro + loop" 两文件口径（`bgmmod.hpp` 的 `track_pcm_t`：`intro_size = intro 文件解码字节`、
+    `total_size = intro + loop`），**不是** `thbgm.fmt/dat` 里的零售曲。`source_loop()` 只认后者，
+    所以这里给它一个等价的外部入口：返回的 `(intro_bytes, track_bytes, 44100, 2, loop)` 与
+    `source_loop()` 完全同口径，后面 fine_align / 截断 / 响度匹配一行都不用改。
+    """
+    import soundfile as sf                      # 只有走外部参考时才需要（不拖累默认路径）
+    x, sr = sf.read(path, dtype="float32", always_2d=True)
+    if sr != want_sr:
+        raise SystemExit(f"{path}: 采样率 {sr} ≠ {want_sr}（外部参考只按 44100 口径算）")
+    if x.shape[1] != 2:
+        raise SystemExit(f"{path}: 需要立体声（实际 {x.shape[1]} ch）")
+    return np.ascontiguousarray(x, dtype=np.float32)
+
+
 def _db2lin(db):
     """dB → 线性振幅倍数（velocity 因子）。"""
     return 10.0 ** (float(db) / 20.0)
@@ -772,7 +853,7 @@ def _db2lin(db):
 
 def render_sf2(mid_path, sf2, fs, fs_libdir, melody_tracks, prog_by_ch, notes,
                mel_gain, bass_gain, log=print, tune=None, drum_bank=True, unmute_cc7=None,
-               program_override_on=True):
+               program_override_on=True, melody_channels=None):
     """SoundFont 渲染：改 velocity 的临时 MIDI ⇒ fluidsynth 渲 44100 Hz wav ⇒ 读回 ⇒ 降到 22050。
 
     返回 (n,2) float32 @ SR —— 与 `render_naive` 同接口，后面的 fine_align / 截断 / 归一化
@@ -798,6 +879,13 @@ def render_sf2(mid_path, sf2, fs, fs_libdir, melody_tracks, prog_by_ch, notes,
     `--no-program-override` 关掉（A/B 对照 / 出改版前峰值）。
     """
     tune = tune or {}
+    # ★ 2026-10-24：format-0 单轨多通道时，`melody_channels` 给出"主旋律只在哪几个通道"；
+    #   非 None 时 melody 判定 = `轨在 melody_tracks 且通道在 melody_channels`（见 pick_melody_parts）。
+    melody_channels = set(melody_channels) if melody_channels is not None else None
+
+    def _is_mel(ti, ch):
+        return ti in melody_tracks and (melody_channels is None or ch in melody_channels)
+
     drums_gain = _db2lin(tune.get("drums_db") or 0.0)
     mel_gain = _db2lin(tune["melody_db"]) if "melody_db" in tune else mel_gain
     bass_gain = _db2lin(tune["bass_db"]) if "bass_db" in tune else bass_gain
@@ -838,7 +926,7 @@ def render_sf2(mid_path, sf2, fs, fs_libdir, melody_tracks, prog_by_ch, notes,
         low_inst = {k for k, mp in mean_pitch.items()
                     if mp < low_mean_max
                     and (prog_by_ch.get(k[1]) or 0) not in range(32, 40)   # 倍斯另有 bass_db
-                    and k[0] not in melody_tracks}                          # melody 轨另有 melody_db
+                    and not _is_mel(k[0], k[1])}                           # melody 轨/通道另有 melody_db
         raw = bytearray(open(mid_src, "rb").read())
         # ★ 鼓 kit 25 / ZUN 号 56（2026-10-19 owner 定）：只改临时 MIDI 的 program change 值字节
         if program_override_on:
@@ -874,7 +962,7 @@ def render_sf2(mid_path, sf2, fs, fs_libdir, melody_tracks, prog_by_ch, notes,
             if ch in drum_ch:
                 g = drums_gain
                 drum_hit += 1
-            elif ti in melody_tracks:
+            elif _is_mel(ti, ch):
                 g = mel_gain
             elif prog in prog_gain:
                 g = prog_gain[prog]
@@ -1475,6 +1563,26 @@ def main(argv=None):
                          "naive = 老的自写合成器（兜底）")
     ap.add_argument("--sf2", default=None,
                     help="SoundFont 路径（默认自动找 local/th18.v1.00a/sf2/*.sf2，优先 thfont）")
+    # ★★ 2026-10-24（leveledit 二面 boss 灵界版）：两处**外部参考**入口，默认都不用 ⇒
+    #    既有 17 首的行为一个字节不变。
+    #    `--midi-map`：内部曲名 → MIDI 目录下另一个 SMF（leveledit 用 th08_05_tr.mid 顶 th18_06，
+    #      因为那首 MIDI 不在 musiccmt 的 No. 表里，不能靠文件名映射）。
+    #    `--ref-intro/--ref-loop`：用**外部音轨**当"原曲"参考（leveledit 的 th18_06.ogg +
+    #      th18_06.loop.ogg；thcrap bgmmod 的语义 = intro_size 取第一个文件、循环体取 .loop，
+    #      见 thcrap_bgmmod/src/bgmmod.hpp 的 track_pcm_t 构造）。必须成对给，且只允许单曲。
+    ap.add_argument("--midi-map", action="append", default=None, metavar="STEM=FILE",
+                    help="内部曲名 → MIDI 目录下的另一个 SMF（可多次；例 "
+                         "`--midi-map th18_06=th08_05_tr.mid`）")
+    ap.add_argument("--ref-intro", default=None, metavar="AUDIO",
+                    help="外部参考的 **intro** 音轨（ogg/flac/wav，soundfile 可读；须与 --ref-loop 成对）")
+    ap.add_argument("--ref-loop", default=None, metavar="AUDIO",
+                    help="外部参考的 **循环体** 音轨（thcrap `.loop.ogg` 口径：intro_size = intro 长度，"
+                         "track_size = intro + loop）")
+    ap.add_argument("--intro-loudness-match", choices=("same", "ref"), default="same",
+                    help="intro 段的响度口径：`same` = 与循环体用**同一个**增益（默认，既有 17 首）；"
+                         "`ref` = intro 段单独匹配 `--ref-intro` 的 LUFS —— leveledit 的主曲 "
+                         "intro(−14.80 LUFS) 与 loop(−12.95) 本来就差 1.85 LU，同一个增益会让 "
+                         "30.97 s 的长 intro 偏响 2.7 dB")
     ap.add_argument("--fluidsynth", default=None,
                     help="fluidsynth 可执行文件（默认 PATH → local/vendor/fluidsynth-*/usr/bin/）")
     a = ap.parse_args(argv)
@@ -1508,6 +1616,33 @@ def main(argv=None):
         raise SystemExit(f"读不出 {MUSICCMT}（需要游戏自带的音乐室注释文件）")
     stems = a.stem or [k for k, _ in sorted(tbl.items(), key=lambda kv: kv[1])]
     os.makedirs(a.out, exist_ok=True)
+    # ★ 2026-10-24：`--midi-map STEM=FILE`（内部曲名 → MIDI 目录下的另一个 SMF）。
+    #   leveledit 的 `th08_05_tr.mid` 不在 musiccmt 的 No. 表里，不能靠 `th18_05.mid` 文件名映射；
+    #   同时**不改**默认的 `midi_index_for()` ⇒ 17 首的既有输入一个字节都不动。
+    midi_map = {}
+    for spec in (a.midi_map or []):
+        if "=" not in spec:
+            raise SystemExit(f"--midi-map 要 `STEM=FILE`，收到 {spec!r}")
+        k, v = spec.split("=", 1)
+        midi_map[k.strip()] = v.strip()
+    # ★ 2026-10-24：`--ref-intro/--ref-loop` —— 外部"原曲"参考（thcrap bgmmod 的 intro+loop 口径）。
+    #   只用一次、只允许单曲；给的 `loop` 数组与 `source_loop()` 的返回完全同构，
+    #   所以后面的 fine_align / 截断 / 响度匹配一行都不改。
+    ref_intro_pcm = ref_loop_pcm = None
+    if a.intro_loudness_match == "ref" and not (a.ref_intro and a.ref_loop):
+        raise SystemExit("--intro-loudness-match ref 需要 --ref-intro/--ref-loop（要拿主曲 intro 当目标）")
+    if a.intro_loudness_match == "ref" and not a.loudness_match:
+        raise SystemExit("--intro-loudness-match ref 需要 --loudness-match（循环体的目标也要有）")
+    if a.ref_intro or a.ref_loop:
+        if not (a.ref_intro and a.ref_loop):
+            raise SystemExit("--ref-intro 与 --ref-loop 必须成对给")
+        if len(stems) != 1:
+            raise SystemExit("--ref-intro/--ref-loop 只支持单曲（配 --stem 用）")
+        ref_intro_pcm = load_ref_audio(a.ref_intro)
+        ref_loop_pcm = load_ref_audio(a.ref_loop)
+        print(f"外部参考：intro {len(ref_intro_pcm)/RENDER_SR:.4f}s + loop "
+              f"{len(ref_loop_pcm)/RENDER_SR:.4f}s = {(len(ref_intro_pcm)+len(ref_loop_pcm))/RENDER_SR:.4f}s"
+              f"（{os.path.basename(a.ref_intro)} + {os.path.basename(a.ref_loop)}）")
     # 母带锚定（A/B 口径）：给 `--master-peaks` 的 JSON 里有的曲目用**固定增益**
     # = a.peak / 改版前 pre-norm 峰值 ⇒ 换 kit / 换号之外其它乐器电平不动；
     # 没给的曲目照旧逐文件峰值归一。`--peak-report` 把这次归一化前的峰值存下来供下次用。
@@ -1529,7 +1664,8 @@ def main(argv=None):
     start_report = {}
     loud_report = {}
     env_cache = {}
-    print(f"{'曲':<9}{'轨':>4}{'音符':>7}{'主旋律轨':>9}{'MIDI 时长':>10}{'循环体':>9}{'起点':>9}{'r':>7}  文件")
+    print(f"{'曲':<9}{'轨':>4}{'音符':>7}{'主旋律轨':>9}{'MIDI 时长':>10}{'循环体':>9}"
+          f"{'intro':>9}{'静音P':>8}{'总长':>9}{'起点':>9}{'r':>7}  文件")
     wrote = 0
     for stem in stems:
         # stem = **内部曲名**（th18_03…）；MIDI 文件按**音乐室编号**命名（th18_02…）
@@ -1539,13 +1675,23 @@ def main(argv=None):
             continue
         tune, mel_gain, bass_gain = resolve_tune(stem, a)
         eq = resolve_eq(stem, a)                     # 先解析：坏 JSON 在渲染前就停
-        mid = os.path.join(MIDI_DIR, f"th18_{mi:02d}.mid")
+        mid = os.path.join(MIDI_DIR, midi_map.get(stem, f"th18_{mi:02d}.mid"))
         if not os.path.exists(mid):
             print(f"  ★ 跳过 {stem}：没有 {os.path.relpath(mid, REPO)}（音乐室 No.{mi}）")
             continue
         tracks, ppq, tempos = parse_smf(mid)
         t2s = ticks_to_sec(tempos, ppq)
         mel, stats = pick_melody(tracks, t2s)
+        # ★ 2026-10-24：format-0（单轨多通道）按**通道**判主旋律；format-1 照旧按轨。
+        mel_chs = None
+        parts = pick_melody_parts(tracks, t2s)
+        if parts:
+            mel, mel_chs, stats = parts
+            print(f"    [melody] {stem}: format-0 单轨多通道 ⇒ 按通道判主旋律 "
+                  f"ch{','.join(str(c) for c in sorted(mel_chs))}"
+                  f"（其余通道仍按 prog / 倍斯 / 低音区规则）")
+        mel_tag = ("ch" + ",".join(str(c) for c in sorted(mel_chs))
+                   if mel_chs is not None else str(sorted(mel)))
         prog = {}
         for evs in tracks:
             for tick, kind, ch, val, _ in evs:
@@ -1558,28 +1704,38 @@ def main(argv=None):
         midi_secs = max(n[0] + n[1] for n in notes)
         src_name = None
         # MIDI 文件名 th18_03 → fmt 里叫 "th18_03"
-        try:
-            intro, tsize, ssr, sch, loop = source_loop(stem)
-        except SystemExit as e:
-            print(f"  ★ {stem}: {e}")
-            continue
+        if ref_loop_pcm is not None:
+            # ★ 外部参考（leveledit ogg 的 intro+loop）：与 source_loop 同口径 —
+            #   intro 字节 = 帧数 × 4（44100 × 2ch × 16bit），track = intro + loop。
+            intro = len(ref_intro_pcm) * 4
+            tsize = intro + len(ref_loop_pcm) * 4
+            ssr, sch, loop = RENDER_SR, 2, ref_loop_pcm
+        else:
+            try:
+                intro, tsize, ssr, sch, loop = source_loop(stem)
+            except SystemExit as e:
+                print(f"  ★ {stem}: {e}")
+                continue
         loop_secs = len(loop) / ssr
         if a.dry_run:
-            print(f"{stem:<9}{len(tracks):>4}{len(notes):>7}{str(sorted(mel)):>9}{midi_secs:>9.2f}s"
-                  f"{loop_secs:>8.2f}s{'—':>9}{'—':>7}  (dry-run)")
+            print(f"{stem:<9}{len(tracks):>4}{len(notes):>7}{mel_tag:>9}{midi_secs:>9.2f}s"
+                  f"{loop_secs:>8.2f}s{intro / (ssr * 4):>8.2f}s{'—':>8}{'—':>9}{'—':>9}{'—':>7}"
+                  f"  (dry-run；成品 = intro {intro / (ssr * 4):.2f}s + 循环体 {loop_secs:.2f}s)")
             continue
         # 渲染时把主旋律轨单独标记（按通道号集合；naive 路径用它，sf2 路径按**轨**判）
-        mel_ch = set()
-        for ti in mel:
-            for tick, kind, ch, val, _ in tracks[ti]:
-                if kind in ("on", "off"):
-                    mel_ch.add(ch)
+        mel_ch = set(mel_chs) if mel_chs is not None else set()
+        if mel_chs is None:
+            for ti in mel:
+                for tick, kind, ch, val, _ in tracks[ti]:
+                    if kind in ("on", "off"):
+                        mel_ch.add(ch)
         if a.render == "sf2":
             rendered = render_sf2(mid, sf2, fs, fs_lib, mel, prog, notes,
                                   mel_gain, bass_gain, tune=tune,
                                   drum_bank=not a.no_drum_bank,
                                   unmute_cc7=a.drum_bank_unmute,
-                                  program_override_on=not a.no_program_override)
+                                  program_override_on=not a.no_program_override,
+                                  melody_channels=mel_chs)
         else:
             rendered = render_naive(notes, prog, midi_secs + 0.5, mel_ch, mel_gain,
                                     bass_gain, seed=hash(stem) & 0xFFFF)
@@ -1631,7 +1787,20 @@ def main(argv=None):
         if len(rendered) < start + want:                         # 不够就首尾相接补满
             reps = int(math.ceil((start + want) / max(1, len(rendered) - start))) + 1
             rendered = np.concatenate([rendered] * max(2, reps))
-        seg = rendered[start:start + want].copy()
+        # ★★ 2026-10-24 方案 A：成品 = **P 秒静音 + intro 段 + 循环体**（对齐 TH13 的 b 轨）。
+        #    `intro_frames` = 原曲 intro 的 22050 采样帧数（**一手值**：`intro / 8`，
+        #    因为 44100→22050 恰好 2:1、每帧 4 B ⇒ 字节数 ÷ 8；向下取整 = 整帧）。
+        #    `P = intro_game − start_sec`（0.37–0.80 s）：MIDI 的 intro 比游戏里的短，
+        #    所以成品最前面要补这么多**静音**，才能让"文件第 intro_frames 帧"精确落在
+        #    原曲的循环点上（= MIDI 的 `start` 帧）。
+        #    `start > intro_frames`（P<0）时反向：丢掉 MIDI 开头多出来的那几帧。
+        #    ⚠ 循环体那一段 = `rendered[start:start+want]`，**与旧成品逐采样相同**（不动母带口径）。
+        intro_frames = int(intro) // 8
+        pre  = max(0, intro_frames - start)                      # 头部静音帧数（P ≥ 0 时）
+        skip = max(0, start - intro_frames)                      # P < 0 时要丢掉的开头帧数
+        body = rendered[start:start + want].copy()               # 循环体（= 旧成品的同一段）
+        intro_seg = rendered[skip:start].copy()                  # intro 段（MIDI skip…循环点）
+        seg = body
         # 接缝：默认**不动**（同人 MIDI 的循环段本来就接得上；交叉淡化会把尾巴混进开头）
         xf = 0 if not a.xfade else min(int(0.5 * SR), len(seg) // 4)
         if xf > 0:
@@ -1646,6 +1815,7 @@ def main(argv=None):
         if eq:
             seg = apply_eq(seg, SR, eq)
             print(f"    [eq] {stem}: {eq_knobs(eq)}（响度匹配前；同帧）")
+        use_limiter = False          # intro 段是否走同一个 lookahead 软限幅（响度模式才有）
         if a.loudness_match:
             # ★ 响度匹配（2026-10-19）：目标逐曲 = 原曲循环体的 LUFS；峰值上限 -0.3 dBFS；
             #   超上限走 lookahead 软限幅。`--master-peaks` 的固定增益在这里**不参与**
@@ -1653,14 +1823,19 @@ def main(argv=None):
             import measure_loudness as ML
             kind, val = resolve_loudness_target(a.loudness_match, stem, loop, ssr, ML)
             if kind == "peak":
-                seg *= (val / peak)
+                gain_lin = val / peak
+                seg *= gain_lin
+                ceil_lin = val                                         # 峰值目标 = 上限
                 loud_report[stem] = {"mode": "peak", "target": val,
-                                     "peak_out": peak * (val / peak), "gain_db": 20 * np.log10(val / peak)}
+                                     "peak_out": peak * gain_lin, "gain_db": 20 * np.log10(gain_lin)}
                 print(f"    [loud] {stem}: 峰值目标 {val:.6f}（{20*np.log10(val):.2f} dBFS）"
                       f" → 增益 {20*np.log10(val/peak):+.2f} dB")
             else:
                 seg, st = match_loudness(seg, SR, val, a.peak_ceiling,
                                          release_db_per_sec=a.limit_release)
+                gain_lin = 10.0 ** (st["gain_db"] / 20.0)              # 循环体实际用的总增益
+                ceil_lin = 10.0 ** (a.peak_ceiling / 20.0)
+                use_limiter = True                                     # intro 段套同一个限幅器
                 st.update(mode=("original" if a.loudness_match == "original" else "lufs"),
                           pre_norm_peak=peak, eq=(dict(eq) if eq else None))
                 loud_report[stem] = st
@@ -1671,13 +1846,51 @@ def main(argv=None):
                       f"；{lim}；结果 {st['lufs']:.2f} LUFS / peak {st['peak_db']:.2f} dBFS"
                       f"（{st['iters']} 次迭代）")
         elif stem in master_peaks:
-            gain = a.peak / float(master_peaks[stem])
-            seg *= gain
+            gain_lin = a.peak / float(master_peaks[stem])
+            seg *= gain_lin
+            ceil_lin = a.peak
             print(f"    [master] {stem}: 改版前 pre-norm peak {float(master_peaks[stem]):.6f} "
-                  f"→ 固定增益 {gain:.6f}（新峰值 {peak * gain:.6f}）")
+                  f"→ 固定增益 {gain_lin:.6f}（新峰值 {peak * gain_lin:.6f}）")
         else:
-            seg *= (a.peak / peak)
-        pcm = (np.clip(seg, -1, 1) * 32767.0).astype("<i2").tobytes()
+            gain_lin = a.peak / peak
+            seg *= gain_lin
+            ceil_lin = a.peak
+        # ★ intro 段（2026-10-24）：**同一组 EQ 滤波器 + 同一个增益**，但它是**非循环**的一段
+        #   （前面是 P 秒静音、后面接循环体）⇒ 滤波器状态从 0 起、不做"卷回副本"（`loop=False`）。
+        #   峰值若超过上限（intro 的瞬态可能比循环体高）**单独缩**，不裁波、也不改动循环体。
+        if len(intro_seg):
+            if eq:
+                intro_seg = apply_eq(intro_seg, SR, eq, loop=False)
+            if a.intro_loudness_match == "ref":
+                # ★ 2026-10-24：leveledit 的长 intro 单独匹配主曲 intro 的 LUFS。
+                #   主曲本身 intro(−14.80) 与 loop(−12.95) 差 1.85 LU；用同一个增益会让
+                #   30.97 s 的 intro 偏响 2.7 dB（整首 LUFS 因此超 +0.5 LU 的门）。
+                #   这里只动 intro 段的增益（EQ 已经过、滤波器状态不变），循环体一个采样都不动。
+                import measure_loudness as ML
+                tgt_intro = ML.integrated_lufs(ref_intro_pcm, RENDER_SR)
+                cur_intro = ML.integrated_lufs(intro_seg, SR)
+                ig = 10.0 ** ((tgt_intro - cur_intro) / 20.0)
+                intro_seg = intro_seg * ig
+                print(f"    [intro] {stem}: intro 段单独匹配主曲 intro {tgt_intro:.2f} LUFS"
+                      f"（当前 {cur_intro:.2f} ⇒ 增益 {20*np.log10(ig):+.2f} dB；"
+                      f"循环体增益 {20*np.log10(gain_lin):+.2f} dB 不动）")
+            else:
+                intro_seg = intro_seg * gain_lin
+            ipk = float(np.abs(intro_seg).max())
+            if use_limiter:
+                # 与循环体**同一个** lookahead 软限幅（同一 ceiling / 同一释放速率），
+                # 但 intro 是非循环的一段 ⇒ `loop=False`（不接"卷回副本"，开头前面是静音）。
+                if ceil_lin > 0 and ipk > ceil_lin:
+                    intro_seg, ist = soft_limit(intro_seg, SR, a.peak_ceiling,
+                                                release_db_per_sec=a.limit_release, loop=False)
+                    print(f"    [intro] {stem}: intro 段限幅 −{ist['max_gr']:.2f} dB"
+                          f"（{ist['frac']*100:.1f}% 采样；与循环体同一 ceiling）")
+            elif ceil_lin > 0 and ipk > ceil_lin:
+                intro_seg *= (ceil_lin / ipk)
+                print(f"    [intro] {stem}: intro 段峰值 {20*np.log10(ipk):+.2f} dBFS 超上限 "
+                      f"{20*np.log10(ceil_lin):+.2f} dBFS ⇒ 单独缩到上限（循环体不动）")
+        out = np.concatenate([np.zeros((pre, 2), dtype=np.float32), intro_seg, seg])
+        pcm = (np.clip(out, -1, 1) * 32767.0).astype("<i2").tobytes()
         name = f"{stem}b_rearr.wav"
         path = os.path.join(a.out, name)
         write_wav(path, pcm)
@@ -1688,8 +1901,9 @@ def main(argv=None):
             tot = sum((v / 127.0) ** 2 * d for t, d, m, v, ch in notes)
             mel_e = sum((v / 127.0) ** 2 * d for t, d, m, v, ch in notes if ch in chset)
             return mel_e / max(tot, 1e-9)
-        print(f"{stem:<9}{len(tracks):>4}{len(notes):>7}{str(sorted(mel)):>9}{midi_secs:>9.2f}s"
-              f"{loop_secs:>8.2f}s{start_sec:>+8.2f}s{r_corr:>7.3f}  {os.path.relpath(path, REPO)}"
+        print(f"{stem:<9}{len(tracks):>4}{len(notes):>7}{mel_tag:>9}{midi_secs:>9.2f}s"
+              f"{loop_secs:>8.2f}s{intro_frames / SR:>8.2f}s{pre / SR:>7.2f}s{len(out) / SR:>8.2f}s"
+              f"{start_sec:>+8.2f}s{r_corr:>7.3f}  {os.path.relpath(path, REPO)}"
               f"   [{a.render} | {tune_knobs(tune)} | BPM "
               f"{midi_bpm(tempos, tick_at_intro):.1f} 主旋律能量占比 "
               f"{share(mel_ch)*100:.0f}%→"
