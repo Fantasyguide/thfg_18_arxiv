@@ -5613,7 +5613,12 @@ static void pofv_c4s_tick(void)
             }
         }
     }
-    if (s_c4s.timer % (s_c4s.wait * POFV_C4S_PERIOD) == 0) {   /* ★ 密度：wait(1) × PERIOD(4) = 每 4 帧一轮 */             /* ⚠ 2026-10-18 重验更正 ✗：不是"每 wait 帧发一颗"✗ ——
+    /* ★★★★ 2026-10-25 owner（一手复核）：`8/8/8/6/5/4/5/4` **是 `ins_23` 的等待帧数**（发完一次等 N 帧），
+     *   **不是"每帧发几颗"** ✗ —— 我先前理解错，密度因此大了几十倍 ✗。
+     *   ⇒ 节奏 = **每次发 1 条，然后等 `{8,8,8,6,5,4,5,4}[rank]` 帧** ✓；`POFV_C4S_PERIOD` 撤销 ✓。*/
+    static const int c4s_gap_tab[8] = { 8, 8, 8, 6, 5, 4, 5, 4 };   /* ★ 一手 ✓ ins_23 的参数 */
+    const int c4s_gap = c4s_gap_tab[pofv_c4_rank() & 7];
+    if (s_c4s.timer % c4s_gap == 0) {             /* ⚠ 2026-10-18 重验更正 ✗：不是"每 wait 帧发一颗"✗ ——
                                                       * 每 wait 帧发 **lanes × cnt** 颗（`lanes` = rank>=6?3:2 ✓、
                                                       * `cnt` = `c4s_cnt_tab` 4-8 ✓）✓。*/
         /* ★★★★ 2026-10-17（施工单 §8 ＋ §25 ＋ §12②-1 ＋ §65 ✓）：★ **路数按档** ✗ ——
@@ -5639,9 +5644,8 @@ static void pofv_c4s_tick(void)
              *   （★ `Boss00BossCard1_at()` 里 `!0..!7` 那段 ✓）⇒ ★ 原来每台每帧 **1 颗** ✗
              *   ★ 现在按档发 `cnt` 颗 ✓；⚠ 重验更正 ✗：★ 只有**速度**逐颗随机 ✓（`+ (rand%100)*0.005f` ✓），
              *   ★ **角度不随机** ✗（★ 一律 `s_c4s.theta` ✓，`aim` 字段已删 ✓）。*/
-            static const int c4s_cnt_tab[8] = { 8, 8, 8, 6, 5, 4, 5, 4 };
             int m;
-            const int cnt = c4s_cnt_tab[pofv_c4_rank() & 7];
+            const int cnt = 1;   /* ★ 2026-10-25：一手是 `ins_601` **发一次 = 1 条** ✓（原来按 8 颗 ✗）*/
             /* ★ 2026-10-18（IMPL §4 #2 ✓）：★ 当帧的 `theta` 已于函数开头按自机横移量更新 ✓
              *   ⇒ ★ **所有弹共用同一个 `theta`** ✗（★ 不再逐颗掷 `jit2` ✗ —— 一手 `604($A,%D,0)` 的 `dif=0` ✓）*/
             for (m = 0; m < cnt; ++m) {
