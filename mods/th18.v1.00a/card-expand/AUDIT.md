@@ -33360,3 +33360,34 @@ owner 给了上面的口径后**改成精确事件**（commit `65c0e178`，本�
   `verify: entry 228、sprite 1000、script 473`、**图集逐像素自检 70 个图集 / 740 个成员全过**；
   `anm_ids.h` 生成 `CE_ANM_ABILITY_ATLAS_ATLAS_POFV109_ASC = 227`、`…_SPRITE_POFV109_ASC_C00 = 904`
   … `_C95 = 999`，旧名 0 处残留；`rebuild_safe.py` **六道门全过**；`make dev` 全绿。
+
+## §BE-109-20261024b ★ 蓄力条 HUD 文字：照 TH19 一手画法（VM 逐字 + 一手颜色）
+
+- **文件 → 改了什么**：
+  · **新增** `assets/ability/scripts/473_pofv109_hud_char.anm.txt`（脚本 473：`sprite(@POFV109_ASC_C00)`
+    + `layer(25)` + `resolutionMode(2)` + `resampleMode(1)`，**一个字形一台 VM**）。
+  · `native/cards/pofv.c`：新增 `pofv_hud_txt_*`（字形表 / 逐字画 / 数字 / 居中）+ `s_hud_txt_vm[24]` 池，
+    在 `pofv_hud_charge_bar()` **末尾**（压在底槽/填充/标之上）调用；**删掉** `[TXTEX2]` 那段
+    `ce_hud_text_ex` 调试块（它 `ce_log` 21 条、**像素 0** —— 卡侧调不到引擎文字层）。
+  · `native/anm_ids.h` 由构建重生成（`CE_ANM_ABILITY_SCRIPT_POFV109_HUD_CHAR = 473`）。
+- **为什么 / 一手**：owner 2026-10-24 goal「① 画到蓄力条上；ExAttack/skill/boss 还有额外叠加上去的颜色，
+  **具体画法得读 th19**；② C3/C4 下面是**常驻** lvN，到点提示（含 lvN）只在蓄力停在那一档时才放」。
+  ⇒ 读 TH19 v1.10c `FUN_004e8a20`（气槽 HUD 的 `on_draw`）得到**全部**口径，逐条：
+  · 格式串（VA）：`0x5987e8 "Boss Lv%d"` / `0x5987f4 "Ex.Attack Lv%d"` / `0x598804 "Skill"`
+    / `0x59880c`、`0x598814 "Lv%d"`；
+  · 颜色（写 `DAT_005d1a34+0x1977c`，`0xAARRGGBB`）：Skill `0xff80d0ff`｜Ex.Attack `0xffffff80`（A=0x80）
+    ｜Boss `0xffff8080`｜常驻 lv `0xffc0c0c0`｜画完重置 `0xffffffff`；
+  · 分档：`t2≤g<t3` ⇒ `Skill`；`t3≤g<t4` ⇒ `Ex.Attack Lv d`；`g≥t4` ⇒ `Boss Lv d`（`g` = 槽值 0..2500，
+    等级一律 **+1**）⇒ 与 owner「C2 蓄到 C3 时 C2 的 skill 消失」逐字一致；
+  · 常驻 `Lv d`：一手画在 y=460（到点提示 y=448）**第 3/4 档标的下方**，但**只在该档未越时**才画；
+  · 字形：`data/ascii1280.anm` 的 **sprite98..193**（`16×16`，`y=176/192/208`，32 格/行）
+    = 本仓 `POFV109_ASC_C00..C95` 逐像素同一批。
+  全文 + 未定项 + 复现命令见 `engine/ascii/th19/02-hud-text-gauge-labels.md`。
+- **本卡与一手的差异（❓ 已登记 `TUNING.md`）**：① 常驻 lv **恒显**（owner 口径，一手是"未越才画"）；
+  ② 到点提示**条心居中**、常驻 lv **以标为中心**（一手左对齐标位；在本卡 448 px 条上会溢出 64 px）；
+  ③ 上下位置 = 条上沿 `-30` / 条下沿 `+14`（一手气槽本体的 y 未测到，拿不到相对偏移）。
+- **谁改的**：本 agent。**影响面**：只卡 109 的蓄力条；新增 1 个脚本号（473）、**entry 数不变（228）**、
+  sprite 号不变（复用上一段的 904..999）；`s_c3_lv_n` / `s_c4_lv_n` 只**读**。
+- **怎么验证的**：`make anm` → `verify: entry 228、sprite 1000、script 474`、
+  图集逐像素自检 70/740 全过、`script473 pofv109_hud_char` 入表；`make check` 的 capcheck 全绿
+  （新图集 entry 已登记 `CAPACITY.md`）；`make dev` 19 门全绿。⚠ 实跑观感待 owner。

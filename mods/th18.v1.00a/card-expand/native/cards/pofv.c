@@ -1003,6 +1003,164 @@ static void pofv_hud_chg_claim(void)
  *     · `ratio_chg` = **蓄力比例** ⇒ **左端白段**（叠在蓝上 ✓，规格 ②）。
  *   内部自带「**部分死 ⇒ 整组重建**（保生成序：底槽 → 蓝填充 → 白段 → 4 标 ✓）」；
  *   句柄全 0（首次 / 全被收走）⇒ 直接按同一顺序新建 ✓。 */
+/* ★★★★ 2026-10-24（owner goal「HUD 文字」）：蓄力条上的**文字**—— 画法**照 TH19 一手**。
+ *
+ * 一手 = TH19 v1.10c `FUN_004e8a20`（气槽 HUD 的 `on_draw`，2971 B；Ghidra 反编译全文与推法见
+ *   `engine/ascii/th19/02-hud-text-gauge-labels.md`）。五条格式串、四个颜色、分档判据**全是读出来的**：
+ *   `0x5987e8 "Boss Lv%d"` / `0x5987f4 "Ex.Attack Lv%d"` / `0x598804 "Skill"`
+ *   / `0x59880c "Lv%d"` / `0x598814 "Lv%d"`；
+ *   颜色写进绘制上下文 `DAT_005d1a34 + 0x1977c`（`0xAARRGGBB`）：
+ *     Skill `0xff80d0ff`（浅蓝）| Ex.Attack `0xffffff80`（**A=0x80** 半透明白）| Boss `0xffff8080`（浅红）
+ *     | 常驻 lv `0xffc0c0c0`（浅灰）| 画完一律重置回 `0xffffffff` ✓
+ *   分档（`g` = 槽值 0..2500，`t2/t3/t4` = 第 2/3/4 档阈值）：
+ *     `t2 ≤ g < t3` ⇒ `"Skill"`；`t3 ≤ g < t4` ⇒ `"Ex.Attack Lv d"`；`g ≥ t4` ⇒ `"Boss Lv d"`
+ *   ⇒ 与 owner 口径**逐字一致**：「C2 蓄到 C3（= 放手会放 C3）的时候，C2 的 skill 就消失」✓
+ *   常驻：`"Lv d"`（浅灰）画在**第 3 / 第 4 档标的下方**（一手 y=448 到点提示 / 460 常驻 ⇒ 差 12【640×480】）。
+ *   ⚠ 一手那两条**只在 `g < 该档阈值` 时才画**（越过就交给上面那行）；owner 要的是「**常驻**」
+ *     ⇒ 本卡按 owner **恒显**（差异登记在 `TUNING.md` 的 ❓ 条目）✓
+ *   ⚠ **位置锚点**是 ❓自定：一手把到点提示的**左边**对齐标位 x（左对齐，上下文 `0x197a4 = 0`）——
+ *     在本卡 448 px 宽的条上 `"Ex.Attack Lv1"`（13 字 × 16 = 208 px）从 0.68 标位（304 px）起会
+ *     **溢出条右端 64 px** ⇒ 本卡改成**以条心居中**（到点提示）/ **以该标为中心**（常驻 lv）✓
+ *   字号 = **1:1 不缩放**（一手就是这 16 px 一档；`resolutionMode(2)` 下 1 texel = 1 表面 px）✓
+ *   ⚠ 这些 VM 都**接 HUD 透明度**（`tdim` ＝ 共享带的 alpha，和底槽/填充/标同款）✓ */
+#define POFV_HUD_TXT_VMS     24      /* 字形 VM 池（到点提示最多 13 字 + 常驻 2×4 字 + 余量）*/
+#define POFV_HUD_TXT_W       16.0f   /* 格宽（一手 16×16 格 ✓）*/
+#define POFV_HUD_TXT_H       16.0f   /* 格高 */
+#define POFV_HUD_TXT_UP      30.0f   /* 到点提示的**上边**：条上沿（含 -12 刻度出头）再往上一条字 */
+#define POFV_HUD_TXT_DOWN    14.0f   /* 常驻 lv 的**上边**：条下沿（fy+12）再往下 2 px */
+#define POFV_HUD_TXT_SKILL_COL 0xFF80D0FFu   /* 一手 `[+0x1977c] = 0xff80d0ff` ✓ */
+#define POFV_HUD_TXT_EX_COL    0xFFFFFF80u   /* 一手 `0xffffff80`（半透明白 ✓）*/
+#define POFV_HUD_TXT_BOSS_COL  0xFFFF8080u   /* 一手 `0xffff8080` ✓ */
+#define POFV_HUD_TXT_LV_COL    0xFFC0C0C0u   /* 一手 `0xffc0c0c0` ✓ */
+static int32_t s_hud_txt_vm[POFV_HUD_TXT_VMS];
+static int s_c3_lv_n, s_c4_lv_n;   /* ★ C3 / C4 的**等级**（0..7）；定义在下面 `:2717`，这里前置声明供本段取用 ✓ */
+
+/* 字符 → 图集格号（`C00..C95`）；空格 / 不认识 ⇒ -1（**只推进、不收 VM**）✓
+ * 三行的排法**不是** `0x20 + 格号`（第 0、2 行的第 0 格是空的）⇒ 逐段查表，见 `make_pofv109_asc_art.py`。*/
+static int pofv_hud_txt_glyph(int ch)
+{
+    if (ch >= '!' && ch <= '/') return 1 + (ch - '!');    /* C01..C15 = ! " # … / */
+    if (ch >= '0' && ch <= '9') return 16 + (ch - '0');   /* C16..C25 = 0..9 */
+    if (ch >= ':' && ch <= '?') return 26 + (ch - ':');   /* C26..C31 = : ; < = > ? */
+    if (ch >= '@' && ch <= '_') return 32 + (ch - '@');   /* C32..C63 = @ A-Z [ \ ] ^ _ */
+    if (ch >= 'a' && ch <= 'z') return 65 + (ch - 'a');   /* C65..C90 = a..z */
+    if (ch >= '{' && ch <= '~') return 91 + (ch - '{');   /* C91..C94 = { | } ~ */
+    return -1;
+}
+
+static int pofv_hud_txt_len(const char *s)
+{
+    int n = 0;
+    while (s[n]) ++n;
+    return n;
+}
+
+/* 画一串字：`(x, y)` = **左上角**；返回画完后的 x（= 右边界）✓
+ * 每个字一台 VM：**先认池、再写 pos/sprite/color**；池满了就只推进不画（防御）✓ */
+static float pofv_hud_txt_put(float x, float y, const char *s, uint32_t col,
+                              uint32_t tdim, int *used)
+{
+    for (; *s; ++s) {
+        const int g = pofv_hud_txt_glyph((unsigned char)*s);
+        if (g >= 0 && *used < POFV_HUD_TXT_VMS) {
+            const uint32_t vm = (uint32_t)s_hud_txt_vm[*used];
+            if (vm) {
+                /* 精灵默认锚 = 锚心 ⇒ 给格子中心（左上角 + 半格）✓ */
+                ce_anm_set_pos(vm, x + POFV_HUD_TXT_W * 0.5f, y + POFV_HUD_TXT_H * 0.5f, 0.0f);
+                ce_anm_set_scale(vm, 1.0f, 1.0f);
+                ce_anm_set_sprite(CE_ABILITY_ANM(), vm,
+                                  (uint32_t)(CE_ANM_ABILITY_SPRITE_POFV109_ASC_C00 + g));
+                /* 字形贴图是**白字** ⇒ 顶点色直接就是 TH19 的一手色；A 接 HUD 透明度 ✓ */
+                ce_anm_set_color(vm, (tdim & 0xff000000u) | (col & 0xffffffu));
+                ce_anm_set_color2(vm, (tdim & 0xff000000u) | (col & 0xffffffu));
+                ++(*used);
+            }
+        }
+        x += POFV_HUD_TXT_W;
+    }
+    return x;
+}
+
+/* 十进制（0..99，无前导零）—— 本仓没有 `snprintf` 可用 ⇒ 自己拆两位 ✓ */
+static float pofv_hud_txt_put_int(float x, float y, int v, uint32_t col,
+                                  uint32_t tdim, int *used)
+{
+    char b[3];
+    if (v < 0) v = 0;
+    if (v > 99) v = 99;
+    if (v >= 10) {
+        b[0] = (char)('0' + v / 10);
+        b[1] = (char)('0' + v % 10);
+        b[2] = 0;
+    } else {
+        b[0] = (char)('0' + v);
+        b[1] = 0;
+    }
+    return pofv_hud_txt_put(x, y, b, col, tdim, used);
+}
+
+/* `"前缀" + 数字`：以 `cx` 为**中心**摆（到点提示用条心、常驻 lv 用标位）✓ */
+static void pofv_hud_txt_center_lv(float cx, float y, const char *pre, int v,
+                                   uint32_t col, uint32_t tdim, int *used)
+{
+    const int nd = (v >= 10) ? 2 : 1;
+    const float wd = POFV_HUD_TXT_W * (float)(pofv_hud_txt_len(pre) + nd);
+    const float x0 = cx - wd * 0.5f;
+    pofv_hud_txt_put_int(pofv_hud_txt_put(x0, y, pre, col, tdim, used), y, v, col, tdim, used);
+}
+
+/* ① 到点提示（条上方、**条心居中**）+ ② 常驻 lv（**C3 / C4 标的正下方、以标为中心**）✓
+ * 每帧调用：先把池用满（`used`），**剩下的全部 alpha=0** 隐掉 ✓ */
+static void pofv_hud_txt_frame(float bx, float fy, float fc, int kind, uint32_t tdim)
+{
+    int used = 0, i, tier = 0;
+    const float fw = POFV_HUD_CHG_FILL_W;
+
+    /* 分档：`tier` = 已越过的标数（0..4）；一手「越过第 2/3/4 档」⇒ 到点提示换名 ✓ */
+    for (i = 0; i < POFV_HUD_CHG_TICKS; ++i)
+        if (fc >= POFV_HUD_CHG_TICK_AT(kind, i)) tier = i + 1;
+
+    /* 池：**按台补**（首次 / 被引擎收走都重新起；生成序 = 池序 ⇒ 画序稳定 ✓）*/
+    for (i = 0; i < POFV_HUD_TXT_VMS; ++i)
+        if (!s_hud_txt_vm[i])
+            s_hud_txt_vm[i] = (int32_t)hud_vm_spawn(CE_ANM_ABILITY_SCRIPT_POFV109_HUD_CHAR,
+                                                    bx, fy + POFV_HUD_TXT_DOWN);
+
+    /* ① 到点提示：只有**越到第 2 档及以后**才有名字（第 1 档一手也不画 ✓）。
+     *   ★ 第 2 档 = 放手放 C2 ⇒ `"Skill"`；第 3 档 = C3 ⇒ `"Ex.Attack Lv d"`；
+     *     第 4 档 = C4 ⇒ `"Boss Lv d"`（一手三条格式串逐字 ✓）。
+     *   ★ 等级取 `s_c3_lv_n` / `s_c4_lv_n`（0..7）**+1** —— 一手是 `(int)piVar7 + 1` ✓。*/
+    if (tier == 2) {
+        pofv_hud_txt_center_lv(bx + fw * 0.5f, fy - POFV_HUD_TXT_UP, "Skill", 0,
+                               POFV_HUD_TXT_SKILL_COL, tdim, &used);
+    } else if (tier == 3) {
+        const int lv3 = (s_c3_lv_n < 0 ? 0 : (s_c3_lv_n > 7 ? 7 : s_c3_lv_n)) + 1;
+        pofv_hud_txt_center_lv(bx + fw * 0.5f, fy - POFV_HUD_TXT_UP,
+                               "Ex.Attack Lv", lv3, POFV_HUD_TXT_EX_COL, tdim, &used);
+    } else if (tier >= POFV_HUD_CHG_TICKS) {
+        const int lv4 = (s_c4_lv_n < 0 ? 0 : (s_c4_lv_n > 7 ? 7 : s_c4_lv_n)) + 1;
+        pofv_hud_txt_center_lv(bx + fw * 0.5f, fy - POFV_HUD_TXT_UP,
+                               "Boss Lv", lv4, POFV_HUD_TXT_BOSS_COL, tdim, &used);
+    }
+
+    /* ② 常驻 lv：**C3 标下**与 **C4 标下**各一条（owner：「C3 和 C4 下面是常驻 lvN」✓）*/
+    {   const int lv3 = (s_c3_lv_n < 0 ? 0 : (s_c3_lv_n > 7 ? 7 : s_c3_lv_n)) + 1;
+        const int lv4 = (s_c4_lv_n < 0 ? 0 : (s_c4_lv_n > 7 ? 7 : s_c4_lv_n)) + 1;
+        pofv_hud_txt_center_lv(bx + fw * POFV_HUD_CHG_TICK_AT(kind, 2), fy + POFV_HUD_TXT_DOWN,
+                               "Lv", lv3, POFV_HUD_TXT_LV_COL, tdim, &used);
+        pofv_hud_txt_center_lv(bx + fw * POFV_HUD_CHG_TICK_AT(kind, 3), fy + POFV_HUD_TXT_DOWN,
+                               "Lv", lv4, POFV_HUD_TXT_LV_COL, tdim, &used);
+    }
+
+    /* 池里剩下的全部隐掉（A=0；两路同写 —— 引擎的早退判据看两路 ✓）*/
+    for (i = used; i < POFV_HUD_TXT_VMS; ++i) {
+        const uint32_t vm = (uint32_t)s_hud_txt_vm[i];
+        if (!vm) continue;
+        ce_anm_set_color(vm, 0x00000000u);
+        ce_anm_set_color2(vm, 0x00000000u);
+    }
+}
+
 static int pofv_barrier_have(void);   /* ★ 罩子「有没有」= 那个标识 VM `s_barrier_vm_disc` ✓；定义在后 ✓ */
 static void pofv_hud_charge_bar(float fx, float fy, float ratio_rei, float ratio_chg)
 {
@@ -1060,14 +1218,8 @@ static void pofv_hud_charge_bar(float fx, float fy, float ratio_rei, float ratio
         ce_anm_set_color((uint32_t)s_hud_chg_track_vm, tdim | (POFV_HUD_CHG_TRACK_COL1 & 0xffffffu));
         ce_anm_set_color2((uint32_t)s_hud_chg_track_vm, tdim | (POFV_HUD_CHG_TRACK_COL2 & 0xffffffu));
     }
-    /* 2026-10-23 owner: '总之没有看见 txt' + 日志 0 条 => 原处那段没跑。
-     *   挪到这里（pofv_hud_charge_bar 每帧必走）再试 ce_hud_text_ex。
-     *   ⚠ senro.c:191 提过它"只能在 +0x48 on_draw 里调" —— 若这里仍不显示，就说明本函数不在 on_draw。*/
-    if ((s_card_frames % 120u) == 0u) {
-        ce_log("pofv: [TXTEX2] charge_bar reached");
-        ce_hud_text_ex(fx, fy - 40.0f, 0xFFFFFFFFu, 0u, 2, 2, 0, 1.0f, "Ex Attack lv%d", 3);
-        ce_hud_text_ex(fx, fy - 56.0f, 0xFFFFFFFFu, 0u, 2, 2, 0, 1.0f, "skill");
-    }
+    /* 2026-10-24：`ce_hud_text_ex` 那条路**放弃**（日志 21 条、像素 0 ⇒ 卡侧调不到引擎文字层，
+     *   见 `AUDIT.md` §BE-109-20261023x）。文字改走 **TH19 字形 + VM**（脚本 473 / 下面 ⑥）。*/
     /* (1) frame: 4 white 1px bars. anchor=top-left => pos = start of each bar. */
     {
         const float FW = POFV_HUD_CHG_BLOCK_W_SURF;
@@ -1193,6 +1345,13 @@ static void pofv_hud_charge_bar(float fx, float fy, float ratio_rei, float ratio
             s_hud_chg_halo_vm[i] = 0;
         }
     }
+    /* ⑥ **文字**（TH19 一手画法；owner 2026-10-24 goal）
+     *    · 到点提示（`Skill` / `Ex.Attack Lv d` / `Boss Lv d`）= **只在蓄力停在那一档时**画在条上方
+     *      （「C2 蓄到 C3 ⇒ C2 的 skill 消失」✓）；
+     *    · 常驻 `Lv d` = 画在 **C3 / C4 标的正下方**（`s_c3_lv_n` / `s_c4_lv_n`）✓；
+     *    · 颜色 = TH19 一手的四个值（见上面宏）；A 通道接 `tdim`（HUD 统一透明度 ✓）。
+     *    ⚠ 放在**最后**：文字要压在底槽/填充/标之上（生成序 = 画序 ✓）。*/
+    pofv_hud_txt_frame(bx, fy, fc, kind, tdim);
 }
 
 /* ★★★ 2026-10-05 owner：**调试 UI** —— ① 镜像事件列表（镜像暴风**延迟**显示；镜像击破/固灵**停 3 s**再消失）
