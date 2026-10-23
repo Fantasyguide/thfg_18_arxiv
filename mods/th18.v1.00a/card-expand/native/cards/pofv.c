@@ -5602,7 +5602,7 @@ static void pofv_c4s_tick(void)
             }
         }
     }
-    if (s_c4s.timer % s_c4s.wait == 0) {             /* ⚠ 2026-10-18 重验更正 ✗：不是"每 wait 帧发一颗"✗ ——
+    if (s_c4s.timer % (s_c4s.wait * POFV_C4S_PERIOD) == 0) {   /* ★ 密度：wait(1) × PERIOD(4) = 每 4 帧一轮 */             /* ⚠ 2026-10-18 重验更正 ✗：不是"每 wait 帧发一颗"✗ ——
                                                       * 每 wait 帧发 **lanes × cnt** 颗（`lanes` = rank>=6?3:2 ✓、
                                                       * `cnt` = `c4s_cnt_tab` 4-8 ✓）✓。*/
         /* ★★★★ 2026-10-17（施工单 §8 ＋ §25 ＋ §12②-1 ＋ §65 ✓）：★ **路数按档** ✗ ——
