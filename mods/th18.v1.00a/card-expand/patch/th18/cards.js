@@ -366,7 +366,7 @@
     "internal_name": "EOSD_PLAYRANK",
     "initial_unlocked": 1,
     "price_tier": 10,
-    "weight": 2,
+    "weight": 1,
     "sprite_large": 164,
     "sprite_small": 165
   },
@@ -382,7 +382,7 @@
     "internal_name": "PCB_CHERRY",
     "initial_unlocked": 1,
     "price_tier": 10,
-    "weight": 2,
+    "weight": 1,
     "sprite_large": 166,
     "sprite_small": 167
   },
@@ -399,7 +399,7 @@
     "internal_name": "IN_HUMAN_YOUKAI",
     "initial_unlocked": 1,
     "price_tier": 10,
-    "weight": 2,
+    "weight": 1,
     "sprite_large": 168,
     "sprite_small": 169
   },
@@ -417,7 +417,7 @@
     "internal_name": "POFV_BLAST",
     "initial_unlocked": 1,
     "price_tier": 10,
-    "weight": 2,
+    "weight": 1,
     "sprite_large": 212,
     "sprite_small": 213
   },
@@ -434,7 +434,7 @@
     "category": 0,
     "initial_unlocked": 1,
     "price_tier": 10,
-    "weight": 2,
+    "weight": 1,
     "sprite_large": 170,
     "sprite_small": 171
   },
@@ -452,7 +452,7 @@
     "initial_unlocked": 1,
     "category": 0,
     "price_tier": 10,
-    "weight": 2,
+    "weight": 1,
     "sprite_large": 172,
     "sprite_small": 173
   },
@@ -468,7 +468,7 @@
     "internal_name": "UFO",
     "initial_unlocked": 1,
     "price_tier": 10,
-    "weight": 2,
+    "weight": 1,
     "sprite_large": 174,
     "sprite_small": 175
   },
@@ -486,7 +486,7 @@
     "category": 0,
     "initial_unlocked": 1,
     "price_tier": 10,
-    "weight": 2,
+    "weight": 1,
     "sprite_large": 176,
     "sprite_small": 177
   },
@@ -502,7 +502,7 @@
     "internal_name": "COLLECT_2X",
     "initial_unlocked": 1,
     "price_tier": 10,
-    "weight": 2,
+    "weight": 1,
     "sprite_large": 178,
     "sprite_small": 179
   },
@@ -518,7 +518,7 @@
     "internal_name": "LOLK_CHAPTER",
     "initial_unlocked": 1,
     "price_tier": 10,
-    "weight": 2,
+    "weight": 1,
     "sprite_large": 180,
     "sprite_small": 181
   },
@@ -536,7 +536,7 @@
     "category": 0,
     "initial_unlocked": 1,
     "price_tier": 10,
-    "weight": 2,
+    "weight": 1,
     "sprite_large": 182,
     "sprite_small": 183
   },
@@ -553,7 +553,7 @@
     "internal_name": "WBAWC",
     "initial_unlocked": 1,
     "price_tier": 10,
-    "weight": 2,
+    "weight": 1,
     "sprite_large": 184,
     "sprite_small": 185
   },
@@ -567,9 +567,10 @@
     ],
     "internal_name": "GIVE12",
     "category": 0,
-    "initial_unlocked": 1,
+    "initial_unlocked": 0,
+    "deck_visible": 0,
     "price_tier": 10,
-    "weight": 1,
+    "weight": 6,
     "sprite_large": 186,
     "sprite_small": 187
   },
@@ -585,11 +586,10 @@
     "category": 0,
     "initial_unlocked": 0,
     "deck_visible": 0,
-    "weight": 0,
+    "weight": 6,
     "repeatable": 1,
     "hud_show": 1,
     "price_tier": 1,
-    "weight": 0,
     "sprite_large": 214,
     "sprite_small": 215
   },

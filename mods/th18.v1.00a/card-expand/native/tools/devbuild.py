@@ -62,6 +62,11 @@ CARD_DESC_LINES = 6          # 与 native/cards_def.h 的 CE_CARD_DESC_LINES 同
 CARD_TEXT_LINE = 64          # 与 native/cards_def.h 的 CE_CARD_TEXT_LINE 同步
 # 调试 / 测试卡：internal_name 命中这些前缀的就是「不许被玩家看到」的卡
 DEBUG_RE = re.compile(r"^(?:DEBUG_DEL|DEBUG_.*|TEST_.*)$", re.I)
+# ★ 调试卡三项判据（按**商店机制**，不是「全 0」）：
+#   initial_unlocked=0（新档不解禁）、deck_visible=0（编成菜单不可见）、
+#   weight=6（CE_SHOP_NEVER_WEIGHT：永不进商店随机池）。
+#   ⚠ weight=0 **不是**「不出现」——0 是商店 loop1 的「必上架」哨兵（每关必出）✗。
+DEBUG_FLAGS = (("initial_unlocked", 0), ("deck_visible", 0), ("weight", 6))
 
 # 哪些未跟踪文件算「源文件」⇒ 默认闸会拦。构建产物（.o/.dll/.anm/.sht/.wav/图片）不算。
 SOURCE_EXTS = {
@@ -188,24 +193,33 @@ def _flag(c, key):
 
 
 def check_debug_visibility(cards):
-    """★★ 新闸：调试/测试卡必须 initial_unlocked=0 且 deck_visible=0 且 weight=0。"""
+    """★★ 新闸：调试/测试卡必须 initial_unlocked=0、deck_visible=0、weight=6。
+
+    判据按**商店机制**写（一手见 native/cards_def.h:98-105、
+    engine/card/th18/05-shop-and-money.md §4；旧闸「三项全 0」与机制相反 ✗）：
+      · 商店随机池 = `+0x14 ∉ {0, 6}` 按权重压份 ⇒ weight=6（CE_SHOP_NEVER_WEIGHT）
+        = 永不进随机池 ✓；
+      · weight=0 是 loop1 的「必上架」哨兵 ⇒ 每关都上架 ✗，还会挤占 guaranteed 名额；
+    """
     bad = []
     found = debug_cards(cards)
     for cid, c in found:
         row = []
-        for key in ("initial_unlocked", "deck_visible", "weight"):
+        for key, want in DEBUG_FLAGS:
             v = _flag(c, key)
-            if v != 0:
-                row.append("%s=%s" % (key, "缺失" if v is None else v))
+            if v != want:
+                row.append("%s=%s（必须=%d）" % (key, "缺失" if v is None else v, want))
         if row:
             bad.append("  · 卡 %s（internal_name=%s）：%s"
                        % (cid, c.get("internal_name"), " / ".join(row)))
     if bad:
         raise StepFail(
-            "有 %d 张调试/测试卡会被玩家看到（三项必须全 0）" % len(bad),
+            "有 %d 张调试/测试卡不符合「不可见」判据" % len(bad),
             "\n".join(bad) + "\n\n"
             "判定：cards.js 里 internal_name 命中 DEBUG_DEL / DEBUG_* / TEST_* 的卡，\n"
-            "必须 initial_unlocked=0、deck_visible=0、weight=0（缺字段按非 0 处理）。")
+            "必须 initial_unlocked=0、deck_visible=0、weight=6（缺字段按不合规处理）。\n"
+            "★ weight 只认 6：6 = CE_SHOP_NEVER_WEIGHT ⇒ 退出商店随机池，永远不上架 ✓；\n"
+            "  weight=0 不是「不出现」，而是 loop1 的「必上架」哨兵 ⇒ 每次进店都会上架 ✗。")
     return found
 
 
@@ -225,7 +239,7 @@ def card_201_flags(cards):
     if not isinstance(c, dict):
         raise StepFail("cards.js 里找不到 201（调试・定向删卡）",
                        "确认卡表里有 id 201；本闸只读，不会补卡。")
-    return {k: _flag(c, k) for k in ("initial_unlocked", "deck_visible", "weight")}
+    return {k: _flag(c, k) for k, _want in DEBUG_FLAGS}
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -315,7 +329,7 @@ def step_debug_visibility():
     found = check_debug_visibility(cards)
     if not found:
         return "未发现 DEBUG_*/TEST_* 卡（0 张）"
-    return "%d 张调试/测试卡三项全 0：%s" % (
+    return "%d 张调试/测试卡全不可见（init=0 / deck=0 / weight=6）：%s" % (
         len(found), "、".join("%s(%s)" % (cid, c.get("internal_name")) for cid, c in found))
 
 
@@ -604,15 +618,16 @@ def step_readback_cards(modkit):
     bad = []
     if lines != CARD_DESC_LINES:
         bad.append("  · 109 的 desc 是 %d 行（必须 = %d 行）" % (lines, CARD_DESC_LINES))
-    for k, v in flags.items():
-        if v != 0:
-            bad.append("  · 201 的 %s=%s（必须 = 0）" % (k, "缺失" if v is None else v))
+    for k, want in DEBUG_FLAGS:
+        v = flags.get(k)
+        if v != want:
+            bad.append("  · 201 的 %s=%s（必须 = %d）" % (k, "缺失" if v is None else v, want))
     if bad:
         raise StepFail("部署件 cards.js 的关键项不对（%d 项）" % len(bad),
                        "\n".join(bad) + "\n\n"
                        "注意：本步读的是 **modkit 里的部署件**，不是源；"
                        "出现这种不一致说明 deploy 写进去的是旧件/半批。")
-    return "109 desc=%d 行；201 三项全 0；调试卡 %d 张全不可见" % (lines, len(found))
+    return "109 desc=%d 行；201 init=0 / deck=0 / weight=6；调试卡 %d 张全不可见" % (lines, len(found))
 
 
 def step_readback_files(modkit):
@@ -737,10 +752,11 @@ def main():
              "改 patch/th18/cards.js 的 desc（≤6 行、每行<64 字节、不能有 ASCII %），"
              "然后 `python3 mkfiles.py` 刷新 patch/files.js，commit。",
              step_cards_check)
-    run_step("调试/测试卡不可见（initial_unlocked/deck_visible/weight 全 0）",
-             "调试卡会进商店 / 图鉴 / 卡组 / 指南，owner 实跑被污染（今天 201 就进了图册）。",
-             "在 patch/th18/cards.js 把该卡的 initial_unlocked、deck_visible、weight 都写成 0，"
-             "`python3 mkfiles.py` 刷新 crc，commit。",
+    run_step("调试/测试卡不可见（init=0 / deck=0 / weight=6）",
+             "调试卡会进商店 / 图鉴 / 卡组 / 指南，owner 实跑被污染（201 曾进图册、也曾每关必上架）。",
+             "在 patch/th18/cards.js 把该卡写成 initial_unlocked=0、deck_visible=0、weight=6；"
+             "★ weight 只认 6（CE_SHOP_NEVER_WEIGHT = 不进随机池），写 0 反而每次进店必上架 ✗。"
+             "然后 `python3 mkfiles.py` 刷新 crc，commit。",
              step_debug_visibility)
     run_step("sites.py check：站点不变式 + 声明↔def 对账 + 预算",
              "站点表与 patch/def 不同步会让补丁静默不生效，或把跳板池用超（崩）。",
@@ -813,7 +829,7 @@ def main():
              "复制失败或被并发发布覆盖时，modkit 里会是旧件/半批。",
              "重跑 deploy；检查 modkit 写权限与 .deploy.lock；不要手工改 modkit 里的产物。",
              lambda: step_readback_md5(a.modkit))
-    run_step("回读②：部署件 109 desc=6 行 / 201 三项全 0",
+    run_step("回读②：部署件 109 desc=6 行 / 201 init=0 deck=0 weight=6",
              "今天两次翻车的直接判据；必须从部署件读，不能只看源。",
              "说明 deploy 写进去的是旧件/半批：重跑 deploy；确认 patch/th18/cards.js 已 commit。",
              lambda: step_readback_cards(a.modkit))
