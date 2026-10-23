@@ -793,6 +793,9 @@ static int hud_asc_idx(char c)
 #define POFV_HUD_TXT_MAX 24
 static int32_t s_hud_txt_vm[POFV_HUD_TXT_MAX];
 static int     s_hud_txt_n;
+/* 2026-10-23：C3/C4 等级（定义在文件后半）⇒ HUD 文字要先声明才能读 */
+static int s_c3_lv_n, s_c4_lv_n;
+/* ★ 2026-10-23：`s_c3_lv_n` / `s_c4_lv_n` 定义在文件后半（2575 行）⇒ HUD 文字要读它，先声明 ✓ */
 static void hud_text_draw(float x640, float y640, const char *str, float sc, uint32_t rgb)
 {
     const int BASE = CE_ANM_ABILITY_SPRITE_POFV109_ASC_LS;      /* = 904 */
@@ -1140,10 +1143,17 @@ static void pofv_hud_charge_bar(float fx, float fy, float ratio_rei, float ratio
         ce_anm_set_color((uint32_t)s_hud_chg_white_vm, tdim | 0x00ffffffu);
         ce_anm_set_color2((uint32_t)s_hud_chg_white_vm, tdim | 0x00ffffffu);
     }
-    /* ★ 2026-10-23 **先验字形**：在条上方固定显示一行 `Ex Attack lv3`。
-     *   ★ 这一步**不带任何条件** ✗ —— 进游戏按住蓄力就能看到，用来确认
-     *   ★ 字形/大小/位置 对不对 ✓。验过之后这一行会换成 ③④ 的条件版本 ✓。*/
-    hud_text_draw(fx, fy - 20.0f, "Ex Attack lv3", 0.5f, 0xffffffu);
+    /* ★★ 2026-10-23 ④ **常驻 `lvN`**（owner：「C3 和 C4 位置的下部会常驻有 lvn 以指示」✗）：
+     *   ★ 在 **C3 刻度**下方 4 px 处，始终显示 ★ `lv` + 当前等级 ✗。
+     *   ★ ❓ 位置（刻度下方 4）与 `N` 的取值（`s_c3_lv_n`，0..7）都是我**自定** ✓，等 owner 实跑校。
+     *   ★ C4 的 `BOSS lvN` 还没做（★ 要确认是否与这条**同一行** ✓）。*/
+    {
+        char buf[16];
+        const int lv = (s_c3_lv_n < 0) ? 0 : ((s_c3_lv_n > 9) ? 9 : s_c3_lv_n);
+        const float tx = fx + POFV_HUD_CHG_FILL_W * POFV_HUD_CHG_TICK_AT(kind, 2);
+        buf[0] = 'l'; buf[1] = 'v'; buf[2] = (char)('0' + lv); buf[3] = 0;
+        hud_text_draw(tx, fy + POFV_HUD_CHG_BLOCK_H_SURF + 4.0f, buf, 0.45f, 0xffffffu);
+    }
     /* ④ **C1..C4 四枚标**（规格 ⑤⑥ ✓；形状 = 一手 `ins_617(1.0f,4)` ⇒ 脚本 425 的**贴图**）
      *    ★★ **三档**（一手 `interruptLabel` 的 4 / 3 / 2 三态；推法见 `TUNING.md` 本轮 §①②）：
      *      · **常显 / 已达**（`fc ≥ 标位`）：`scale` = 1.0 ⇒ **4 × 24**（一手 label4 ✓，细长竖菱形）；
