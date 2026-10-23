@@ -1060,6 +1060,14 @@ static void pofv_hud_charge_bar(float fx, float fy, float ratio_rei, float ratio
         ce_anm_set_color((uint32_t)s_hud_chg_track_vm, tdim | (POFV_HUD_CHG_TRACK_COL1 & 0xffffffu));
         ce_anm_set_color2((uint32_t)s_hud_chg_track_vm, tdim | (POFV_HUD_CHG_TRACK_COL2 & 0xffffffu));
     }
+    /* 2026-10-23 owner: '总之没有看见 txt' + 日志 0 条 => 原处那段没跑。
+     *   挪到这里（pofv_hud_charge_bar 每帧必走）再试 ce_hud_text_ex。
+     *   ⚠ senro.c:191 提过它"只能在 +0x48 on_draw 里调" —— 若这里仍不显示，就说明本函数不在 on_draw。*/
+    if ((s_card_frames % 120u) == 0u) {
+        ce_log("pofv: [TXTEX2] charge_bar reached");
+        ce_hud_text_ex(fx, fy - 40.0f, 0xFFFFFFFFu, 0u, 2, 2, 0, 1.0f, "Ex Attack lv%d", 3);
+        ce_hud_text_ex(fx, fy - 56.0f, 0xFFFFFFFFu, 0u, 2, 2, 0, 1.0f, "skill");
+    }
     /* (1) frame: 4 white 1px bars. anchor=top-left => pos = start of each bar. */
     {
         const float FW = POFV_HUD_CHG_BLOCK_W_SURF;
@@ -10595,10 +10603,6 @@ static int on_draw(ce_card_t *c)
                 /* 2026-10-23 卡 109 调试（owner：先试 ce_hud_text_ex 是不是那套字体）：
                  *   在同上下文画一行 `Ex Attack lv3` / 一行 `skill` / 一行 `BOSS lv2`。
                  *   font_id 试 2（一手 TH18 ascii 的 2/3 号字体）。*/
-                ce_log("pofv: [TXTEX] reached, font_id=2");
-                ce_hud_text_ex(200.0f, 400.0f, 0xFFFFFFFFu, 0u, 2, 2, 0, 1.0f, "Ex Attack lv%d", 3);
-                ce_hud_text_ex(200.0f, 420.0f, 0xFFFFFFFFu, 0u, 2, 2, 0, 1.0f, "skill");
-                ce_hud_text_ex(200.0f, 440.0f, 0xFFFFFFFFu, 0u, 2, 2, 0, 1.0f, "BOSS lv%d", 2);
                 /* ★ 2026-10-16 owner 实跑订正（原话）：「★ **你小数部分改更靠右了何意味呢 —— 错了，
                  *   比对之后是你整数部分太靠左了，但是你小数部分是上沿对齐整数部分，应当是下沿**」✓
                  *   ⇒ ★ ① **主块 x 224 → 248**（整数整体往右 ✓）；★ ② **小数块 y 448 → 452**
