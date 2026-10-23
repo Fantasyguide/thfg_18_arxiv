@@ -6,7 +6,7 @@
     python3 make_guide.py <cards.js> <PLAYER-GUIDE.md> <out.tex> [<cards 图片目录>=cards]
 
 产出 guide.tex：
-  · **统一模板，一卡一页**（owner 2026-10-20）：本 mod 所有卡（58–92、106–118、201）按 id 升序，
+  · **统一模板，一卡一页**（owner 2026-10-20）：本 mod 所有卡（58–92、106–118）按 id 升序，
     每张卡另起一页：卡面 PNG + **卡面文字**（cards.js 的 name/desc ✓）+ 玩家手册正文 ✓
     （没有正文的卡只留卡面，不补空话 ✗）；旧版的「第一部分系统卡 / 第二部分双栏其它卡」已取消。
 编译（任何装了 XeLaTeX + 中文字体的机器）：
@@ -297,16 +297,9 @@ def main():
     imgdir = sys.argv[4] if len(sys.argv) > 4 else 'cards'
     cards = parse_cards(js)
     guide = parse_guide(md)
-<<<<<<< HEAD
-    sysids = [i for i in range(106, 118) if i in cards]      # ★ 系统卡 = 106–117
-    extra = [i for i in (118,) if i in cards]               # ★ 附：118 挑战卡
-    skip = {200}                                            # ★ 不进图册：200（测试卡）；201 是调试卡，owner 2026-10-19 要它进册
-    others = sorted(i for i in cards if i not in sysids and i not in extra and i not in skip)
-=======
-    skip = {200}                    # ★ 不进图册：200（测试卡）；201 是调试卡，owner 2026-10-19 要它进册
-    # ★ owner 2026-10-20：所有卡统一模板、按 id 升序 —— 58…92、106…118、201 一条线排下去 ✓
+    skip = {200, 201}                            # ★ 不进图册：200/201 都是测试·调试卡，不进玩家图册
+    # ★ owner 2026-10-20：所有卡统一模板、按 id 升序 —— 58…92、106…118 一条线排下去 ✓
     ids = sorted(i for i in cards if i not in skip)
->>>>>>> 16f924cf (card-guide: 同步 modkit 一卡一页版 make_guide.py；106/109 协同句收成一句)
 
     L = [PRE, card_macros(cards)]
     L.append(r'\begin{center}')
@@ -315,15 +308,9 @@ def main():
     L.append(r'{\small 系统卡 106--117 = \textbf{原作编号 + 100}：106 = 红魔乡，\ldots，117 = 鬼形兽。}')
     L.append(r'\end{center}')
     L.append(r'\vspace{6pt}')
-<<<<<<< HEAD
-    L.append(r'本册分两部分：\textbf{第一部分}逐张讲 106--117 怎么用、代价是什么（正文来自玩家手册）；'
-             r'\textbf{第二部分}是本 mod 其它卡片的图鉴 —— 卡面、卡面上印的字，以及每张一段展开说明（定位 / 数值 / 用法 / 注意事项）。'
-             r'118 是挑战卡；201 是临时调试卡，正式版会删。测试卡 200 不进本册。')
-=======
     L.append(r'本册\textbf{一卡一页}：每张卡先给卡图与卡面文字，下面接玩家手册里的展开说明'
              r'（定位 / 数值 / 用法 / 注意事项）；正文长时自然续页，没有正文的卡只留卡面。'
-             r'58--92 是其它卡，106--117 是系统卡，118 是挑战卡；201 是调试卡，正常游玩用不到。')
->>>>>>> 16f924cf (card-guide: 同步 modkit 一卡一页版 make_guide.py；106/109 协同句收成一句)
+             r'58--92 是其它卡，106--117 是系统卡，118 是挑战卡。')
     L.append(r'\tableofcontents')
     L.append(r'\clearpage')
 
@@ -351,49 +338,6 @@ def main():
         if cid in guide:            # ★ 没有正文的卡就留空（不硬凑 ✗）
             L.append(linkify(md2tex(guide[cid]), cards))
         L.append('')
-<<<<<<< HEAD
-    # ── 附：118 挑战卡 ──
-    if extra:
-        L.append(r'\clearpage')
-        L.append(r'\section{附：118 挑战・十二合一（挑战卡）}')
-        for cid in extra:
-            c = cards[cid]
-            L.append(r'\noindent\begin{minipage}[t]{0.41\textwidth}')
-            L.append(r'\includegraphics[width=\linewidth]{%s/%s_max.png}' % (imgdir, c['internal']))
-            L.append(r'\end{minipage}\hfill')
-            L.append(r'\begin{minipage}[t]{0.55\textwidth}')
-            L.append(r'\printedlabel')
-            L.append(r'{\small %s}\par' % '\\\\'.join(inline(x) for x in c['desc']))
-            L.append(r'\end{minipage}')
-            if cid in guide:                    # ★ 118 也带展开说明（owner 2026-10-19）
-                L.append(r'\divider')
-                L.append(r'{\footnotesize ' + linkify(md2tex(guide[cid]), cards) + '}')
-            L.append('')
-    # ── 第二部分：其它卡 ──
-    L.append(r'\clearpage')
-    L.append(r'\parthdr{第二部分}{本 mod 其它卡}')
-    L.append(r'{\small 下列卡片按卡号排列；每张给卡面图、卡面上印的字，以及一段展开说明。}')
-    L.append(r'\begin{multicols}{2}')
-    for cid in others:
-        c = cards[cid]
-        img = pathlib.Path('%s/%s_max.png' % (imgdir, c['internal']))
-        L.append(r'\needspace{0.20\textheight}')
-        if c['internal'] and img.exists():
-            L.append(r'\noindent\begin{minipage}[c]{0.33\linewidth}')
-            L.append(r'\includegraphics[width=\linewidth]{%s}' % str(img))
-            L.append(r'\end{minipage}\hfill')
-            L.append(r'\begin{minipage}[c]{0.64\linewidth}')
-        else:
-            L.append(r'\noindent\begin{minipage}[c]{0.98\linewidth}')
-        L.append(r'{\bfseries %d %s}\par\smallskip' % (cid, esc(c['name'])))
-        L.append(r'{\footnotesize %s}\par' % '\\\\'.join(inline(x) for x in c['desc']))
-        L.append(r'\end{minipage}')
-        if cid in guide:                    # ★ 非系统卡的展开说明（owner 2026-10-19）
-            L.append(r'{\footnotesize ' + linkify(md2tex(guide[cid]), cards) + '}')
-        L.append(r'\par\smallskip{\color{gray}\hrule}\smallskip')
-    L.append(r'\end{multicols}')
-=======
->>>>>>> 16f924cf (card-guide: 同步 modkit 一卡一页版 make_guide.py；106/109 协同句收成一句)
     L.append(r'\end{document}')
     pathlib.Path(out).write_text('\n'.join(x for x in L if x is not None), encoding='utf-8')
     print('  已写 %s' % out)

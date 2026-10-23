@@ -4868,7 +4868,9 @@ UI 列表尾插、组内后生成者后画（§2b.4）。
 | 2026-10-04 | **删除 109 卡全部代码**（含别人的文件：脚本编号前移 / sht 生成器）| 见下方小节「§BE-109 删除记录」|
 | 日期 | 别人的卡 | 文件 | 改了什么 | 为什么 | 验证 |
 | --- | --- | --- | --- | --- | --- |
-| 2026-10-20 | **109 花映塚**（+ **发布闸**） | `patch/th18/cards.js`（109 的 `desc`）、`native/tools/deploy.py`（校验闸） | 109 的 `desc` 第 7 行「（本卡仍在开发中，效果可能还会变）」**并进第 6 行** ⇒ 回到 6 行（63 B，仍 <64）；`deploy.py` 的 ② 校验**新增 `make cards-check`** | ★★ owner 2026-10-20 08:12 实跑「**所有 mod 卡消失**」：DLL 自检 `FAIL: cards: card "109": desc: at most 6 lines` ⇒ `start_deck: disabled` + `mitigation: allocator bound restored to retail (56)` ⇒ **新 id 57..254 全停用**；根因 = `3b4ca1d6`（docs commit 顺手改了卡面文案）加了第 7 行，而发布闸当时**不查 cards.js** | `make cards-check` rc=0（49 张全合规、109 desc 6 行 [58,57,45,51,48,63] B）；`python3 mkfiles.py` 重算 `patch/files.js`（`th18/cards.js` crc `3376893556`）；部署后 `python3 tools/deploy.py --skip-build` 三道闸全绿；DLL 前后 md5 `72205148…` 四处同（未重编）；owner 重启待验 |
+| 2026-10-21 | **boss-bg-warp（非 109 的另一个 mod）** | `mods/th18.v1.00a/boss-bg-warp/ROUTE-B.md` | ★ **只加了一行 `> **版本**：TH18 v1.00a…` 声明**（**零行为改动**、一行未删） | `python3 tooling/check-docs.py` 报 `[version]`：该文件引用了 `0x487780`／`0x4ccfa0` 等地址，但开头 20 行没有版本声明 ⇒ 闸红（`check-docs` 是全仓共用的） | 补完 **`check-docs` EXIT=0（516 文件）**；`git diff` 只有那一行 ✓ |
+| 2026-10-20 | **109 花映塚**（+ **发布闸**） | `patch/th18/cards.js`（109 的 `desc`）、`native/tools/deploy.py`（校验闸） | 109 的 `desc` 第 7 行并进第 6 行 ⇒ 回到 6 行；`deploy.py` 的 ② 校验新增 `make cards-check` | owner 08:12 实跑「所有 mod 卡消失」：desc 7 行 ⇒ 整批新卡停用；详见 §BE-DEVBUILD-2026-10-20 | `make cards-check` rc=0（49 张全合规、109 desc 6 行）；`mkfiles.py` 重算 `files.js`；deploy 三道闸全绿；详见 §BE-DEVBUILD-2026-10-20 |
+| 2026-10-20 | **所有卡（共享件：Makefile / 构建闸）** | `native/tools/devbuild.py`（新）、`native/Makefile`（`dev:`）、`native/README.md`（新）、`patch/th18/cards.js`（201 三项置 0）、`patch/files.js` | 新增一条命令的构建闸：校验→构建→发布→回读→汇总；新增「调试卡不可见」闸；加 `make dev` 入口 | owner 今天连环翻车（109 desc / 201 进图册 / 旧 BGM / 冲突标记）⇒ 纪律变成闸；详见 §BE-DEVBUILD-2026-10-20 | 三个故意故障均被拦；全绿 PASS 表见 §BE-DEVBUILD-2026-10-20 |
 | 2026-10-19 | **70 腐化**（★ owner 已授权：**全权主持修改** ✓）+ **108 永夜抄**（1 行上报）+ **共享件** | `cards/corruption_core.{h,c}`(新)、`tests/test_corruption_core.c`(新)、`cards/youkai.c`(1 行)；★ 共享件 `sites.py` / `sdk.c` / `sdk/public.h`；生成物 `sites_gen.h` / patch / `.def` | ★ 新站点 **`ce_death_save_spent` `0x40a44b`** + 钩子 `on_death_save_spent(card, spent)` + 上报函数 `ce_death_save_spent_note()`；腐化改「只减上限、CURRENT 拉满」⇒ 详见文末「BE-CORRUPTION-DEATHSAVE-2026-10-19」 | ★ 一手真 bug：死亡回避 `0x40a2a0` 只扣 `CURRENT_BOMBS`、**不写 MAX**、**不走 `consume_bomb`** ⇒ 带 70 时那 1–2 发被每帧钉回 ⇒ **每次死亡免费、残机永不减** ✗ | `make dll` / `make test-host` rc=0 ✓；单测 20 断言 ✓；`sitecheck 0x40a44b 6` 四项全绿 ✓；`make check` 仅**环境 leveledit 同开冲突**红（与本次无关）✓；四处 DLL 同 md5 ✓ |
 | 2026-10-13 | **109 卡专属（未改共享件 ✓）** | ★ 新增脚本 `457`/`458`/`459` + 阴阳玉贴图（`bball/` 30×30、62×62）+ 生成器 ⇒ 详见「§BE-109-BBALL」✓ |
 | 2026-10-13 | **109 卡专属（未改共享件 ✓）** | ★ 新增脚本 `456` + 本卡 7 处 spawn 换引用 ⇒ 详见下方小节「§BE-109-HUD20」✓ |
@@ -4891,6 +4893,32 @@ UI 列表尾插、组内后生成者后画（§2b.4）。
 | 2026-09-13 | **117 鬼形兽**（咆哮） | 见下方「§BE 详录 #10」 |
 | 2026-09-13 | **所有卡（共享件，追加式）** | 见下方「§BE 详录 #11」 |
 | 2026-09-13 | **所有卡（共享件，追加式）** | 见下方「§BE 详录 #12」 |
+
+#### §BE-DEVBUILD-2026-10-20（构建闸：一条命令，任何一步红就停）
+
+- **动了哪些共享件**：`native/Makefile`（只加 `dev:` 目标，不动既有目标）、
+  `patch/th18/cards.js`（201 调试卡的 `initial_unlocked` / `deck_visible` / `weight` 全部置 0）、
+  `patch/files.js`（cards.js 改了 ⇒ 重算 crc）。
+- **新增**：`native/tools/devbuild.py`（纯标准库）、`native/README.md`（用法）。
+- **为什么**：owner 今天四次翻车 —— 109 的 `desc` 第 7 行导致整批新卡停用（游戏里所有 mod 卡消失）；
+  201 调试卡进商店/图鉴/指南；发布包里 BGM 是旧批次；`guide.tex` 带冲突标记（连续 7 个 `<`）被编译。
+  这些都不是写代码时能记住的事，只能靠构建期闸。
+- **一条命令**：`make dev MODKIT_DIR="<modkit>"`（等价 `python3 tools/devbuild.py --modkit <modkit>`）。
+  流程 = **校验 → 构建 → 发布 → 回读 → 汇总**；任何一步红就停，打印「哪一步 / 为什么 / 怎么修」。
+- **新增的「调试卡不可见」闸**（判据）：`cards.js` 里 `internal_name` 命中
+  `DEBUG_DEL` / `DEBUG_*` / `TEST_*` 的卡，`initial_unlocked`、`deck_visible`、`weight` 必须**全 0**；
+  缺字段按非 0 处理。指南侧再查 `调试・定向删卡` 与 `DEBUG_*` / `TEST_*` 内部名不得出现在 `guide.tex`。
+- **回读口径**：109 的 `desc` 行数与 201 的三项都**从 modkit 部署件读**，不看源；
+  `files.js` 的每个 crc 与部署件现算比对（文本按 git blob 的 LF 口径，兼容 modkit 的 CRLF 工作区）。
+- **`--full`**：抽 3 个 wav + `cards.js` + DLL，比「zip 内 md5」vs「modkit 现件」；
+  不一致**只报不重打**，并逐条列出哪些条目旧。
+- **验证（三个故意故障，每次改完复原）**：
+  1. 把 201 的 `deck_visible` 改回 1 ⇒ 第 02 步「调试/测试卡不可见」红；
+  2. 把 109 的 `desc` 加到 7 行 ⇒ 第 01 步 `cards-check` 红；
+  3. 在 `PLAYER-GUIDE.md` 造一个冲突标记（连续 7 个 `<`）⇒ 第 12 步「冲突标记」红。
+- **全绿**：默认模式（构建 + 发布 + 回读）PASS；`--skip-build` 模式也 PASS。
+- **谁改的**：DSH agent（2026-10-20）。
+
 #### §BE-109 两格（2026-10-12，owner 口径「给 109 两格。你可以自己改，写 audit 即可」）
 
 - **动了哪些共享件**：
@@ -6089,42 +6117,6 @@ UI 列表尾插、组内后生成者后画（§2b.4）。
   `verify()` 另外逐条核了「零售 40 项偏移值不变 + 前 23 组的记录字节逐字节不变」。
 - **回归**：`make sht` rc=0、`make sht-verify` rc=0、`make check` rc=0（含 `capcheck` 三方对账、
   `check_player_anm_bounds.py`）、`python3 tooling/check-docs.py` 269 文件全过。
-
-#### BE-4 ★ 2026-10-17 摘回 main 的 1d41bcdb（新卡 81–85）+ 9b623ff1（平衡数值）—— 动了共享件
-
-**背景**：把 `Fantasyguide/renkolab` 的 `main` 上 Renko 那批内容摘回本线（分支
-`feat/pullback-main-content`）。81–85 五张卡（黑莲花 / 阳光戒指 / 火球术 / 向日葵 / 金盏花）
-的**代码与美术**此前已并入；这次补的是**声明 / 数据 / 生成物**，以及 9b623ff1 的**平衡数字**。
-
-| 文件 | 改了什么 | 为什么 | 验证 |
-| --- | --- | --- | --- |
-| `native/Makefile` | `test-host` 加 fireball_core / plant_core 两对「编译 + 运行」 | 两个单测源文件 29d8f2c7 就并入了，但 Makefile 没跑它们 ⇒ 从未被验证过 | `make test-host` rc=0、两条单测 OK |
-| `native/engine.h` | 新增 `CE_FN_GAIN_POWER`（`0x4573f0`）/ `CE_FN_POPUP_ADD`（`0x4645f0`）/ `CE_MAX_POWER()` / `CE_SE_POWERUP` | `cards/lotus.c` 已经在调，缺声明时整棵 DLL 编不过（`-Werror`）| 单头 `-fsyntax-only` rc=0；无重定义 |
-| `native/sdk.h` | 新增 `ce_grant_power()` + 两个调用约定 typedef + `CE_POPUP_POWERUP_COLOR` | 同上；四步照零售 `CardRingo__constructor`（一手）| 交叉编译 lotus.c / fireball.c rc=0 |
-| `native/anm_ids.h` | **生成物**：`SF_*` / `MG_*` / `SCRIPT_SUNFLOWER` / `SCRIPT_MARIGOLD` | 上游那 +20 行在本仓的落地（号码按本仓现状，见下）| `make anm` rc=0；bounds 检查 rc=0 |
-| `assets/ability/entries/ORDER.txt` | 追加 `ATLAS_SUNFLOWER`（27 帧）/ `ATLAS_MARIGOLD`（24 帧）| 只 append；图集合并规矩 ⇒ 2 个 entry 而不是 51 个 | 逐像素自检全过 |
-| `assets/ability/scripts/468/469` | 两株植物的场上动画（上游 137/138；本仓号接在 467 之后）| 脚本号必须连续 | `thanm -l 18` 里首帧 sprite 对得上 |
-| `assets/ability/scripts/79–84` | 青眼光束保持段 45 → 30 帧 | 9b623ff1 的平衡 | `make anm` + `make check` |
-| `patch/th18/cards.js` | 67 / 72 两行 desc 的数字 | 与 `BE_HP` / `FL_HP` 的新值一致 | `mkfiles.py --check` rc=0 |
-| `patch/files.js` | 重算 `th18/cards.js` 的 crc32 | 内容字节变了 | 幂等 |
-| `CAPACITY.md` | 附录 A 重新生成 | 新图集 entry 必须登记 | `capcheck` 全绿 |
-| `tooling/check-docs.py` + `DOCSTYLE.md` | 摘回 main 的 3ae53b6a（指向 gitignored 的链接不判死）| 干净 worktree 的 `make check` 前置 | `check-docs.py` rc=0 |
-
-**对既有卡的影响面**：
-- 声明都是**纯新增**（`engine.h` / `sdk.h` 里没有改任何既有宏 / 函数 / 调用约定）⇒ 既有卡零影响。
-- **脚本号 / sprite 号只在末尾追加**：468/469 是新脚本；`SF_*` = 812.. 起、`MG_*` 因向日葵图集
-  变大而整体后移（两处宏都是生成物，只有 84/85 引用）。
-- **67 青眼白龙**（别人的卡）：`BE_HP` / `BE_WAVE_FRAMES` / `BE_RADIUS` 按 9b623ff1 削；
-  这是**原作者自己的平衡提交**，我们只是照数值摘。**72 炎魔之王**同理（`FL_HP`）。
-- **84/85**（也是别人那批）：血 / 半径 / 待机帧数 / 血条偏移按 9b623ff1。
-
-**回归**：`make check` **rc=0**（`quick` / `cards-check` / `anm-verify` / `sht-verify` / `snd-check` /
-`dllx87` / `dllverify` / `sites` / `contract_check` / `gen_drift` / `sitecheck` / `capcheck` /
-`engine_abi_check` / `anm_hud_alpha_check` / `check_anm_rules` / modkit / `check-docs` 全过）；
-`make test-host` rc=0（含新旧全部单测）。
-
-**跳过**：9b623ff1 的 62 个美术文件（此前已并过，本次逐张 md5 核对过）；1d41bcdb 的
-`CARDS.md` / `NEXT.md` / `AUDIT` 正文等文档增量（不属于这四步的范围）。
 
 ## §BF. 112 的用户裁决实装（2026-09-12：金=蓝 / 两同一异 / HUD 第一版 / 五边形钩子）
 
@@ -32479,8 +32471,17 @@ DLL 未重发 ⇒ 本轮的 5 处改动**尚未进入游戏** ✓（下次发版
 - **待办**：已按 owner 裁定收敛 ✓ —— 唯一保留项：**leveledit 侧要发布/更新时，本闸的 C1 必须对新组合再跑一次**
   ✓（命令：`python3 tools/check_modkit_packages.py --modkit <modkit>` ✓；它带 DLL 或带 `default.ecl` 的那天就会响 ✓）。
 
-### §BE-PEA-ELEC-2026-10-15（2026-10-15，DSH agent）：77（**别人的卡**）电大哥三处缺陷 + 共享件 `sdk.c` 的货架判据
+## §BE 追加（2026-10-18，卡 109 owner 会话）—— **灵梦 C3 的疑似不一致（未改动，仅登记）**
 
+- **文件**：`native/cards/pofv.c`（`c3_fire_wave()` 与 `pofv_c3_fire()` 内的固定发射点）
+- **现象**：这两处的**注释**写 `(0.0f, POFV_FIELD_H − 128.0f)` ✓（依据 `ins_400(0,128)` ✓），
+  而**代码**是 `POFV_FIELD_H − 200.0f` ✗ —— 注释与代码**不一致**。
+- **为什么没改**：★ 这是**灵梦**的卡，不是本次 owner 会话的授权范围（卡 109 / 魔理沙·早苗 C3–C4）✗；
+  按「只做自己那批卡」的纪律，**只登记、不动手** ✓。
+- **一次事故记录**：我曾用 `ReplaceAll("POFV_FIELD_H - 200.0f" → "…- 128.0f")` 想改魔理沙 C4 的射线原点，
+  把这两处**也**改成了 128 ✗ —— **已立即回改** ✓（现为 200，与改前一致 ✓）。
+  ★ 教训：★ 全局替换前必须**先数命中数**✗（本次 4 处，其中 2 处属别人的卡 ✗）。
+- **建议**：灵梦的作者确认一下该常量该是 128 还是 200（`ins_400(0,128)` 指向 128）。
 owner 2026-10-15 实跑逐字：
   ·「**电大哥的弹幕怎么把我主机的弹幕也弄成全方向随机的了**」✗
   ·「**植物大战僵尸里面的电大哥是向前方一个角度范围内随机散射子弹，你目前做成了全向散射**」✗
@@ -32921,6 +32922,57 @@ youkai: practice auto-equip 108 (ce_owned=1, r=4, spell=8)
     的判据还漏了一条，把那一格补上即可；
   · `hp_delta>0` ⇒ 转嫁真的落地 ✓（`all_delta` 与 `hp_delta` 应同量级）。
 
+#### 2026-10-20 追加（owner 实跑三条：**碰使魔又 MISS** / **出界使魔扣 boss 血** / **打穿下一根血条**）
+
+- **授权**：owner 2026-10-20 三条实跑报告（逐字见下每条的标题）；只动 108 自己的卡（`cards/youkai.c` +
+  `cards/youkai_core.{h,c}` + `tests/test_youkai_core.c`），**不碰共享件**。
+- **一手复核（本轮自己 `objdump` 直读 `th18.exe`，不是文档转述）**：
+  `0042f50d mov ecx,[ebx+0x5130]`（`ebx` = `zEnemyData` = flags_lo）→
+  `0042f51c cmp dword ptr [ebx+0x5108],0` → `0042f523 jg 0x42f69f`（**>0 ⇒ 整段接触致伤跳过**）
+  ⇒ `zEnemyData+0x5108` = **`no_hitbox_timer.current`** = 绝对 `e+0x6334`。
+  ⛔ 因此 `engine/enemy/th18/06-enemy-inert-flag.md:214` 那句「`no_hitbox_timer` 只递减、无人读（死字段）」
+  是**旧结论、错的**（它读的是计时器基址 `0x6330`，真正的读点在 `+0x5108` = `0x6334`）；本条以反汇编为准。
+
+1. **「108 的使魔怎么又有判定了」—— 关掉卡侧「人侧撞使魔 ⇒ MISS」**（`cards/youkai.c`，`yk_fam_collide_tick`）
+   - **根因**：扣命**不是**引擎体术（我们壳的 `no_hitbox_timer` 每帧都写）、也**不是** `if (f)` 取不到对象
+     （`f` = `yk_familiar_by_id(sl->fam_id)`，取不到上一行就 `continue` 了），而是本卡 **2026-09-22 自己加**的
+     判据 `yk_fam_collide_tick`：人侧圆 vs 圆（`hit_r 3.0 + hurtbox 12.0`）→ 直接调 `Player__die 0x45d3a0`。
+     实跑证据：`youkai: MISS by touching familiar enemy_id 283 (human side…)` 下一行就是
+     `PLAYER HIT/STATE 1 -> 4`；283 = 母机 158 的**映射壳**（`CENSUS-DET life=1248` ≈ 母机 HP/2、`slot0=0`、
+     `iv997=0`），**不是** leveledit 的 `s_xfam` 接管条目。
+   - **改法**：新增旋钮 **`YK_FAM_MISS_ON_TOUCH = 0`**（默认关；`1` 一行开回），函数入口早退；每局打一行
+     `familiar touch-MISS gate = OFF` 探针。owner 现口径 = 「使魔不该有体术/判定」。
+   - **不动**：自机弹打使魔照旧扣槽/给刻符（`+0x635c` bit4 按侧分工、P-D 三条一手全部保留）、1/2 转嫁不动。
+2. **「使魔出界了也会扣 boss 血」—— 喂料判据从「消失了」改成「真被打死」**
+   - **根因**：`xfam gone` 那支把「条目从扫描里消失」一律当成「被我们一击打死」，
+     于是把 `last_life` 喂进转嫁（`yk_transfer_feed`）。但**出界/离场不是死亡**：
+     `engine/enemy/th18/09-enemy-offscreen-removal.md` §1 逐指令 = `0x42dfd1 call 0x42fe80` →
+     `0x42dff2 call [eax+0x14]`（= 管理器析构 `0x42d220`，摘链释放）—— **根本不经过 `Enemy__die 0x430240`**
+     ⇒ **一条共享死亡广播都没有**，我们却还是喂了。
+   - **改法**：`on_enemy_death` 在所有 `kind` 门**之前**先记 `(id → kind, frame)`（`yk_xfam_t` 三格）；
+     `xfam gone` 只在「4 帧内收到 `CE_EDEATH_KILLED`（`retaddr 0x42f3b7` = `life.current <= 0` 主路）
+     或 `BOMB_KILL`」时才喂。`KILL_ALL`（`enmKillAll`）/ `ECL_DIE`（ECL `delete()`）/ **没有任何广播**
+     （出界）= **一笔都不喂**（宁可少喂，绝不白扣 boss 血）。消失日志改成
+     `xfam gone … death_seen=%d kind=%d feed=YES/NO`，收尾多一行 `youkai/xfer bars: gone feed/drop …`。
+3. **「扣血顺手打穿下一根血条」—— 一根血条的钳 + 一源一结**
+   - **根因①（直扣）**：`life.current` 是**当前这一根**的剩余；转嫁量是**一笔**（出界那笔 = 整条 `last_life`），
+     原来只做「扣到 0 就停」（`after < 0 ⇒ 0`），没有把 `amount` 本身钳成这一根的剩余。
+   - **根因②（伤害源，真正跨条的那条）**：`ce_damage_rect` 的源**寿命 4 帧**（`+0x60/+0x64` 计时器，
+     玩家侧推进器 `0x45c3e1` 每帧 `prev = cur; cur--`），结算段每帧都判「`cur != prev`」
+     ⇒ **同一条源会连打好几帧**；第一帧把这一根打空后，后面几帧就打到了**下一根**。
+   - **改法**：新增纯函数 **`yk_bar_damage_clamp(amount, bar_left)`**（`youkai_core.{h,c}`，有主机单测：
+     `current=100, amount=500 ⇒ 100`；`bar_left==0 ⇒ 0`）；卡内直扣、卡内建源、无 108 那条**三条路**都先钳。
+     建源之后再调 **`yk_xfer_src_make_oneshot(slot, amount)`**：回读验证这条槽是我们刚建的
+     （`bit0 active` / `+0x74 == amount` / `+0x98 == 0`），然后把 **`+0x7c`（累计上限）钉成 `amount`**
+     ⇒ 一手结算段 `0x45f4f0`–`0x45f512`（`cap <= 累计 ⇒ 清 active`）⇒ **一源一结**，不会打到下一根。
+     （池满时 `0x45dfea` 会「不写槽却返回 > 0」⇒ 必须回读验证，否则会改到别人的源。）
+- **验证**：`make dll` rc=0；`make test-host` rc=0（`test_youkai_core` **12804 checks / 0 failed**，含新增 8 条
+  血条钳断言）；`make dev … --allow-dirty` **19/19 PASS**（DLL md5 `29a1f8c998c15c68083b5d112dd0d553`，
+  源 + modkit 两份部署件三处同 md5）。
+- **下一局一眼判据**：`fam touch-MISS gate = OFF` + 碰使魔**不再**出 `MISS by touching familiar`；
+  `xfam gone … feed=NO` 与 `xfer bars: gone feed 0 / drop N`（出界时 boss HP 不掉）；
+  `xfer bars: bar clamp > 0` 且 `transfer applied … hp_delta <= bar`（不再跨条）。
+
 ### BE-TERMINOLOGY-2026-10-19 · 术语口径：原生 / 原版（禁「零售」）
 
 **owner 口径（`local/*.md` 铁律）**：
@@ -33073,3 +33125,206 @@ owner 给了上面的口径后**改成精确事件**（commit `65c0e178`，本�
   `check_modkit_packages.py` 报的 **9 处同路径冲突**（`th18_leveledit_sanae_mystia` 与
   `lang_zh-hans` / 本包同时启用）—— **与本批无关的环境状态**（改动前后同样红），不是本批引入 ✗；
 - 实跑判据见 §T 末尾「实跑要看的」那一段的补充（撞一次看 `5/5`、连撞到 `1/1`、第 4 次 `0/0`、第 5 次真死）。
+
+### §BE-108-PRACTICE-EQUIP-2026-10-20（2026-10-20，DSH agent，卡 108）：**把「符卡练习自动发 108」加回来 —— 只发一次，retry 后消失是测试特性**
+
+- **授权 / 口径（owner 2026-10-20，逐字）**：「不是，这个是**测试特性**，retry 后 108 没了反而有对比了你知道吗」
+  ⇒ ① 恢复「进符卡练习自动获得 108」（`da946d56` 那段）；② **不做**「防 `reset_cards` 抹掉 / 补发」
+  （`d4bc54ed` 那套）—— 它会把「有 108 / 没 108」的对照抹掉；③ retry 后没有 108 = **预期** ✓。
+- **历史（为什么删过又加回来）**：`da946d56` 实装（判据当时是错的，见下条）→ `a91672a9` 判据订正
+  （`0x4cf438 == 5` + `0x4ccd14 >= 0`）→ `d4bc54ed` 加「被 `reset_cards` 抹掉后补发一次」→
+  `28ff8307` owner 让**整条删掉**（「retry 后 108 就没了」，且它让「仅 DLL」那条在练习里永远 no-op）。
+  **现在 owner 明确**：那个消失正是要的对照态 ⇒ 只恢复「发一次」，补发不要。
+- **改法（只动 108 自己的卡 + 它的纯逻辑层，不碰共享件）**：
+  · `cards/youkai.c` 的 `yk_practice_equip_once()`（调用点是**既有的**、与卡组无关的帧点
+    `sdk.c` `BP_ce_item_frame`，**本批没有改 `sdk.c`**）：
+    判据成立 ⇒ 发一张（走既有路径 `ce_give_card(108u, CE_MODE_SHOP, 0)` = `AbilityManager__allocate_new_card`
+    `0x411460` 的 mode 2，只进本局卡表、不写存档卡组）；`s_practice_given` **只发一次**
+    （失败也不重试；**离开符卡练习**才复位）；刻意**不**用 `CE_TIME_IN_STAGE()` 倒退复位（那会在 retry
+    时重发，把对照特性抹掉）。
+  · **判据 / 发不发**抽成纯函数（主机可测）：
+    `yk_practice_is_spell(start_kind, spell_id, practice_mode, replay_playing)` 与
+    `yk_practice_grant_decision(in_spell_practice, owned, already_granted)`（`cards/youkai_core.{h,c}`）。
+  · 新增一行可核对的日志（retry 后打一次，**不发卡**）：
+    `youkai: practice auto-equip 108 gone (reset_cards after retry) - NOT re-granted (intended: 有/没 108 的对照 …)`。
+- **为什么不能挂在卡自己的回调上**：`ctor` / `on_tick_2` **本身就属于这张卡** —— 108 不在练习卡组里时
+  它们不存在 ⇒ 必须由**与卡组无关**的帧点从外面叫进来（这一条与首版相同，未变）。
+- **对既有卡的影响面**：只有 108 自己的卡 + 它的纯逻辑层（`youkai_core.c` 只**追加**两个函数）
+  + 单测 + 本文件。**共享件（`sdk.c` / `sdk.h` / `engine.h` / `sites.py` / `Makefile`）一个字节都没动**；
+  站点零新增（跳板池零增量）。⇒ 对其余卡行为逐字不变 ✓。
+  ⚠ 唯一可感差异是**符卡练习里手上会多一张 108**（这正是本条的目的），而它在 retry 后会被
+  `reset_cards` 清掉 ⇒ 那时「仅 DLL」的 `yk_le_transfer_standalone()` 接管路径照常生效（对照态 ✓）。
+- **一手判据（不变，见 §BE-108-PRACTICE-EQUIP-2026-10-19b）**：① `0x4cf438 == 5`（启动方式 =
+  符卡练习，唯一写点 `th18:0x46cfce`）② `0x4ccd14 >= 0`（本局练的符卡 id，唯一非负写点 `th18:0x46cffe`）
+  ③ 🟡 兜底 `GAME_FLAGS 0x4cccc8 & 0x30 == 0x20` 且不在回放中（`GT+0xd0 == 0`）。
+- **验证**：
+  · `make test-host` **rc=0**，`./tests/build/test_youkai_core` ⇒ **12837 checks, 0 failed**
+    （新增 **26 条断言**：判据 13 条 + 决策 10 条 + 组合 3 条，含「retry 后（`already_granted=1`）**不发**」）；
+  · `make dll` **rc=0**（无新增 warning）；`strings th18_card_expand.dll` 命中
+    `youkai: practice auto-equip 108 (ce_owned=%d, r=%d, spell=%d)` /
+    `... skipped (already owned, spell=%d)` / `... gone (reset_cards after retry) - NOT re-granted`；
+  · `objdump -dr cards/youkai.o` 实测读 `0x4ccd14` / `mov 0x4cf438,%eax` / `movzbl 0x4cccc8`；
+    `nm cards/youkai.o` = `T yk_practice_equip_once`、`nm cards/youkai_core.o` =
+    `T yk_practice_grant_decision` / `T yk_practice_is_spell` ✓；
+  · `make dev MODKIT_DIR=… --allow-dirty` 全流程 PASS，DLL md5 见交付回报（四处同 md5）。
+- **下一局一眼判据**：
+  · 进符卡练习 ⇒ `youkai: practice auto-equip 108 (ce_owned=1, r=…, spell=…)`（`r >= 0` 即成功，
+    与 `0x411460` 返回值口径一致，**不是** `r=1`）；
+  · 按 R 重开同一张符 ⇒ 108 从手上消失（`reset_cards` 从存档练习槽重建卡组），日志出现**一次**
+    `... gone (reset_cards after retry) - NOT re-granted`，而**不会**再出现 `practice auto-equip 108 (…)`；
+  · 普通关卡 ⇒ 一行都没有（`yk_practice_is_spell()` 先看 `0x4ccd14 < 0` 就返回 0）。
+
+## §BE-109-20261022 ★ 早苗 C3 运动学重写（含共享脚本改动）
+
+- **文件 → 改了什么**：`assets/ability/scripts/465_pofv109_c3s_orb.anm.txt` 的 `scale(0.1171875, 0.875)`
+  → `scale(0.03125, 0.5)`（256×16 ⇒ 场上 **8×8**）。
+- **为什么**：owner 2026-10-22「先把运动学把握准，贴图先用"啥都不是"的近似」——
+  把贴图压成 8×8 占位，实跑时只观察运动。
+- **谁改的**：另一个 agent（提交 `535daac5`），复核人：本 agent。
+- **对既有卡的影响面**：`465` 只被卡 109 的 `pofv_c3s_*` 引用（`CE_ANM_ABILITY_SCRIPT_POFV109_C3S_ORB`），
+  没有别的卡用它 ⇒ **影响面 = 卡 109 自己**；但按 `CLAUDE.md` 规矩 `assets/ability/scripts/**` 属共享件 ⇒ 必须登记。
+- **怎么验证的**：`make rc=0` + `make dev` 全绿；owner 实跑看运动（不走贴图判断）。
+- **注意**：这是**临时占位**，运动学定稿后要换回正式外观（会再登记一次）。
+
+## §BE-109-20261023 ★ 蓄力条：去掉"罩子"（white_vm 关闭）
+
+- **文件 → 改了什么**：`native/cards/pofv.c` 的 `pofv_hud_charge_bar()` 里，
+  `s_hud_chg_white_vm` 的绘制从「白色、长 `fc × FILL_W`」改成「**长度 0、颜色全透明**」。
+- **为什么**：owner 2026-10-23「可放 C3/C4 时**不要罩子**，改成只有**灵力那一段**黄蓝闪」——
+  原实现用白色盖住蓄力段，就是那个罩子。
+- **谁改的**：本 agent。**影响面**：只有卡 109 的蓄力条这一台 VM；其它卡不引用它。
+- **怎么验证的**：`make rc=0` + `make dev` 全绿；owner 实跑看"罩子消失"。
+- **后续**：灵力段（`fill_vm`）的黄蓝闪 + 1 px 白边框还没做，等 owner 确认"可放 C3/C4"的判据。
+
+## §BE-109-20261023b ★ 蓄力条：加 1 px 白色边框（复用 white_vm）
+
+- **文件 → 改了什么**：`native/cards/pofv.c` `pofv_hud_charge_bar()` 里，把已空出来的
+  `s_hud_chg_white_vm` 改成**边框**：位置 `(fx−1, fy−1)`、尺寸 `BLOCK_W/H + 2`、颜色纯白。
+- **为什么**：owner 2026-10-23「蓄力条底下应当有一个 **1 px 的白色边框**」。
+  复用它而不是新加全局，**不增 VM 数**、不改编组重建逻辑（`hv[]` 数组不变）。
+- **谁改的**：本 agent。**影响面**：只有卡 109 的蓄力条；其它卡不引用。
+- **怎么验证的**：`make rc=0`；`make dev` 全绿；owner 实跑看"外圈 1 px 白线"。
+- **注意**：`white_vm` 是**后建**的（画序在 `fill_vm` 之上）⇒ 边框会压在填充上，但只有边缘 1 px，可接受。
+
+## §BE-109-20261023c ★ 蓄力条：灵力段"能放 C3/C4"时改黄/蓝交替闪
+
+- **文件 → 改了什么**：`native/cards/pofv.c` `pofv_hud_charge_bar()` 里 `s_hud_chg_fill_vm` 的取色：
+  原来"该催了"时是**同色亮/暗**（改 alpha）；现在改成 **黄 `0x00FFC800` / 蓝 `0x0040A0FF` 交替**
+  （每 10 帧切一次，沿用原节奏）。
+- **为什么**：owner 2026-10-23「可放 C3/C4 时不要罩子，改成**灵力那一段黄蓝闪**」。
+- **判据沿用一手**（未改）：`s_aura_charge >= 1700`（= `POFV_C3_THRESH`）**且** `!pofv_barrier_have()`。
+- **谁改的**：本 agent。**影响面**：只有卡 109 蓄力条的填充 VM。
+- **怎么验证的**：`make rc=0`；`make dev` 全绿；owner 实跑看"灵力段黄蓝跳"。
+
+## §BE-109-20261023d ★ 新增 TH19 ASCII 字图集（95 格，28×28）
+
+- **文件 → 改了什么**：新增 `assets/ability/POFV109_ASCII_95.png`（**504×168**，18 列 × 6 行，用 95 格）
+  ＋ `POFV109_ASCII_95_preview.png`（自检用的一行 "Ex Attack lv3" 预览）。
+- **来源**：TH19 `data/ANM/ascii/ascii_1280.png` 的 **`sprite0..94`**（`thanm -l` 解出的 rect：
+  `x=(i%18)*28, y=(i/18)*28, 28×28`）；**墨 = `alpha>0 && R<128`**。
+- **为什么**：owner 2026-10-23「109 蓄力条的 HUD 文字必须用 TH19 那套字」；原画法贴图不对。
+- **谁改的**：本 agent。**影响面**：只增资源（还没接进 `ORDER`、还没被任何脚本引用）⇒ **对现有卡零影响**。
+- **怎么验证的**：切出的 sprite 1/2/3 = `!` `"` `#`、sprite0 = 空格；拼 "Ex Attack lv3" 目视正确（见 preview）。
+
+## §BE-109-20261023e ★ 27 个 TH19 ASCII 字形进 `ability.anm`（sprite 904..930）
+
+- **文件 → 改了什么**：新增 `assets/ability/ascii/POFV109_ASC_*.png`（**27 个 28×28**，白字透明底）
+  ＋ `ORDER.txt` 追加 `ATLAS ATLAS_POFV109_ASC 168x140@6x5` ＋ 27 个成员行。
+- **字符集**（按此顺序 = sprite 顺序）：`s k i l E x A t a c B O S v [ ] n 0 1 2 3 4 5 6 7 8 9`
+- **来源**：TH19 `data/ANM/ascii/ascii_1280.png` 的 `sprite (ord(c)-32)`，rect `(i%18*28, i/18*28, 28, 28)`，
+  墨 = `alpha>0 && R<128`（`thanm -l` 解出的 rect 为一手）。
+- **为什么只切 27 个**：`ability.anm` 的 **entry 上限 256**，当前已用 **227** ⇒ **只剩 29** 个名额；
+  全切 95 个**放不下**。27 个覆盖 `skill` / `Ex Attack lv[]` / `BOSS lv[]` / `lvn` / 数字。
+- **谁改的**：本 agent。**影响面**：新增 entry（227→228），**既有 entry 编号不变**；
+  目前**没有脚本引用**这 27 个 sprite ⇒ 对现有卡零影响。
+- **怎么验证的**：`rebuild_safe` **六道门全过**；`anm_ids.h` 里 `ATLAS_POFV109_ASC_0 = 904`、
+  `…_17 = 921`（= 字符 `0`），与切图顺序一致。
+
+## §BE-109-20261023f ★ 蓄力条 1 px 白边框（4 条 1px 矩形，照卡 116）
+
+- **文件 → 改了什么**：`native/cards/pofv.c` `pofv_hud_charge_bar()` 新增 `s_hud_chg_frame[4]`
+  （4 台 VM，复用 `POFV109_HUD_CHARGE` 脚本），每帧按上/下/左/右画 1 px 白线：
+  横条 `scale(W+2, 1)`、竖条 `scale(1, H+2)`（`W=452, H=12`）。
+- **为什么**：owner 2026-10-23「蓄力条底下应当有一个 1 px 的白色边框」；上一次我用"一台实心块放大 2px"
+  结果成了白罩子 ⇒ 按 owner 指示照 **卡 116 `season.c`** 的写法（4 条 1px 矩形）重做。
+- **关键依据**：`422_pofv109_hud_charge.anm.txt` 注释写明 `resolutionMode(2)`（1 单位 = 1 表面 px）
+  且 anchor = **左上** ⇒ `set_scale(w,h)` 单位就是表面 px，`set_pos` 给边起点。
+- **谁改的**：本 agent。**影响面**：只加 4 台 VM 到卡 109 的蓄力条；其它卡不受影响。
+- **怎么验证的**：`make rc=0`；`make dev` 全绿；owner 实跑看"外圈 1px 白线且不遮盖内容"。
+
+## §BE-109-20261023g ★ 关掉蓄力条那块"整块白"（罩子）
+
+- **文件 → 改了什么**：`native/cards/pofv.c` `pofv_hud_charge_bar()` 里 `s_hud_chg_white_vm`
+  从「454×14 整块白、覆盖整条」改成 **`scale = 0,0` ＋ 全透明**（等于关掉）。
+- **为什么**：owner 2026-10-23「**还有白色实心条覆盖在蓄力槽整体上面**」——
+  边框已由 `s_hud_chg_frame[4]`（4 条 1px 白线）负责，这台整块白就是那个"罩子"。
+- **谁改的**：本 agent。**影响面**：只有卡 109 蓄力条；其它卡不引用这台 VM。
+- **怎么验证的**：`make rc=0`；`make dev` 全绿；owner 实跑看"整块白消失、只剩 1px 外框"。
+
+## §BE-109-20261023h ★ 白段恢复成"宽度随蓄力"（修回归）
+
+- **文件 → 改了什么**：`native/cards/pofv.c` `pofv_hud_charge_bar()` 里 `s_hud_chg_white_vm`
+  恢复为：`pos = (bx, by)`、`scale = (fc × POFV_HUD_CHG_FILL_W, POFV_HUD_CHG_FILL_H)`、
+  颜色 `POFV_HUD_CHG_WHITE_COL`（即 **白段 = 蓄力比例**）。
+- **为什么**：owner 2026-10-23「蓄力罩的具体宽度应该和蓄力有关啊，**以前没有这样的问题的**」。
+  `git log -S` 显示：`728c805c` 原本就是「细条 + 蓝(灵力) + **白段(蓄力)**」，
+  后来 `c8655eb6` / `aaa9c9d2` 改成"整槽/居中" ⇒ 宽度不再随蓄力 ⇒ 变成覆盖全条的白块。
+- **谁改的**：本 agent。**影响面**：只有卡 109 蓄力条。
+- **怎么验证的**：`make rc=0`；`make dev` 全绿；owner 实跑看"白段随蓄力变长、1px 外框仍在"。
+
+## §BE-109-20261023j ★ 灵力段闪的判据改用「灵力」（不是「蓄力」）
+
+- **文件 → 改了什么**：`pofv_hud_charge_bar()` 里 `urge` 的第一个条件从
+  `s_aura_charge >= 1700.0f`（**蓄力**）改成 **`fr * 2500.0f >= 1700.0f`（灵力比例）**。
+- **为什么**：owner 2026-10-23 纠正概念 ——
+  · **蓄力** = 按住 C 会涨的那条（`s_aura_charge` / 白段）；
+  · **灵力** = 会**限制蓄力上限**的那条（`ratio_rei` / 蓝填充 `fill_vm`）。
+  闪是在**灵力**段上（`fill_vm`），判据当然该用灵力。阈值表 500/1000/1700/2500 见 `TUNING.md`。
+- **谁改的**：本 agent。**影响面**：只有卡 109 蓄力条。
+- **怎么验证的**：`make rc=0`；`make dev` 全绿；owner 实跑看"灵力（蓝段）到 C3 阈值以上且无罩 ⇒ 黄蓝跳"。
+
+## §BE-109-20261023k ★ 灵力段闪：改用手一节奏与颜色（黄 `0xffffff00` ↔ 通常蓝，3 帧）
+
+- **文件 → 改了什么**：`pofv_hud_charge_bar()` 里 `fill_vm` 的闪：
+  · 黄 = **一手 `0xFFFFFF00`**（原来我自己编的 `0x00FFC800`）；
+  · 另一半 = **通常的蓝（`base`）**，不用一手写的灰 `0xFF808080`（owner 没见过灰）；
+  · 节奏 = **一手 `(count % 6) < 3`**（3 帧黄 / 3 帧蓝），原来是 10 帧；
+  · `color` 与 `color2` **写成同一个值**（一手是纯色，不是渐变）。
+- **一手出处**：`engine/versus/th19/05-four-mechanics.md:1063`
+  （`5461e2: if (闪烁) (+0x2290 % 6) < 3 ⇒ 0xffffff00 黄 ／ 否则 0xff808080 灰`），
+  另有 `:699`「HUD 在它 `< 1` 时黄/灰闪」。
+- **谁改的**：本 agent。**影响面**：只有卡 109 蓄力条的灵力段。
+- **怎么验证的**：`make rc=0`；`make dev` 全绿；owner 实跑看"灵力段 3 帧黄 / 3 帧蓝"。
+
+## §BE-109-20261023l ★ 蓄力条：把剩下两处颜色接入 HUD 统一调暗（`tdim`）
+
+- **文件 → 改了什么**：`native/cards/pofv.c` `pofv_hud_charge_bar()`：
+  · 菱形标的 `ce_anm_set_color2(vm, MARK_COL)` → `tdim | (MARK_COL & 0xffffff)`；
+  · 光晕的 `ce_anm_set_color(halo, MARK_COL)` → `tdim | (MARK_COL & 0xffffff)`。
+- **为什么**：owner 2026-10-23「**这些都得接入 HUD 的透明度**」。原先只有 `color` 那一路接了 `tdim`，
+  `color2` 与光晕两路没接 ⇒ HUD 变暗时它们不跟着暗。
+- **谁改的**：本 agent。**影响面**：只有卡 109 蓄力条的菱形标与光晕。
+- **怎么验证的**：`make rc=0`；`make dev` 全绿；owner 实跑看"HUD 变暗时菱形/光晕一起变暗"。
+
+## §BE-109-20261023m ★ 颜色字节序结论（回应 owner 的怀疑）
+
+- **`ce_anm_set_color(id, v)` 是 `0xAARRGGBB`（A 在高字节）**，不是 BGR：
+  · `sdk.h` 的 `ce_anm_set_color(uint32_t id, uint32_t rgba)` 只把 `v` **原样**写进 `vm+CE_ANM_VM_COLOR1`；
+  · 现有代码用 `0xffffff80`（白 + alpha 0x80）、`tdim | 0x00ffffff`（alpha 0 ⇒ 隐）⇒ **A 必在高字节**；
+  · ⇒ ★ `0xffffff00` = **A=FF, R=FF, G=FF, B=00** = **纯黄** ✓（若真按 BGR 读会变成青，与"发橙"不符）。
+- **BGR 那条结论只适用于 `.anm` 脚本里的 `color(a,b,c)`**（`engine/versus/th19/07-enemy-death-and-cancel.md` §9，
+  `thecl` 落盘整字反转）——★ **不适用于这个 C API**。
+- **结论**：本卡的颜色**没有 BGR/RGB 问题**；"发橙"更可能是 `blendMode(1)` 加算 + 白段叠色，待实跑再看。
+
+## §BE-109-20261023n ★ 修「有罩子也在闪」：`pofv_barrier_have()` 判据一直是假
+
+- **文件 → 改了什么**：`native/cards/pofv.c` 的 `pofv_barrier_have()` 从
+  `return s_barrier_vm_disc != 0;` 改成 **`return s_barrier_on != 0 || s_barrier_vm_disc != 0;`**。
+- **为什么**：owner 2026-10-23「**有罩子的时候也在黄蓝闪**」。查证：`s_barrier_vm_disc` 在
+  `pofv.c:4708` 被注释着「整罩已烤进 446，这里留着同位置再平涂一层」而**永久置 0**
+  ⇒ 那个标识 VM 早已废弃 ⇒ `pofv_barrier_have()` 永远返回假 ⇒ 灵力段的黄蓝闪**在任何时候**都触发。
+  真正反映"盾在不在"的是 `s_barrier_on`（`pofv.c:4625`，注释「盾在不在」）。
+- **谁改的**：本 agent。**影响面**：这个谓词被蓄力条（闪）与 `pofv_hud_chg_claim` 等共用，
+  修好之后那些"有罩时的抑制"才真正生效。
+- **怎么验证的**：`make rc=0`（前一次改坏了定义导致 link 错误，已修）；`make dev` 全绿；
+  owner 实跑看"有罩子时不再黄蓝闪"。

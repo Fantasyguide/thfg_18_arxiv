@@ -35,6 +35,18 @@ EnemyManager__on_tick 0x42df50
   `0x42ffa7 call 0x42e5a0`（**出框判定**）、`0x42fff0 call 0x42ed40`（ECL 步进）、`0x42ffff call 0x42f890` …
 - `FUN_0042e5a0`（`0x42e5a0`）：动画 VM 更新 + 出框判定；**返回 `-1` = 「这只敌人该被删了」**，
   返回 `0` = 正常。返回值沿 `0x42ff80` → `0x42fe80` 一路上传，最终由 `EnemyManager__on_tick` 处置。
+- ★ **出生那次也跑这条链（2026-10-20 一手）**：`EnemyManager__allocate_new_enemy 0x42d7d0` 在
+  **`0x42d90f call 0x42fe80`** 里就给刚建好的敌人跑了**一整帧**（`0x42fe80` →`0x42fedd call 0x42ff80`
+  → **`0x42fff0 call 0x42ed40`**，`ecx = [e+0x122c]` = `zEnemyData`），而且**发生在它把指针返回给调用者之前**。
+  ⇒ 对「自己 spawn 敌人」的 mod：出生那一帧的 `step_game_logic`（伤害段 / **体术段** / ECL 一帧）
+  **任何「spawn 返回后再写字段」的闸都来不及上**；要挡只能让**出生位置/参数本身无害**
+  （例：108 使魔把出生点放到版面上方 8192 px，再由同一帧的 pin 挪回真位置 ——
+  `mods/th18.v1.00a/card-expand/native/cards/youkai.c` 的 `yk_spawn_familiar_parent()`）。
+  这一次 tick 会置 `flags_lo` bit18（`0x42ff9c`）⇒ 管理器同帧后面那趟会因它整段跳过（`0x42ff91`）再清掉
+  （`0x42dfdc`）⇒ **同一帧不会跑第二次**。
+  停机场本身安全：出框判定对「**从没进过屏**」的敌人返回 0（`0x42ebcc test flags,0x10000 / je 返 0`；
+  X 轴同形 `0x42ebe1 and eax,0x10004 / cmp 0x10000 / jne 返 0`）。⚠ 出生那一刻 `flags_lo & 0xC` 还没置
+  （`ce_spawn_enemy*` 是返回后才补），所以这里**只能靠**「从没进过屏」这条豁免。
 - `vtable[0x14] = 0x42d220`：敌人析构 —— 从 `mgr+0x18c/0x190/0x194` 摘链、修 `+0x1518/+0x151c` 的
   前后向指针、`dec [mgr+0x198]`（`enemy_count_real`）、清 boss id 表、释放 16 个 anm VM 槽。
   ⇒ 这就是「**消失**」的落点（对象被释放，不是隐藏）。

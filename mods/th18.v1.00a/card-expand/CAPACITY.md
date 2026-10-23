@@ -283,6 +283,14 @@ cards: 35 registered from cards.js; shop pool 700/8192 slots, guaranteed offers 
   ★ 同批另一件是**单图行**（`MAGICSQUARE` = 原生 `effect/eff_magicsquare.png` 256×256，sprite **798**）
   ⇒ 它是**单图行、不是图集 entry**，不吃本段的画布（同 :140 那条口径）；
   **既有 sprite / 脚本号一个都没动**（ORDER.frozen 前 186 行构建期已核）。
+- **★ 2026-10-21 补登记 `ATLAS_POFV109_LASER`（`CE_ANM_ABILITY_ATLAS_ATLAS_POFV109_LASER`，
+  `ability.anm` 的 entry **226**，画布 **256×32**、**2 个 sprite**）**：卡 109 早苗 C3 的**曲线激光横条**
+  —— 一手素材 = TH19 `ANM/bullet/laser1.png` 的**第 5 行（品红）与第 4 行（紫）**，owner 指认「第 5 行」，
+  故把两行都切进来备用：`LASER528` = sprite **902**（第 5 行）、`LASER527` = sprite **903**（第 4 行）。
+  使用方 = 脚本 `465_pofv109_c3s_orb`（`sprite(@POFV109_LASER528)`，卡侧按 owner 2026-10-21 口径
+  `scale(0.1171875, 0.875)` ⇒ 场上 30×14，见 `TUNING.md`）。
+  ⚠ **登记动因**：`make check` 的 `capcheck` 硬门报「新的图集 entry 宏没登记进 `CAPACITY.md`」
+  （这条图集是 10-20/21 卡侧那批提交带进来的，宏与 sprite id 都在 `native/anm_ids.h`）。
 - **★ 2026-09-24 新增 `ATLAS_FONT2B`（`CE_ANM_ABILITY_ATLAS_ATLAS_FONT2B`，`ability.anm` 的 entry **69**；
   ⚠ 补宏名与现值的是 110/111 这条线，只为让 `capcheck` 的硬门认得出 —— 正文与口径都是 112 那位写的，
   见 `AUDIT.md` §BE 详录 #85）**：卡 112 的 HUD 文字字形

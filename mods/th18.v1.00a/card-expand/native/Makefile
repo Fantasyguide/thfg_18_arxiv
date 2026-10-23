@@ -2,9 +2,19 @@
 ROWS ?= 255
 PATCH := ../patch/th18.v1.00a.js
 
-.PHONY: all quick check package gen verify files clean test-host anm anm-verify atlas-check sht sht-verify ecl ecl-ufo snd-check voice dll dllx87 dllverify
+.PHONY: all quick check package gen verify files clean test-host anm anm-verify atlas-check sht sht-verify ecl ecl-ufo snd-check voice dll dllx87 dllverify dev
 
 all: quick dll
+
+## dev —— ★ owner 的唯一开发/发布入口（2026-10-20）：校验 → 构建 → 发布 → 回读 → 汇总。
+##   任何一步红就停，并打印「哪一步 / 为什么 / 怎么修」；不会在 main 上构建，不会带冲突标记构建。
+##   用法（modkit 路径必须传，脚本不写死本机路径）：
+##     make dev MODKIT_DIR="/mnt/d/项目/幻想指南/18/th18_modkit"
+##     make dev MODKIT_DIR="..." DEVFLAGS="--skip-build"
+##     make dev MODKIT_DIR="..." DEVFLAGS="--full"        # 额外核对发布 zip 与 modkit 同批
+dev:
+	python3 tools/devbuild.py --modkit "$(MODKIT_DIR)" $(DEVFLAGS)
+
 
 ## quick —— 日常开发反馈：主机 C 单测 + 可导入的 Python 单测。
 quick: test-host

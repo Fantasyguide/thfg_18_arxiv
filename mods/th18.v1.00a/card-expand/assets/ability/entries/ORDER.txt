@@ -1293,6 +1293,45 @@ POFV109_CHG_GLOW_RED         ability/chgmark/CHG_GLOW_RED.png             24x48
 POFV109_CHG_MARK_YELLOW      ability/chgmark/CHG_MARK_YELLOW.png          4x24
 POFV109_CHG_GLOW_YELLOW      ability/chgmark/CHG_GLOW_YELLOW.png          24x48
 POFV109_C1_BULLET            ability/POFV109_C1_BULLET.png            30x30
+POFV109_C3S_STRIP     ability/POFV109_C3S_STRIP.png       256x16
+POFV109_C4M_STAR16  ability/POFV109_C4M_STAR16.png      8x8
+POFV109_C4S_L11     ability/POFV109_C4S_L11.png          8x8
+POFV109_C4S_L1      ability/POFV109_C4S_L1.png           8x8
+POFV109_C4S_L18     ability/POFV109_C4S_L18.png          8x8
+POFV109_C4S_EGG     ability/POFV109_C4S_EGG.png         14x16
+POFV109_LASER      ability/POFV109_LASER.png              8x8 
+POFV109_LASER360      ability/POFV109_LASER360.png          16x14
+POFV109_LASER360_FULL ability/POFV109_LASER360_FULL.png       16x448
+POFV109_LASER358_FULL ability/POFV109_LASER358_FULL.png       16x448
+POFV109_LASER362_FULL ability/POFV109_LASER362_FULL.png       16x448
+POFV109_LASER362      ability/POFV109_LASER362.png          16x14
+POFV109_LASER358      ability/POFV109_LASER358.png          16x14
+POFV109_TIP9          ability/POFV109_TIP9.png              32x32
+POFV109_TIP_EFF      ability/POFV109_TIP_EFF.png          16x16
+POFV109_STAR317      ability/POFV109_STAR317.png          14x16
+POFV109_CAIDAN       ability/POFV109_CAIDAN.png           64x16
+POFV109_CD00      ability/POFV109_CD00.png          8x8
+POFV109_CD01      ability/POFV109_CD01.png          8x8
+POFV109_CD02      ability/POFV109_CD02.png          8x8
+POFV109_CD03      ability/POFV109_CD03.png          8x8
+POFV109_CD04      ability/POFV109_CD04.png          8x8
+POFV109_CD05      ability/POFV109_CD05.png          8x8
+POFV109_CD06      ability/POFV109_CD06.png          8x8
+POFV109_CD07      ability/POFV109_CD07.png          8x8
+POFV109_CD08      ability/POFV109_CD08.png          8x8
+POFV109_CD09      ability/POFV109_CD09.png          8x8
+POFV109_CD10      ability/POFV109_CD10.png          8x8
+POFV109_CD11      ability/POFV109_CD11.png          8x8
+POFV109_CD12      ability/POFV109_CD12.png          8x8
+POFV109_CD13      ability/POFV109_CD13.png          8x8
+POFV109_CD14      ability/POFV109_CD14.png          8x8
+POFV109_CD15      ability/POFV109_CD15.png          8x8
+POFV109_LASER_CORE ability/POFV109_LASER_CORE.png        16x14
+POFV109_STAR       ability/POFV109_STAR.png             14x14
+# ★ 109 · **咲夜 C1 的弹 = 蓝飞刀** ✓（一手 = TH09 `pl02.png` 的 `(0,160,32,16)` ✓，owner 指的"第二行" ✓）
+#   ⚠ 该行在图里**有像素、但一手 anm 没把它声明成 sprite** ✗（32×16 那一族只有 `sprite24–27` = y=144 红 ✓）
+#   ⇒ ★ 已登记 ❓：脚本 469 的头注 ＋ `TUNING.md` ✓
+POFV109_C1K_KNIFE            ability/POFV109_C1K_KNIFE.png            32x16
 POFV109_BARRIER_DISC     ability/barrier/BARRIER_DISC.png         96x96
 POFV109_BARRIER_GLOW     ability/barrier/BARRIER_GLOW.png         128x128
 POFV109_C_RING           ability/cring/C_RING.png                 128x128
@@ -1314,11 +1353,12 @@ POFV109_C1S_F2               ability/POFV109_C1S_F2.png          62x14
 POFV109_C1S_F3               ability/POFV109_C1S_F3.png          62x14
 POFV109_C1S_HIT              ability/POFV109_C1S_HIT.png          14x14
 POFV109_BARRIER_FULL        ability/POFV109_BARRIER_FULL.png        72x72
-POFV109_C2M_BEAM           ability/POFV109_C2M_BEAM.png          768x32
 POFV109_C2S_FROG           ability/POFV109_C2S_FROG.png           30x30
 POFV109_C3_ORB                ability/bball/C3_ORB.png             62x62
 POFV109_C4_ORB_FADE           ability/bball/C4_ORB_FADE.png        30x30
 POFV109_C4_ORB_SOLID          ability/bball/C4_ORB_SOLID.png       30x30
+POFV109_C4_ORB2_FADE          ability/bball/C4_ORB2_FADE.png       30x30
+POFV109_C4_ORB2_SOLID         ability/bball/C4_ORB2_SOLID.png      30x30
 POFV109_BBALL_BORN           ability/bball/BBALL_BORN.png           8x8
 POFV109_BBALL_IDLE           ability/bball/BBALL_IDLE.png           8x8
 POFV109_BBALL_DIE            ability/bball/BBALL_DIE.png            8x8
@@ -1337,7 +1377,9 @@ MAGICSQUARE          local/th18.v1.00a/anm/effect/effect/eff_magicsquare.png   2
 #   ⚠ 必须写在 `ATLAS ATLAS_BOSS_AURA_RED` **段头之前** ✗（写进那段会被当成图集成员 ⇒
 #     报"显式段的成员要写 @x,y,WxH"⇒ 段内只许放成员行 ✓）。
 FOG_CIRCLE             ability/fog/FOG_CIRCLE.png                   256x256
-POFV109_C3M_LASER      ability/POFV109_C3M_LASER.png                254x14
+POFV109_C3M_LASER      ability/POFV109_C3M_LASER.png                16x14
+POFV109_C3M_LASER_CORE ability/POFV109_C3M_LASER_CORE.png           16x14
+POFV109_C4M_LASER      ability/POFV109_C4M_LASER.png                30x30
 POFV109_C3S_ORB        ability/POFV109_C3S_ORB.png                  14x14
 POFV109_C4S_BULLET     ability/POFV109_C4S_BULLET.png               8x8
 POFV109_C4M_STAR       ability/POFV109_C4M_STAR.png                 14x14
@@ -1350,6 +1392,7 @@ RED_AURA_4             ability/boss_aura_red/RED_AURA_4.png        @192,0,48x48
 RED_AURA_5             ability/boss_aura_red/RED_AURA_5.png        @240,0,48x48
 RED_AURA_6             ability/boss_aura_red/RED_AURA_6.png        @288,0,48x48
 RED_AURA_7             ability/boss_aura_red/RED_AURA_7.png        @336,0,48x48
+
 # ★ 2026-10-17（摘回 1d41bcdb 的 84 向日葵 / 85 金盏花；帧数与缩放按 9b623ff1 的平衡）：
 #   PvZ1 原版待机动画 —— 向日葵 **27 帧**、金盏花 **24 帧**（9b623ff1：「待机动画加密提速」，
 #   每帧停 4 game frame ⇒ 108 / 96 帧 ≈ 1.8 / 1.6 s；此前是 9 帧 × 18 = 2.7 s）。
@@ -1412,3 +1455,34 @@ MG_21                   ability/marigold/MG_21.png                  128x128
 MG_22                   ability/marigold/MG_22.png                  128x128
 MG_23                   ability/marigold/MG_23.png                  128x128
 MG_24                   ability/marigold/MG_24.png                  128x128
+ATLAS ATLAS_POFV109_LASER 256x32@1x2
+POFV109_LASER528      ability/POFV109_LASER528.png          256x16
+POFV109_LASER527      ability/POFV109_LASER527.png          256x16
+ATLAS ATLAS_POFV109_ASC 168x140@6x5
+POFV109_ASC_ls        ability/ascii/POFV109_ASC_ls.png 28x28
+POFV109_ASC_lk        ability/ascii/POFV109_ASC_lk.png 28x28
+POFV109_ASC_li        ability/ascii/POFV109_ASC_li.png 28x28
+POFV109_ASC_ll        ability/ascii/POFV109_ASC_ll.png 28x28
+POFV109_ASC_ue        ability/ascii/POFV109_ASC_ue.png 28x28
+POFV109_ASC_lx        ability/ascii/POFV109_ASC_lx.png 28x28
+POFV109_ASC_ua        ability/ascii/POFV109_ASC_ua.png 28x28
+POFV109_ASC_lt        ability/ascii/POFV109_ASC_lt.png 28x28
+POFV109_ASC_la        ability/ascii/POFV109_ASC_la.png 28x28
+POFV109_ASC_lc        ability/ascii/POFV109_ASC_lc.png 28x28
+POFV109_ASC_ub        ability/ascii/POFV109_ASC_ub.png 28x28
+POFV109_ASC_uo        ability/ascii/POFV109_ASC_uo.png 28x28
+POFV109_ASC_us        ability/ascii/POFV109_ASC_us.png 28x28
+POFV109_ASC_lv        ability/ascii/POFV109_ASC_lv.png 28x28
+POFV109_ASC_nlb       ability/ascii/POFV109_ASC_nlb.png 28x28
+POFV109_ASC_nrb       ability/ascii/POFV109_ASC_nrb.png 28x28
+POFV109_ASC_ln        ability/ascii/POFV109_ASC_ln.png 28x28
+POFV109_ASC_0        ability/ascii/POFV109_ASC_n0.png 28x28
+POFV109_ASC_1        ability/ascii/POFV109_ASC_n1.png 28x28
+POFV109_ASC_2        ability/ascii/POFV109_ASC_n2.png 28x28
+POFV109_ASC_3        ability/ascii/POFV109_ASC_n3.png 28x28
+POFV109_ASC_4        ability/ascii/POFV109_ASC_n4.png 28x28
+POFV109_ASC_5        ability/ascii/POFV109_ASC_n5.png 28x28
+POFV109_ASC_6        ability/ascii/POFV109_ASC_n6.png 28x28
+POFV109_ASC_7        ability/ascii/POFV109_ASC_n7.png 28x28
+POFV109_ASC_8        ability/ascii/POFV109_ASC_n8.png 28x28
+POFV109_ASC_9        ability/ascii/POFV109_ASC_n9.png 28x28

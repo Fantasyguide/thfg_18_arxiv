@@ -2497,8 +2497,8 @@ def _pofv109_sets(target_file: str, anm_ids: dict) -> list:
                  # ★★ 2026-10-12 **按 owner 原话与一手正文定案**：★「它应当是**碰到敌人爆炸**」✓
                  #   ⇒ ★ `func_on_hit` 从 **4 改成 0** ✓：
                  #     · `hit0` = 「**interrupt(1) 播爆炸、不建伤害源**」✓ ⇒ ★ 它正好触发
-                 #       **我们脚本自己的 `interruptLabel(1)`** ✓（★ 448 里那支 = 一手"**爆开那支**"✓，
-                 #       见 `assets/ability/scripts/448_pofv109_c2s_frog.anm.txt:20-24` ✓）；
+                 #       **我们脚本自己的 `interruptLabel(1)`** ✓（★ 447 里那支 = 一手"**爆开那支**"✓，
+                 #       见 `assets/ability/scripts/447_pofv109_c2s_frog.anm.txt:20-24` ✓）；
                  #     · ★ 而行的 `damage = 22` **本来就照常给伤害** ✓ ⇒ ★ 伤害没丢 ✓；
                  #     · ★ 原来那个 `hit4`（= 建**伤害源子体** ✓）**没有那下爆炸** ✗ ⇒ 与 owner 的描述不符 ✗。
                  func_on_init=0, func_on_tick=0, func_on_draw=0, func_on_hit=0)

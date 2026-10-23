@@ -211,11 +211,19 @@ t[0] = 1; t[1] = 2; *(float *)&t[2] = 2.0f; t[3] = 0; t[4] |= 1u;
 | `flags_lo` bit5 `0x20` | 同上，且进锁定黑名单（`CE_ENEMY_FLAG_NO_LOCK` `0x0c000021`）| ❌ 打不到 + 不可锁定 |
 | `flags_lo` bit4 `0x10` | 排除计数（`test 0x31`）+ 只累加忽略伤害（`0x42f2b9`）| ⭕ 等价于 `invuln > 0`：命中算、血不掉 |
 | `invuln_timer > 0`（本文主角）| 同上 + 每帧递减 | ⭕ 同上；多两条原生写点（出生 2 帧 / ECL 515）|
-| `no_hitbox_timer` `enemy+0x6330` | ECL opcode 541 `noHitboxDur` 写 | ❌ 本 build 只递减、无人读（死字段）|
+| `no_hitbox_timer`（`zTimer` @ `enemy+0x6330`）| ECL opcode 541 `noHitboxDur` 写 `.current`（`+0x6334` = `zEnemyData+0x5108`）| **✅ 有读者**（旧结论订正，见下注）：`0x42f51c` 是体术段前置闸 ⇒ 不是死字段 |
 | `flags_hi` bit2 `enemy+0x6360` | 析构时不 `dec enemy_count_real`（`0x42d2da`）| ❌ 出生照样 `inc`（`0x42d9ef`）⇒ 只会泄漏计数；且全 exe 无人写这一位 🟡 |
 | 摘 `node_in_global_storage` `enemy+0x1514` | 从 `mgr+0x18c` 摘链 | ❌ tick 与计数共用这条链（`0x42df99`）⇒ 摘了就不 tick |
 | `hurtbox_size = 0`（`enemy+0x133c`）| 受击盒关掉（`0x42f10a`）| ❌ 打不到 |
 | `spawn+0x14 >= 1000` | 置 `flags_lo` bit30 进锁定黑名单（`0x42d8f6`）| ❌ 不可锁定 |
+
+> **★ 2026-10-20 订正（`no_hitbox_timer` 不是死字段）**：读者就是
+> `0x42f51c cmp dword ptr [ebx+0x5108],0 / jg 0x42f69f` —— `EnemyData__step_game_logic 0x42ed40`
+> **体术段的前置闸**（`ebx = zEnemyData`），`> 0` ⇒ 整段接触致伤（含三个几何判定）跳过，
+> 而它**不在**伤害段的两道闸（`0x42f101 test cl,0x21` / `0x42f2b9 test cl,0x10`）里 ⇒
+> 「无体术、但照样可被打中 / 可锁定 / 计数照常」的正解杠杆。⚠ 写 `.current` **只管当帧**：
+> 每帧 `0x4301f3` 会调 `Timer__decrement 0x409750`，而它是
+> `current = (int)(current_f - speed)` 重算出来的（`current_f` = `+0x6338`）⇒ 要跨帧必须两格一起写。
 
 ### 5.3 真正的落点
 
