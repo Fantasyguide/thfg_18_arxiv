@@ -19,9 +19,9 @@ script script462 {
 //   ② `blendMode(0)` = 普通 alpha 混合 ⇒ 深蓝/深红是"**压暗**"而不是加亮 ✓（贴合"霸气/雾"的观感 ✓；
 //      一手此处未核 ⇒ 标 ❓）。
     sprite(@FOG_CIRCLE);
-    layer(6);
+    layer(21);   /* ★ 2026-10-25 一手（`08-bosscard-et-color-layer.md`）：带色层在 **21** ✓ */
     type(1);
-    blendMode(0);
+    blendMode(4);   /* ★ 同上：一手那层颜色是 **blendMode(4) 反色/差值** ✓（原来 0 普通混合 ✗）*/
     alpha(255);
     stop();
 }
