@@ -1,33 +1,96 @@
-# 08 — TH18 符卡「红/蓝晕光」= `et` 特效（`BossCard6_et` / `BossCard6_et2`）
+# 08 — TH18 符卡「红/蓝晕光」= `et` 发射器 + anm 精灵（含 **blendMode / layer** 定案）
 
 > **版本**：TH18 v1.00a（`th18.exe`，imagebase `0x400000`）。裸地址默认属该版本。
-> **状态**：🟡 **进行中**（2026-10-22，目标 goal-ba5c1b97）。已定案的写 ✅，仍缺的写 ❓。
-> **与谁有关**：卡 109 C4「让自机看起来像 boss」的**颜色层**部分（扭曲层是另一件事）。
+> **状态**：✅ 定案（2026-10-22）。一手链路：exe 反汇编 + `th18.dat` 解包（thtk）+ ECL 反编译（thecl）+ anm 反编译（thanm）。
+> **与谁有关**：卡 109 C4「让自机看起来像 boss」的**颜色层**（扭曲层是另一件事，见 07-boss-aura-mesh）。
 
-## 0. 已定案（一手）
+## 0. 三句话结论
 
-| # | 结论 | 证据 |
+1. **那层红/蓝不是 aura mesh，也不是一张"光环贴图"** —— 它是**符卡 ECL 里的 `et` 发射器子程序**
+   （`BossCard6_et` / `BossCard6_et2`，在 **`st07bs.ecl`** 里有定义），发射器内部是 **16 台 anm VM** 的池，
+   每台跑 `effect.anm` 里的一个 **sprite 脚本**。
+2. **混合模式**：主要那台 sprite 脚本写 **`blendMode(4)`**（anm opcode **303**）⇒ RGB 走
+   `SRCBLEND=INVDESTCOLOR(10)`、`DESTBLEND=INVSRCCOLOR(4)`、`BLENDOP=ADD(1)`（"反色/差值"混合）；
+   **alpha 恒为 `Aa' = Sa`**（TH18 分离 alpha 混合，与 blendMode 无关 —— 见 [07](07-blendmode-rgb-only-alpha-is-sa.md)）。
+3. **layer**：主要 sprite 写 **`layer(21)`**（anm opcode **304**）；另一个 sprite 写 **`layer(5)`**。
+
+## 1. 一手链路（可复现）
+
+```
+thdat -x 18 th18.dat st07bs.ecl     # 取出第 7 关 boss 的 ECL
+thecl -d 18 st07bs.ecl              # 反编译 ⇒ 找到 void BossCard6_et() / BossCard6_et2()
+thdat -x 18 th18.dat effect.anm
+thanm -l 18 effect.anm              # 反编译 ⇒ script33 / script18 …
+```
+
+**exe 侧**（谁在什么时候调这个子程序）：
+
+| 一手 | 说明 |
+| --- | --- |
+| `0x4b651c` = `"BossCard6_et"`、`0x4b652c` = `"BossCard6_et2"` | 全 exe 只有这两个名字（`BossCard` 前缀）✓ |
+| `0x439153` `push 0x4b651c` → `0x439168 call 0x42d7d0` | 按名字**创建/调用**；参数结构在 `[esp+0x4c]`（含 `0x2710`=10000 等） |
+| `0x42d7d0` → `push 0x683c` / `call 0x48dc71`（分配）/ `call 0x42e100(obj,name)` | 建一个 **0x683c 字节**对象 |
+| `0x42e1a0`–`0x42e1c3`：`ebx=0x10`，每次 `memset(edi,0,0x488)`，`edi += 0x488` | ⇒ 内部是 **16 台 anm VM（16×0x488）** |
+| `0x48d920(this, name)` | 名字→脚本的**二分查找**（表在 `mgr+0x188`，`+8`=个数，`+0x8c`=指针数组，元素步长 8，逐字节比较） |
+
+## 2. 画法（sprite / 几何）
+
+`st07bs.ecl` 的 `BossCard6_et()`（opcode 名按 [`th16/06-settings`](../th16/06-settings.md) 的 anm 表）：
+
+```
+ins_502(303);                                   // ❓ 未定名（303 也是 blendMode 的 opcode 号，需注意别混）
+ins_600(1);  ins_607(1,3);  ins_602(1,33,6);    // etNew / et* setter：槽 1，sprite=33，count=6（🟡 参数位序）
+ins_606(1,1,1);  ins_604(1,0.0f,0.5235988f);    // 🟡 角度/相位类
+ins_605(1,3.2f,1.0f);
+ins_611(1,0,1048576,1,-9999994,…);              // 🟡 参数/插值
+ins_611(1,0,4194304,10,1,1.0f,3.0f);            //   （10 帧、1.0→3.0）
+ins_611(1,0,4194304,60,1,3.0f,0.3f);            //   （60 帧、3.0→0.3 = 扩散后收缩）
+ins_611(1,0,1024,0,-9999994,…);
+$A=8; loop { ins_604(1,[-9998],0); ins_605(1,([-9999]*0.5)+0.4,0); ins_601(1); }   // 8 帧渐显
+… 再来一组 sprite=18/count=6（layer 见下）、sprite=1/count=2 …
+```
+
+对应的 **sprite 脚本**（`effect.anm`）：
+
+| 脚本 | 关键指令 | 含义 |
 | --- | --- | --- |
-| ✅1 | 那层颜色是**独立的 `et` 特效**，**不是** aura mesh 的一部分 | exe 里只有两个字符串 `BossCard6_et`(`0x4b651c`)、`BossCard6_et2`(`0x4b652c`)；`th18.dat` 里**全部 55 个 .anm 解出来搜过 ⇒ 零命中** |
-| ✅2 | 它由 **`0x42d7d0(this=效果管理器, name, params)`** 创建：`push 0x683c` 申请 **0x683c 字节**实例 → `0x42e100(obj, name)` 初始化；随后把 `params` 里的位置（两个 float）写 `+0x12b4`、`+0x12bc`、`+0x621c`、`+0x6220`、`+0x6224` | `0x42d7d6`/`0x42d7ed`/`0x42d7f7`–`0x42d82f` |
-| ✅3 | **实例内部是一池 16 台 anm VM**：`0x42e1a0` 处 `ebx=0x10` 的循环，每次 `push 0x488 / push 0 / push edi / call 0x48f8f0`（memset）后 `edi += 0x488` ⇒ **16 × 0x488** 的 VM 槽 | `0x42e1a0`–`0x42e1c3` |
-| ✅4 | 名字是**运行时按表二分查找**解析的：`0x48d920(this=效果, name)` 在 `[this+0x1218]` 指向的表里二分（`+8`=个数、`+0x8c`=指针数组、元素步长 8、字符串逐字节比较） | `0x48d920`–`0x48d9xx`；表来自效果管理器 `+0x188`（`0x42e431`） |
-| ✅5 | **混合模式（机制层）**：TH18 的 anm 精灵绘制**永远**开分离 alpha 混合 —— `SEPARATEALPHABLENDENABLE=1`、`SRCBLENDALPHA=ONE`、`DESTBLENDALPHA=ZERO`、`BLENDOPALPHA=ADD` ⇒ **`Aa' = Sa`**；`blendMode(n)` **只改 RGB** 三个状态 | 见 [`07-blendmode-rgb-only-alpha-is-sa.md`](07-blendmode-rgb-only-alpha-is-sa.md)（`0x47d937`–`0x47d9a8`） |
+| **`script33`** | `ins_300(-1)` | `sprite(-1)` ⇒ **系统贴图**分支（负数走系统贴图，见 th16/06-settings §2.1） |
+| | **`ins_303(4)`** | ★ **`blendMode(4)`** |
+| | **`ins_304(21)`** | ★ **`layer(21)`** |
+| | `ins_404/405/406(…)` | 颜色/alpha（0、255、255,255,255 一类） |
+| | `ins_412(50,2,600.0f,600.0f)` + `+30: ins_407(20,2,0,0,0)` | 50 帧的尺寸/插值 |
+| **`script18`** | `ins_300(sprite6)` | 普通 sprite 6 |
+| | **`ins_304(5)`** | ★ **`layer(5)`**（在 21 之下） |
+| | `ins_402(16,192)` / `ins_400(128,384,0)` / `ins_415(0,0,0.02617994)` | 缩放 16→192、位置 (128,384)、每帧转 0.026 rad |
 
-⇒ 所以"红/蓝晕光"的画法 = **若干张带颜色的 anm sprite（顶点色/贴图 alpha）铺在场上**，
-RGB 按 `blendMode` 的二选一预设混合、**alpha 恒等于源 alpha（直接覆盖）**。
+⇒ **几何就是"若干张带颜色的四边形 sprite"**（每台 VM 一张），没有专门的 shader/后处理 ✓
 
-## 1. 仍缺（❓ 待一手）
+## 3. 混合模式（RGB 三条状态 + alpha）
 
-| 项 | 现状 | 下一步 |
-| --- | --- | --- |
-| ❓ `blendMode` 具体值 | 未读到 | 读该 et 脚本实例里的 blendMode 字段（或它注册时设的状态） |
-| ❓ 所在 **layer / 优先级数字** | 未读到 | 16 台 VM 由 anm 渲染器按层画 ⇒ 找出这些 VM 的 layer 来源（脚本字段 or 注册时传参） |
-| ❓ 用了几张 sprite、各自颜色 | 未读到 | 同上（脚本实例数组） |
-| ❓ 脚本本体在哪 | 名字表是**运行时表**；`th18.dat` 里搜不到名字 ⇒ 脚本可能是**exe 内建**或按索引取自 `effect.anm` | 追 `0x48d920` 的返回值怎么被使用（脚本指针） |
+`blendMode(4)` 的 RGB（表沿用 TH15 的实测表，TH18 同一函数族 ⇒ 🟡）：
 
-## 2. 已知的工具/环境
+| blendMode | SRCBLEND | DESTBLEND | BLENDOP | 结果 |
+| :-: | --- | --- | --- | --- |
+| **4** | `INVDESTCOLOR(10)` | `INVSRCCOLOR(4)` | `ADD(1)` | **反色/差值类**（颜色随底色与 sprite 底色一起决定 ⇒ 观感是"染上一层蓝/红"） |
+| （对照）0 | `SRCALPHA(5)` | `INVSRCALPHA(6)` | `ADD(1)` | 普通 alpha |
+| （对照）1 | `SRCALPHA(5)` | `ONE(2)` | `ADD(1)` | 加算（发光） |
 
-- `local/vendor/thtk` **在且已构建**（`build/thdat/thdat`、`build/thanm/thanm` 可用）
-- `thdat -l 18 <th18.dat>`：227 个条目；`.anm` **55 个**（含 `effect.anm`）
-- `thanm -l 18 effect.anm`：可导出该 anm 的完整文本（条目名是**贴图名**，如 `effect/eff_switch.png`）
+**alpha**：TH18 的 anm 绘制**恒开分离 alpha 混合**（`0xce←1`、`0xcf←ONE`、`0xd0←ZERO`、`0xd1←ADD`）
+⇒ **`Aa' = Sa`**（源 alpha 直接覆盖，和 Da、和 blendMode 都无关）—— 见 [07](07-blendmode-rgb-only-alpha-is-sa.md) ✅
+
+## 4. layer 的语义
+
+anm opcode **304 `layer(n)`** = `set_layer(vm, n & 0xff)`（`th16/06-settings` 一手，case `0x462950`）
+⇒ 之后由 anm 的层系统按层号画（见 [02-render-stages](02-render-stages.md) 的优先级表）。
+**本例：主层 = 21，副层 = 5。**
+
+## 5. 可信度与遗留
+
+| 项 | 可信度 |
+| --- | --- |
+| ECL 子程序名/内容、`BossCard6_et` 定义在 `st07bs.ecl` | ✅（thecl 反编译 + 原始字节里找得到字符串） |
+| sprite 脚本 → `blendMode(4)` / `layer(21)` / `layer(5)` | ✅（thanm 反编译，逐条） |
+| `0x42d7d0`/`0x42e100` 的实例结构与 16 台 VM 池 | ✅（反汇编） |
+| `blendMode 4` 的 D3D 常量映射 | 🟡（沿用 TH15 实测表；未在 TH18 上逐 case 复核） |
+| ECL `et*` 各 setter 的**参数位序**（`ins_602/604/605/606/607/611`） | 🟡（按 TH09 的九参族类推；未逐条在 TH18 上验证） |
+| `ins_502(303)` 的语义 | ❓ |
