@@ -1023,8 +1023,8 @@ static void pofv_hud_chg_claim(void)
  *     `t2 ≤ g < t3` ⇒ `"Skill"`；`t3 ≤ g < t4` ⇒ `"Ex.Attack Lv d"`；`g ≥ t4` ⇒ `"Boss Lv d"`
  *   ⇒ 与 owner 口径**逐字一致**：「C2 蓄到 C3（= 放手会放 C3）的时候，C2 的 skill 就消失」✓
  *   常驻：`"Lv d"`（浅灰）画在**第 3 / 第 4 档标的下方**（一手 y=448 到点提示 / 460 常驻 ⇒ 差 12【640×480】）。
- *   ⚠ 一手那两条**只在 `g < 该档阈值` 时才画**（越过就交给上面那行）；owner 要的是「**常驻**」
- *     ⇒ 本卡按 owner **恒显**（差异登记在 `TUNING.md` 的 ❓ 条目）✓
+ *   ★ 一手那两条**只在 `g < 该档阈值` 时才画**（越过就交给上面那行）—— owner 2026-10-24 确认：
+ *     「哦，确实是**没越过才画**」⇒ 本卡**照一手**（越过就不画）✓
  *   ⚠ **位置锚点**是 ❓自定：一手把到点提示的**左边**对齐标位 x（左对齐，上下文 `0x197a4 = 0`）——
  *     在本卡 448 px 宽的条上 `"Ex.Attack Lv1"`（13 字 × 16 = 208 px）从 0.68 标位（304 px）起会
  *     **溢出条右端 64 px** ⇒ 本卡改成**以条心居中**（到点提示）/ **以该标为中心**（常驻 lv）✓
@@ -1150,13 +1150,21 @@ static void pofv_hud_txt_frame(float bx, float fy, float fc, int kind, uint32_t 
                                "Boss Lv", lv4, POFV_HUD_TXT_BOSS_COL, tdim, &used);
     }
 
-    /* ② 常驻 lv：**C3 标下**与 **C4 标下**各一条（owner：「C3 和 C4 下面是常驻 lvN」✓）*/
+    /* ② **等级** `Lv d`：**C3 标下**与 **C4 标下**各一条，**只在还没越过该标时**才画 ✓
+     *   ★ owner 2026-10-24 定稿：「哦，确实是**没越过才画**」✓ —— 与一手逐字一致：
+     *     一手 `if (g < t3) queue(x(t3), 460, "Lv%d", lvl_ex+1);` / `if (g < t4) queue(x(t4), 460, "Lv%d", lvl_boss+1);`
+     *   ⇒ 越过之后该行**消失**，信息由上面那行（`Ex.Attack Lv d` / `Boss Lv d`）承担 ✓
+     *     （所以两条不会同时给同一档报两次等级 ✓）。*/
     {   const int lv3 = (s_c3_lv_n < 0 ? 0 : (s_c3_lv_n > 7 ? 7 : s_c3_lv_n)) + 1;
         const int lv4 = (s_c4_lv_n < 0 ? 0 : (s_c4_lv_n > 7 ? 7 : s_c4_lv_n)) + 1;
-        pofv_hud_txt_center_lv(bx + fw * POFV_HUD_CHG_TICK_AT(kind, 2), fy + POFV_HUD_TXT_DOWN,
-                               "Lv", lv3, POFV_HUD_TXT_LV_COL, tdim, &used);
-        pofv_hud_txt_center_lv(bx + fw * POFV_HUD_CHG_TICK_AT(kind, 3), fy + POFV_HUD_TXT_DOWN,
-                               "Lv", lv4, POFV_HUD_TXT_LV_COL, tdim, &used);
+        const float t3 = POFV_HUD_CHG_TICK_AT(kind, 2);
+        const float t4 = POFV_HUD_CHG_TICK_AT(kind, 3);
+        if (fc < t3)                                          /* ★ 一手 `g < t3` ✓ */
+            pofv_hud_txt_center_lv(bx + fw * t3, fy + POFV_HUD_TXT_DOWN,
+                                   "Lv", lv3, POFV_HUD_TXT_LV_COL, tdim, &used);
+        if (fc < t4)                                          /* ★ 一手 `g < t4` ✓ */
+            pofv_hud_txt_center_lv(bx + fw * t4, fy + POFV_HUD_TXT_DOWN,
+                                   "Lv", lv4, POFV_HUD_TXT_LV_COL, tdim, &used);
     }
 
     /* 池里剩下的全部隐掉（A=0；两路同写 —— 引擎的早退判据看两路 ✓）*/
@@ -9967,8 +9975,11 @@ static int on_tick_2(ce_card_t *c)
          *   （owner 要求：「把这台也加进去」✓；本块只**清 0**，重建在下面那节里 ✓ ⇒ 撞弹/复活后自愈 ✓）。
          *   ⚠ 顺带修一处**既有越界写**：本数组原声明为 `hs[16]`，而上面已经 push 了 19 个指针
          *   （3 + 4 + 3 + 6 + 3 = 19 ⇒ `hs[16..18]` 越界 ✗，写坏栈上相邻变量）⇒ 这里 16 → **32**。
-         *   19 + （底槽 1 + 蓝填充 1 + 白段 1 + 菱形标 4 + 越过光晕 4）= **30** ✓（≤ 32 ⇒ 仍有余量 ✓）。 */
-        int32_t *hs[32]; int nh = 0, ih;
+         *   19 + （底槽 1 + 蓝填充 1 + 白段 1 + 菱形标 4 + 越过光晕 4）= **30** ✓。
+         *   ★ 2026-10-24：再加 **HUD 文字池 24 台**（脚本 473 的字形 VM）⇒ 30 + 24 = **54**
+         *     ⇒ 数组 32 → **56**（撞弹/复活把文字 VM 收走时也能自愈 ✓ —— 不然句柄一直非 0、
+         *     池里那 24 台就再也不重建 ✗，正是 2026-10-08「连击条再也不出现」那个坑 ✓）。*/
+        int32_t *hs[56]; int nh = 0, ih;
         hs[nh++] = &s_hud_c2_vm; hs[nh++] = &s_hud_sp_frame_vm; hs[nh++] = &s_hud_sp_hit_vm;
         hs[nh++] = &s_hud_chg_label_vm; hs[nh++] = &s_hud_chg_cur_vm;
         hs[nh++] = &s_hud_chg_slash_vm; hs[nh++] = &s_hud_chg_max_vm;
@@ -9980,6 +9991,7 @@ static int on_tick_2(ce_card_t *c)
         hs[nh++] = &s_hud_chg_white_vm;                                                  /* ★ 蓄力槽：白段（= 蓄力比例）*/
         for (ih = 0; ih < POFV_HUD_CHG_TICKS; ++ih) hs[nh++] = &s_hud_chg_tick_vm[ih];   /* ★ 蓄力槽：C1..C4 四枚菱形 */
         for (ih = 0; ih < POFV_HUD_CHG_TICKS; ++ih) hs[nh++] = &s_hud_chg_halo_vm[ih];   /* ★ 光晕（电平起、电平删 ⇒ 被收走就清 0 ✓）*/
+        for (ih = 0; ih < POFV_HUD_TXT_VMS; ++ih) hs[nh++] = &s_hud_txt_vm[ih];          /* ★ HUD 文字：24 台字形 VM（脚本 473）*/
         for (ih = 0; ih < nh; ++ih)
             if (*hs[ih] && !ce_anm_get_vm((uint32_t)*hs[ih])) *hs[ih] = 0;
     }
