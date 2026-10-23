@@ -94,7 +94,7 @@ anm opcode **304 `layer(n)`** = `set_layer(vm, n & 0xff)`（`th16/06-settings` �
 | `blendMode 4` 的 D3D 常量映射 | 🟡（沿用 TH15 实测表；未在 TH18 上逐 case 复核） |
 | ECL `et*` 各 setter 的**参数位序**（`ins_602/604/605/606/607/611`） | 🟡（按 TH09 的九参族类推；未逐条在 TH18 上验证） |
 | `ins_502(303)` 的语义 | ❓ |
-| `sprite(-1)` = **不绑 sprite**；形状由 **`drawPoly(1.0f, 50)`** 程序生成 = **50 边形实心圆** | ✅（`script33` 里的 `ins_604(1.0f, 50)` + [`th16/09-drawing`](../th16/09-drawing.md) opcode 604；同族佐证 [`player/th16/02`](../../player/th16/02-season-release-and-bombs.md) `sprite(-1)+drawPoly(1.0f,32)`=实心圆、[`card/th18/13`](../../card/th18/13-mallet-clear-and-th17-charge.md) `drawPoly` 不消耗 sprite） |
+| `sprite(-1)` = **不绑 sprite**；形状由 **`drawPoly(1.0f, 50)`** 程序生成 = **50 边形实心圆** | ✅（`script33` 里的 `ins_604(1.0f, 50)` + [`th16/09-drawing`](../th16/09-drawing.md) opcode 604；同族佐证 `engine/player/th16/02-season-release-and-bombs.md` `sprite(-1)+drawPoly(1.0f,32)`=实心圆、`engine/card/th18/13-mallet-clear-and-th17-charge.md` `drawPoly` 不消耗 sprite） |
 
 
 ## 6. ❓ 唯一还缺的一手：`sprite(-1)` 时**程序怎么画那个形**
