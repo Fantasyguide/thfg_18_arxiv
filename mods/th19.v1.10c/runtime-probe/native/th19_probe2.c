@@ -32,7 +32,9 @@ static BYTE *g_base;
 static DWORD g_anchor_rva = 0;     /* ini 里配；0 = 未配置 */
 static int   g_scan_mode  = 0;     /* ini: scan=1 ⇒ 主动搜 ctx */
 static DWORD g_scan_next  = 0;
-static int   g_scan_left  = 30;   /* ★ 扫描预算：最多 30 次，用完就停（防止长时间占用/扰动） */     /* 下次扫描时间 */
+static int   g_scan_left  = 30;
+static int   g_hook_on     = 0;    /* ini: hook=1 ⇒ 在 0x502999 装钩子，记录段表字段地址 */
+static DWORD g_hook_field  = 0;    /* 钩子捕获到的 eax（= 段表字段地址，s 写入处） */
 static DWORD g_pat[4]      = {0, 0, 0, 0};  /* ini: pattern / pattern2 / pattern3 */
 static DWORD g_pat_rel     = 0;
 static DWORD g_pat_rel2    = 0;
@@ -161,6 +163,10 @@ static void scan_for_pattern(void)
 static void poll_once(void)
 {
     DWORD anchor, v;
+    if (g_hook_on && g_hook_field) {
+        dump_n("segtbl(r 在 +0x00)", g_hook_field - 0x20, 24);
+        return;
+    }
     if (g_scan_mode == 2) {
         DWORD now = GetTickCount();
         if (g_follow) {
@@ -203,6 +209,62 @@ static void poll_once(void)
             dump("enemy+0x1230+0x4e2c", v + 0x1230 + 0x4e2c);
         }
     }
+}
+
+
+/* ------------------------------------------------------------------ *
+ * 钩子：TH19 v1.10c 的 609 handler 里
+ *   th19:0x502999  f3 0f 11 00    movss [eax], xmm0     ← eax = 段表字段地址（s）
+ *   th19:0x50299d  89 4c 24 1c    mov [esp+0x1c], ecx
+ * 把这两条（共 8 字节）搬到 trampoline 里重放，同时用 A3 记下 eax。
+ * 入口先 pushfd/pushad、出口 popad/popfd ⇒ 通用寄存器全保；xmm 不碰 ⇒ xmm0 不变。
+ * 只读语义不变（原指令照样执行），唯一副作用是多记一个 DWORD。
+ * ------------------------------------------------------------------ */
+#define HOOK_RVA   0x102999u
+static const BYTE HOOK_EXPECT[8] = { 0xf3,0x0f,0x11,0x00, 0x89,0x4c,0x24,0x1c };
+
+static BOOL install_hook(void)
+{
+    BYTE *at = g_base + HOOK_RVA;
+    BYTE *stub;
+    BYTE *p;
+    DWORD old;
+    SIZE_T rel;
+    int i;
+
+    if (!readable(at, 8) || memcmp(at, HOOK_EXPECT, 8) != 0) {
+        probe_log("[hook] 0x%x 处原字节不匹配，拒绝安装。", HOOK_RVA);
+        return FALSE;
+    }
+
+    stub = (BYTE *)VirtualAlloc(NULL, 4096, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    if (!stub) { probe_log("[hook] VirtualAlloc 失败：%lu", GetLastError()); return FALSE; }
+
+    p = stub;
+    *p++ = 0x9C;                                  /* pushfd */
+    *p++ = 0x60;                                  /* pushad */
+    *p++ = 0xA3;                                  /* mov [imm32], eax */
+    *(DWORD *)p = (DWORD)(uintptr_t)&g_hook_field; p += 4;
+    *p++ = 0x61;                                  /* popad */
+    *p++ = 0x9D;                                  /* popfd */
+    for (i = 0; i < 8; i++) *p++ = HOOK_EXPECT[i]; /* 原两条指令 */
+    rel = (SIZE_T)(at + 8) - (SIZE_T)(p + 5);      /* 回到 0x5029a1 */
+    *p++ = 0xE9;
+    *(DWORD *)p = (DWORD)(int)rel; p += 4;
+
+    if (!VirtualProtect(at, 8, PAGE_EXECUTE_READWRITE, &old)) {
+        probe_log("[hook] VirtualProtect 失败：%lu", GetLastError());
+        VirtualFree(stub, 0, MEM_RELEASE);
+        return FALSE;
+    }
+    at[0] = 0xE9;
+    *(DWORD *)(at + 1) = (DWORD)((SIZE_T)stub - ((SIZE_T)at + 5));
+    at[5] = 0x90; at[6] = 0x90; at[7] = 0x90;
+    VirtualProtect(at, 8, old, &old);
+    FlushInstructionCache(GetCurrentProcess(), at, 8);
+
+    probe_log("[hook] 已安装 @ base+0x%x → stub %p（记录 eax = 段表字段地址）", HOOK_RVA, (void *)stub);
+    return TRUE;
 }
 
 static DWORD WINAPI poll_thread(LPVOID unused)
@@ -267,6 +329,7 @@ int __stdcall thcrap_plugin_init(void)
             else if (sscanf(line, "pattern3_rel=0x%lx", &x) == 1) { g_pat_rel3 = (DWORD)x; }
             else if (sscanf(line, "pattern4_rel=0x%lx", &x) == 1) { g_pat_rel4 = (DWORD)x; }
             else if (sscanf(line, "follow=%d", &g_follow_on) == 1) { /* 命中后持续跟踪 */ }
+            else if (sscanf(line, "hook=%d", &g_hook_on) == 1) { /* 装钩子 */ }
         }
         fclose(ini);
     }
@@ -293,6 +356,8 @@ int __stdcall thcrap_plugin_init(void)
     probe_log("anchor_rva = 0x%x / scan = %d / pat = %08x %08x %08x / follow = %d",
               g_anchor_rva, g_scan_mode, g_pat[0], g_pat[1], g_pat[2], g_follow_on);
     probe_log("字段：段表 = ctx+0x5ac → 元素 → +0x28；r=+0x00、s=+0x04；ctx = enemy+0x1230");
+
+    if (g_hook_on) install_hook();
 
     InterlockedExchange(&g_running, 1);
     g_thread = CreateThread(NULL, 0, poll_thread, NULL, 0, NULL);
