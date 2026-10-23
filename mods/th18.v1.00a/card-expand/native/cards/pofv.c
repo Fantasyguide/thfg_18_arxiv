@@ -7690,7 +7690,11 @@ static void pofv_c3s_tick(void)
                                b->x + s_c2_dir36[dj][0] * (len * 0.5f),
                                b->y + s_c2_dir36[dj][1] * (len * 0.5f), 0.0f);
                 ce_anm_set_scale((uint32_t)b->vm, len / 256.0f, 24.0f / 16.0f);
-                ce_anm_set_rotation((uint32_t)b->vm, 0.0f, 0.0f, b->ang);
+                /* ★★★ 2026-10-25 owner：「**整个一个激光在横着拍过去**」✗
+                 *   ⇒ 观察：竖向飞行时条是横的、横向飞行时条是竖的 ⇒ **恒定差 90°** ✗
+                 *   ⇒ 引擎这个 VM 的旋转**零点 = 朝上（竖）**（不是 +x）⇒ 要传 **θ − 90°** ✓
+                 *     （之前传 θ ⇒ 多转了 90°：竖着飞时条横、横着飞时条竖 = "横着拍过去" ✓）。*/
+                ce_anm_set_rotation((uint32_t)b->vm, 0.0f, 0.0f, b->ang - 1.5707963f);
             }
         }
         pos[0] = b->x; pos[1] = b->y; pos[2] = 0.0f;
