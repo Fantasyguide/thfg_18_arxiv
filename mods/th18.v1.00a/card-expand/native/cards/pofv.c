@@ -743,8 +743,15 @@ static const int POFV_HUD_CHG_GLOW_SPR[POFV_HUD_CHG_TICKS] = {
 #define POFV_HUD_CHG_FILL_COL    0xFF8080FFu
 /* ★ 白段 = **蓄力比例**（owner 规格 ② ✓）—— 一手附图里左端那段白；纯白 ✓。*/
 #define POFV_HUD_CHG_WHITE_COL   0xFFFFFFFFu
-/* 认领给 HUD 管理器的**外表**尺寸：条 12 + 刻度出头 12 = **24** ✓。 */
-#define POFV_HUD_BLOCK_H_TOTAL_SURF (POFV_HUD_CHG_BLOCK_H_SURF + POFV_HUD_CHG_TICK_UP)   /* 24 ✓ */
+/* 认领给 HUD 管理器的**外表**尺寸。
+ * ★★ 2026-10-24（HUD 文字落地）：从 **24 → 60** —— 文字要**占位**，否则会压在**上一行**的 HUD 块上 ✗。
+ *   60 = 上文字 16 ＋ 缝 2 ＋ 刻度出头 12 ＋ 条 12 ＋ 缝 2 ＋ 下文字 16 ✓
+ *   （`pofv_hud_txt_*` 的 `UP = 30` / `DOWN = 14` 就是按这个布局定的：
+ *    条顶 `fy` 上面留 30 = 16 + 2 + 12、下面留 18 = 2 + 16 ⇒ 块顶 = `fy − 30`、块底 = `fy + 30` ✓）。
+ *   ⚠ 影响面：**只**在 109 上场时把**上面那一行**的块整体抬高 36 px（货架重排，别的卡的块形/尺寸不变）✓ */
+#define POFV_HUD_BLOCK_H_TOTAL_SURF \
+    (POFV_HUD_CHG_BLOCK_H_SURF + POFV_HUD_CHG_TICK_UP + 2.0f + 16.0f + 2.0f + 16.0f)   /* 60 ✓ */
+#define POFV_HUD_CHG_BAR_ABOVE_TOTAL  30.0f   /* 条顶往上占的高度（= 刻度出头 12 ＋ 缝 2 ＋ 上文字 16）✓ */
 static int32_t s_sp;               /* 本侧 SP（0..999990 ✓）*/
 /* ★★★ 2026-10-08（交接 HANDOFF-109-HUD-STATE §3 的唯一 P0）：**HUD 的 VM 必须起在「UI 列表」** ✓
  *   —— 世界列表版（`ce_anm_spawn`）是给**场上效果**的 ✗；我原先用错了 ⇒ 整组 HUD 落在**屏幕中间** ✗
@@ -975,7 +982,7 @@ static void pofv_hud_chg_claim(void)
     if (blk.w < POFV_HUD_CHG_BLOCK_W_SURF) blk.w = POFV_HUD_CHG_BLOCK_W_SURF;   /* 兜底：不小于条本身 */
     /* ★ 2026-10-11 第二轮：块高 = 条 **12** + 刻度出头 `TICK_UP`(**12**) = **24** ✓
      *   （一手常显态是 4×24 的菱形 ⇒ 要整个落在块里；推法/上抬影响见该宏处注释 ✓）*/
-    blk.h = POFV_HUD_BLOCK_H_TOTAL_SURF;     /*  24 = 12 + 12 ✓ */
+    blk.h = POFV_HUD_BLOCK_H_TOTAL_SURF;     /*  60 = 上文字 16 + 缝 2 + 刻度 12 + 条 12 + 缝 2 + 下文字 16 ✓ */
     blk.side = CE_HUD_SIDE_LEFT;       /* 走底部货架（owner：「冲突是已知问题，就这么做」⇒ 不为避让改位置 ✓）*/
     /* ★★★ 2026-10-03k（owner：「109 的槽位是**水平几乎占满整个宽度**的，他的**优先级最高摆在最下面**」）
      *   ＋ 2026-10-03p 修正（owner 实跑：「**左下角占不满，应当往上面走**」）：
@@ -10020,7 +10027,11 @@ static int on_tick_2(ce_card_t *c)
              *   先前用 1280/申领槽算 ⇒ 位置落在 640 空间里偏到 ~828 ⇒ ★ 就是你看到的"**画出去了**" ✓。
              *   ⇒ ★ `fx = 游玩区中心(640 空间 = 320) − 半宽(452 ÷ 2 ÷ 2 = 113)` = **207** ✓。*/
             const float fx = POFV_HUD_PLAY_CX - POFV_HUD_CHG_BLOCK_W_SURF * 0.25f;
-            const float fy = s_hud_chg_slot.y - POFV_HUD_CHG_BLOCK_H_SURF;   /* 块底对齐 ✓ */
+            /* ★ 2026-10-24：块从 24 长到 60（要给 HUD 文字留位）⇒ 条顶不再是「块底 − 12」✗，
+             *   而是「块顶 + 30」（= 上文字 16 + 缝 2 + 刻度出头 12）✓ ——
+             *   换算成块底就是 `slot.y − (60 − 30) = slot.y − 30` ✓。*/
+            const float fy = s_hud_chg_slot.y
+                           - (POFV_HUD_BLOCK_H_TOTAL_SURF - POFV_HUD_CHG_BAR_ABOVE_TOTAL);
             pofv_hud_charge_bar(fx, fy, ratio_rei, ratio_chg);
         }
     }
