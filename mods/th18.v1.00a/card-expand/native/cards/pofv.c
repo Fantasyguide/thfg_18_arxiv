@@ -1142,9 +1142,10 @@ static void pofv_hud_txt_frame(float bx, float fy, float fc, int kind, uint32_t 
     /* ① 到点提示：只有**越到第 2 档及以后**才有名字（第 1 档一手也不画 ✓）。
      *   ★ 第 2 档 = 放手放 C2 ⇒ `"Skill"`；第 3 档 = C3 ⇒ `"Ex.Attack Lv d"`；
      *     第 4 档 = C4 ⇒ `"Boss Lv d"`（一手三条格式串逐字 ✓）。
-     *   ★ 等级取 `s_c3_lv_n` / `s_c4_lv_n`**原值**（0..7，**不加 1** ✗）—— 一手是 `(int)piVar7 + 1`，
-     *     ★ 但那是因为**一手表里存的是 0 基下标**；本卡这两个量**本身就是显示等级**
-     *     （初值 C3 = 1 ⇒ `Lv1`、C4 = 3 ⇒ `Lv3`，owner 2026-10-24：「开局一手应当是 lv1，C4 应当是 lv3」✓）。
+     *   ★ 等级：**内部 0..7，显示 `+1`**（= 一手 `(int)piVar7 + 1` ✓）—— owner 2026-10-24：
+     *     「一手的内部等级应当是 0-7，显示等级是 1-8，内部等级最好是按照 0-7，照一手搞」✓
+     *     ⇒ 本卡的 `s_c3_lv_n` / `s_c4_lv_n` 也改成**0 基内部等级**（初值 C3 = 0 ⇒ `Lv1`、C4 = 2 ⇒ `Lv3`；
+     *       Lunatic = 4 / 4 ⇒ 显示 `Lv5` / `Lv5`）✓
      *   ★★ owner 2026-10-24：「**上面位置应当是对应的 CN 标的上面**」✓
      *     ⇒ 水平位置 = **该档自己的标位 x**（C2/C3/C4 三枚菱形之一），**字符串以它为心** ✓
      *     —— 所以换个档时这句话会**跟着标跳过去**（不是恒在条心 ✗）；
@@ -1153,15 +1154,14 @@ static void pofv_hud_txt_frame(float bx, float fy, float fc, int kind, uint32_t 
         pofv_hud_txt_center_lv(bx + fw * POFV_HUD_CHG_TICK_AT(kind, 1), fy - POFV_HUD_TXT_UP,
                                "Skill", -1, POFV_HUD_TXT_SKILL_COL, tdim, &used);
     } else if (tier == 3) {
-        /* ★★ owner 2026-10-24：「开局一手应当是 **lv1**，C4 应当是 **lv3**」⇒ **不加 1** ✗
-         *   —— 本卡的 `s_c3_lv_n` / `s_c4_lv_n` **本身就是显示用的等级**（初值 C3 = 1、C4 = 3，
-         *   与一手开局的 lv1 / lv3 **同号** ✓）；一手的 `+1` 是因为它表里存的是 **0 基下标** ✗，
-         *   两者差一档，**别把那句话照抄到本卡** ✓。*/
-        const int lv3 = (s_c3_lv_n < 0 ? 0 : (s_c3_lv_n > 7 ? 7 : s_c3_lv_n));
+        /* ★★★ owner 2026-10-24 定稿：「一手的**内部**等级应当是 **0-7**，**显示**等级是 **1-8**，
+         *   内部等级最好是按照 0-7，照一手搞」✓ ⇒ 本卡改成 **内部 0 基 + 显示 `+1`** ✓
+         *   （此前是内部 1 基、显示原值 ✗ —— 与一手的基准差一档）。*/
+        const int lv3 = (s_c3_lv_n < 0 ? 0 : (s_c3_lv_n > 7 ? 7 : s_c3_lv_n)) + 1;
         pofv_hud_txt_center_lv(bx + fw * POFV_HUD_CHG_TICK_AT(kind, 2), fy - POFV_HUD_TXT_UP,
                                "Ex.Attack Lv", lv3, POFV_HUD_TXT_EX_COL, tdim, &used);
     } else if (tier >= POFV_HUD_CHG_TICKS) {
-        const int lv4 = (s_c4_lv_n < 0 ? 0 : (s_c4_lv_n > 7 ? 7 : s_c4_lv_n));
+        const int lv4 = (s_c4_lv_n < 0 ? 0 : (s_c4_lv_n > 7 ? 7 : s_c4_lv_n)) + 1;
         pofv_hud_txt_center_lv(bx + fw * POFV_HUD_CHG_TICK_AT(kind, 3), fy - POFV_HUD_TXT_UP,
                                "Boss Lv", lv4, POFV_HUD_TXT_BOSS_COL, tdim, &used);
     }
@@ -1171,9 +1171,9 @@ static void pofv_hud_txt_frame(float bx, float fy, float fc, int kind, uint32_t 
      *     一手 `if (g < t3) queue(x(t3), 460, "Lv%d", lvl_ex+1);` / `if (g < t4) queue(x(t4), 460, "Lv%d", lvl_boss+1);`
      *   ⇒ 越过之后该行**消失**，信息由上面那行（`Ex.Attack Lv d` / `Boss Lv d`）承担 ✓
      *     （所以两条不会同时给同一档报两次等级 ✓）。*/
-    /* ★ 同 ①：**不加 1**（本卡的 `s_c3_lv_n` / `s_c4_lv_n` 就是显示等级 ✓ owner 2026-10-24）*/
-    {   const int lv3 = (s_c3_lv_n < 0 ? 0 : (s_c3_lv_n > 7 ? 7 : s_c3_lv_n));
-        const int lv4 = (s_c4_lv_n < 0 ? 0 : (s_c4_lv_n > 7 ? 7 : s_c4_lv_n));
+    /* ★ 同 ①：内部 0 基 + 显示 `+1`（一手 ✓ owner 2026-10-24「内部 0-7、显示 1-8」）*/
+    {   const int lv3 = (s_c3_lv_n < 0 ? 0 : (s_c3_lv_n > 7 ? 7 : s_c3_lv_n)) + 1;
+        const int lv4 = (s_c4_lv_n < 0 ? 0 : (s_c4_lv_n > 7 ? 7 : s_c4_lv_n)) + 1;
         const float t3 = POFV_HUD_CHG_TICK_AT(kind, 2);
         const float t4 = POFV_HUD_CHG_TICK_AT(kind, 3);
         if (fc < t3)                                          /* ★ 一手 `g < t3` ✓ */
@@ -4270,13 +4270,19 @@ static void pofv_c1_tick(void)
  * ★ 清理（铁律「长持续效果删卡要交代」✓）：跨帧遗留物 = **每颗弹一台 VM** ⇒ `pofv_c3_clear()` 全真删 ✓
  *   （`on_ctor` / `on_run_reset` / `on_delete` 三路共用 `clear_card()` ✓；伤害源 life=2 自灭、无残留 ✓）。
  */
-#define POFV_C3_LEVEL_DEFAULT       1      /* ❓①：档索引 0..7（一手 = 每局按难度取常数）*/
+/* ★★★★ 2026-10-24（owner）：「一手的**内部**等级应当是 **0-7**，**显示**等级是 **1-8**，
+ *   内部等级最好是按照 0-7，照一手搞」✓ ⇒ 本卡这两个量**改成一手那套 0 基内部等级** ✗
+ *   （此前是 1 基、显示原值；现在：内部 0..7、**显示时 +1** ✓）。
+ *   ⇒ 开局显示 `Lv1` / `Lv3` ⇒ **内部 0 / 2** ✓；Lunatic 开局显示 `Lv5` / `Lv5` ⇒ **内部 4 / 4** ✓。
+ *   ⚠ 这两个量同时是**能力自己的 `level`**（弹幕档位 / 伤害表 / 图案逐次升级都按它取）
+ *     ⇒ 内部整体减 1 等于**复位到一手的基准**（此前等于比一手高了一档 ✗）。*/
+#define POFV_C3_LEVEL_DEFAULT       0      /* ★ 内部等级 0..7（一手 ✓）⇒ 显示 +1 = Lv1 */
 /* ★★★★★ 2026-10-13（★ owner 口径 ✓）：
  *   ★「★ **C4 的初始等级是 `max(3, 难度初始等级)`** ✓，★ **因为只有 Lv3 及以上的 C4 才会有符卡**」✓
- *   ⇒ ★ 难度初值就是上面那个 `POFV_C3_LEVEL_DEFAULT`（★ 一手每局按难度取常数 ✓，★ 实测 `∈{1,3}` ✓）
+ *   ⇒ ★ 难度初值就是上面那个 `POFV_C3_LEVEL_DEFAULT`（★ 一手每局按难度取常数 ✓）
  *   ⇒ ★ `max(3, 它)` ✓。★ 于是 **N/E 等难度下 C4 也从 Lv3 起** ✓（★ 才有符卡段 ✓）。
- *   ★ 若将来难度表细化（★ 一手的档位表 ★ 见 §10.2 ✓），★ 这个宏跟着它走 ✓。*/
-#define POFV_C4_LEVEL_DEFAULT       ((POFV_C3_LEVEL_DEFAULT) > 3 ? (POFV_C3_LEVEL_DEFAULT) : 3)
+ *   ★ 2026-10-24：整体改成**0 基内部等级** ⇒ 那个 `3` 也跟着变 **`2`**（= 显示 Lv3 ✓）。*/
+#define POFV_C4_LEVEL_DEFAULT       ((POFV_C3_LEVEL_DEFAULT) > 2 ? (POFV_C3_LEVEL_DEFAULT) : 2)
 #define POFV_C3_MAX_BULLETS        48      /* ❓自定：同屏弹池上限（一手无上限：最多 $D×$C = 4×8 = 32）*/
 #define POFV_C3_CARRIER_DY     (-128.0f)   /* ★ 一手 ✓ `ins_400(0.0f, 128.0f)`：环心 = 自机上方 128 */
 /* ★★★★ 2026-10-13（★ 独立审计 `a39d612c` §B ✓ 一手定死）：★ `120` = ★ **EX_ANGLE_ACCEL 的持续帧数 `a`** ✓
@@ -7573,21 +7579,22 @@ static void pofv_c3s_tick(void)
 }
 
 /* ★★★★ 2026-10-24（owner）：「对于 **lunatic** 难度，应该是开局 **C3 lv5**，**C4 开局 lv5**」✓
- *   一手那张「每局按难度取常数」的表，本卡此前只落了 `POFV_C3_LEVEL_DEFAULT`(=1) /
- *   `POFV_C4_LEVEL_DEFAULT`(=3) 两个**难度无关**的常量（一手实测过 `∈{1,3}`）。
- *   ⇒ 这里按难度分两支：**Lunatic（含 EX，❓ 待 owner 定音）⇒ 5 / 5**；其它难度**沿用原常量**。
+ *   一手那张「每局按难度取常数」的表，本卡此前只落了 `POFV_C3_LEVEL_DEFAULT` /
+ *   `POFV_C4_LEVEL_DEFAULT` 两个**难度无关**的常量（一手实测过 `∈{1,3}`，那时是 **1 基** ✗）。
+ *   ★ 2026-10-24 改成**一手那套 0 基内部等级**（显示 = 内部 + 1）⇒ Lunatic 显示 lv5 ⇒ **内部 4** ✓。
+ *   ⇒ 这里按难度分两支：**Lunatic（含 EX，❓ 待 owner 定音）⇒ 4 / 4（显示 5 / 5）**；其它难度走常量 ✓。
  *   ⚠ `clear_card()` 与 `on_load()` **两个初始化点都走这两个函数**（一手：换面 = 新一关要重置 ✓）。*/
 static int pofv_c3_lv_init(void)
 {
     const int d = ce_difficulty();      /* 0=E 1=N 2=H 3=L 4=EX（`engine.h:14` ✓）*/
-    if (d >= 3) return 5;               /* ★ Lunatic / EX ⇒ 5 ✓（owner 2026-10-24 亲眼）*/
-    return POFV_C3_LEVEL_DEFAULT;       /* 1 ✓ */
+    if (d >= 3) return 4;               /* ★ Lunatic / EX ⇒ **内部 4 = 显示 Lv5** ✓（owner 2026-10-24）*/
+    return POFV_C3_LEVEL_DEFAULT;       /* 内部 0 = 显示 Lv1 ✓ */
 }
 static int pofv_c4_lv_init(void)
 {
     const int d = ce_difficulty();
-    if (d >= 3) return 5;               /* ★ Lunatic / EX ⇒ 5 ✓ */
-    return POFV_C4_LEVEL_DEFAULT;       /* 3 ✓ */
+    if (d >= 3) return 4;               /* ★ Lunatic / EX ⇒ **内部 4 = 显示 Lv5** ✓ */
+    return POFV_C4_LEVEL_DEFAULT;       /* 内部 2 = 显示 Lv3 ✓ */
 }
 
 static void clear_card(ce_card_t *c)
