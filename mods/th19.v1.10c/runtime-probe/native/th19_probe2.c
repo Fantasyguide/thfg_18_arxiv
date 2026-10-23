@@ -591,7 +591,7 @@ int __stdcall thcrap_plugin_init(void)
 
     GetLocalTime(&st);
     probe_log("");
-    probe_log("=== th19_probe2 起 %04d-%02d-%02d %02d:%02d:%02d ===",
+    probe_log("=== th19_probe2 v3 起 %04d-%02d-%02d %02d:%02d:%02d ===",
               st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
     probe_log("exe  = %s", exe);
     probe_log("base = %p", (void *)g_base);
