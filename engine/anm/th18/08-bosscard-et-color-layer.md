@@ -54,7 +54,7 @@ $A=8; loop { ins_604(1,[-9998],0); ins_605(1,([-9999]*0.5)+0.4,0); ins_601(1); }
 
 | 脚本 | 关键指令 | 含义 |
 | --- | --- | --- |
-| **`script33`** | `ins_300(-1)` | ★ **`sprite(-1)` = 本次绘制【不画 PNG 贴图】**；形状由**程序绘制**产生（圆 / 长方形等，由程序控制）。颜色/alpha 仍由 `color()/alpha()` 乘上 |
+| **`script33`** | `ins_300(-1)` | ★ **`sprite(-1)` = 不绑 sprite（不画 PNG）**；形状由 **`ins_604(1.0f, 50)` = `drawPoly(半径1, 50 边)`** 程序生成 ⇒ **实心圆**（见 [`th16/09-drawing`](../th16/09-drawing.md)：604=`drawPoly`、605=`drawPolyBorder`、611=`drawRing`） |
 | | **`ins_303(4)`** | ★ **`blendMode(4)`** |
 | | **`ins_304(21)`** | ★ **`layer(21)`** |
 | | `ins_404/405/406(…)` | 颜色/alpha（0、255、255,255,255 一类） |
@@ -94,7 +94,7 @@ anm opcode **304 `layer(n)`** = `set_layer(vm, n & 0xff)`（`th16/06-settings` �
 | `blendMode 4` 的 D3D 常量映射 | 🟡（沿用 TH15 实测表；未在 TH18 上逐 case 复核） |
 | ECL `et*` 各 setter 的**参数位序**（`ins_602/604/605/606/607/611`） | 🟡（按 TH09 的九参族类推；未逐条在 TH18 上验证） |
 | `ins_502(303)` 的语义 | ❓ |
-| `sprite(-1)` = **本次绘制不画 PNG 贴图，形状由程序绘制**（owner 确认；圆的观感即程序画的圆） | ✅（语义）；❓（程序那段圆的**具体画法/边缘曲线**尚未读，是"复刻观感"唯一还缺的一手） |
+| `sprite(-1)` = **不绑 sprite**；形状由 **`drawPoly(1.0f, 50)`** 程序生成 = **50 边形实心圆** | ✅（`script33` 里的 `ins_604(1.0f, 50)` + [`th16/09-drawing`](../th16/09-drawing.md) opcode 604；同族佐证 [`player/th16/02`](../../player/th16/02-season-release-and-bombs.md) `sprite(-1)+drawPoly(1.0f,32)`=实心圆、[`card/th18/13`](../../card/th18/13-mallet-clear-and-th17-charge.md) `drawPoly` 不消耗 sprite） |
 
 
 ## 6. ❓ 唯一还缺的一手：`sprite(-1)` 时**程序怎么画那个形**
@@ -103,3 +103,23 @@ owner 口径：`sprite(-1)` = 本次绘制**不画 PNG**，形状由程序画（
 ⇒ 若要"复刻那层的观感"，必须读**程序画形的代码**：它决定了圆的**细分方式、半径映射、边缘 alpha 曲线**。
 这些在 `blendMode(4)`（`INVDESTCOLOR × INVSRCCOLOR + ADD`）下会直接影响观感 —— 用烤好的径向渐变去近似，
 差别就出在这里（**不是**混合模式错，是**形状/边缘**不同）。
+
+
+## 7. ✅ 定案补充（2026-10-22，来自 `engine/` 既有成果，不是新反汇编）
+
+`effect.anm` 的 **`script33`** 全文（`thanm -l 18 effect.anm`）：
+
+```c
+ins_300(-1);                    // sprite(-1)      —— 不绑 sprite（不画 PNG 贴图）
+ins_304(21);                    // layer(21)       —— 层 21
+ins_604(1.0f, 50);              // drawPoly(1, 50) —— ★ 半径 1 的 50 边形 = 实心圆
+ins_303(4);                     // blendMode(4)    —— 反色混合
+ins_403(0); ins_405(255); ins_404(255,255,255); ins_406(255,255,255);   // color/alpha
+ins_412(50, 2, 600.0f, 600.0f); // 50 帧的尺寸插值
++30: ins_407(20, 2, 0.0f, 0.0f, 0.0f);
+ins_3();
+```
+
+⇒ **那层"圆"是程序画的 50 边形**（不是贴图、不是烤图）✓
+⇒ 要复刻：`sprite(-1); layer(21); drawPoly(1.0f, 50); blendMode(4); color(...); alpha(...)`，
+再用 `scale`/`alpha` 做时间序列 ✓ —— **烤好的径向渐变在 `blendMode(4)` 下必然观感不同**（形状与边缘都不一样）✗
