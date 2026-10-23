@@ -679,6 +679,37 @@ static uint32_t yk_vm_spawn(void *anm, int script, int layer)
     return id;
 }
 
+/* ★★★ 2026-10-24（owner 报「**106 的『判定点不显示』被 108 覆盖了**」）—— **只写自己起的那支 VM**。
+ *
+ * 一手背景（三段：前两段在本文件之外，最后一段是本仓的既有教训）：
+ *   ① **判定点指示是引擎的东西**：`th18:0x45b433` 在**玩家 tick**（优先级 0x17）里
+ *      `cmp [player+0x476b0],0` ⇒ `0x45b450 call 0x405bf0`（`AnmLoaded__instantiate_vm_to_world_list_back`，
+ *      从 **EffectManager 的 effect.anm** = `[0x4cf2c8]+0xc` 起 **script 0x1a / layer 0xe**）⇒
+ *      `0x45b457` 把句柄写回 `player+0x476b0`；离开聚焦时 `interrupt_tree` + 句柄清 0。
+ *      ⇒ 它**不属于任何卡**；106（红魔乡）每帧把它的 alpha 写 0 来「不显示」（见 `th06rank.c` 的 ①）。
+ *   ② **引擎回收 VM id**：一支 VM 自删之后，同一个 id 会被**下一支** VM 重新用上；
+ *      而 `ce_anm_get_vm(旧 id)` 在复用之后**照样返回非 NULL**（`ufo.c:2081` 记着同一课：
+ *      「两道『上一批还在飞就不叠』的门原来靠句柄活性判定，而 VM id 会被引擎复用 ⇒ 门永久关上」）。
+ *   ③ 本文件有一批「**缓存 id** + 每帧写颜色 / 位置」的循环（刻符浮字、残影束、束根光斑……）。
+ *      它们原来只判 `ce_anm_get_vm(id)` 就算「还活着」⇒ 一旦那个 id 被引擎分给了**判定点指示**，
+ *      我们就会**每帧把 alpha / 位置写到判定点头上**（106 那一笔落在本帧绘制之后，见 `th06rank.c`
+ *      的相位注）⇒ 实跑表现 = 「装上 108 之后，106 隐藏的判定点又出现了」。
+ *
+ * ⇒ 判据升级成**身份**而不是**活性**：VM 现在跑的脚本号（`vm+0x28` = `CE_ANM_VM_SCRIPT_ID`）
+ *   必须还是**我们起它时那一支**。对不上 ⇒ 当作已死（调用方照原样重建，代价 = 少一支 VM 一帧）。
+ *   ⚠ 只判脚本号就够：判定点那支是 **effect.anm script 0x1a**，本卡起的全是 ability.anm /
+ *     自机 anm 的脚本（生成号段见 `pl_anm_ids.h` 与 `assets/build_*.py`），两支号段不重叠。
+ *   ⚠ 使用范围 = **脚本号在生到死之间不变**的池子（浮字 / 残影束 / 束根光斑）。
+ *     使魔跟随 VM 的脚本号会随**变体（kind / 侧）**变 ⇒ 那条路仍由它自己的 `yk_fam_vm_spawn` 判定。*/
+static int yk_vm_ours(uint32_t id, int script)
+{
+    uint8_t *vm;
+    if (!id) return 0;
+    vm = (uint8_t *)ce_anm_get_vm(id);
+    if (!vm) return 0;
+    return *(const int32_t *)(vm + CE_ANM_VM_SCRIPT_ID) == (int32_t)script;
+}
+
 /* ============================== 小工具 ============================== */
 static int yk_base_damage_cap(void)                       /* 照 76 guding.c：sht 头的每敌每帧上限基值 */
 {
@@ -6552,6 +6583,9 @@ typedef struct {
     float    x, y;
     uint32_t vm[YK_POPUP_GLYPHS];
     uint8_t  g[YK_POPUP_GLYPHS];
+    int16_t  script;     /* ★ 2026-10-24：起这批字形时用的脚本号（= `YK_GAUGE_SCRIPT_FONT[ch]`）。
+                          *   每帧写颜色/位置前用它做**身份**判据（`yk_vm_ours`）—— 引擎会回收 VM id，
+                          *   只判 `ce_anm_get_vm()` 会把**判定点指示**当成我们的浮字（owner 报的那条）。*/
 } yk_popup_t;
 static yk_popup_t s_popup[YK_POPUP_MAX];
 static unsigned s_popup_dropped;
@@ -6567,6 +6601,7 @@ static void yk_popup_kill(yk_popup_t *p)
         if (p->vm[i]) { ce_anm_delete(p->vm[i]); p->vm[i] = 0; }
     }
     p->used = 0; p->n = 0; p->age = 0;
+    p->script = 0;                      /* ★ 2026-10-24：句柄全清了 ⇒ 身份判据也清（防串到下一条浮字）*/
 }
 
 static void yk_popup_kill_all(void)
@@ -6650,6 +6685,7 @@ static void yk_popup_spawn(float x, float y, int32_t value, int kind, uint32_t c
     p->scale = scale;
     p->age = 0;
     p->x = x; p->y = y;
+    p->script = (int16_t)YK_GAUGE_SCRIPT_FONT[ch];   /* ★ 身份判据（见 `yk_popup_t.script` / `yk_vm_ours`）*/
     p->used = 1;
 }
 
@@ -6671,7 +6707,10 @@ static void yk_popup_tick(void)
             uint32_t id = p->vm[i];
             float gx = base_x + (float)i * step;
             int a, dx0, dy0;
-            if (!id || !ce_anm_get_vm(id)) { p->vm[i] = 0; continue; }
+            /* ★ 2026-10-24：**身份**判据（不是活性）—— 见 `yk_vm_ours` 的长注：
+             *   id 被引擎回收给别的 VM（典型 = 判定点指示 effect.anm script 0x1a）时，
+             *   `ce_anm_get_vm(id)` 仍非 NULL ⇒ 我们每帧把 alpha/位置写到它头上。*/
+            if (!yk_vm_ours(id, (int)p->script)) { p->vm[i] = 0; continue; }
             if (!ce_anm_set_pos(id, gx, p->y, 0.0f)) { p->vm[i] = 0; continue; }
             /* ★★★ 2026-09-30（**P0：浮字 UI「十分偏移」**，见 `AUDIT.md` §BE #162）：
              *   浮字 VM 用的 `YK_GAUGE_SCRIPT_FONT[]` 是**HUD 字形脚本**，它正文自带
@@ -10281,7 +10320,10 @@ static void __attribute__((noinline)) yk_beam_tick(yk_card_t *s)
             const float x = trail[k * 2 + 0];
             const float y = trail[k * 2 + 1];
             const int vis = (k < bars);
-            if (!s_beam_vm[u][k] || !ce_anm_get_vm(s_beam_vm[u][k])) {
+            /* ★ 2026-10-24：**身份判据**（`yk_vm_ours`）而不是活性 —— 引擎会回收 VM id，
+             *   只判 `ce_anm_get_vm()` 会把**判定点指示**（effect.anm script 0x1a）当成我们的束
+             *   ⇒ 每帧把它挪到膛口、染上束的 alpha（= owner 报的「106 的隐藏被 108 覆盖」）。*/
+            if (!yk_vm_ours(s_beam_vm[u][k], YK_BEAM_SCRIPT[tier])) {
                 s_beam_vm[u][k] = yk_vm_spawn(yk_player_anm(), YK_BEAM_SCRIPT[tier], YK_BEAM_ANM_LAYER);
                 if (!s_beam_vm[u][k]) {               /* 池满 ⇒ 这一帧到此为止 */
                     ++s_beam_dropped;                 /* ★ 记账：**只少一条观感**，见下面伤害那一段 */
@@ -10305,7 +10347,7 @@ static void __attribute__((noinline)) yk_beam_tick(yk_card_t *s)
          * 旋转 / scale 一律不碰（一写就把积分器与插值器打掉，光斑就不转了）。*/
         if (bars > 0) {
             ++want;                                   /* 光斑也是本帧想要的常驻 VM 之一 */
-            if (!s_beam_core[u] || !ce_anm_get_vm(s_beam_core[u])) {
+            if (!yk_vm_ours(s_beam_core[u], YK_BEAM_CORE_SCRIPT)) {   /* ★ 同上：身份判据 */
                 s_beam_core[u] = yk_vm_spawn(CE_ABILITY_ANM(), YK_BEAM_CORE_SCRIPT,
                                              YK_BEAM_CORE_ANM_LAYER);
                 if (!s_beam_core[u]) ++s_beam_dropped;    /* 池满 ⇒ 少一颗光斑（观感）*/

@@ -33889,3 +33889,60 @@ owner 给了上面的口径后**改成精确事件**（commit `65c0e178`，本�
   ⇒ 下一轮实跑直接对比"每帧摸了几槽 / 查了几次表"。
 - 一行撤销：`POFV_GRAZE_SCAN_PERIOD = 1`、`SIGNAL_GRAZE_SCAN_PERIOD = 1`、自检的 `60u → 1u`、
   `forced = 1`、`#if CE_DEV_DUMP >= 1` 改回无条件。
+
+## §BE-106-HITBOX-108-2026-10-25 ★★ 106 的「判定点不显示」被 108 覆盖（跨卡：106 + 108，**2026-10-25 修**）
+
+> 登记理由（`CLAUDE.md` §协作纪律 1）：本次动的是**106 / 108 两张系统卡**（不是我的卡），
+> owner 直接报的 bug ⇒ 必须逐条登记（文件 → 改了什么 → 为什么 → 谁改的 → 怎么验证的）。
+
+### 1. owner 口径（逐字）
+
+> 「**106 的效果是判定点不显示，这个不显示的效果被 108 覆盖了**」
+
+⇒ 目标 = **106 + 108 同装 ⇒ 判定点仍然不显示**。
+
+### 2. 一手（三段，全部有地址 / 文件:行）
+
+| # | 事实 | 出处 |
+| --- | --- | --- |
+| ① | 判定点指示 = **引擎**在**玩家 tick（UpdateFunc 优先级 0x17）**里建的 VM：聚焦且 `player+0x476b0 == 0` ⇒ `call 0x405bf0`（`AnmLoaded__instantiate_vm_to_world_list_back`）、`0x45b457` 写回句柄；离焦 ⇒ `interrupt_tree` + 清 0 | `th18:0x45b433` / `:0x45b450` / `:0x45b457`（本次反汇编复核） |
+| ② | 那支 VM 的 anm = **EffectManager 的 effect.anm**（`[0x4cf2c8]+0xc`），**script 0x1a**，脚本自己 `layer(18)` ⇒ **绘制优先级 0x28** | `engine/anm/th18/04-anm-slot-selection.md:101`（`0x4cf2c8` = EffectManager）+ `local/th18.v1.00a/anm/effect/effect.anm.txt` script26 + `engine/anm/th18/02-render-stages.md` §1 |
+| ③ | 本卡原来**只在 `on_draw`**（`AbilityManager__on_draw`，优先级 **0x33**）写 alpha ⇒ **晚于本帧那张图**（0x28 < 0x33）⇒ 只对**下一帧**有效 | `cards/th06rank.c` 的 `on_draw`（改前） |
+| ④ | 引擎**回收 VM id**：`ce_anm_get_vm(旧 id)` 在 id 被复用之后**照样返回非 NULL** | `cards/ufo.c:2081`（同一课）+ 本次 `youkai.c` 的注 |
+
+⇒ **根因（相位，不是值）**：106 的隐藏落在**绘制之后**；只要**任何一帧**在**更新相位**有人在那一格写回非 0，
+那一帧的判定点就会被画出来。108 的每帧 VM 写（刻符浮字 / 残影束 / 束根光斑）用的都是**缓存 id**、
+且只判 `ce_anm_get_vm()`（活性）⇒ 那个 id 一旦被引擎分给判定点，108 就每帧把 alpha / 位置写到判定点头上
+= owner 看到的「**106 的隐藏被 108 覆盖**」。
+
+### 3. 改动一览
+
+| # | 文件:符号 | 改了什么 |
+| --- | --- | --- |
+| 1 | `native/cards/th06rank.c` `t06_hide_hitbox_dot()`（新）| 把隐藏抽成一个函数：门序不变（游戏线程 / 自机 / 聚焦 / 句柄 / `ce_anm_get_vm` 五道），写 `color_1 = 0x00ffffff` **＋ alpha 插值器三格 `initial/goal/current = 0`**（`vm+0x140`；`engine.h` 一手：引擎每帧用 `current` 覆盖 `color_1.A`，`th18:0x47c7f2`）|
+| 2 | `native/cards/th06rank.c` `on_item_frame`（0x1e）| **新增调用**：ItemManager tick **晚于**所有卡的更新回调（`on_tick_2` = 0x16）与玩家 tick（0x17）、**早于全部绘制阶段**（玩家 0x1d、层 14 = 0x1f … 层 18 = 0x28）⇒ 这一笔是**本帧最后一笔** |
+| 3 | `native/cards/th06rank.c` `on_draw`（0x33）| 保留（幂等、兜底）；改为调用同一函数 + 探针 |
+| 4 | `native/cards/th06rank.c` `t06_dot_probe()` / `t06_dot_probe_reset()`（新）| **实跑判据**：`ce_log_key` 打 `T06R-DOT: frame … id … w … c1(alpha) a1i fl(visible)`；首帧 / 值变化 / 每 300 帧心跳，一局最多 200 行；`on_load` / `on_delete` / `on_run_reset` 归零 |
+| 5 | `native/cards/youkai.c` `yk_vm_ours()`（新）| **身份判据**（不是活性）：`vm+0x28`（当前脚本号）必须还是我们起它时那一支；对不上 ⇒ 当作已死（调用方照原样重建）|
+| 6 | `native/cards/youkai.c` 刻符浮字 `yk_popup_t` / `yk_popup_spawn` / `yk_popup_tick` / `yk_popup_kill` | 新增 `script` 字段（= 起这批字形用的脚本号），每帧写颜色 / 位置前用 `yk_vm_ours()` 判身份 |
+| 7 | `native/cards/youkai.c` 残影束 / 束根光斑（`s_beam_vm[][]` / `s_beam_core[]`）| 活性判据 `!ce_anm_get_vm()` → **`!yk_vm_ours(id, YK_BEAM_SCRIPT[tier])` / `!yk_vm_ours(id, YK_BEAM_CORE_SCRIPT)`** |
+| 8 | 本文 §BE + `CARD-CODE-106.md` | 登记 + 代码清单同步 |
+
+### 4. 为什么 106 与 108 不会再互相覆盖
+
+1. **106 这一侧**：0x1e 之后到层 18 的绘制（0x28）之间**没有任何卡回调**（卡回调只有 0x16 更新族与 0x33 绘制族）
+   ⇒ 106 那一笔落地后本帧没人能改回来。再加 alpha 插值器三格同写 0 ⇒ 引擎自己的每帧提交（`0x47c7f2`）
+   即使跑起来，写进去的也是 0。
+2. **108 这一侧**：三条每帧写 VM 的池子（浮字 / 残影束 / 束根）现在**只认自己起的脚本号**
+   ⇒ 引擎把那个 id 分给判定点（effect.anm script 0x1a）之后，108 会判「不是我的」⇒ **一个字节都不写**，
+   并按原逻辑重建自己的 VM（观感代价 = 少一支 VM 一帧；这三条本来就是"起不出来只少观感"的设计）。
+3. **删卡 / 换关**：106 的两笔只是「每帧写引擎 VM 的 alpha」，停写即恢复（VM 是引擎的，引擎自己维护）；
+   探针计数在 `on_delete` / `on_run_reset` 归零。108 的池子本来就在 `on_delete` / `on_run_reset` 里 `yk_*_kill` 收干净，
+   新增的身份判据**不新增任何跨帧状态**（`script` 随浮字槽一起被 `yk_popup_kill` 清零）。
+
+### 5. 怎么验证的
+
+- `make dll` rc=0（`CE_DEV_DUMP=0` 与 `=2` 两档都编过：探针在 0 档整段编译掉）；
+- `make test-host` rc=0（25 组单测全过）；
+- 实跑判据（owner）：装 106 + 108，按住 Shift ⇒ 判定点**不出现**；`CE_DEV_DUMP=1` 时日志里
+  `T06R-DOT:` 行的 `(alpha 00)` 与 `a1i=00000000` **恒定**；若某帧出现 `alpha ff` / `a1i≠0`，那一帧就是有人又在写这一格。
