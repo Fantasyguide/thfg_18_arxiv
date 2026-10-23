@@ -826,6 +826,17 @@ static void hud_text_draw(int pool, float x640, float y640, const char *str, flo
     for (i = used; i < POFV_HUD_TXT_MAX; ++i)          /* 剩下的藏起来 */
         if (vmp[i]) ce_anm_set_scale((uint32_t)vmp[i], 0.0f, 0.0f);
     *pn = used;
+    /* 2026-10-23 调试：每 60 帧打一次，确认 VM 建出来了、sprite id 与坐标对不对 */
+    if (used > 0 && ((s_card_frames % 60u) == 0u)) {
+        const uint32_t v0 = (uint32_t)vmp[0];
+        int32_t sp0 = -1;
+        if (v0) {   /* 头一个字的 sprite id（从 VM 里读不到，就报我们写进去的那个）*/
+            int i2 = 0; while (str[i2] && hud_asc_idx(str[i2]) < 0) ++i2;
+            sp0 = BASE + (hud_asc_idx(str[i2]) < 0 ? 0 : hud_asc_idx(str[i2]));
+        }
+        ce_log("pofv: [HUDTXT] pool=%d n=%d vm0=%u sprite0=%d str=%s x=%.1f y=%.1f sc=%.2f",
+               pool, used, (unsigned)v0, (int)sp0, str, (double)x640, (double)y640, (double)sc);
+    }
 }
 
 static ce_hud_number_t s_hud_sp_num;
