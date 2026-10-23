@@ -791,26 +791,31 @@ static int hud_asc_idx(char c)
     }
 }
 #define POFV_HUD_TXT_MAX 24
-static int32_t s_hud_txt_vm[POFV_HUD_TXT_MAX];
-static int     s_hud_txt_n;
+#define POFV_HUD_TXT_POOLS 3
+static int32_t s_hud_txt_vm[POFV_HUD_TXT_POOLS][POFV_HUD_TXT_MAX];
+static int     s_hud_txt_n[POFV_HUD_TXT_POOLS];
 /* 2026-10-23：C3/C4 等级（定义在文件后半）⇒ HUD 文字要先声明才能读 */
 static int s_c3_lv_n, s_c4_lv_n;
 /* ★ 2026-10-23：`s_c3_lv_n` / `s_c4_lv_n` 定义在文件后半（2575 行）⇒ HUD 文字要读它，先声明 ✓ */
-static void hud_text_draw(float x640, float y640, const char *str, float sc, uint32_t rgb)
+static void hud_text_draw(int pool, float x640, float y640, const char *str, float sc, uint32_t rgb)
 {
+    int32_t *vmp; int *pn;
+    if (pool < 0 || pool >= POFV_HUD_TXT_POOLS) pool = 0;
+    vmp = s_hud_txt_vm[pool]; pn = &s_hud_txt_n[pool];
+    (void)pn;
     const int BASE = CE_ANM_ABILITY_SPRITE_POFV109_ASC_LS;      /* = 904 */
     int i = 0, used = 0;
     if (sc <= 0.0f) sc = 1.0f;
     for (; str[i] && used < POFV_HUD_TXT_MAX; ++i) {
         const int idx = hud_asc_idx(str[i]);
         if (idx < 0) continue;
-        if (!s_hud_txt_vm[used]) {
-            s_hud_txt_vm[used] = (int32_t)hud_vm_spawn(
+        if (!vmp[used]) {
+            vmp[used] = (int32_t)hud_vm_spawn(
                 CE_ANM_ABILITY_SCRIPT_POFV109_HUD_CHARGE,
                 x640 + (float)used * 28.0f * sc, y640);
         }
-        if (s_hud_txt_vm[used]) {
-            const uint32_t v = (uint32_t)s_hud_txt_vm[used];
+        if (vmp[used]) {
+            const uint32_t v = (uint32_t)vmp[used];
             ce_anm_set_sprite(CE_ABILITY_ANM(), v, BASE + idx);
             ce_anm_set_pos(v, x640 + (float)used * 28.0f * sc, y640, 0.0f);
             ce_anm_set_scale(v, sc, sc);
@@ -819,9 +824,8 @@ static void hud_text_draw(float x640, float y640, const char *str, float sc, uin
         ++used;
     }
     for (i = used; i < POFV_HUD_TXT_MAX; ++i)          /* 剩下的藏起来 */
-        if (s_hud_txt_vm[i]) ce_anm_set_scale((uint32_t)s_hud_txt_vm[i], 0.0f, 0.0f);
-    s_hud_txt_n = used;
-    (void)s_hud_txt_n;
+        if (vmp[i]) ce_anm_set_scale((uint32_t)vmp[i], 0.0f, 0.0f);
+    *pn = used;
 }
 
 static ce_hud_number_t s_hud_sp_num;
@@ -1154,7 +1158,13 @@ static void pofv_hud_charge_bar(float fx, float fy, float ratio_rei, float ratio
         const float tx4 = fx + POFV_HUD_CHG_FILL_W * POFV_HUD_CHG_TICK_AT(kind, 3);
         /* ④ 常驻：C3 刻度下方 `lvN`（C4 刻度下方 `BOSS lvN` 待 owner 确认后再加）*/
         buf[0] = 'l'; buf[1] = 'v'; buf[2] = (char)('0' + lv); buf[3] = 0;
-        hud_text_draw(tx3, fy + POFV_HUD_CHG_BLOCK_H_SURF + 4.0f, buf, 0.45f, 0xffffffu);
+        hud_text_draw(1, tx3, fy + POFV_HUD_CHG_BLOCK_H_SURF + 4.0f, buf, 0.45f, 0xffffffu);
+        {   /* ④b：C4 刻度下方常驻 `BOSS lvN`（owner：「C4 也有 BOSS lv[]」）*/
+            char b2[16]; int k2 = 0;
+            b2[k2++]='B'; b2[k2++]='O'; b2[k2++]='S'; b2[k2++]='S'; b2[k2++]=' ';
+            b2[k2++]='l'; b2[k2++]='v'; b2[k2++]=(char)('0'+lv); b2[k2]=0;
+            hud_text_draw(2, tx4, fy + POFV_HUD_CHG_BLOCK_H_SURF + 4.0f, b2, 0.45f, 0xffffffu);
+        }
         /* ③ 蓄到刻度时，刻度**正上方**弹一行（同一时刻只显示最高的一档）：
          *   C4 ⇒ `BOSS lvN` / C3 ⇒ `Ex Attack lvN` / C2 ⇒ `skill`
          *   ❓ `[]` 的写法（`Ex Attack lv3` 还是 `Ex Attack lv[3]`）与 C4 的 `BOSS` 都待 owner 校。*/
@@ -1175,7 +1185,7 @@ static void pofv_hud_charge_bar(float fx, float fy, float ratio_rei, float ratio
                  * 其它两档才拼等级 ✓。*/
                 if (!(t[0] == 's' && t[1] == 'k')) t[n2++] = (char)('0' + lv);
                 t[n2] = 0;
-                hud_text_draw(ux, fy - 20.0f, t, 0.5f, 0xffffffu);
+                hud_text_draw(0, ux, fy - 20.0f, t, 0.5f, 0xffffffu);
             }
         }
     }
