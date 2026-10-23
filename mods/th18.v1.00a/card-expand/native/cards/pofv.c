@@ -774,6 +774,53 @@ static uint32_t hud_vm_spawn(int script, float x640, float y640)
     return ce_anm_spawn_ui(CE_ABILITY_ANM(), script, p);
 }
 
+/* ★★★ 2026-10-23 卡 109：HUD 文字（TH19 字形，sprite 904..930）。
+ *   一手：TH19 `data/ANM/ascii/ascii_1280.png` 的 sprite(ord(c)-32)，28x28 一格。
+ *   卡里只切了 27 个字符（entry 上限 256 已用 227）：
+ *     s k i l E x A t a c B O S v [ ] n 0 1 2 3 4 5 6 7 8 9
+ *   ⇒ sprite = 904 + 序号。★ 每字一台 VM，复用 HUD_CHARGE 脚本，每帧盖写 sprite/pos/scale/color。*/
+static int hud_asc_idx(char c)
+{
+    switch (c) {
+    case 's': return 0;  case 'k': return 1;  case 'i': return 2;  case 'l': return 3;
+    case 'E': return 4;  case 'x': return 5;  case 'A': return 6;  case 't': return 7;
+    case 'a': return 8;  case 'c': return 9;  case 'B': return 10; case 'O': return 11;
+    case 'S': return 12; case 'v': return 13; case '[': return 14; case ']': return 15;
+    case 'n': return 16;
+    default: return (c >= '0' && c <= '9') ? (17 + (c - '0')) : -1;
+    }
+}
+#define POFV_HUD_TXT_MAX 24
+static int32_t s_hud_txt_vm[POFV_HUD_TXT_MAX];
+static int     s_hud_txt_n;
+static void hud_text_draw(float x640, float y640, const char *str, float sc, uint32_t rgb)
+{
+    const int BASE = CE_ANM_ABILITY_SPRITE_POFV109_ASC_LS;      /* = 904 */
+    int i = 0, used = 0;
+    if (sc <= 0.0f) sc = 1.0f;
+    for (; str[i] && used < POFV_HUD_TXT_MAX; ++i) {
+        const int idx = hud_asc_idx(str[i]);
+        if (idx < 0) continue;
+        if (!s_hud_txt_vm[used]) {
+            s_hud_txt_vm[used] = (int32_t)hud_vm_spawn(
+                CE_ANM_ABILITY_SCRIPT_POFV109_HUD_CHARGE,
+                x640 + (float)used * 28.0f * sc, y640);
+        }
+        if (s_hud_txt_vm[used]) {
+            const uint32_t v = (uint32_t)s_hud_txt_vm[used];
+            ce_anm_set_sprite(CE_ABILITY_ANM(), v, BASE + idx);
+            ce_anm_set_pos(v, x640 + (float)used * 28.0f * sc, y640, 0.0f);
+            ce_anm_set_scale(v, sc, sc);
+            ce_anm_set_color(v, 0xff000000u | (rgb & 0xffffffu));
+        }
+        ++used;
+    }
+    for (i = used; i < POFV_HUD_TXT_MAX; ++i)          /* 剩下的藏起来 */
+        if (s_hud_txt_vm[i]) ce_anm_set_scale((uint32_t)s_hud_txt_vm[i], 0.0f, 0.0f);
+    s_hud_txt_n = used;
+    (void)s_hud_txt_n;
+}
+
 static ce_hud_number_t s_hud_sp_num;
 static ce_hud_number_t s_hud_c2_num;   /* ★ TH09 連擊槽显示句柄（数字 ❓自定 ✓）*/
 static ce_hud_number_t s_hud_ag_num;   /* ★ TH19 攻撃ランク数字句柄 ✓ */   /* ★ 由 32 → 44：避让 110/111 信仰块（y≤30）✓ */
@@ -1093,6 +1140,10 @@ static void pofv_hud_charge_bar(float fx, float fy, float ratio_rei, float ratio
         ce_anm_set_color((uint32_t)s_hud_chg_white_vm, tdim | 0x00ffffffu);
         ce_anm_set_color2((uint32_t)s_hud_chg_white_vm, tdim | 0x00ffffffu);
     }
+    /* ★ 2026-10-23 **先验字形**：在条上方固定显示一行 `Ex Attack lv3`。
+     *   ★ 这一步**不带任何条件** ✗ —— 进游戏按住蓄力就能看到，用来确认
+     *   ★ 字形/大小/位置 对不对 ✓。验过之后这一行会换成 ③④ 的条件版本 ✓。*/
+    hud_text_draw(fx, fy - 20.0f, "Ex Attack lv3", 0.5f, 0xffffffu);
     /* ④ **C1..C4 四枚标**（规格 ⑤⑥ ✓；形状 = 一手 `ins_617(1.0f,4)` ⇒ 脚本 425 的**贴图**）
      *    ★★ **三档**（一手 `interruptLabel` 的 4 / 3 / 2 三态；推法见 `TUNING.md` 本轮 §①②）：
      *      · **常显 / 已达**（`fc ≥ 标位`）：`scale` = 1.0 ⇒ **4 × 24**（一手 label4 ✓，细长竖菱形）；
