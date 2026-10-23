@@ -33215,3 +33215,13 @@ owner 给了上面的口径后**改成精确事件**（commit `65c0e178`，本�
 - **判据沿用一手**（未改）：`s_aura_charge >= 1700`（= `POFV_C3_THRESH`）**且** `!pofv_barrier_have()`。
 - **谁改的**：本 agent。**影响面**：只有卡 109 蓄力条的填充 VM。
 - **怎么验证的**：`make rc=0`；`make dev` 全绿；owner 实跑看"灵力段黄蓝跳"。
+
+## §BE-109-20261023d ★ 新增 TH19 ASCII 字图集（95 格，28×28）
+
+- **文件 → 改了什么**：新增 `assets/ability/POFV109_ASCII_95.png`（**504×168**，18 列 × 6 行，用 95 格）
+  ＋ `POFV109_ASCII_95_preview.png`（自检用的一行 "Ex Attack lv3" 预览）。
+- **来源**：TH19 `data/ANM/ascii/ascii_1280.png` 的 **`sprite0..94`**（`thanm -l` 解出的 rect：
+  `x=(i%18)*28, y=(i/18)*28, 28×28`）；**墨 = `alpha>0 && R<128`**。
+- **为什么**：owner 2026-10-23「109 蓄力条的 HUD 文字必须用 TH19 那套字」；原画法贴图不对。
+- **谁改的**：本 agent。**影响面**：只增资源（还没接进 `ORDER`、还没被任何脚本引用）⇒ **对现有卡零影响**。
+- **怎么验证的**：切出的 sprite 1/2/3 = `!` `"` `#`、sprite0 = 空格；拼 "Ex Attack lv3" 目视正确（见 preview）。
