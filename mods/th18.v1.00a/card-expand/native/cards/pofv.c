@@ -1093,19 +1093,22 @@ static void pofv_hud_charge_bar(float fx, float fy, float ratio_rei, float ratio
              *   原来"能放 C3/C4 且在闪"时只是**亮/暗**（同色改 alpha）✗；
              *   改成 ★ **黄 / 蓝两色交替**✗：★ 每 10 帧切一次 ✓（沿用原节奏 ✓）。
              *   判据沿用一手（`s_aura_charge >= 1700` ＋ ★ **没有罩子** ✓）。*/
-            const uint32_t yel  = (0xffu << 24) | 0x00ffc800u;   /* 黄 ✗ */
-            const uint32_t blu  = (0xffu << 24) | 0x0040a0ffu;   /* 蓝 ✗ */
+            /* 一手（`engine/versus/th19/05-four-mechanics.md:1063`）：`(+0x2290 % 6) < 3` ⇒
+             *   `0xffffff00` **黄** ／ 否则 `0xff808080` **灰**。owner 2026-10-23：
+             *   「没看到灰色，可能是视觉暂留看成蓝」「**通常是蓝色没问题**」
+             *   ⇒ ★ 黄用一手值 `0xFFFFFF00` ✗；★ 另一半用 ★ **通常的蓝（`base`）**✗，不用灰 ✓；
+             *   ★ 节奏用一手 **`% 6 < 3`（3 帧黄 / 3 帧蓝）**✗，不是 10 帧 ✓。*/
+            const uint32_t yel  = 0xffffff00u;   /* 一手：亮黄 */
             /* 2026-10-23 owner 纠正概念：★ **灵力** = 会**限制蓄力上限**的那条（= `fr` 蓝填充）；
              *   ★ **蓄力** = 按 C 会涨的那条（= `s_aura_charge` / 白段）。
              *   ⇒ 判据要用 **灵力**✗：`fr × 2500 >= 1700` ⇔ `fr >= 0.68`（阈值表 500/1000/1700/2500 ✓）。
              *   ★ 原来用 `s_aura_charge`（蓄力）—— 变量选错了 ✗。*/
             const int urge = (((fr * 2500.0f) >= 1700.0f)
-                          && !pofv_barrier_have()
-                          && (((s_card_frames / 10) & 1) != 0));
-            ce_anm_set_color((uint32_t)s_hud_chg_fill_vm,
-                             urge ? ((((s_card_frames / 10) & 2) != 0) ? yel : blu) : base);
-            ce_anm_set_color2((uint32_t)s_hud_chg_fill_vm,
-                              urge ? ((((s_card_frames / 10) & 2) != 0) ? yel : blu) : base);
+                          && !pofv_barrier_have());
+            /* 一手节奏：`(count % 6) < 3` ⇒ 3 帧黄 / 3 帧通常蓝 */
+            {   const uint32_t c = urge ? (((s_card_frames % 6u) < 3u) ? yel : base) : base;
+                ce_anm_set_color((uint32_t)s_hud_chg_fill_vm, c);
+                ce_anm_set_color2((uint32_t)s_hud_chg_fill_vm, c); }
         }
     }
     /* ③ **白段 = 蓄力比例**（规格 ② ✓）：同一左端、**叠在蓝上** ✓ */
