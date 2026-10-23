@@ -7744,8 +7744,21 @@ static void pofv_c3s_tick(void)
                 }
             }
         }
-        pos[0] = b->x; pos[1] = b->y; pos[2] = 0.0f;
-        (void)ce_damage_rect(pos, 0.0f, 2, 14.0f, 24.0f, 24.0f);   /* ❓④ */
+        /* ★★★ 2026-10-25 owner：「**你如何确认伤害和视觉匹配？**」✓ —— 之前**不匹配** ✗：
+         *   视觉是"长 `len_draw`、宽 24、沿 θ 的条"，而伤害是**固定 24×24、角度 0、只在弹头上** ✗。
+         *   `ce_damage_rect(center, angle, life, dmg, w, h)` 是**OBB（可带角度）**（`sdk.h:171` ✓）
+         *   ⇒ 现在伤害盒**与绘制同源**：同一个中心（沿 −方向退 `len_draw/2`）、同一个角 `θ+π`、
+         *     `w = len_draw`、`h = 24` ⇒ 视觉与判定**逐帧同参数**，不可能再错位 ✓ */
+        {
+            const int dj2 = (int)(b->ang * (36.0f / 6.2831853f)) % 36;
+            const int dk2 = (dj2 < 0) ? dj2 + 36 : dj2;
+            float cx[3];
+            cx[0] = b->x - s_c2_dir36[dk2][0] * (b->len_draw * 0.5f);
+            cx[1] = b->y - s_c2_dir36[dk2][1] * (b->len_draw * 0.5f);
+            cx[2] = 0.0f;
+            (void)ce_damage_rect(cx, b->ang + 3.14159265f, 2, 14.0f,
+                                 (b->len_draw > 8.0f) ? b->len_draw : 8.0f, 24.0f);
+        }
     }
 }
 
