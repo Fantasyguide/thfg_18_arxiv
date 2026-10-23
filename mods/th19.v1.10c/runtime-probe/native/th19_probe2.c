@@ -34,7 +34,8 @@ static int   g_scan_mode  = 0;     /* ini: scan=1 ⇒ 主动搜 ctx */
 static DWORD g_scan_next  = 0;
 static int   g_scan_left  = 30;
 static int   g_hook_on     = 0;    /* ini: hook=1 ⇒ 在 0x502999 装钩子，记录段表字段地址 */
-static DWORD g_hook_field  = 0;    /* 钩子捕获到的 eax（= 段表字段地址，s 写入处） */
+static DWORD g_hook_field  = 0;
+static DWORD g_hook_r      = 0;    /* hook2：call 0x50c1d0 返回的 float（首个参数 r）*/    /* 钩子捕获到的 eax（= 段表字段地址，s 写入处） */
 static DWORD g_pat[4]      = {0, 0, 0, 0};  /* ini: pattern / pattern2 / pattern3 */
 static DWORD g_pat_rel     = 0;
 static DWORD g_pat_rel2    = 0;
@@ -163,6 +164,10 @@ static void scan_for_pattern(void)
 static void poll_once(void)
 {
     DWORD anchor, v;
+    if (g_hook_on && g_hook_r) {
+        probe_log("[r] %08x  = %g", g_hook_r, 0.0);
+        return;
+    }
     if (g_hook_on && g_hook_field) {
         dump_n("segtbl(r 在 +0x00)", g_hook_field - 0x20, 24);
         return;
@@ -267,6 +272,45 @@ static BOOL install_hook(void)
     return TRUE;
 }
 
+
+/* ★ hook2：0x50296c 处（`call 0x50c1d0` 之后第一条）xmm0 = 取到的第 1 个 float 参数（r）。
+ * 原 10 字节：ff 74 24 20 (push [esp+0x20]) + 8d 8f ac 05 00 00 (lea ecx,[edi+0x5ac])
+ * stub：movss [g_hook_r], xmm0 ; 重放这 10 字节 ; jmp 0x502976
+ * 只写自己的全局，不碰任何寄存器/xmm ⇒ 语义不变。 */
+#define HOOK2_RVA  0x10296cu
+static const BYTE HOOK2_EXPECT[10] = { 0xff,0x74,0x24,0x20, 0x8d,0x8f,0xac,0x05,0x00,0x00 };
+
+static BOOL install_hook2(void)
+{
+    BYTE *at = g_base + HOOK2_RVA;
+    BYTE *stub, *p;
+    DWORD old;
+    int i;
+
+    if (!readable(at, 10) || memcmp(at, HOOK2_EXPECT, 10) != 0) {
+        probe_log("[hook2] 0x%x 原字节不匹配，拒绝安装。", HOOK2_RVA);
+        return FALSE;
+    }
+    stub = (BYTE *)VirtualAlloc(NULL, 4096, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    if (!stub) return FALSE;
+
+    p = stub;
+    *p++ = 0xF3; *p++ = 0x0F; *p++ = 0x11; *p++ = 0x05;      /* movss [imm32], xmm0 */
+    *(DWORD *)p = (DWORD)(uintptr_t)&g_hook_r; p += 4;
+    for (i = 0; i < 10; i++) *p++ = HOOK2_EXPECT[i];
+    *p++ = 0xE9;
+    *(DWORD *)p = (DWORD)((SIZE_T)(at + 10) - (SIZE_T)(p + 4) - 1);
+
+    if (!VirtualProtect(at, 10, PAGE_EXECUTE_READWRITE, &old)) { VirtualFree(stub, 0, MEM_RELEASE); return FALSE; }
+    at[0] = 0xE9;
+    *(DWORD *)(at + 1) = (DWORD)((SIZE_T)stub - ((SIZE_T)at + 5));
+    for (i = 5; i < 10; i++) at[i] = 0x90;
+    VirtualProtect(at, 10, old, &old);
+    FlushInstructionCache(GetCurrentProcess(), at, 10);
+    probe_log("[hook2] 已安装 @ base+0x%x → stub %p（记录 r）", HOOK2_RVA, (void *)stub);
+    return TRUE;
+}
+
 static DWORD WINAPI poll_thread(LPVOID unused)
 {
     DWORD t0 = GetTickCount();
@@ -357,7 +401,7 @@ int __stdcall thcrap_plugin_init(void)
               g_anchor_rva, g_scan_mode, g_pat[0], g_pat[1], g_pat[2], g_follow_on);
     probe_log("字段：段表 = ctx+0x5ac → 元素 → +0x28；r=+0x00、s=+0x04；ctx = enemy+0x1230");
 
-    if (g_hook_on) install_hook();
+    if (g_hook_on) { install_hook(); install_hook2(); }
 
     InterlockedExchange(&g_running, 1);
     g_thread = CreateThread(NULL, 0, poll_thread, NULL, 0, NULL);
