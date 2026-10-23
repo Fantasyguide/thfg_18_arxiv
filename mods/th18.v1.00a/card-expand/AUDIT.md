@@ -33711,3 +33711,21 @@ owner 给了上面的口径后**改成精确事件**（commit `65c0e178`，本�
 - **谁改的**：本 agent。**影响面**：只早苗 C3 的激光外观（脚本 465 是这张卡专用的 ✓，别的卡不引用）。
 - **怎么验证的**：`make dll` 通过；`make anm` 六道门全过（entry 228 / sprite 1000 / script 474）；
   `make dev` 19 门全绿。⚠ 待实跑：颜色应回到**品红**（不再是红橙）。
+
+## §BE-109-20261025k ★ C4 三型弹接线（符札 / 小彩弹 / 中玉，一手 `ins_602` 的 type 11/1/18）
+
+- **一手**：`engine/ecl/th19/02-bullet-types.md` §2 —— `ins_602(num, type, color)`；
+  早苗 C4（`pl02.txt:178 Boss00BossCard1_at`）三路 = `(0, 11, 8)` **札弹** / `(1, 1, 8)` **高光点弹** /
+  `(2, 18, 1)` **中玉**（第三路仅 `!67` ⇒ rank ≥ 6）✓ ⇒ 与 owner 口径「符札 + 小彩弹（+高档中玉）」一致 ✓。
+- **文件 → 改了什么**：
+  · `assets/ability/`：新增 **3 张一手切图**（owner 逐格指认，**16px 格**）：
+    `POFV109_C4S_OFUDA.png` = `bullet1.png (128,112,16,16)` 符札；
+    `POFV109_C4S_SMALL.png` = `bullet1.png **(56,240,8,8)**` 小彩弹；
+    `POFV109_C4S_BIG.png` = `bullet2.png **(32,32,32,32)**` 中玉（`bullet2` 是 **8×8 格**）；
+    `entries/ORDER.txt` 末尾追加 3 个单图行（**entry 229→232**，仍余 24 个）。
+  · `native/cards/pofv.c`：`pofv_c4s_emit(ang, spd, color)` → **`(ang, spd, lane)`**，
+    按 lane 选 sprite（符札/小彩弹/中玉）与缩放（16 / 8 / 16 px）；顶点色统一 **`0x80FFFFFF`**
+    （贴图自带颜色，α 按本仓"我方弹幕"约定 0x80）；调用点传 `li`；**删掉** `c4s_lane_col[]` 换色表 ✓。
+- **谁改的**：本 agent。**影响面**：只早晚苗 C4 的三路弹（`pofv_c4s_*`）。
+- **怎么验证的**：`make dll` 通过；`make anm` 六道门全过（entry 232 / sprite 1004 / script 474）；
+  `make dev` 19 门全绿。⚠ 待实跑：三路应分别是**蓝符札 / 青小彩弹 / 红中玉**（高档才有中玉）。

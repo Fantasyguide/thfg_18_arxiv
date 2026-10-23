@@ -5435,7 +5435,12 @@ static float pofv_c4s_cosf(float a) { return pofv_c4s_sinf(a + 1.5707963f); }
  *    · `ins_618` 的偏移**方向**是逐颗随机还是别的量 —— 反编译只定到"偏移向量"，卡侧按"逐颗随机"实现 ✓；
  *    · `ins_605` 的速度上下限与 8 档表的关系（卡侧用 8 档 + `rand×0.5` ✓）。
  */
-static void pofv_c4s_emit(float ang, float spd, uint32_t color)
+/* ★★★ 2026-10-25 owner（goal）：C4 改成**一手三型弹** ✗（原来三路都用同一张 8×8 圆点换顶点色 ✗）：
+ *   一手 `ins_602($A, type, color)` 的三路 = **type 11 札弹 / 1 高光点弹 / 18 中玉**（见
+ *   `engine/ecl/th19/02-bullet-types.md` §2 ✓）⇒ 本卡用 owner 指认切出来的三张：
+ *     `POFV109_C4S_OFUDA`(16×16) / `POFV109_C4S_SMALL`(8×8) / `POFV109_C4S_BIG`(32×32) ✓
+ *   贴图**本身带色** ⇒ 顶点色只给白 + A=0x80（本仓"我方弹幕"的统一透明度 ✓），不再染色 ✓ */
+static void pofv_c4s_emit(float ang, float spd, int lane)
 {
     int k;
     for (k = 0; k < POFV_C4_MAX_BULLETS; ++k) if (!s_c4_b[k].live) break;
@@ -5463,13 +5468,20 @@ static void pofv_c4s_emit(float ang, float spd, uint32_t color)
     s_c4_b[k].nobounce = 1;
     s_c4_b[k].ang = ang; s_c4_b[k].spd = spd;
 
-    /* ③ 外观：脚本 466（8×8）× 染色 */
+    /* ③ 外观：**按路选贴图**（符札 / 小彩弹 / 中玉）✓，顶点色只给白 + A=0x80 ✓ */
     s_c4_b[k].vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
                                          CE_ANM_ABILITY_SCRIPT_POFV109_C4S_BULLET,
                                          POFV_C4_VM_LAYER);
     if (s_c4_b[k].vm) {
-        ce_anm_set_color((uint32_t)s_c4_b[k].vm, color);
-        ce_anm_set_scale((uint32_t)s_c4_b[k].vm, 0.5f, 0.5f);
+        const int spr = (lane == 2) ? CE_ANM_ABILITY_SPRITE_POFV109_C4S_BIG
+                      : (lane == 1) ? CE_ANM_ABILITY_SPRITE_POFV109_C4S_SMALL
+                                    : CE_ANM_ABILITY_SPRITE_POFV109_C4S_OFUDA;
+        const float sc = (lane == 2) ? 0.5f      /* 中玉 32 → 16 px */
+                       : (lane == 1) ? 1.0f      /* 小彩弹 8  → 8 px  */
+                                     : 1.0f;     /* 符札 16  → 16 px  */
+        ce_anm_set_sprite(CE_ABILITY_ANM(), (uint32_t)s_c4_b[k].vm, (uint32_t)spr);
+        ce_anm_set_color((uint32_t)s_c4_b[k].vm, 0x80FFFFFFu);
+        ce_anm_set_scale((uint32_t)s_c4_b[k].vm, sc, sc);
     }
 }
 
@@ -5624,7 +5636,7 @@ static void pofv_c4s_tick(void)
             for (m = 0; m < cnt; ++m) {
                 pofv_c4s_emit(s_c4s.theta,
                               s_c4s_spd_tab[pofv_c4_rank()] + (float)(ce_rand() % 100u) * 0.005f,
-                              (li == 2) ? 0xFFD95D5Du : ((li == 1) ? 0xFFEFADADu : 0xFFD5EFAEu));
+                              li);   /* ★ 2026-10-25：**按路**选贴图（0 符札 / 1 小彩弹 / 2 中玉）✓ */
             }
             /* ★ 2026-10-17（施工单 §12②-2 ＋ §56 ＋ §8 ✓）：★ **每路各自的配色** ✓ ——
              *   ★ 一手的 `_at(0, **11**, 8)`／`_at(1, **1**, 8)`／`_at(2, **18**, 1)` ✓ ⇒ ★ 观感差别**只在配色** ✓
@@ -5635,11 +5647,8 @@ static void pofv_c4s_tick(void)
              *   ★ ⚠ ⚠ 格式**不是** `0xRRGGBBAA` ✗ —— 是 `0xAARRGGBB` ✓（`:1044` ✓） —— ★ 依卡里既有口径（`:1206`：★ "`0xFFFFFF80` 写 α=128" ✓）
              *     ★ 原注释「α 放低字节」**是错的** ✗（它把 A 变成了 D5/EF/D9 ⇒ 蓝紫色）⇒ ★ 已改成 `0xFFD5EFAE` 等（A=FF、RGB 不变）✓。
              *   ★ ⚠ ★ 低档（2 路）★ 只用**前两色** ✓（★ 绿 ＋ 粉 ✓）；★ 红那色**只在高档**出现 ✓。*/
-            static const uint32_t c4s_lane_col[3] = {
-                0xFFD5EFAEu,   /* ★ 路 1 = sprite11 = 淡绿 (213,239,174) ✓ */
-                0xFFEFADADu,   /* ★ 路 2 = sprite1  = 粉红 (239,173,173) ✓ */
-                0xFFD95D5Du,   /* ★ 路 3 = sprite18 = 红   (217,93,93) ✓（仅高档 ✓）*/
-            };
+            /* ★ 2026-10-25：`c4s_lane_col[]` **删掉** ✗ —— 颜色现在由**贴图本身**给
+             *   （符札/小彩弹/中玉各一张，都是 owner 指认的一手切图 ✓），不再靠顶点色换色 ✓。*/
             /* ★ 2026-10-17：★ 单发那段已并入上面的 `cnt` 循环 ✓（★ C 组 ③ ✓）——
              *   ⚠ 重验更正 ✗：★ 只有**速度**的 `+ rand×0.5` 逐颗掷 ✓；★ **`±2°` 抖动不逐颗** ✗
              *   —— ★ 每颗用的都是**全局同一个** `s_c4s.theta` ✓（见上面的 5264–5267 ✓）。*/
