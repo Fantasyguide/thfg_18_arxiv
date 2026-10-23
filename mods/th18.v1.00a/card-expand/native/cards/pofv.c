@@ -1095,9 +1095,13 @@ static void pofv_hud_charge_bar(float fx, float fy, float ratio_rei, float ratio
              *   判据沿用一手（`s_aura_charge >= 1700` ＋ ★ **没有罩子** ✓）。*/
             const uint32_t yel  = (0xffu << 24) | 0x00ffc800u;   /* 黄 ✗ */
             const uint32_t blu  = (0xffu << 24) | 0x0040a0ffu;   /* 蓝 ✗ */
-            const int urge = (s_aura_charge >= 1700.0f)   /* = POFV_C3_THRESH ✓（宏在后 ⇒ 用字面量 ✓）*/
+            /* 2026-10-23 owner 纠正概念：★ **灵力** = 会**限制蓄力上限**的那条（= `fr` 蓝填充）；
+             *   ★ **蓄力** = 按 C 会涨的那条（= `s_aura_charge` / 白段）。
+             *   ⇒ 判据要用 **灵力**✗：`fr × 2500 >= 1700` ⇔ `fr >= 0.68`（阈值表 500/1000/1700/2500 ✓）。
+             *   ★ 原来用 `s_aura_charge`（蓄力）—— 变量选错了 ✗。*/
+            const int urge = (((fr * 2500.0f) >= 1700.0f)
                           && !pofv_barrier_have()
-                          && (((s_card_frames / 10) & 1) != 0);
+                          && (((s_card_frames / 10) & 1) != 0));
             ce_anm_set_color((uint32_t)s_hud_chg_fill_vm,
                              urge ? ((((s_card_frames / 10) & 2) != 0) ? yel : blu) : base);
             ce_anm_set_color2((uint32_t)s_hud_chg_fill_vm,
