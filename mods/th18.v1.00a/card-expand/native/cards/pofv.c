@@ -5961,7 +5961,12 @@ static void pofv_c4_fog_tick(void)
         const float k6 = s_fog_r_last / POFV_C4_FOG_REF_R;
         if (pp6) vm_set_world_pos((uint32_t)s_c4_aura_vm, pp6[0], pp6[1]);
         ce_anm_set_scale((uint32_t)s_c4_aura_vm, k6, k6);
-        ce_anm_set_color((uint32_t)s_c4_aura_vm, 0xFF000000u | (s_fog_c_last & 0x00FFFFFFu));
+        /* ★ 2026-10-25：这就是"颜色完全消失"的原因 —— 一手 `script33` 的顶点色是
+         *   **`ins_404(255,255,255)` 纯白** ✓，而我上一笔把 boss 的 fog 颜色（深红 0xF00F80）
+         *   写成了顶点色 ⇒ 在 `blendMode(4)`（`INVDESTCOLOR × INVSRCCOLOR + ADD`）下
+         *   深红几乎乘没了 ⇒ 什么都看不见 ✗。
+         *   ⇒ 顶点色固定 **白**（与一手一致 ✓），颜色由**混合模式与底色**决定 ✓。*/
+        ce_anm_set_color((uint32_t)s_c4_aura_vm, 0xFFFFFFFFu);
     }
 }
 
