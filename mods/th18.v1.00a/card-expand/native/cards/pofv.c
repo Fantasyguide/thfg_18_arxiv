@@ -5465,26 +5465,11 @@ static void pofv_c4s_emit(float ang, float spd, int lane)
     /* ★★★ 2026-10-25 owner：「**它是全 x 发射！**」✓ —— 弹从**整条宽度**上散布出现
      *   （不是从自机的某一点、也不是三个点）⇒ x = **±192 全宽随机** ✓；
      *   y 仍按 0..23 错开，避免所有弹在同一条横线上"成浪" ✓。*/
-    /* ★★★★ 2026-10-25 owner（一手 opcode 复核 —— 出生点 = 基准 + 极坐标偏移）：
-     *   `ins_620($A, 0, 96)`  = **基准点** (x=0, y=96)（`etBasePos` 0x502511）；
-     *   `ins_618($A, θ, 192)` = **极坐标偏移**（`etOffsetPolar` 0x502432，参数 **(θ, r)**）；
-     *   `θ = [-9987]·(π/2) − π/2`，`[-9987]` = **自机横移量**（−1…+1）✓
-     *   ⇒ 出生点 = `(192·cosθ, 96 + 192·sinθ)`（一手坐标）⇒ **x 在 −192…+192 间随自机横移摆动** ✓
-     *   ✅ 本卡是**镜像后的自机侧** ⇒ y 走 `POFV_FLIP_Y(y) = 448 − y` ✓
-     *      ⇒ 正中：y = 96−192 = −96 ⇒ 本卡 **544**（画面外下方 ✓）；最左/右：y = 96 ⇒ 本卡 **352** */
-    {
-        const float *pm = ce_player_pos();
-        float nrm = (pm ? pm[0] : 0.0f) / 192.0f;                 /* ★ [-9987] 的等价量 ✓ */
-        if (nrm >  1.0f) nrm =  1.0f;
-        if (nrm < -1.0f) nrm = -1.0f;
-        const float th = nrm * 1.5707963f - 1.5707963f;
-        /* ⚠ 本文件**没有 libm**（`cos/sin` 未声明）⇒ 用现成的 36 向表取 cos/sin ✓（本仓老办法）*/
-        {   int di = (int)(th * (36.0f / 6.2831853f)) % 36;
-            if (di < 0) di += 36;
-            s_c4_b[k].x = 192.0f * s_c2_dir36[di][0];
-            s_c4_b[k].y = POFV_FLIP_Y(96.0f + 192.0f * s_c2_dir36[di][1]);
-        }
-    }
+    /* ★★★ 2026-10-25 owner 定稿：「**不管了，就用 random x 吧，x 换成咱们目前场地的宽度**」✓
+     *   ⇒ `x = ±POFV_FIELD_HALF_W(=192)` 的**全宽随机** ✓（一手那套 `etBasePos + etOffsetPolar`
+     *     的极坐标推法**作废** ✗ —— 它是 boss 语义，本卡没有 boss 实体 ✓）。*/
+    s_c4_b[k].x = POFV_FIELD_HALF_W * (((float)(ce_rand() % 10000u) / 5000.0f) - 1.0f);
+    s_c4_b[k].y = POFV_FIELD_H + 16.0f + (float)(ce_rand() % 24u);   /* ★ 画面外 + 0..23 错开 */
 
     /* ② 状态：不反弹 ✓（一手这支没有 `ins_611` ✓） */
     s_c4_b[k].live = 1; s_c4_b[k].age = 0; s_c4_b[k].bounced = 0;
