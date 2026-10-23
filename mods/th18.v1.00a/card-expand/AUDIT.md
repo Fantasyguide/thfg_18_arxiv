@@ -33890,6 +33890,187 @@ owner 给了上面的口径后**改成精确事件**（commit `65c0e178`，本�
 - 一行撤销：`POFV_GRAZE_SCAN_PERIOD = 1`、`SIGNAL_GRAZE_SCAN_PERIOD = 1`、自检的 `60u → 1u`、
   `forced = 1`、`#if CE_DEV_DUMP >= 1` 改回无条件。
 
+## §BE-RETIRE-NATIVE-2026-10-24 ★★ 最终发版的三条卡池调整（原生卡退场 / 系统卡权重 ×0.5 / 118 退场）
+
+- **owner 2026-10-24 逐字**（本次唯一口径）：
+  1. 所有「原生卡」（TH18 自己的 57 张，id 0–56）都要从三处摘掉：**初始可携带 / 贪欲之壶的发牌池 / 商店可购买**；
+     **唯一例外** = 商店里**固定出现**的那些（残机卡 / 加钱卡之类）—— 保留。
+  2. **系统卡（106–117）权重 × 0.5**。
+  3. **摘掉 118** —— 和 1 一样全摘（三处）；
+     注意 `give12` 是 118 自己发 12 张 ⇒ **代码保留** ✓，只是拿不到卡。
+- **一手机制（为什么一行里有三个字段在管，且 weight 不能写 0）**：
+  · 贪欲之壶（63 `POT_OF_GREED`）**没有自己的池子**：`native/cards/pot.c` 的 ctor 调
+    `ce_shop_pick_random(0, 14, …)` → 商店的 `CardShop__pick_weighted_random_offer` `0x416F50`
+    ⇒ **壶的池子 == 商店随机池**，摘一处 = 两处一起摘。
+  · 商店 `AbilityShop__initialize` `0x4171B0` 三段：随机池（`+0x14 ∉ {0,6}`，按 `+0x14` 压份）
+    + **loop1**（`is_available_at_stage()==1` 且 `+0x14 == 0` ⇒ **每次必上架**）
+    + **loop2**（`+0x18 ∈ 1..5` 且本关匹配 ⇒ `is_available_at_stage()==2` ⇒ **本关必上架**）
+    —— 详见 [`engine/card/th18/05-shop-and-money.md`](../../../engine/card/th18/05-shop-and-money.md) §4/§5。
+  · 初始可携带 = 行 `+0x24`（新档创建时拷进 `unlocked_cards[]`，`0x4636d5`）+ 编成菜单可见位 `+0x20`
+    （`AbilityMenu__on_tick` `0x4149de` 的「可见 && 已解锁」筛选）—— [`07-registry.md`](../../../engine/card/th18/07-registry.md)。
+  · ⇒ **`weight` 必须写 6（`CE_SHOP_NEVER_WEIGHT`），不能写 0**：0 是 loop1 的「必上架」哨兵，
+    写 0 会把「摘掉」变成「每次进店固定卖」✗。同理 118 也是 6。
+- **文件 → 改了什么**（共享件，按 §BE 纪律登记）：
+  · `native/cards_def.h` / `native/cards_def.c`：新增 `CE_RETAIL_LAST_ID`（=56）、
+    `ce_native_keep(id)`、`ce_native_retire(table, nrows)`（纯逻辑，主机可测）。
+    退场一行 = `+0x14 := 6`、`+0x18 := 0`（仅当原值 ∈ 1..5）、`+0x20 := 0`、`+0x24 := 0`；
+    **保留原样** = `0` BLANK、`1/2/5/6`（EXTEND/BOMB/PENDULUM/DANGO）、`56/57` 哨兵。
+    ⚠ 表行**不按 id 排序**（行 8 是 id 38、行 13 是 id 16…）⇒ 函数按 `+0x04` 的 id 线性扫。
+  · `native/cards.c`：`ce_cards_load` 里 staged 拷贝之后、容量检查之前调 `ce_native_retire`
+    （cards.js 不在栈里就早退 ⇒ 没有本 mod 卡池时**不动**原生卡）；打一行 `retire: native 0..56 …`。
+  · `native/tests/test_cards_def.c`：新增 `test_native_retire` —— 表用 **th18.exe `0x4c53c0` 物理顺序实读值**，
+    逐卡断言三字段 + 幂等 + 退场后随机池 = 0 份。
+  · `patch/th18/cards.js`：106–117 的 `weight` **2 → 1**（×0.5，12 张全 2 ⇒ 全 1）；
+    118 的 `initial_unlocked` 1→0、`deck_visible` 补 0、`weight` 1→**6**。
+- **判断点（要 owner 确认的）**：`38/39/40/51/52/53`（MANEKI/YAMAWARO/KISERU/MAGATAMA/CYLINDER/RICEBALL，
+  `+0x18` = 1..5）是 loop2 的「**本关专属必上架**」——机制上也算「固定出现」，但它们**不是资源卡**，
+  是各关 boss 的原生卡 ⇒ 本次按「全摘」处理（`+0x18 := 0` 拆掉 loop2）。若 owner 要保留这六张，改
+  `ce_native_keep` 加 id 即可（一行一处）。
+- **已知遗留（不在本次三处范围）**：
+  · 老存档里已经解锁 / 已经装进卡组的原生卡：`+0x20:=0` 让它们从**编成菜单**消失，但**不影响**已经建出来的卡对象
+    （原生行为照旧）；新档不再解禁。
+  · **图鉴**仍按顺序表列出 0..55（不在 owner 说的三处里）；要一起摘得改顺序表。
+  · 调试卡 **201**：`weight = 0` ⇒ 按同一套机制它其实是**每次进店必上架** ✗（`0` 是 loop1 的「必上架」
+    哨兵，不是「不可见」；devbuild 原来那张「三项全 0」闸就是基于「0 = 不可见」的错误假设）。
+    **★ 已订正**（`27ef64e7`）：`weight` 改为 **6** ✓（回读 = `init0 / deck0 / weight6`），
+    闸也改成**只认 6** ✓ —— 不再是「本次不动它」。
+  · modkit 里 `mods/start_deck.js`：**回读确认已是发布态**（`mode: "off"`、`deck: []`，2026-10-24 ✓）
+    ⇒ 不用清；它**不在 deploy 的同步范围**（本机脚本那一半），发版前照例回读一次即可。
+- **谁改的**：本 agent。**影响面**：所有卡的商店 / 壶 / 编成可见性（共享件级）；新卡行为零改动。
+- **怎么验证的**：`make test-host`（cards_def 238 断言，含真值表）；`make cards-check`（49 张合规）；
+  `make dll`；`make dev` 19/19 全绿；部署件 `cards.js` 回读（106–117 全 1、118 三项退场、201 = `0/0/6`）。
+
+## §BE-LOG-GATE-2026-10-24 ★★ 日志总闸 `CE_DEV_DUMP`（共享件：全是日志，零功能改动）
+
+**一句话**：`ce_log` 从**函数**改成**宏**（唯一定义在 `native/sdk/public.h`），一个编译期开关
+`CE_DEV_DUMP`：
+
+| 档 | 含义 | 谁用 |
+| --- | --- | --- |
+| **0** | **全关（发布默认）**：`ce_log`/`ce_log_key` 都编译成 `((void)0)`；连日志文件都不创建 | 发布 / `make dev` |
+| **1** | **只留关键行**：`ce_log_key` 生效，`ce_log` 仍为空（每局 ≤ 20 行）| 机师 / 实跑现场 |
+| **2** | **全部** = 改造前的行为 | 排查 |
+
+**改了哪些文件**（都在 `mods/th18.v1.00a/card-expand/native/`）：
+
+| 文件 | 改了什么 |
+| --- | --- |
+| `sdk/public.h` | 新增 `CE_DEV_DUMP`（缺省 0）+ `ce_log_impl()` 声明 + **`ce_log` / `ce_log_key` 两个宏**（唯一定义处） |
+| `card_expand.h` | 改 `#include "sdk/public.h"`，删掉本地 `void ce_log(...)` 原型（避免和宏撞） |
+| `dll_main.c` | 旧 `ce_log` 本体改名 **`ce_log_impl`**（不参与闸门，只被宏引用）；`ce_verdict` 的**文件行**收进 `>=1`，但那条结论**仍镜像进 thcrap 日志**；启动横幅与 `open_log("w")` 一起收进 `>=1` ⇒ 0 档**连日志文件都不建** |
+| `sdk.h` / `sdk.c` | 高频探针收进同一闸：`ce_sdk_trace`（嵌在 `CE_STUB*` 里、每帧每卡都调 ⇒ 改成宏，0/1 档 `((void)0)`）、`ce_hud_vm_probe`、`ce_site_trail`、`ce_hud_slot_log_all`（0/1 档函数体整块编译掉）；`FAIL:`/`WARN:`/`★` 共 13 条改成 `ce_log_key` |
+| `Makefile` | 新旋钮 `CE_DEV_DUMP ?= 0` → `-DCE_DEV_DUMP=$(CE_DEV_DUMP)`；★ make 不跟踪命令行变量 ⇒ 加 `build/.dev_dump` 戳，**值一变就整批重编**（否则「刚编过 0 档，再 `CE_DEV_DUMP=2`」会静默不编） |
+| `cards/youkai.c` | 5 条改成 `ce_log_key`：build 戳 / practice auto-equip ×3 / `xfam gone … feed=` |
+| `TUNING.md` | 记一条：总闸语义 + 关键行清单 + 依赖日志的旧工具 |
+
+**关键行（1 档）**：`youkai: build …`（现场报告先看它）、`practice auto-equip 108` 三条、
+`youkai/leveledit: xfam gone … feed=`、`sdk.c` 的 `FAIL/WARN/★` 守卫 13 条 + `ce_verdict` 全部、
+`dll_main.c` 的 `thcrap exports:` / `guard: retail table signature ok`。
+`trance-bgm: seek` 两条**暂未**收进 1 档（`cards/trance_bgm.c` 正被 BGM 那条线重写，避免冲突）。
+
+**为什么不做成函数**：函数版闸关只能省"写盘"，参数字符串仍进 `.rdata`、`va_list` 仍要建。
+宏版是**编译期删干净**：0 档 `ce_log` 调用 = **0 条指令**（参数不求值）⇒ 那 11–23 MB 日志与文件 I/O 全消失。
+全仓 grep 过：**没有任何地方对 `ce_log` 取地址 / 当函数指针用** ⇒ 改宏安全。
+
+**证据（同一棵源码树，隔离目录编三次）**：
+
+| 档 | DLL 体积 | `strings | grep youkai:` | 总 strings | 构建警告 |
+| --- | --- | --- | --- | --- |
+| 0 | **697344 B** | **0**（改造前 = 79）| **5220**（改造前 = 10030）| 528 |
+| 1 | 701440 B | 4（全是关键行）| 5322 | 525 |
+| 2 | **942592 B**（= 改造前逐字节同体积）| **79**（= 改造前）| **10030**（= 改造前）| 57 |
+
+⇒ −**245248 B = −239.5 KB**（−26.0%）；总串 −4810 条。`make dll` 三档 rc=0；`make test-host` rc=0；
+`dllverify` 23 exports / 依赖不变；`dllx87` = 0。
+⚠ 0 档多出的 ~470 条警告全是 `-Wunused-*`（原本只被日志读过的诊断变量/函数；**行为不变**），
+本仓**不静音**（静音会连带盖住真问题）。
+⚠ `native/tools/verify.py` / `autoplay*.py` 读 `th18_card_expand.log` 做判据 ⇒ 跑它们要用 **2 档**构建。
+
+## §BE-PERF-C2-2026-10-25 ★★ 性能 C2：整池平扫降频 + 结界染色去重 O(n²)→O(1) + 三处 SDK 固定开销
+
+- **owner 诊断（本次唯一口径，一手证据已给、不重查）**：
+  · `cards/pofv.c` 的 `pofv_graze_scan_drop()`（`CE_BULLET_POOL_FOR_EACH_IDX`）与
+    `cards/signal.c` 的 `signal_graze_scan()` 都是**整池 2000 槽 / 每帧一次**（4 KB 步长 ⇒ **8 MB 地址空间**）；
+  · `pofv.c` 的 `pofv_aura_tint_tick()` ② 段对**每颗**活弹做 `for (j<n_tint)` 线性去重 ⇒ **O(n_tint × n_live)**；
+  · `sdk.c` 三处固定付：`ce_hud_native_face_dim_tick()` 每帧无条件写、`ce_integrity_check()` 每帧跑、
+    `ce_bullet_scan_probe()` 每秒摸一遍 8 MB（**发布档也摸**）；
+  · 二面 `st02bs.ecl` = 133 KB / 62 sub（零售 24）⇒ 同屏弹数高一档 ⇒ 上面全部被放大。
+- **硬约束**：不改任何卡的玩法/数值/判据；不引入 x87；每一条都要能说清"为什么不会漏"。
+
+### 改动一览（详细理由见下一节）
+
+| # | 文件:函数 | 改前 → 改后 |
+| --- | --- | --- |
+| 1 | `cards/pofv.c` `pofv_graze_scan_drop()`（`:1785` / `:1791`）| 每帧整池 2000 槽 → **每 2 帧**一次 |
+| 2 | `cards/signal.c` `signal_graze_scan()`（`:2002` / `:2008`）| 每帧整池 → **扫帧**每 2 帧、**跳帧**只复核 ≤36 颗 |
+| 3 | `cards/pofv.c` `pofv_aura_tint_tick()` ②（`:2263` 区）| `O(n_tint×n_live)` 线性去重 → **`O(n_live)`**（按槽号 O(1) 查）|
+| 4 | `sdk.c` `ce_hud_native_face_dim_tick()`（`:1224`）| 每帧写 ≈40 个 dword → **只在 alpha / 子 VM 变化时写** |
+| 5 | `sdk.c` `ce_integrity_check()`（`:2817`）| 每帧 → **每 60 帧**（每关首帧永远跑）|
+| 6 | `sdk.c` `ce_bullet_scan_probe()`（`:1336`）| 每 60 帧摸 8 MB → **0 档整块编译掉**（只剩 1 条 `ret`）|
+| 7 | `cards/pofv.c` `s_aura_bullet_done[]`（`:199`）| `[2000]`（池扫下标 1..2000 ⇒ **1 字节越界**）→ `[2001]` |
+
+### 为什么不会漏（逐条）
+
+1. **① 擦弹掉落（109，每 2 帧）**：掉道具是**事件**（"这颗弹进过 R1"）不是每帧的量。
+   `POFV_GRAZE_R1 = 40 px` ⇒ 圈直径 80 px；本作弹速 < 20 px/帧 ⇒ 穿圈 ≥ 4 帧，擦边 1 px 也要 ≈18 px ≈ 1 帧
+   ⇒ 跳过窗口只有 **1 帧**，任何在圈里停留过的弹必在某个扫帧还在圈里。最坏只是**掉道具晚 1 帧（16.7 ms）**。
+   闩锁 `s_aura_bullet_done[]` 的"空槽清位"最坏晚 1 帧：窗口从 1 帧变 2 帧，上限影响 = **1 颗灵力道具**
+   （且"槽在扫描点之后死于帧内 + 同帧被复用"这一类边界**改前就有**）。
+2. **② 擦弹计数（111，扫帧/跳帧）**：★ **`signal_remilia_tick()` 仍然每帧被调** ⇒ 每弹 `1+11 = 12` 帧冷却阶梯
+   **一帧不少** ⇒ 擦弹计入次数、`ce_do_graze()` 的计数/火花/`se_graze.wav` **与改前等价**。
+   （若连它也降频，冷却会走成 24 帧 ⇒ 擦弹砍半 ✗。）跳帧缓存里的弹仍每帧被喂；只有"本帧才第一次进圈、
+   而本帧恰好是跳帧"的弹晚 1 帧被计入 ⇒ 相位后移 1 帧、**总量不变**（⌊N/12⌋+1 与相位无关）。
+   擦弹圈最小尺寸：圆模式 ≥43 px、矩形模式穿越需 ≥48 px 位移 ⇒ 一颗弹**不可能在一个跳帧里进圈又出圈**
+   ⇒ 漏判上限 = 擦过角上 1–2 px 的那**一颗弹少一次**（它整个停留期本来吃 1+ 次，且无累计量依赖那次）。
+3. **③ 染色去重 O(1)**：弹的生命周期 = 池槽的生命周期（引擎在槽上就地构造/析构）⇒ 槽号 ⇒ 至多一颗弹；
+   表里仍存**指针**（`s_aura_tint[i].b`），① 段的"还原 + 重写"逻辑**一字未动**；`restore_all()` 同时清登记位
+   （删卡/换关/重开不留幽灵登记）；槽号算不出来（结构上不该发生）**退回老的线性查** ⇒ 绝不会重复登记。
+   实现 = **定长 2001 B `.bss` 字节表**，不 malloc、不引 libm、不碰 x87（`make dllx87` 仍 0）。
+4. **④ 镜像压暗**：我们写的是 `initial = goal = current = a` **三处同时写** ⇒ 引擎插值器没有可动余量
+   ⇒ 不写也不回弹；alpha 变 ⇒ 全表重写；**树重建/换卡 ⇒ 第 k 支子 VM 指针变了 ⇒ 该支强制重写**
+   （这条必需，否则"换卡面而 alpha 不变"会让新卡面永远压不暗 ✗）。`CE_MGR_SEL_CARD_VM` 全仓只在本函数读
+   ⇒ 没有别的写者会跟我们的假设打架。`forced = 1` 可一行退回旧行为。
+5. **⑤ 卡链自检**：它的语义本来就是「**每关开场** dump 一遍 + 之后**只在异常时**再打一行」；异常是**状态**
+   （id 越界 / `num_total` 不符 / `owned` 高位非零），坏掉之后下一帧还在 ⇒ 晚 ≤1 秒发现与当帧发现等价；
+   "每关首帧那次"由 `first` 保证**一帧不晚**。
+6. **⑥ 8 MB 探针**：它是 z58 的**验证件**（结论早已落 `AUDIT.md` §BE #279 + `sdk.h` 宏注释），不是玩法判据；
+   1/2 档一字未动、随时 `make dll CE_DEV_DUMP=1` 开回来。
+7. **⑦ 越界补正**：`CE_BULLET_POOL_FOR_EACH_IDX` 的 `idx` 是 1..2000（池共 2001 块），`[2000]` 项读到/写到相邻
+   `.bss`；2000 号槽是池尾哨兵 `state = 5`，过不了 `COLLIDE` / 半径判据 ⇒ 补成 `[2001]` **行为零变化**。
+
+### 复杂度 / 调用频率（每帧；二面 ≈1000 活弹、结界内 ≈200 颗）
+
+| 站点 | 改前 | 改后 | 量级 |
+| --- | --- | --- | --- |
+| ① `pofv_graze_scan_drop` 池访问 | 2000 槽 / 帧 | 2000 槽 / 2 帧 | ÷2 |
+| ② `signal_graze_scan` 池访问 | 2000 槽 / 帧 | 扫帧 2000 + 跳帧 ≤36 ⇒ ≈1018 / 帧 | ÷2 |
+| ③ 染色去重比较 | ≈1000×200 = 2×10⁵ / 帧 | ≈1×10³ / 帧 | ÷200 |
+| ④ 镜像压暗写 | ≈40 写 + 15 次 `IsBadWritePtr` / 帧 | 0（alpha 不变时）/ 帧 | 常态归零 |
+| ⑤ 卡链自检 | ≤256 节点 + 127 读 / 帧 | 同量 / 60 帧 | ÷60 |
+| ⑥ 8 MB 探针 | 2000 槽 / 60 帧（发布档也算）| 0（不进二进制）| 归零 |
+
+**合计（二面 · 咲夜 111 + 109 同场 · 结界开着）：每帧固定开销约 −96%**（主项 = ③ 的 2×10⁵ → 10³）。
+
+### 影响面（共享件 `sdk.c`）
+
+- 所有卡：④⑤ 都是**纯观测/压暗**、不参与任何判据 ⇒ 玩法零变化；⑥ 只写日志 ⇒ 发布档只是"少一行日志 + 少摸 8 MB"。
+- **本轮明确没动**（留给下一轮，避免顺手改判据）：`pofv.c` 的 `aura_scan_bullets()` /
+  `pofv_graze_cancel_bullets()` 仍是每帧整池扫（判据含 `state 2`、又要按下标写闩锁）；
+  这两处是**持续量**不是事件，要降频得先证明"结界张开的那几帧能跳过池扫"。
+
+### 怎么验证的
+
+- `make dll`（`CE_DEV_DUMP=0` 发布档）rc=0；`make dllx87` = **0**（0/1/2 三档都是 0）；`make test-host` 全绿；
+  `make dllverify` 23 exports / PE32 / 三个依赖 ✓。
+- `CE_DEV_DUMP=1`（探针那档）与 `=2`（全日志）都 rc=0 ⇒ 新加 `#if` 的两条分支都编过。
+- 0 档 DLL md5（两次独立全量重建同值）：`2f20088b2f664b239965a3a3625d0a97`。
+- 0 档 `sdk.o` 里 `_ce_bullet_scan_probe` 只剩 1 条 `retl`，`_ce_bullet_scan_probe.s_tick` 不进二进制（objdump 实测）。
+- 一次性计数器（`ce_log` ⇒ 只在 `CE_DEV_DUMP ≥ 2` 打）：`pofv: [PERF] graze_scan frames/skipped/slots/period`、
+  `pofv: [PERF] tint frames/lookups/fallback_lin/tint_n`、`signal: [PERF] graze frames/rechecks/slots/period`
+  ⇒ 下一轮实跑直接对比"每帧摸了几槽 / 查了几次表"。
+- 一行撤销：`POFV_GRAZE_SCAN_PERIOD = 1`、`SIGNAL_GRAZE_SCAN_PERIOD = 1`、自检的 `60u → 1u`、
+  `forced = 1`、`#if CE_DEV_DUMP >= 1` 改回无条件。
+
 ## §BE-106-HITBOX-108-2026-10-25 ★★ 106 的「判定点不显示」被 108 覆盖（跨卡：106 + 108，**2026-10-25 修**）
 
 > 登记理由（`CLAUDE.md` §协作纪律 1）：本次动的是**106 / 108 两张系统卡**（不是我的卡），
