@@ -5958,7 +5958,12 @@ static void pofv_c4_fog_tick(void)
      *     —— 半径/颜色照样每帧从 boss 的 fog 字段写进去 ✓。*/
     if (s_c4_aura_vm) {
         const float *pp6 = ce_player_pos();
-        const float k6 = s_fog_r_last / POFV_C4_FOG_REF_R;
+        /* ★★★ 2026-10-25「完全没有画出来 fog」的根因 ✓：
+         *   一手 `script33` 里 `drawPoly(1.0f, 50)` 的半径是 **1 px**，尺寸全靠
+         *   `ins_412(50,2,600.0f,600.0f)` 把它**放大到 600** ✓；
+         *   而我沿用了旧贴图那套 `k = r / 128 ≈ 1.25` ⇒ 画出来只有 **1.25 px** ⇒ 等于没画 ✗。
+         *   ⇒ 改为按**直径**放大：`scale = r × 2`（r=160 ⇒ 320 ⇒ 直径 320 = 半径 160 ✓）。*/
+        const float k6 = s_fog_r_last * 2.0f;
         if (pp6) vm_set_world_pos((uint32_t)s_c4_aura_vm, pp6[0], pp6[1]);
         ce_anm_set_scale((uint32_t)s_c4_aura_vm, k6, k6);
         /* ★ 2026-10-25：这就是"颜色完全消失"的原因 —— 一手 `script33` 的顶点色是
