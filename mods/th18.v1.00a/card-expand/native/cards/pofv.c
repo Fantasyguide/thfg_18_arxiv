@@ -1072,7 +1072,8 @@ static void pofv_hud_charge_bar(float fx, float fy, float ratio_rei, float ratio
             if (!s_hud_chg_frame[i]) continue;
             ce_anm_set_pos((uint32_t)s_hud_chg_frame[i], fpx[i], fpy[i], 0.0f);
             ce_anm_set_scale((uint32_t)s_hud_chg_frame[i], fsx[i], fsy[i]);
-            ce_anm_set_color((uint32_t)s_hud_chg_frame[i], 0xffffffffu);
+            /* 2026-10-23 owner: '边框透明度没有接入 HUD 统一分布器' => 用 tdim（和底槽/填充同一套）*/
+            ce_anm_set_color((uint32_t)s_hud_chg_frame[i], tdim | 0x00ffffffu);
         }
     }
     /* ② **蓝填充 = 灵力比例**（规格 ① ✓）：左端起、长 `fr × 448` ✓ */
