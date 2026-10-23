@@ -228,6 +228,37 @@ static void poll_once(void)
         probe_log("[cnt] 609-612 = %u   711 = %u", g_cnt609, g_cnt711);
         return;
     }
+    if (g_hook_on && g_hook_sel == 13 && g_ctx) {
+        /* ★ 一次把两种解释都打出来：
+         *   A) ctx+0x5ac 是**指针** ⇒ base = *(ctx+0x5ac)，元素 = base + i*0x2c，看 +0x28
+         *   B) ctx+0x5ac 是**内联数组** ⇒ 元素 = ctx+0x5ac + i*0x2c，看 +0x28
+         * 哪个解释里出现"不是 0 也不是 -9999994"的值，哪个就是对的。 */
+        DWORD p = 0, base, v; char b1[400], b2[400]; int n1 = 0, n2 = 0, i;
+        if (readable((const void *)(uintptr_t)(g_ctx + 0x5ac), 4))
+            p = *(const DWORD *)(uintptr_t)(g_ctx + 0x5ac);
+        probe_log("[probe] ctx=%08x  *(ctx+0x5ac)=%08x", g_ctx, p);
+        if (p && readable((const void *)(uintptr_t)p, 0x40)) {
+            for (i = 0, base = p; i < 16; i++) {
+                DWORD a = base + i * 0x2c + 0x28;
+                v = readable((const void *)(uintptr_t)a, 4) ? *(const DWORD *)(uintptr_t)a : 0;
+                n1 += snprintf(b1 + n1, sizeof(b1) - n1, " %x=%08x", i, v);
+                if (n1 > 330) break;
+            }
+            probe_log("[A 指针] +28:%s", b1);
+            for (i = 0; i < 3; i++) {
+                char tag[32]; snprintf(tag, sizeof(tag), "A[%d]+0x28", i);
+                dump_n(tag, p + i * 0x2c + 0x28, 16);
+            }
+        }
+        for (i = 0, base = g_ctx + 0x5ac; i < 16; i++) {
+            DWORD a = base + i * 0x2c + 0x28;
+            v = readable((const void *)(uintptr_t)a, 4) ? *(const DWORD *)(uintptr_t)a : 0;
+            n2 += snprintf(b2 + n2, sizeof(b2) - n2, " %x=%08x", i, v);
+            if (n2 > 330) break;
+        }
+        probe_log("[B 内联] +28:%s", b2);
+        return;
+    }
     if (g_hook_on && g_hook_sel == 12 && g_ctx) {
         /* ★ 遍历元素 i=0..15：elem = ctx+0x5ac + i*0x2c，看哪条 elem+0x28 不是 -9999994 */
         char buf[600]; int n = 0, i;
@@ -647,6 +678,7 @@ int __stdcall thcrap_plugin_init(void)
         if (g_hook_sel == 0 || g_hook_sel == 4) install_hook();
         if (g_hook_sel == 0 || g_hook_sel == 8) install_hook711();
         if (g_hook_sel == 12) install_hook711();   /* 抓 ctx，然后遍历元素 dump */
+        if (g_hook_sel == 13) install_hook711();   /* 抓 ctx，指针/内联两种解释都打 */
         if (g_hook_sel == 0 || g_hook_sel == 11) {
             /* ★ 全 opcode 直方图：把 300..1042 里出现的**每个不同组**都装上计数器，
              * 一次运行就能看出这台机器到底跑了哪些 handler（不预设任何 opcode）。 */
