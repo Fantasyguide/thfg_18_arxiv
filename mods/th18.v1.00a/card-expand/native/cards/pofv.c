@@ -7373,6 +7373,7 @@ typedef struct { int live, age, life, side; float x, y; float rx, ry, rot; float
                  float C;    /* ★ 2026-10-25：**本条的转向帧**（一手 `$C = 60 + ([-10000]%100)` ✓，每条各自抽）*/
                  float a;    /* ★ 长度系数（一手 `ins_701(0, 24 + 32×%A, …)` ✓）*/
                  float len;  /* ★ 每帧现算：`len = a × spd` ✓（一手口径，见 HANDOFF §10.2）*/
+                 float len_draw;  /* ★ 绘制用的长度（对 `len` 做缓动，避免起步突兀 ✓）*/
                  int32_t vm; } pofv_c3s_t;
 static pofv_c3s_t s_c3s[POFV_C3S_MAX];
 static struct { int active, wave, step, timer, level, side; float f0; } s_c3s_st;
@@ -7435,7 +7436,7 @@ static void pofv_c3s_spawn(float x, float y)
         s_c3s[k].C = C;
     }
     s_c3s[k].a = 24.0f + 32.0f * POFV_C3S_APARAM;                 /* ★ 一手 ✓（%A 取 ❓0.5 ⇒ 40）*/
-    s_c3s[k].len = 0.0f;
+    s_c3s[k].len = 0.0f; s_c3s[k].len_draw = 2.0f;
     /* ★ 寿命要**跟这条的转向帧走** ✗ —— 五段总长 = `40 + (C−40) + 10 + 8 + 120 = C + 138`
      *   ⇒ 原来固定 220 在 `C > 82` 时会把段 5 砍掉 ✗ ⇒ 改成 `C + 150`（留 12 帧余量 ✓）。*/
     s_c3s[k].life = (int)s_c3s[k].C + 150;
@@ -7706,7 +7707,10 @@ static void pofv_c3s_tick(void)
                      *   从**不**每帧换 sprite ⇒ 怀疑 `ce_anm_set_sprite` 会把 VM 的朝向状态一起重置 ✗
                      *   （这正是"怎么设 rotation 都是水平"的最后一条嫌疑）。
                      *   ⇒ sprite 改在 **spawn 时设一次**（见 `pofv_c3s_spawn` ✓）。*/
-                    ce_anm_set_scale((uint32_t)b->vm, elen / 256.0f, 24.0f / 16.0f);
+                    /* ★ 2026-10-25 owner：「上升段的动态有点**突兀**」⇒ 长度改成**缓动逼近**目标
+                     *   （原来 `len` 逐帧硬写 `a×v`，起步那几帧从 2 px 跳到 a×v 会"啪"一下）✓ */
+                    s_c3s[k].len_draw += (elen - s_c3s[k].len_draw) * 0.35f;
+                    ce_anm_set_scale((uint32_t)b->vm, s_c3s[k].len_draw / 256.0f, 24.0f / 16.0f);
                 }
                 ce_anm_set_pos((uint32_t)b->vm, b->x, b->y, 0.0f);   /* ★ 弹头本体（不做偏移 ✓）*/
                 /* ★★★ 2026-10-25 owner：「全jb错位了：上升段是**横着上升**，转向后没问题，
