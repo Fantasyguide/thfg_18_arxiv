@@ -39,7 +39,8 @@ static DWORD g_hook_field  = 0;
 static DWORD g_hook_r      = 0;
 static DWORD g_hook_s      = 0;
 static DWORD g_w0 = 0, g_w4 = 0, g_w8 = 0, g_wc = 0;
-static DWORD g_ctx = 0;      /* 711 handler 里捕获的 edi = ECL 上下文 */
+static DWORD g_ctx = 0;
+static DWORD g_cnt609 = 0, g_cnt711 = 0;   /* 派发表计数：609-612 组 / 711 组各被调多少次 */      /* 711 handler 里捕获的 edi = ECL 上下文 */
 
 static void probe_log(const char *fmt, ...);   /* 前置声明（restore_all_patches 会用到） */
 
@@ -200,6 +201,10 @@ static void scan_for_pattern(void)
 static void poll_once(void)
 {
     DWORD anchor, v;
+    if (g_hook_on && (g_cnt609 || g_cnt711)) {
+        probe_log("[cnt] 609-612 = %u   711 = %u", g_cnt609, g_cnt711);
+        return;
+    }
     if (g_hook_on && g_ctx) {
         probe_log("[ctx] %08x  | [w4] %08x  [w8] %08x", g_ctx, g_w4, g_w8);
         dump_n("ctx+0x5ac", g_ctx + 0x5ac, 24);
@@ -468,6 +473,40 @@ static BOOL install_hook711(void)
     return TRUE;
 }
 
+
+/* ★★★ 计更安全的一招：**改派发表**而不是改代码。
+ * 派发 = jmp [group*4 + 0x50524c]；把某个 handler 地址换成"自增计数 + jmp 回原 handler" 的桩，
+ * 既能数调用次数，又完全不碰被挂钩的代码（不需要重放任何指令）。
+ *   stub 字节：FF 05 <&cnt>   inc dword [cnt]
+ *              E9 rel32        jmp 原 handler
+ * 不碰任何寄存器/xmm ⇒ 语义完全不变。 */
+#define DISPATCH_TBL 0x10524cu    /* th19:0x50524c */
+static BOOL hook_dispatch_group(int group, DWORD *cnt, DWORD orig_handler, const char *tag)
+{
+    BYTE *slot = g_base + DISPATCH_TBL + 4 * group;
+    BYTE *stub, *p;
+    DWORD old, cur;
+
+    if (!readable(slot, 4)) { probe_log("[tbl:%s] 表项不可读，跳过。", tag); return FALSE; }
+    cur = *(DWORD *)slot;
+    if (cur != orig_handler) { probe_log("[tbl:%s] 表项=%08x≠%08x，跳过。", tag, cur, orig_handler); return FALSE; }
+
+    stub = (BYTE *)VirtualAlloc(NULL, 4096, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    if (!stub) return FALSE;
+    p = stub;
+    *p++ = 0xFF; *p++ = 0x05;                       /* inc dword [imm32] */
+    *(DWORD *)p = (DWORD)(uintptr_t)cnt; p += 4;
+    *p++ = 0xE9;
+    *(DWORD *)p = (DWORD)((SIZE_T)(uintptr_t)orig_handler - (SIZE_T)(p + 4));
+
+    remember_patch(DISPATCH_TBL + 4 * group, (const BYTE *)&cur, 4);
+    if (!VirtualProtect(slot, 4, PAGE_EXECUTE_READWRITE, &old)) { VirtualFree(stub, 0, MEM_RELEASE); return FALSE; }
+    *(DWORD *)slot = (DWORD)(uintptr_t)stub;
+    VirtualProtect(slot, 4, old, &old);
+    probe_log("[tbl:%s] 组 %d 已接管 → %p（原 %08x）", tag, group, (void *)stub, orig_handler);
+    return TRUE;
+}
+
 static DWORD WINAPI poll_thread(LPVOID unused)
 {
     DWORD t0 = GetTickCount();
@@ -569,6 +608,10 @@ int __stdcall thcrap_plugin_init(void)
         if (g_hook_sel == 0 || g_hook_sel == 3) hook_store5(0x102a60u, EC, &g_wc, "+0c");
         if (g_hook_sel == 0 || g_hook_sel == 4) install_hook();
         if (g_hook_sel == 0 || g_hook_sel == 8) install_hook711();
+        if (g_hook_sel == 0 || g_hook_sel == 9) {
+            hook_dispatch_group(121, &g_cnt609, 0x5027a3u, "609-612");
+            hook_dispatch_group(152, &g_cnt711, 0x50388cu, "711");
+        }
         /* ★★ 真正的 609 handler（th19:0x502432）里的两个 float store：
          *   0x502493  f3 0f 10 44 24 28   movss xmm0,[esp+0x28]   ← r（5 字节整）
          *   0x5024af  f3 0f 11 40 04      movss [eax+0x4],xmm0    ← s（5 字节整）
