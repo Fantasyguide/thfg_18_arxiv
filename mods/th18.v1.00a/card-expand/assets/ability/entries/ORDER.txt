@@ -1568,3 +1568,8 @@ POFV109_ASC_C95       ability/ascii/POFV109_ASC_C95.png 16x16
 
 # 109 早苗 C3：曲线激光的**竖条**版（把 256x16 横条转 90°）—— 运行时旋转在本卡 VM 上不生效 ✗
 POFV109_C3S_STRIP_V  ability/POFV109_C3S_STRIP_V.png  16x256
+
+# 109 早苗 C4 三型弹（一手 bullet1/bullet2，**16px 格**）：符札/小彩弹/中玉
+POFV109_C4S_OFUDA  ability/POFV109_C4S_OFUDA.png  16x16
+POFV109_C4S_SMALL  ability/POFV109_C4S_SMALL.png  8x8
+POFV109_C4S_BIG    ability/POFV109_C4S_BIG.png    32x32
