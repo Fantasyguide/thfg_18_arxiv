@@ -7688,17 +7688,22 @@ static void pofv_c3s_tick(void)
                  *     · 横条 `POFV109_C3S_STRIP`  (256×16) = 转向**后**（横移段）✓
                  *     切换点 = 段 4 结束（`ag > tt + 18`）✓ —— 一手那里正好转了 90° ✓。*/
                 {
-                    /* ★★★ 2026-10-25 owner 选 B + 「**贴图本身的压缩拉伸**，转向时要**压缩成一个圆球**」✓：
-                     *   · 只用**横条** `POFV109_C3S_STRIP`（不再切竖条 ✗）；
-                     *   · 朝向靠**运行时旋转**（脚本体已加 `anchor(0,0)` + `rotate(-90°)` 基准 ✓）；
-                     *   · 段 4（转向那 8 帧 + 2 帧缓冲）把长度**压到 24 px** ⇒ 24×24 = **圆球** ✓，
-                     *     转完再按 `len` 拉长 ✓。*/
+                    /* ★★★ 2026-10-25 owner：「**依旧全部水平**」✗ ⇒ 运行时旋转在本卡这台 VM 上**确实不生效** ✗
+                     *   （脚本基准 `anchor+rotate(-90°)` 也试过了 ✗）⇒ 回到**两张贴图**方案：
+                     *   · 上升段 = **竖条** `POFV109_C3S_STRIP_V`(16×256) ✓
+                     *   · 转向后 = **横条** `POFV109_C3S_STRIP`(256×16) ✓
+                     *   · **转向那 8 帧 + 2 帧缓冲**：长度压到 **24 px** ⇒ **24×24 圆球** ✓（owner 要的"压缩成圆球转向"）
+                     *   · 位置 = **弹头本体**（不做偏移 ✓ —— 上次"错位"就是偏移造成的 ✗）。*/
                     const float ag2 = (float)b->age;
-                    const int turning = (ag2 > b->C + 10.0f) && (ag2 <= b->C + 20.0f);
-                    const float elen = turning ? 24.0f : len;          /* ★ 转向时压成圆球 ✓ */
+                    const int vert    = (ag2 <= b->C + 18.0f);          /* 段4 结束前 = 竖 ✓ */
+                    const int turning = (ag2 >  b->C + 10.0f) && (ag2 <= b->C + 20.0f);
+                    const float elen  = turning ? 24.0f : len;          /* ★ 转向时压成圆球 ✓ */
                     ce_anm_set_sprite(CE_ABILITY_ANM(), (uint32_t)b->vm,
-                                      (uint32_t)CE_ANM_ABILITY_SPRITE_POFV109_C3S_STRIP);
-                    ce_anm_set_scale((uint32_t)b->vm, elen / 256.0f, 24.0f / 16.0f);
+                                      (uint32_t)(vert ? CE_ANM_ABILITY_SPRITE_POFV109_C3S_STRIP_V
+                                                      : CE_ANM_ABILITY_SPRITE_POFV109_C3S_STRIP));
+                    ce_anm_set_scale((uint32_t)b->vm,
+                                     vert ? (24.0f / 16.0f)  : (elen / 256.0f),
+                                     vert ? (elen / 256.0f)  : (24.0f / 16.0f));
                 }
                 ce_anm_set_pos((uint32_t)b->vm, b->x, b->y, 0.0f);   /* ★ 弹头本体（不做偏移 ✓）*/
                 /* ★★★ 2026-10-25 owner：「全jb错位了：上升段是**横着上升**，转向后没问题，
@@ -8388,6 +8393,13 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
 /* ★★★ 2026-10-25（owner：「**空格换成 C4**」✓）：调试键 = **直接放 C4**（不是只把蓄力顶到阈值）。
  *   一手口径里 C4 的派发就是这四支（与释放支 `tier_rel >= 4` 那一段**同一组调用** ✓）；
  *   抽成一个函数，**释放支照旧**、调试键复用它 ⇒ 不会出现"两套 C4" ✗。*/
+static void pofv_c3_dispatch(void)
+{
+    if (s_aura_kind == 1)      pofv_c3m_fire();
+    else if (s_aura_kind == 3) pofv_c3s_fire();
+    else                       pofv_c3_fire();
+}
+
 static void pofv_c4_dispatch(void)
 {
     if (s_aura_kind == 1)      pofv_c4m_fire();
@@ -9004,10 +9016,11 @@ static int on_tick_2(ce_card_t *c)
                     static int sp_prev;
                     const int sp_now = ce_key_down(CE_VK_SPACE) ? 1 : 0;
                     if (sp_now && !sp_prev) {
-                        s_aura_charge = POFV_C4_THRESH;
-                        pofv_c4_dispatch();
-                        ce_log("pofv: [DBG] 空格 ⇒ 直接放 C4（kind=%d rank=%d）",
-                               (int)s_aura_kind, pofv_c4_rank());
+                        /* ★ 2026-10-25 owner：「**你把空格键换成 C3**」✓ */
+                        s_aura_charge = POFV_C3_THRESH;
+                        pofv_c3_dispatch();
+                        ce_log("pofv: [DBG] 空格 ⇒ 直接放 C3（kind=%d lv=%d）",
+                               (int)s_aura_kind, (int)s_c3_lv_n);
                     }
                     sp_prev = sp_now;
                 }
