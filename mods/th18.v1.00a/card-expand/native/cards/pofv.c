@@ -1083,8 +1083,17 @@ static float pofv_hud_txt_put(float x, float y, const char *s, uint32_t col,
         if (g >= 0 && *used < POFV_HUD_TXT_VMS) {
             const uint32_t vm = (uint32_t)s_hud_txt_vm[*used];
             if (vm) {
+                /* ★★ 2026-10-24（owner 实跑：「大写字母、小写字母和数字的 **baseline 有点错位**」）——
+                 *   量过**源图**（不是我们切图错 ✗）：三行墨迹底边（相对格顶，阈值 `alpha>8 && max>=96`）
+                 *     · 第 0 行（数字/标点）y=176 格：**11**
+                 *     · 第 1 行（`@A-Z[\]^_`）y=192 格：**11**
+                 *     · 第 2 行（小写 `a-z{|}~`）y=208 格：**12**  ← **一手自己的表里低 1 px**
+                 *   ⇒ 一手逐字画只推进 x、不改 y，所以**原版也是这个错位**；owner 要它对齐 ✓
+                 *   ⇒ 本卡在**画的时候**把第 2 行（格号 ≥ 64）整体上提 **1 px** 补偿 ✓
+                 *     （贴图**不动** —— 仍是逐像素照切，owner「先按照切图画」✓）。*/
+                const float dy = (g >= 64) ? -1.0f : 0.0f;
                 /* 精灵默认锚 = 锚心 ⇒ 给格子中心（左上角 + 半格）✓ */
-                ce_anm_set_pos(vm, x + POFV_HUD_TXT_W * 0.5f, y + POFV_HUD_TXT_H * 0.5f, 0.0f);
+                ce_anm_set_pos(vm, x + POFV_HUD_TXT_W * 0.5f, y + dy + POFV_HUD_TXT_H * 0.5f, 0.0f);
                 ce_anm_set_scale(vm, 1.0f, 1.0f);
                 ce_anm_set_sprite(CE_ABILITY_ANM(), vm,
                                   (uint32_t)(CE_ANM_ABILITY_SPRITE_POFV109_ASC_C00 + g));
