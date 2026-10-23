@@ -1110,12 +1110,13 @@ static void pofv_hud_charge_bar(float fx, float fy, float ratio_rei, float ratio
     /* ★ 2026-10-23 owner：「蓄力条底下应当有一个 **1 px 的白色边框**」✗
      *   ⇒ 把**已经空出来的** `white_vm` 当**边框**用（零新全局 ✓）：
      *   ★ 位置比底槽**各向外 1 px**、★ 尺寸比底槽**大 2 px**、★ 纯白 ⇒ 露出来的就是 **1 px 白描边** ✓。*/
+    /* 2026-10-23 owner: '还有白色实心条覆盖在蓄力槽整体上面' => 这就是它（整块 454x14 白）。
+     *   边框已经由上面 4 条 1px 白线负责 => 这台整块白**关掉**（缩到 0）。*/
     if (s_hud_chg_white_vm) {
         ce_anm_set_pos((uint32_t)s_hud_chg_white_vm, fx - 1.0f, fy - 1.0f, 0.0f);
-        ce_anm_set_scale((uint32_t)s_hud_chg_white_vm,
-                         POFV_HUD_CHG_BLOCK_W_SURF + 2.0f, POFV_HUD_CHG_BLOCK_H_SURF + 2.0f);
-        ce_anm_set_color((uint32_t)s_hud_chg_white_vm, tdim | 0x00ffffffu);
-        ce_anm_set_color2((uint32_t)s_hud_chg_white_vm, tdim | 0x00ffffffu);
+        ce_anm_set_scale((uint32_t)s_hud_chg_white_vm, 0.0f, 0.0f);
+        ce_anm_set_color((uint32_t)s_hud_chg_white_vm, 0x00000000u);
+        ce_anm_set_color2((uint32_t)s_hud_chg_white_vm, 0x00000000u);
     }
     /* ④ **C1..C4 四枚标**（规格 ⑤⑥ ✓；形状 = 一手 `ins_617(1.0f,4)` ⇒ 脚本 425 的**贴图**）
      *    ★★ **三档**（一手 `interruptLabel` 的 4 / 3 / 2 三态；推法见 `TUNING.md` 本轮 §①②）：
