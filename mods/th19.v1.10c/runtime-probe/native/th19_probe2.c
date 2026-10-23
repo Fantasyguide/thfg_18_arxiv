@@ -41,7 +41,9 @@ static DWORD g_hook_s      = 0;
 static DWORD g_w0 = 0, g_w4 = 0, g_w8 = 0, g_wc = 0;
 static DWORD g_ctx = 0;
 static DWORD g_cnt609 = 0, g_cnt711 = 0;
-static DWORD g_cnt_et[15];        /* opcode 700..714 各自的调用次数 */
+static DWORD g_cnt_et[15];
+static DWORD g_cnt_grp[64];       /* ★ 每组（group）被调用次数：全 opcode 直方图 */
+static int   g_grp_of[64];        /* g_cnt_grp[i] 对应的组号 */        /* opcode 700..714 各自的调用次数 */
 static int   g_grp_done[64];      /* 已接管过的组号，防重复补丁 */   /* 派发表计数：609-612 组 / 711 组各被调多少次 */      /* 711 handler 里捕获的 edi = ECL 上下文 */
 
 static void probe_log(const char *fmt, ...);   /* 前置声明（restore_all_patches 会用到） */
@@ -203,6 +205,15 @@ static void scan_for_pattern(void)
 static void poll_once(void)
 {
     DWORD anchor, v;
+    if (g_hook_on && g_hook_sel == 11) {
+        int k; char buf[600]; int n = 0;
+        for (k = 0; k < 64; k++) {
+            if (g_cnt_grp[k]) { n += snprintf(buf + n, sizeof(buf) - n, " g%d:%u", g_grp_of[k], g_cnt_grp[k]); }
+            if (n > 480) break;
+        }
+        if (n) probe_log("[hist]%s", buf);
+        return;
+    }
     if (g_hook_on && g_hook_sel == 10) {
         int k; DWORD sum = 0;
         char buf[512]; int n = 0;
@@ -622,6 +633,22 @@ int __stdcall thcrap_plugin_init(void)
         if (g_hook_sel == 0 || g_hook_sel == 3) hook_store5(0x102a60u, EC, &g_wc, "+0c");
         if (g_hook_sel == 0 || g_hook_sel == 4) install_hook();
         if (g_hook_sel == 0 || g_hook_sel == 8) install_hook711();
+        if (g_hook_sel == 0 || g_hook_sel == 11) {
+            /* ★ 全 opcode 直方图：把 300..1042 里出现的**每个不同组**都装上计数器，
+             * 一次运行就能看出这台机器到底跑了哪些 handler（不预设任何 opcode）。 */
+            BYTE *l1 = g_base + 0x105560;
+            int op, n = 0;
+            for (op = 300; op <= 1042 && n < 64; op++) {
+                BYTE grp; DWORD orig;
+                if (!readable(l1 + (op - 300), 1)) continue;
+                grp = l1[op - 300];
+                if (grp >= 64 || g_grp_done[grp]) continue;
+                if (!readable(g_base + 0x10524c + 4 * grp, 4)) continue;
+                orig = *(DWORD *)(g_base + 0x10524c + 4 * grp);
+                if (hook_dispatch_group(grp, &g_cnt_grp[n], orig, "all")) { g_grp_of[n] = grp; n++; }
+            }
+            probe_log("[hist] 共接管 %d 个组", n);
+        }
         if (g_hook_sel == 0 || g_hook_sel == 10) {
             /* ★ 给 opcode 700..714 的每个 handler 组各装一个计数器：
              * 一次跑就能看出 C3 到底用了哪几个 et 族 op（不预设、不猜）。 */
