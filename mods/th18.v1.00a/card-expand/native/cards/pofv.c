@@ -8292,6 +8292,17 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
     }
 }
 
+/* ★★★ 2026-10-25（owner：「**空格换成 C4**」✓）：调试键 = **直接放 C4**（不是只把蓄力顶到阈值）。
+ *   一手口径里 C4 的派发就是这四支（与释放支 `tier_rel >= 4` 那一段**同一组调用** ✓）；
+ *   抽成一个函数，**释放支照旧**、调试键复用它 ⇒ 不会出现"两套 C4" ✗。*/
+static void pofv_c4_dispatch(void)
+{
+    if (s_aura_kind == 1)      pofv_c4m_fire();
+    else if (s_aura_kind == 3) pofv_c4s_fire();
+    else if (s_aura_kind == 2) pofv_c4k_fire();
+    else                       pofv_c4_fire();
+}
+
 static int on_tick_2(ce_card_t *c)
 {
     int i;
@@ -8882,8 +8893,20 @@ static int on_tick_2(ce_card_t *c)
                 /* ★ 2026-10-16 owner 订正：「★ **空格应当是直接放 C4，你去掉 C3 就行**」✓
                  *   ⇒ ★ **去掉 C3 档那道门** ✗ ⇒ ★ 只要按空格，蓄力**一律顶到 C4 阈值** ✓
                  *   （不再要求"已到 C3 且未到 C4" ✓）⇒ 之后由卡自己的释放逻辑放 C4 ✓。*/
-                if (ce_key_down(CE_VK_SPACE))
-                    s_aura_charge = POFV_C4_THRESH;
+                /* ★★★ 2026-10-25（owner：「**空格换成 C4**」✓）——
+                 *   原来只是把蓄力**顶到 C4 阈值**（还要松手才发）；现在按一下空格就**直接放 C4** ✓
+                 *   （走 `pofv_c4_dispatch()` = 与释放支同一组派发 ✓，按**上升沿**触发一次 ✓）。*/
+                {
+                    static int sp_prev;
+                    const int sp_now = ce_key_down(CE_VK_SPACE) ? 1 : 0;
+                    if (sp_now && !sp_prev) {
+                        s_aura_charge = POFV_C4_THRESH;
+                        pofv_c4_dispatch();
+                        ce_log("pofv: [DBG] 空格 ⇒ 直接放 C4（kind=%d rank=%d）",
+                               (int)s_aura_kind, pofv_c4_rank());
+                    }
+                    sp_prev = sp_now;
+                }
                 /* ★★★★★ 2026-10-16 **调试键（owner：「★ **那这样的话，I 键安排一下无敌（参考 108），
                  *   我没有 L 的底力**」✓）**：★ 按住 **I** ⇒ 每帧向 SDK **声明无敌** ✓ —— 走的是
                  *   一手那条路 ✓（`sdk.h:1055-1063` ✓：★ 各卡每帧**声明**自己想要的帧数 ✓，
