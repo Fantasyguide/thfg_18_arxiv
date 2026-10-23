@@ -235,16 +235,16 @@ static void poll_once(void)
         return;
     }
     if (g_hook_on && g_hook_sel == 14 && g_ctx) {
-        probe_log("[buf] 段表候选: %08x %08x %08x %08x | %08x %08x %08x %08x",
+        probe_log("[buf1] %08x %08x %08x %08x %08x %08x %08x %08x",
                   g_buf[0], g_buf[1], g_buf[2], g_buf[3],
                   g_buf[4], g_buf[5], g_buf[6], g_buf[7]);
-        probe_log("[buf] +0x10..: %08x %08x %08x %08x | %08x %08x %08x %08x",
+        probe_log("[buf2] %08x %08x %08x %08x %08x %08x %08x %08x",
                   g_buf[8], g_buf[9], g_buf[10], g_buf[11],
                   g_buf[12], g_buf[13], g_buf[14], g_buf[15]);
-        probe_log("[buf] 701区: %08x %08x %08x %08x %08x %08x %08x %08x",
+        probe_log("[buf3] %08x %08x %08x %08x %08x %08x %08x %08x",
                   g_buf2[0], g_buf2[1], g_buf2[2], g_buf2[3],
                   g_buf2[4], g_buf2[5], g_buf2[6], g_buf2[7]);
-        probe_log("[buf] 元素头: %08x %08x %08x %08x %08x %08x %08x %08x",
+        probe_log("[buf4] %08x %08x %08x %08x %08x %08x %08x %08x",
                   g_buf3[0], g_buf3[1], g_buf3[2], g_buf3[3],
                   g_buf3[4], g_buf3[5], g_buf3[6], g_buf3[7]);
         return;
@@ -702,7 +702,7 @@ int __stdcall thcrap_plugin_init(void)
 
     GetLocalTime(&st);
     probe_log("");
-    probe_log("=== th19_probe2 v3 起 %04d-%02d-%02d %02d:%02d:%02d ===",
+    probe_log("=== th19_probe2 v4 === %04d-%02d-%02d %02d:%02d:%02d ===",
               st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
     probe_log("exe  = %s", exe);
     probe_log("base = %p", (void *)g_base);
