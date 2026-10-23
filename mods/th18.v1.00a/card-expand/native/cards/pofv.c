@@ -8481,22 +8481,30 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
  *   **本帧播放队列 = `0x56ad9c`（12 槽 × 4 字节，存音效 id）**、每槽计数 `0x56adcc`。
  *   `play_sound`(`0x476c70`) 就是把 id 填进这个队列 ⇒ **每帧读队列、只在变化时打一行日志**，
  *   就能看到"破罩那一帧前后到底播了哪些 SE" ✓（不屏蔽、不改行为 ✓）。*/
-#define POFV_SE_QUEUE_ADDR  0x56ad9cu
-#define POFV_SE_QUEUE_N     12
+/* ★★★★ 2026-10-25 goal「侦测被弹音」—— **轮询 slot 数组**（v2；v1 轮询播放队列失败 ✗：
+ *   实跑日志里一条 `slot` 都没出 ⇒ 队列 `0x56ad9c` 在 `on_tick_2` 之前就被消费/清空了 ✗）。
+ *   一手 `engine/_shared/th18-sound-table.md` §1/§3：`slot` 数组 = **`0x56c804`，84 × 0x18**，
+ *     · `+0x04` = 优先级/音量 word，**初值 `0xFFFFFFFF` = 空闲**；
+ *     · `+0x08` = **&cfg 行**，而 cfg 行 `+0x00` = **音效 id** ✓
+ *   ⇒ 每帧扫 84 槽：**空闲→忙** 的那一刻把该槽的 `id` 打出来（只在变化时打 ✓ 不刷屏）。
+ *   仍然**零 hook、零行为改动** ✓。*/
+#define POFV_SE_SLOT_BASE   0x56c804u
+#define POFV_SE_SLOT_N      84
+#define POFV_SE_SLOT_STRIDE 0x18
 static void pofv_se_probe(void)
 {
-    static int last[POFV_SE_QUEUE_N];
+    static int last[POFV_SE_SLOT_N];
     static int inited;
-    const int32_t *q = (const int32_t *)POFV_SE_QUEUE_ADDR;
-    int i;
-    for (i = 0; i < POFV_SE_QUEUE_N; ++i) {
-        /* ★ 队列语义（反汇编 `0x476c70` 实证 ✓）：槽里是 **id**，**负数 = 空位**
-         *   （`0x476ca9  js 0x476ce6` 遇到负值即结束扫描）⇒ 只记 `0 < v <= 0x53` 的槽 ✓ */
-        const int v = (int)q[i];
-        const int ok = (v > 0 && v <= 0x53) ? v : 0;
-        if (!inited || ok != last[i]) {
-            if (ok) ce_log("pofv: [SE] slot%d = 0x%02x", i, (unsigned)ok);
-            last[i] = ok;
+    int k;
+    for (k = 0; k < POFV_SE_SLOT_N; ++k) {
+        const uint8_t *sl = (const uint8_t *)(POFV_SE_SLOT_BASE + (uint32_t)k * POFV_SE_SLOT_STRIDE);
+        const int32_t prio = *(const int32_t *)(sl + 4);
+        const uint8_t *row  = *(const uint8_t *const *)(sl + 8);
+        int id = -1;
+        if (prio != -1 && row) id = *(const int32_t *)row;
+        if (!inited || id != last[k]) {
+            if (id >= 0 && id <= 0x53) ce_log("pofv: [SE] slot%d busy id=0x%02x (t=%d)", k, (unsigned)id, (int)s_card_frames);
+            last[k] = id;
         }
     }
     inited = 1;
