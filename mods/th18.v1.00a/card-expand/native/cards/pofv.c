@@ -7472,7 +7472,7 @@ static void pofv_c3s_spawn(float x, float y)
                          CE_ANM_ABILITY_SCRIPT_POFV109_C3S_ORB,
                          POFV_C4_VM_LAYER);
     if (s_c3s[k].vm) {
-        ce_anm_set_color((uint32_t)s_c3s[k].vm, 0xffffffffu);
+        /* ★ 2026-10-25 owner：C3 的 color 全摘 ⇒ spawn 这里也不写顶点色 ✓ */
         ce_anm_set_pos((uint32_t)s_c3s[k].vm, x, y, 0.0f);
         /* 2026-10-18（对抗性验证 D4 ✓）：贴图从 8x8 的点换成 **256x16 的横条** =>
          * X 必须按 30/256 缩（原来 0.5 会把 256 画成 128px 宽）。Y 留 0.5 => 16x0.5 = 8px。*/
@@ -7650,11 +7650,9 @@ static void pofv_c3s_tick(void)
              *   红橙 = **蓝通道被乘成 0**（品红×黄 = 242,106,0 ✓）⇒ 是**第二色**在染色。
              *   ⇒ `color` / `color2` **两路都写白**（本仓 HUD 的老规矩：引擎按两路判/用 ✓），
              *     并且脚本 465 已把 `type(1)` 改成 `type(0)`（不再走第二色通道 ✓）。*/
-            {
-                const uint32_t cc = (b->age < 8) ? 0xffffff80u : 0xffffff14u;
-                ce_anm_set_color((uint32_t)b->vm, cc);
-                ce_anm_set_color2((uint32_t)b->vm, cc);
-            }
+            /* ★★★ 2026-10-25 owner：「**你把 C3 的 color 都摘掉**」✓ ——
+             *   ⇒ 这里**不再写顶点色**（`color`/`color2` 都不动）⇒ 让纹理按它自己的颜色（品红）画 ✓
+             *   （此前两路都写白仍显示红橙 ⇒ 说明染色来自别处/或写色本身触发了乘法 ⇒ 先全摘 ✗）。*/
         }
         if (b->vm) {
             /* ★ 2026-10-16 **一手 `posTime(28, 0, %F0, %F1, 0)` 的线性飘动** ✓：
