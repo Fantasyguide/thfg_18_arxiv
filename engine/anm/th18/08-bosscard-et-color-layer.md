@@ -54,7 +54,7 @@ $A=8; loop { ins_604(1,[-9998],0); ins_605(1,([-9999]*0.5)+0.4,0); ins_601(1); }
 
 | 脚本 | 关键指令 | 含义 |
 | --- | --- | --- |
-| **`script33`** | `ins_300(-1)` | ★ **`sprite(-1)` = 不绑 sprite（不画 PNG）**；形状由 **`ins_604(1.0f, 50)` = `drawPoly(半径1, 50 边)`** 程序生成 ⇒ **实心圆**（见 [`th16/09-drawing`](../th16/09-drawing.md)：604=`drawPoly`、605=`drawPolyBorder`、611=`drawRing`） |
+| **`script33`** | `ins_300(-1)` | ★ **不绑 sprite（不画 PNG）**；形状由 `ins_604(1.0f, 50)` = **`drawPoly(1, 50)`** 程序生成 ⇒ **实心圆**（opcode 名见 [`th16/09-drawing`](../th16/09-drawing.md)：604/605/611 = drawPoly/Border/Ring） |
 | | **`ins_303(4)`** | ★ **`blendMode(4)`** |
 | | **`ins_304(21)`** | ★ **`layer(21)`** |
 | | `ins_404/405/406(…)` | 颜色/alpha（0、255、255,255,255 一类） |
