@@ -7724,7 +7724,7 @@ static void pofv_c3s_tick(void)
                 if (k == 0 && (b->age <= 3 || (b->age % 20) == 0 ||
                                (b->age >= (int)b->C + 9 && b->age <= (int)b->C + 20))) {
                     uint8_t *vmp = (uint8_t *)ce_anm_get_vm((uint32_t)b->vm);
-                    const float rz = vmp ? *(float *)(vmp + 0x3c) : -9.9f;
+                    const float rz = vmp ? *(float *)(vmp + 0x44) : -9.9f;   /* ★ rz 在 +0x44（+0x3c 是 rx）*/
                     ce_log("pofv: [C3ROT] age=%d th_w=%.3f rz_vm=%.3f spin=%.3f pos=(%.1f,%.1f) spr=%d",
                            (int)b->age, (double)b->ang, (double)rz, (double)b->spd,
                            (double)b->x, (double)b->y,
