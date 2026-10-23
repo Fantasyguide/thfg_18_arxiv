@@ -7476,6 +7476,8 @@ static void pofv_c3s_spawn(float x, float y)
         ce_anm_set_pos((uint32_t)s_c3s[k].vm, x, y, 0.0f);
         /* 2026-10-18（对抗性验证 D4 ✓）：贴图从 8x8 的点换成 **256x16 的横条** =>
          * X 必须按 30/256 缩（原来 0.5 会把 256 画成 128px 宽）。Y 留 0.5 => 16x0.5 = 8px。*/
+        ce_anm_set_sprite(CE_ABILITY_ANM(), (uint32_t)s_c3s[k].vm,
+                          (uint32_t)CE_ANM_ABILITY_SPRITE_POFV109_C3S_STRIP);   /* ★ 只在这里设一次 ✓ */
         ce_anm_set_scale((uint32_t)s_c3s[k].vm, 0.5f * (30.0f / 256.0f), 0.5f);
     }
 }
@@ -7699,8 +7701,11 @@ static void pofv_c3s_tick(void)
                     const float ag2 = (float)b->age;
                     const int turning = (ag2 > b->C + 10.0f) && (ag2 <= b->C + 20.0f);
                     const float elen  = turning ? 24.0f : len;          /* ★ 转向时压成圆球 ✓ */
-                    ce_anm_set_sprite(CE_ABILITY_ANM(), (uint32_t)b->vm,
-                                      (uint32_t)CE_ANM_ABILITY_SPRITE_POFV109_C3S_STRIP);
+                    /* ★★★ 2026-10-25：**不再每帧 set_sprite** ✗ ——
+                     *   对照能转的那支（`animal.c:2703` 的鹰光束）：它每帧只写 **pos / scale / rotation**，
+                     *   从**不**每帧换 sprite ⇒ 怀疑 `ce_anm_set_sprite` 会把 VM 的朝向状态一起重置 ✗
+                     *   （这正是"怎么设 rotation 都是水平"的最后一条嫌疑）。
+                     *   ⇒ sprite 改在 **spawn 时设一次**（见 `pofv_c3s_spawn` ✓）。*/
                     ce_anm_set_scale((uint32_t)b->vm, elen / 256.0f, 24.0f / 16.0f);
                 }
                 ce_anm_set_pos((uint32_t)b->vm, b->x, b->y, 0.0f);   /* ★ 弹头本体（不做偏移 ✓）*/
