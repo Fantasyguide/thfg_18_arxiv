@@ -8917,7 +8917,12 @@ static int on_tick_2(ce_card_t *c)
      *     "保持结界"那一支才接 `owned`（见下面 `else if (aura_held && owned)`）——
      *     这样"按着 C 直接按 D 切走"时：`chg_held=0`、保持支不成立 ⇒ 落到释放支 ⇒ 按放开蓄力处理 ✓，
      *     而结界块仍按 `aura_held` 继续维持 ✓。*/
-    const int aura_held = pofv_aura_key();
+    /* ★★★ 2026-10-25 owner（定稿）：「**按 Shift 永远都可以**，但是 **C 键有 109 的效果当且仅当
+     *   主动卡是这张**」✓ ⇒ 结界键拆成两半：
+     *     · **Shift 恒可用** ✓（与卡是否被选中无关）；
+     *     · **C 只有在 109 被选中时**才算"张结界" ✓（它同时是蓄力键，两个用途都归 109 ✓）。*/
+    const int aura_held = ce_key_down(CE_VK_SHIFT)
+                        || (pofv_charge_owned(c) && ce_key_down(CE_VK_C));
                                               /* ★ 结界 = C ∨ Shift **且 109 是选中的主动卡** ✓
                                                *   ⚠ 这一道**也必须加**：否则"按着 C 直接按 D 切走"时
                                                *   `chg_held=0 ∧ aura_held=1` ⇒ 落进"保持"那一支 ⇒
