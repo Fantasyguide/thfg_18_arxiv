@@ -40,7 +40,9 @@ static DWORD g_hook_r      = 0;
 static DWORD g_hook_s      = 0;
 static DWORD g_w0 = 0, g_w4 = 0, g_w8 = 0, g_wc = 0;
 static DWORD g_ctx = 0;
-static DWORD g_cnt609 = 0, g_cnt711 = 0;   /* 派发表计数：609-612 组 / 711 组各被调多少次 */      /* 711 handler 里捕获的 edi = ECL 上下文 */
+static DWORD g_cnt609 = 0, g_cnt711 = 0;
+static DWORD g_cnt_et[15];        /* opcode 700..714 各自的调用次数 */
+static int   g_grp_done[64];      /* 已接管过的组号，防重复补丁 */   /* 派发表计数：609-612 组 / 711 组各被调多少次 */      /* 711 handler 里捕获的 edi = ECL 上下文 */
 
 static void probe_log(const char *fmt, ...);   /* 前置声明（restore_all_patches 会用到） */
 
@@ -201,6 +203,16 @@ static void scan_for_pattern(void)
 static void poll_once(void)
 {
     DWORD anchor, v;
+    if (g_hook_on && g_hook_sel == 10) {
+        int k; DWORD sum = 0;
+        char buf[512]; int n = 0;
+        for (k = 0; k < 15; k++) {
+            if (g_cnt_et[k]) { n += snprintf(buf + n, sizeof(buf) - n, " %d:%u", 700 + k, g_cnt_et[k]); sum += g_cnt_et[k]; }
+            if (n > 400) break;
+        }
+        if (sum) probe_log("[et ]%s", buf);
+        return;
+    }
     if (g_hook_on && (g_cnt609 || g_cnt711)) {
         probe_log("[cnt] 609-612 = %u   711 = %u", g_cnt609, g_cnt711);
         return;
@@ -488,6 +500,7 @@ static BOOL hook_dispatch_group(int group, DWORD *cnt, DWORD orig_handler, const
     DWORD old, cur;
 
     if (!readable(slot, 4)) { probe_log("[tbl:%s] 表项不可读，跳过。", tag); return FALSE; }
+    if (group < 64 && g_grp_done[group]) return TRUE;
     cur = *(DWORD *)slot;
     if (cur != orig_handler) { probe_log("[tbl:%s] 表项=%08x≠%08x，跳过。", tag, cur, orig_handler); return FALSE; }
 
@@ -503,6 +516,7 @@ static BOOL hook_dispatch_group(int group, DWORD *cnt, DWORD orig_handler, const
     if (!VirtualProtect(slot, 4, PAGE_EXECUTE_READWRITE, &old)) { VirtualFree(stub, 0, MEM_RELEASE); return FALSE; }
     *(DWORD *)slot = (DWORD)(uintptr_t)stub;
     VirtualProtect(slot, 4, old, &old);
+    if (group < 64) g_grp_done[group] = 1;
     probe_log("[tbl:%s] 组 %d 已接管 → %p（原 %08x）", tag, group, (void *)stub, orig_handler);
     return TRUE;
 }
@@ -608,6 +622,21 @@ int __stdcall thcrap_plugin_init(void)
         if (g_hook_sel == 0 || g_hook_sel == 3) hook_store5(0x102a60u, EC, &g_wc, "+0c");
         if (g_hook_sel == 0 || g_hook_sel == 4) install_hook();
         if (g_hook_sel == 0 || g_hook_sel == 8) install_hook711();
+        if (g_hook_sel == 0 || g_hook_sel == 10) {
+            /* ★ 给 opcode 700..714 的每个 handler 组各装一个计数器：
+             * 一次跑就能看出 C3 到底用了哪几个 et 族 op（不预设、不猜）。 */
+            int op, k;
+            BYTE *l1 = g_base + 0x105560;
+            for (op = 700, k = 0; op <= 714; op++, k++) {
+                BYTE grp;
+                DWORD orig;
+                if (!readable(l1 + (op - 300), 1)) continue;
+                grp = l1[op - 300];
+                if (!readable(g_base + 0x10524c + 4 * grp, 4)) continue;
+                orig = *(DWORD *)(g_base + 0x10524c + 4 * grp);
+                hook_dispatch_group(grp, &g_cnt_et[k], orig, "et");
+            }
+        }
         if (g_hook_sel == 0 || g_hook_sel == 9) {
             hook_dispatch_group(121, &g_cnt609, 0x5027a3u, "609-612");
             hook_dispatch_group(152, &g_cnt711, 0x50388cu, "711");
