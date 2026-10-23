@@ -7675,12 +7675,18 @@ static void pofv_c3s_tick(void)
              *   · `len < 2` 时给个下限（= 刹停时的"方块"），免得 scale 归零后整台不可见 ✓。*/
             {
                 const float len = (b->len > 2.0f) ? b->len : 2.0f;
+                /* ★★★ 2026-10-25 owner：「贴图基准是横着的，转向本身没问题，但**它是横着转过去的**」✗
+                 *   ⇒ 根因 = **锚心**：整条以弹头为中心对称铺开 ⇒ 转弯时看着像"绕中心横着翻" ✗。
+                 *   ⇒ 改成 **从弹头往后拖**：把绘制点沿 **−θ 方向退半个长度** ✓
+                 *     （贴图长轴本来就沿 +x ⇒ 旋转 θ 后正好指向运动方向 ✓，尾巴在身后 ✓）。*/
+                const int di = (int)(b->ang * (36.0f / 6.2831853f)) % 36;
+                const int dj = (di < 0) ? di + 36 : di;
                 ce_anm_set_sprite(CE_ABILITY_ANM(), (uint32_t)b->vm,
                                   (uint32_t)CE_ANM_ABILITY_SPRITE_POFV109_C3S_STRIP);
+                ce_anm_set_pos((uint32_t)b->vm,
+                               b->x - s_c2_dir36[dj][0] * (len * 0.5f),
+                               b->y - s_c2_dir36[dj][1] * (len * 0.5f), 0.0f);
                 ce_anm_set_scale((uint32_t)b->vm, len / 256.0f, 24.0f / 16.0f);
-                /* ★ 2026-10-25 owner：「**你没有转 90°，它现在是横着过来的**」✗
-                 *   ⇒ 纹理的长轴**本来就在 +x** ⇒ 旋转量 = **θ 本身**（不是 θ+90° ✗；
-                 *     θ+90° 在"朝下(θ=π/2)"时正好转成 180° ⇒ 还是横的 ✗）。*/
                 ce_anm_set_rotation((uint32_t)b->vm, 0.0f, 0.0f, b->ang);
             }
         }
