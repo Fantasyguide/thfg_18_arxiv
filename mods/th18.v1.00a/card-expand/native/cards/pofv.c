@@ -5963,7 +5963,10 @@ static void pofv_c4_fog_tick(void)
          *   `ins_412(50,2,600.0f,600.0f)` 把它**放大到 600** ✓；
          *   而我沿用了旧贴图那套 `k = r / 128 ≈ 1.25` ⇒ 画出来只有 **1.25 px** ⇒ 等于没画 ✗。
          *   ⇒ 改为按**直径**放大：`scale = r × 2`（r=160 ⇒ 320 ⇒ 直径 320 = 半径 160 ✓）。*/
-        const float k6 = s_fog_r_last * 2.0f;
+        /* ★ 2026-10-25 owner：「**你直接拆掉换 layer5 的那个**」⇒ 461 已换成一手 `script18` 那套
+         *   （普通贴图 + layer(5) + 每帧自转、默认混合 ✓）⇒ 缩放回到**按半径**映射：
+         *   贴图是 256×256 的羽化圆（半径 128）⇒ `scale = r / 128`（r=160 ⇒ 1.25 ⇒ 半径 160 ✓）。*/
+        const float k6 = s_fog_r_last / POFV_C4_FOG_REF_R;
         if (pp6) vm_set_world_pos((uint32_t)s_c4_aura_vm, pp6[0], pp6[1]);
         ce_anm_set_scale((uint32_t)s_c4_aura_vm, k6, k6);
         /* ★ 2026-10-25：这就是"颜色完全消失"的原因 —— 一手 `script33` 的顶点色是
