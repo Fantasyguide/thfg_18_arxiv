@@ -1227,9 +1227,25 @@ void ce_hud_native_face_dim_tick(void)
     int32_t root;
     uint8_t *vm, *head, *node;
     uint32_t a;
-    int guard = 0, nw = 0;
+    int guard = 0, nw = 0, wr = 0, k = 0;
     static uint32_t s_wa = 0xffffffffu;
     static int s_wn = -1;
+    /* ★★★★ 2026-10-25（性能 C2，owner 诊断「全程固定付」）：**只在 alpha 变化时写**。
+     *   改前：每帧对**每一支**子 VM 无条件写 4–5 个 dword（`color_1` / `color_2` + 2 × 3 个插值器）
+     *   ⇒ 5 支 VM × 8 次写 = 40 次/帧，而且`IsBadWritePtr` 也要跟着跑 15 次/帧。
+     *   改后：`(alpha, 第 k 支子 VM 指针)` 与上一次写过的**都相同** ⇒ 跳过写（本帧 0 次写）。
+     *   ★ **为什么不会漏（为什么可以跳）**：
+     *     ① 我们写的是 `initial = goal = current = a` 三处**同时**写 ⇒ 引擎的插值器**没有可动的余量**
+     *        （`current` 每帧被写成 `current + (goal−current)·k` = `current` 本身）⇒ 不写它也不会回弹 ✓；
+     *     ② alpha 变了 ⇒ `a != s_wa` ⇒ 全表重写 ✓；
+     *     ③ **树重建/换卡**（子 VM 换了对象）⇒ 第 k 支指针变了 ⇒ 该支重写 ✓（这一条必须有：
+     *        否则"换了一张主动卡、alpha 没变"会让新卡面的子 VM 永远压不暗 ✗）；
+     *     ④ 别的代码**擅自改**了我们写过的颜色/alpha？⇒ 那种情况下 `a` 也没变 —— 这是**改前就有**的
+     *        同一个假设（改前每帧重写能盖掉它、改后盖不掉）。但本仓**只有这一个函数**写原生卡面
+     *        子 VM 的 `color_1/2` 与 `alpha1/2` 插值器（`grep` 过：`CE_MGR_SEL_CARD_VM` 只在这里用），
+     *        所以假设成立 ✓；真出问题把下面那个 `forced` 常量改成 1 即可（一行，回到每帧无条件写）。*/
+    static uint8_t *s_wch[8];      /* 上一次真正写过的第 k 支子 VM（指针变了 ⇒ 必须重写）*/
+    const int forced = 0;          /* 诊断开关：1 = 退回"每帧无条件写"（改前行为）*/
 
     if (!mgr) return;
     root = *(const int32_t *)(mgr + CE_MGR_SEL_CARD_VM);
@@ -1259,28 +1275,34 @@ void ce_hud_native_face_dim_tick(void)
             !IsBadWritePtr(ch + CE_ANM_VM_COLOR1, 8) &&
             !IsBadWritePtr(ch + CE_ANM_VM_ALPHA1_I, 0x20) &&
             !IsBadWritePtr(ch + CE_ANM_VM_ALPHA2_I, 0x20)) {
-            const uint32_t old = *(const uint32_t *)(ch + CE_ANM_VM_COLOR1);
-            const uint32_t old2 = *(const uint32_t *)(ch + CE_ANM_VM_COLOR2);
-            int32_t *i1, *i2;
-            *(uint32_t *)(ch + CE_ANM_VM_COLOR1) = (a << 24) | (old & 0x00ffffffu);
-            *(uint32_t *)(ch + CE_ANM_VM_COLOR2) = (a << 24) | (old2 & 0x00ffffffu);
-            /* ★ z51：**连插值器一起写**（`initial/goal/current` 三处）——否则引擎每帧用
-             *   它算出的 `current` 覆盖颜色 A ⇒ 我们和引擎**交替胜出 = 闪烁** ✓（owner 实跑）。*/
-            i1 = (int32_t *)(ch + CE_ANM_VM_ALPHA1_I);
-            i2 = (int32_t *)(ch + CE_ANM_VM_ALPHA2_I);
-            i1[CE_ANM_VM_INTERP_INITIAL / 4] = (int32_t)a;
-            i1[CE_ANM_VM_INTERP_GOAL / 4]    = (int32_t)a;
-            i1[CE_ANM_VM_INTERP_CURRENT / 4] = (int32_t)a;
-            i2[CE_ANM_VM_INTERP_INITIAL / 4] = (int32_t)a;
-            i2[CE_ANM_VM_INTERP_GOAL / 4]    = (int32_t)a;
-            i2[CE_ANM_VM_INTERP_CURRENT / 4] = (int32_t)a;
-            ++nw;
+            ++nw;                                        /* 支数（日志口径不变）*/
+            if (forced || a != s_wa || k >= 8 || s_wch[k] != ch) {
+                const uint32_t old = *(const uint32_t *)(ch + CE_ANM_VM_COLOR1);
+                const uint32_t old2 = *(const uint32_t *)(ch + CE_ANM_VM_COLOR2);
+                int32_t *i1, *i2;
+                *(uint32_t *)(ch + CE_ANM_VM_COLOR1) = (a << 24) | (old & 0x00ffffffu);
+                *(uint32_t *)(ch + CE_ANM_VM_COLOR2) = (a << 24) | (old2 & 0x00ffffffu);
+                /* ★ z51：**连插值器一起写**（`initial/goal/current` 三处）——否则引擎每帧用
+                 *   它算出的 `current` 覆盖颜色 A ⇒ 我们和引擎**交替胜出 = 闪烁** ✓（owner 实跑）。*/
+                i1 = (int32_t *)(ch + CE_ANM_VM_ALPHA1_I);
+                i2 = (int32_t *)(ch + CE_ANM_VM_ALPHA2_I);
+                i1[CE_ANM_VM_INTERP_INITIAL / 4] = (int32_t)a;
+                i1[CE_ANM_VM_INTERP_GOAL / 4]    = (int32_t)a;
+                i1[CE_ANM_VM_INTERP_CURRENT / 4] = (int32_t)a;
+                i2[CE_ANM_VM_INTERP_INITIAL / 4] = (int32_t)a;
+                i2[CE_ANM_VM_INTERP_GOAL / 4]    = (int32_t)a;
+                i2[CE_ANM_VM_INTERP_CURRENT / 4] = (int32_t)a;
+                if (k < 8) s_wch[k] = ch;
+                ++wr;                                    /* 本帧真正写了几支（诊断）*/
+            }
         }
+        ++k;
         node = *(uint8_t *const *)(node + 0x4);
     }
+    for (; k < 8; ++k) s_wch[k] = 0;   /* 尾部的旧登记作废（支数变少时下一帧照样重写）*/
     if (s_wa != a || s_wn != nw) {
         s_wa = a; s_wn = nw;
-        ce_log("hud: native face 耦合(每帧) 写 %d 支 band alpha=%u", nw, (unsigned)a);
+        ce_log("hud: native face 耦合(每帧) 支 %d 写 %d band alpha=%u", nw, wr, (unsigned)a);
     }
 }
 
@@ -1300,6 +1322,16 @@ int ce_ptr_readable(const void *p, unsigned n)
 {
     return p && !IsBadReadPtr(p, n);
 }
+
+/* ★★★ 2026-10-25（性能 C2，owner 诊断「它一次就摸 8 MB」）：**发布编译掉**。
+ *   本函数是 z58 的"验证件"（比对活弹链表 vs 2000 槽数组扫描），**诊断任务早已完成**
+ *   （结论写进 `AUDIT.md` §BE #279 / `sdk.h` 的 `CE_BULLET_LIVE_FOR_EACH` 注释）。
+ *   它每秒（60 帧节流）仍要摸一遍 8 MB 地址空间（2000 个 4 KB 跨度的地址 ⇒ 全 cache miss），
+ *   只为打一行日志 —— 在 `CE_DEV_DUMP = 0`（发布默认）时**连日志都没有**，
+ *   纯属白付 ⇒ 用 `#if CE_DEV_DUMP >= 1` 把实现整块编译掉，1/2 档照旧可用。
+ *   ⚠ 调用点（`ce_sdk_active_tick`）一字不改：0 档时 `ce_bullet_scan_probe()` 是下面的空函数，
+ *     链接不缺符号、也不会有"未使用"警告。*/
+#if CE_DEV_DUMP >= 1
 
 void ce_bullet_scan_probe(void)
 {
@@ -1365,6 +1397,12 @@ void ce_bullet_scan_probe(void)
            (unsigned)hist[4], (unsigned)hist[5], (unsigned)hist[6], (unsigned)hist[7],
            idx_first[0], idx_first[1], idx_first[2], idx_first[3]);
 }
+
+#else  /* CE_DEV_DUMP == 0：发布档 —— 8 MB 平扫整个不进二进制（调用点照旧编译通过）*/
+
+void ce_bullet_scan_probe(void) { }
+
+#endif  /* CE_DEV_DUMP >= 1 */
 
 void ce_hud_slot_log_all(const char *tag)
 {
@@ -2774,6 +2812,8 @@ static void ce_mem_map_dump(void)
  * 发现异常（id 越界、链表长度 != num_total、owned 高位非零）时再打一行。下一份用户日志可直接
  * 证明是「id 污染 / manager 坏」还是「纯美术」。零写入、纯只读；只在 ItemManager tick 帧界跑。 */
 static int32_t s_integrity_stage = (-0x7fffffff - 1);
+/* ★ 2026-10-25（性能 C2）：非首帧的**节流相** —— 见 `ce_integrity_check()` 里那段。*/
+static unsigned s_integrity_slow;
 static void ce_integrity_check(void)
 {
     uint8_t *mgr = CE_ABILITY_MGR();
@@ -2786,6 +2826,21 @@ static void ce_integrity_check(void)
     stage = CE_CURRENT_STAGE();
     first = (stage != s_integrity_stage);
     if (first) s_integrity_stage = stage;
+
+    /* ★★★★ 2026-10-25（性能 C2）：**每 60 帧一次**（首帧永远跑）。
+     *   本探针的语义 = 「**每关开场**沿卡链 dump 一遍 + 之后**只在发现异常时**再打一行」
+     *   （见上面的函数头）。也就是说它**本来就不是**每帧都要的观测量：
+     *   异常是**状态**（`id` 越界 / `num_total` 对不上 / `owned` 高位非零），
+     *   坏掉之后**下一帧还在**，晚 ≤ 60 帧（= 1 秒）发现与当帧发现没有区别；
+     *   而"每关开场那一次"由 `first` 保证**一帧都不晚** ✓。
+     *   开销：改前 = 每帧一次卡链走（≤256 节点）+ `owned[]` 的 128..254 平扫；
+     *         改后 = 同样的活每 60 帧一次（首帧那次保留）⇒ 固定开销 ÷60 ✓。
+     *   ⚠ 想回到每帧：把 `60u` 改成 `1u`（一行）。*/
+    if (!first) {
+        if (++s_integrity_slow % 60u) return;
+    } else {
+        s_integrity_slow = 0;
+    }
 
     total   = *(const int32_t *)(mgr + CE_MGR_NUM_TOTAL);
     active  = *(const int32_t *)(mgr + CE_MGR_NUM_ACTIVE);

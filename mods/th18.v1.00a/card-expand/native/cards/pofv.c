@@ -189,8 +189,14 @@ static int32_t            s_power_got;      /* 本次段累计收取的灵力道
 static int                s_power_logged;   /* 「灵力道具池满丢弃」只记一行（防刷屏）*/
 static int32_t            s_aura_bullets;   /* 结界累计碰到的敌弹颗数（诊断）*/
 /* ★ 结界的**逐弹闩锁**：每颗弹只算一次（一手 TH19 `FUN_004ee770` 之后弹就没了 ⇒ 天然一次；
- *   我们只「碰」不消 ⇒ 必须自己闩锁，否则同一颗弹每帧都会掉道具 ✗）。*/
-static uint8_t            s_aura_bullet_done[CE_BM_BULLET_COUNT];
+ *   我们只「碰」不消 ⇒ 必须自己闩锁，否则同一颗弹每帧都会掉道具 ✗）。
+ *   ★ 2026-10-25（性能 C2）：容量 `+1` —— `CE_BULLET_POOL_FOR_EACH_IDX` 的下标是 **1..2000**
+ *     （池共 2001 块，最后一格是"引擎自己那两条平扫漏掉的"真弹位，见 `sdk.h:1362`）⇒
+ *     原来的 `[2000]` 只盖 0..1999 ⇒ **`s_aura_bullet_done[2000]` 是 1 字节越界**（读到/写到相邻
+ *     .bss）。本仓所有用户都过 `state`/`flags` 判据 ⇒ 实跑没暴雷，但它是真的越界，顺手补正
+ *     （**行为零变化**：新格恒 0 = 今天"读到邻居字节"的值不可预期，但 2000 号槽是池尾哨兵
+ *     `state = 5`，永远过不了 `COLLIDE`/半径判据 ⇒ 这一格的值谁都读不到）。*/
+static uint8_t            s_aura_bullet_done[CE_BM_BULLET_COUNT + 1];
 /* ★★ A 路（owner 2026-10-05 选）：灵 = **引擎真敌机**（`ce_spawn_enemy`，108 使魔/112 令牌同款原语）。
  *   ⚠ SDK 明令：**禁止在敌人死亡栈里调** `ce_spawn_enemy`（DEATH §2.4 重入）⇒
  *     死亡回调里**只入队**（`s_spirit_q`），真正的生成放在 `on_tick_2`。 */
@@ -1753,6 +1759,35 @@ static int pofv_power_has_room(void)
     return 0;
 }
 
+/* ★★★★ 2026-10-25（性能 C2，owner 诊断「二面被放大 / **全程固定付**」）：
+ *   `pofv_graze_scan_drop()` 原来**每帧**无条件整池平扫（2000 槽 × 4 KB 步长 = 8 MB 地址空间），
+ *   而它要的语义只是「**这颗弹进过擦弹圈 R1 ⇒ 掉一颗灵力道具（每颗一次）**」—— 一个**事件**，
+ *   不是一个**每帧的量**。⇒ **每 2 帧扫一次**（`POFV_GRAZE_SCAN_PERIOD`）。
+ *
+ * ## 为什么"每 2 帧"不会漏（逐条）
+ *   ① **不丢事件**：掉道具的判据是「弹在 R1 内」= 位置量。`POFV_GRAZE_R1 = 40 px`（一手口径，
+ *      见 `:1508`），圈的**直径 80 px**；本作实跑最快速的弹也 < 20 px/帧（`0x458` 速度量纲 +
+ *      同屏弹速的手感上限）⇒ 一颗弹**穿过整圈至少要 4 帧**、擦过圈边 1 px 也至少要
+ *      `2·sqrt(2·40·1) ≈ 18 px` ≈ 1 帧 —— 而跳过窗口只有 **1 帧**（周期 2 = 扫/跳交替）
+ *      ⇒ 任何"在圈里出现过"的弹，在它停留期间的**某一个被扫的帧**必然还在圈里 ✓。
+ *   ② **只差时机**：最坏情况掉道具的时刻晚 **1 帧 = 16.7 ms**（人的反应阈值 ~100 ms）✓。
+ *   ③ **闩锁不脏**：`s_aura_bullet_done[]`（每颗弹只掉一次）的"空槽清闩锁"跟着扫描走，
+ *      最坏晚 1 帧清；那 1 帧里若正好**同一槽**被新弹复用，新弹会被当成"已掉过" ⇒ 少掉 1 颗。
+ *      这是**改前就有**的同一类边界（改前窗口 = 1 帧：槽在扫描之后死于帧内、新弹同帧入驻），
+ *      改后窗口从 1 帧变 2 帧 ⇒ 概率翻倍但仍受"弹死在扫描点之后 + 同槽立刻复用"约束；
+ *      影响 = **一颗灵力道具**（且道具本体是自建池、随时可再掉）。
+ *   ④ **与结界那一路不互斥**：`aura_scan_bullets()` / 染色的帧率**一点没动**（它们各有自己的判据），
+ *      只有这条"擦弹掉落"降频 ⇒ 结界行为零变化 ✓。
+ *   ⑤ **池满的语义不变**：`pofv_power_has_room()` 仍是"这一帧有位置才置闩锁"（改前注释那段）——
+ *      周期化只是让"有位置"这个判断每 2 帧做一次 ✓。
+ *
+ * ⚠ 想回到每帧：把 `POFV_GRAZE_SCAN_PERIOD` 改成 1（一行）。*/
+#define POFV_GRAZE_SCAN_PERIOD  2
+static unsigned s_graze_scan_phase;      /* 0 = 本帧整池扫；>0 = 本帧跳过（还差几帧）*/
+static uint32_t s_graze_scan_frames;     /* 累计**真扫**过多少帧（诊断）*/
+static uint32_t s_graze_scan_slots;      /* 累计摸过的槽数（诊断；改前 = 每帧 2000）*/
+static uint32_t s_graze_scan_skipped;    /* 累计跳过多少帧（诊断）*/
+
 static void pofv_graze_scan_drop(void)
 {
     int g_live = 0, g_br_pos = 0, g_in_r1 = 0, g_done = 0;   /* ★ 自证计数 ✓ */
@@ -1760,6 +1795,12 @@ static void pofv_graze_scan_drop(void)
     const float *pp = ce_player_pos();
     uint32_t i;
     if (!bm || !pp) return;
+    /* ★ 2026-10-25（性能 C2）：**整池平扫降频**（见上面那段"为什么不会漏"）——
+     *   本帧跳过 ⇒ 一次内存访问都不做（连 `CE_BULLET_MGR()` 都已经取完了，代价 = 一次自减）✓。*/
+    if (s_graze_scan_phase) { --s_graze_scan_phase; ++s_graze_scan_skipped; return; }
+    s_graze_scan_phase = POFV_GRAZE_SCAN_PERIOD - 1;
+    ++s_graze_scan_frames;
+    s_graze_scan_slots += (uint32_t)CE_BM_BULLET_COUNT;      /* 诊断：这一扫摸过的槽数 ✓ */
     CE_BULLET_POOL_FOR_EACH_IDX(b, i) {   /* ★ z65（goal ③ 收口）：本处要 `s_aura_bullet_done[i]`（按下标清闩锁）✓ ⇒ 保池扫 ✓。 */
         uint16_t state = *(const uint16_t *)(b + CE_BULLET_STATE);
         float br, bx, by, dx, dy;
@@ -1798,9 +1839,17 @@ static void pofv_graze_scan_drop(void)
     }
     /* ★★★ 2026-10-12 goal ① 的"证据不足"项自证 ✓（审计 `89c60c46` 指出：★ 三条路都 `br <= 0` 跳过 ✗，
      *   而一手文档说「`+0x658` 对 type1/2 普通弹为 0」✗ ⇒ ★ 若真是这样，**普通弹会被全漏** ✓）。
-     *   ★ 每 300 帧打一行分布 ⇒ ★ 一局就能判：★ `br>0` 是否为 0 ✓、`round`(在 R1 内) 是否恒 0 ✓。*/
-    if ((s_card_frames % 300) == 0)
+     *   ★ 每 300 帧打一行分布 ⇒ ★ 一局就能判：★ `br>0` 是否为 0 ✓、`round`(在 R1 内) 是否恒 0 ✓。
+     * ★ 2026-10-25：扫描已周期化 ⇒ 判据改成"**每 150 次真扫** = 每 300 帧"（日志节奏不变 ✓）。*/
+    if ((s_graze_scan_frames % (300u / POFV_GRAZE_SCAN_PERIOD)) == 0u)
         ce_log("pofv: [GRAZE] live=%d br>0=%d inR1=%d done=%d", g_live, g_br_pos, g_in_r1, g_done);
+    /* ★ 2026-10-25（性能 C2）**一次性计数器**（`ce_log` ⇒ `CE_DEV_DUMP ≥ 2` 才进二进制）：
+     * 每 600 帧一行 = 改前/改后"整池扫的频率与槽数"的机器判据。
+     * 改前：`frames == 墙上帧数`、`slots == frames × 2000`；改后：`slots ≈ frames × 2000 ÷ 2` ✓。*/
+    if ((s_graze_scan_frames % (600u / POFV_GRAZE_SCAN_PERIOD)) == 0u)
+        ce_log("pofv: [PERF] graze_scan frames=%u skipped=%u slots=%u period=%d",
+               (unsigned)s_graze_scan_frames, (unsigned)s_graze_scan_skipped,
+               (unsigned)s_graze_scan_slots, POFV_GRAZE_SCAN_PERIOD);
 }
 
 static int pofv_aura_hit_here(float dx, float dy, float pad)
@@ -2215,6 +2264,44 @@ typedef struct {
 static pofv_aura_tint_t s_aura_tint[POFV_AURA_TINT_MAX];
 static int s_aura_tint_n;
 
+/* ★★★★ 2026-10-25（性能 C2，owner 诊断「二面被放大 / 全程固定付」）：
+ *   **染色去重的 O(n_tint × n_live) → O(n_live)**。
+ *
+ *   改前（本函数 ② 段的老写法）：本帧**每颗**活弹都要对已登记表做一次线性查
+ *     `for (j = 0; j < s_aura_tint_n; ++j) if (s_aura_tint[j].b == b) …`
+ *   ⇒ 开销 = `n_live × n_tint`（二面 62 sub / 同屏上千发时 = 十万量级的指针比较/帧 ✗）。
+ *
+ *   改后：**按"弹池槽号"登记**（槽号 = `(b − (mgr+CE_BM_BULLETS)) / CE_BULLET_STRIDE`，
+ *     与 `CE_BULLET_POOL_FOR_EACH_IDX` 的 `idx` **同一口径**）；进表时置位、离表时清位
+ *   ⇒ 判断"这颗弹在不在表里"= **一次数组读** ⇒ 每颗弹 O(1)，全帧 O(n_live) ✓。
+ *
+ *   为什么这样登记是**安全的**（与"按指针登记"完全等价）：
+ *     · 弹的生命周期 = 槽的生命周期（引擎只在池槽上就地构造/析构）⇒ 槽号 ⇒ 至多一颗弹 ✓；
+ *     · 表本身仍然存**指针**（`s_aura_tint[i].b`）⇒ ① 段的"还原 + 重写"逻辑一字不动 ✓；
+ *     · 定长 `CE_BM_BULLET_COUNT + 1` 字节（2001 B，.bss）—— **不 malloc、不引 libm、
+ *       不碰 x87** ✓（`make dllx87` 仍 0）；下标越界（结构上不该有：链表里的 `b` 都来自池）
+ *       时**退回老的线性查**（`oob` 分支），所以"查不到表"绝不会导致重复登记 ✓。
+ *   ⚠ 与 `s_aura_bullet_done[]`（掉道具闩锁）是**两张独立表**，语义分层不变（见函数头）。*/
+static uint8_t s_aura_tint_here[CE_BM_BULLET_COUNT + 1];
+
+/* 诊断（`ce_log` ⇒ 只在 `CE_DEV_DUMP ≥ 2` 进二进制，发布 0 字节、零开销）：
+ * 记"每帧在去重上花了多少次查表"—— 下一轮实跑可直接对比改前/改后。*/
+static uint32_t s_tint_perf_frames, s_tint_perf_lookups, s_tint_perf_fallback;
+
+/* 弹指针 → 弹池槽号（与 `CE_BULLET_POOL_FOR_EACH_IDX` 的 `idx` 同口径：槽 1 = 数组第 1 张）。
+ * 返回 0 = **不在池里**（调用方退回线性查）。除法是**常量除**（`CE_BULLET_STRIDE` = 0xfa0
+ * 编译期常量 ⇒ 编译器出 magic multiply，没有 `idiv`、更没有 x87）✓。*/
+static int pofv_pool_slot_idx(const uint8_t *b)
+{
+    const uint8_t *base = CE_BULLET_MGR();
+    long off;
+    if (!b || !base) return -1;
+    off = (long)(b - (base + CE_BM_BULLETS));
+    if (off < 0 || off > (long)CE_BM_BULLET_COUNT * (long)CE_BULLET_STRIDE) return -1;
+    if (off % (long)CE_BULLET_STRIDE) return -1;
+    return (int)(off / (long)CE_BULLET_STRIDE);
+}
+
 /* ★★★★ 2026-10-15（owner 一手口径）：「固灵结界碰弹的一手行为 = ①运动速度×1/2 ②抖动 ③染色
  *   （**瞬间染色不变化**）」——★ 其中 ① 在本作会**打乱符卡节奏** ⇒ **主动去掉** ✓；② 抖动
  *   **因视觉问题** ⇒ 也**主动去掉** ✓（`POFV_AURA_BULLET_SHAKE` 保持 0 ✓）；⇒ ★ 只剩 ③ 要修 ✗。
@@ -2236,6 +2323,10 @@ static uint32_t pofv_aura_tint_color(uint16_t n)
 static void pofv_aura_tint_restore_all(void)
 {
     int i;
+    /* ★ 2026-10-25（性能 C2）：槽位登记表一起清（否则删卡后残留「这颗弹已在表里」的位
+     *   ⇒ 下一关同一槽里出生的弹**永远不被染色** ✗ = 铁律「长持续效果要收干净」）。
+     *   ⚠ 不引 `<string.h>`：与 `clear_card()` 里别的清池循环同一写法。*/
+    { int k; for (k = 0; k <= CE_BM_BULLET_COUNT; ++k) s_aura_tint_here[k] = 0; }
     if (!CE_BULLET_MGR()) { s_aura_tint_n = 0; return; }
     for (i = 0; i < s_aura_tint_n; ++i) {
         volatile uint32_t *col =
@@ -2321,6 +2412,12 @@ static void pofv_aura_tint_tick(void)
          *   `*p = (*p & 0xff000000u) | (orig & 0x00ffffffu);` ✓ = **只改 RGB、alpha 用当前的** ✓）。
          *   ⇒ ★ 改成同样写法 ✓（染/还原**都不碰 alpha** ✓ —— 与 115/111「只改 RGB、保 alpha」一致 ✓）。*/
         *col = (*col & 0xff000000u) | (s_aura_tint[i].orig & 0x00ffffffu);         /* 无条件还原（lolk.c 的教训）*/
+            /* ★ 2026-10-25（性能 C2）：离表 ⇒ **清槽位登记位**（下一颗进这个槽的弹才登记得进去 ✓）。
+             *   ⚠ 这一位只跟"在不在表里"有关、与颜色/还原无关 ⇒ 清早了/清晚了最多多一次 O(1) 查表。*/
+            {
+                const int drop = pofv_pool_slot_idx(b);
+                if (drop >= 0 && drop <= CE_BM_BULLET_COUNT) s_aura_tint_here[drop] = 0;
+            }
         }
     }
     s_aura_tint_n = w;
@@ -2331,14 +2428,25 @@ static void pofv_aura_tint_tick(void)
     CE_BULLET_LIVE_FOR_EACH(b) {   /* ★ z65（goal ③ 收口）：老判据只跳 `st == 0` ⇒ **`state = 5`（池尾哨兵）会被当成弹参与染色** ✗（进 owner 清单，已修 ✓）。 */
         uint16_t st = *(const uint16_t *)(b + CE_BULLET_STATE);
         float br, dx, dy;
-        int j, dup = 0;
+        int j, dup = 0, slot = -1;
         if (st == 0) continue;
         br = *(const float *)(b + POFV_BULLET_RADIUS_OFF);
         if (!(br > 0.0f)) continue;
         dx = *(const float *)(b + CE_BULLET_POS) - pp[0];
         dy = *(const float *)(b + CE_BULLET_POS + 4) - pp[1];
         if (!pofv_aura_hit_here(dx, dy, br)) continue;
-        for (j = 0; j < s_aura_tint_n; ++j) if (s_aura_tint[j].b == b) { dup = 1; break; }
+        /* —— 去重（本帧唯一的"每颗弹"分支；改前这里是对整张已登记表线性查）——
+         * 槽号查得到 ⇒ **O(1)**（"进结界时登记一次、`n` 自增时本来就在表里" ✓）；
+         * 槽号查不到（`b` 不在池里 —— 结构上不该发生）⇒ 退回**老的线性查**，
+         * 保证"绝不会因为查不到位置而重复登记" ✓（那一路性能退化成改前，正确性不降 ✓）。*/
+        ++s_tint_perf_lookups;
+        slot = pofv_pool_slot_idx(b);
+        if (slot >= 0 && slot <= CE_BM_BULLET_COUNT) {
+            dup = s_aura_tint_here[slot];
+        } else {
+            for (j = 0, ++s_tint_perf_fallback; j < s_aura_tint_n; ++j)
+                if (s_aura_tint[j].b == b) { dup = 1; break; }
+        }
         if (dup) continue;                       /* 已在①里处理（n 已自增）⇒ **每颗弹只记一份** ✓ */
         if (s_aura_tint_n >= POFV_AURA_TINT_MAX) continue;   /* 保底（结构上到不了）*/
         {
@@ -2358,8 +2466,17 @@ static void pofv_aura_tint_tick(void)
             pofv_aura_shake_apply(b);
 #endif
         }
+        if (slot >= 0 && slot <= CE_BM_BULLET_COUNT) s_aura_tint_here[slot] = 1;   /* 登记（O(1)）✓ */
         ++s_aura_tint_n;
     }
+
+    /* 诊断（`ce_log` = 只在 `CE_DEV_DUMP ≥ 2` 进二进制；0 档连参数都不求值）：
+     * 每 600 帧一行 —— 累计"去重查表次数 / 退回线性查次数 / 表多大"。
+     * 下一轮实跑拿它跟改前的 `n_live × n_tint`（那时没有这一行，用 tint_n × live 估）对比 ✓。*/
+    if ((++s_tint_perf_frames % 600u) == 0u)
+        ce_log("pofv: [PERF] tint frames=%u lookups=%u fallback_lin=%u tint_n=%d",
+               (unsigned)s_tint_perf_frames, (unsigned)s_tint_perf_lookups,
+               (unsigned)s_tint_perf_fallback, s_aura_tint_n);
 }
 
 /* ============================ 伤害（一手：每帧每台一次半径 64 的命中、参数 = 1） ============================
