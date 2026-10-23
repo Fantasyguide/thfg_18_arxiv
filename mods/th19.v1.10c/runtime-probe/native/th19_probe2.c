@@ -199,7 +199,7 @@ static void scan_for_pattern(void)
 static void poll_once(void)
 {
     DWORD anchor, v;
-    if (g_hook_on && (g_hook_r || g_hook_s)) {
+    if (g_hook_on) {
         probe_log("[arg1] %08x  [arg2] %08x  | [w4] %08x  [w8] %08x  [wc] %08x",
                   g_hook_r, g_hook_s, g_w4, g_w8, g_wc);
         return;
