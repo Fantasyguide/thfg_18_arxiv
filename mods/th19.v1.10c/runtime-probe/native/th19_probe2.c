@@ -40,6 +40,7 @@ static DWORD g_hook_r      = 0;
 static DWORD g_hook_s      = 0;
 static DWORD g_w0 = 0, g_w4 = 0, g_w8 = 0, g_wc = 0;
 static DWORD g_ctx = 0;
+static DWORD g_rec = 0, g_num = 0;   /* hook711 时现场捕获：[edi+0x5ac] 与 esi(=num) */
 static DWORD g_cnt609 = 0, g_cnt711 = 0;
 static DWORD g_cnt_et[15];
 static DWORD g_cnt_grp[64];       /* ★ 每组（group）被调用次数：全 opcode 直方图 */
@@ -226,6 +227,19 @@ static void poll_once(void)
     }
     if (g_hook_on && (g_cnt609 || g_cnt711)) {
         probe_log("[cnt] 609-612 = %u   711 = %u", g_cnt609, g_cnt711);
+        return;
+    }
+    if (g_hook_on && g_hook_sel == 14 && g_ctx) {
+        probe_log("[711] ctx=%08x rec=%08x num=%u", g_ctx, g_rec, g_num);
+        if (g_rec) {
+            DWORD elem = g_rec + g_num * 0x2c;
+            probe_log("[711] elem=%08x  +0x28=%08x", elem, elem + 0x28);
+            dump_n("elem+0x28", elem + 0x28, 16);
+            dump_n("elem+0x40", elem + 0x40, 16);
+            dump_n("elem+0x458", elem + 0x458, 8);
+        } else {
+            probe_log("[711] rec 仍为 0 —— 现场捕获也拿不到，说明 0x5ac 当时就是空");
+        }
         return;
     }
     if (g_hook_on && g_hook_sel == 13 && g_ctx) {
@@ -524,6 +538,12 @@ static BOOL install_hook711(void)
     *p++ = 0x9C; *p++ = 0x60;                       /* pushfd / pushad */
     *p++ = 0x89; *p++ = 0x3D;                       /* mov [imm32], edi */
     *(DWORD *)p = (DWORD)(uintptr_t)&g_ctx; p += 4;
+    *p++ = 0x8B; *p++ = 0x87;                       /* mov eax,[edi+0x5ac] */
+    *(DWORD *)p = 0x5acu; p += 4;
+    *p++ = 0xA3;                                    /* mov [imm32], eax → g_rec */
+    *(DWORD *)p = (DWORD)(uintptr_t)&g_rec; p += 4;
+    *p++ = 0x89; *p++ = 0x35;                       /* mov [imm32], esi → g_num */
+    *(DWORD *)p = (DWORD)(uintptr_t)&g_num; p += 4;
     *p++ = 0x61; *p++ = 0x9D;                       /* popad / popfd */
     for (i = 0; i < 6; i++) *p++ = HOOK711_EXPECT[i];
     *p++ = 0xE9;
@@ -679,6 +699,7 @@ int __stdcall thcrap_plugin_init(void)
         if (g_hook_sel == 0 || g_hook_sel == 8) install_hook711();
         if (g_hook_sel == 12) install_hook711();   /* 抓 ctx，然后遍历元素 dump */
         if (g_hook_sel == 13) install_hook711();   /* 抓 ctx，指针/内联两种解释都打 */
+        if (g_hook_sel == 14) install_hook711();   /* 现场抓 [edi+0x5ac] 与 num，再 dump 段表 */
         if (g_hook_sel == 0 || g_hook_sel == 11) {
             /* ★ 全 opcode 直方图：把 300..1042 里出现的**每个不同组**都装上计数器，
              * 一次运行就能看出这台机器到底跑了哪些 handler（不预设任何 opcode）。 */
