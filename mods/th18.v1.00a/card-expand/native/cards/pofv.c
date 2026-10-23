@@ -1034,8 +1034,16 @@ static void pofv_hud_chg_claim(void)
  *   字号 = **1:1 不缩放**（一手就是这 16 px 一档；`resolutionMode(2)` 下 1 texel = 1 表面 px）✓
  *   ⚠ 这些 VM 都**接 HUD 透明度**（`tdim` ＝ 共享带的 alpha，和底槽/填充/标同款）✓ */
 #define POFV_HUD_TXT_VMS     24      /* 字形 VM 池（到点提示最多 13 字 + 常驻 2×4 字 + 余量）*/
-#define POFV_HUD_TXT_W       16.0f   /* 格宽（一手 16×16 格 ✓）*/
-#define POFV_HUD_TXT_H       16.0f   /* 格高 */
+#define POFV_HUD_TXT_W       16.0f   /* 字形贴图宽（一手 16×16 格 ✓）*/
+#define POFV_HUD_TXT_H       16.0f   /* 字形贴图高 */
+/* ★★★★ 2026-10-24（owner 实跑：「**字间距宽了**」）—— 一手的**字距**不是格宽 ✗：
+ *   逐字画那一支（`FUN_004e5850`）对**字体档 1** 的推进量 = `scale.x * 6.0`，
+ *   落笔处再 `× DAT_0062eeb0`（分辨率倍率 = **2** @1280×960）⇒ **12 表面 px / 字** ✓
+ *   （`_DAT_005aa2e8 = 6.0f` 一手读 `.rdata`；同一分支的行高 = `scale.y * 9.0` ⇒ 18）。
+ *   ⇒ 本卡原来按**整格 16** 推进（比一手宽 1/3）✗，改成 **12** ✓。
+ *   ⚠ 字形本身仍是 16 px 宽（贴图原尺寸，不改大小 ✓）；宽字（`M`/`W`/`%` 满格）会与邻字
+ *     **略有重叠** —— 一手就是这么排的（它的字形墨迹平均 12.7 px、字距 12）✓。*/
+#define POFV_HUD_TXT_ADV     12.0f   /* ★ 字距（一手 `6.0 × 2` ✓）*/
 #define POFV_HUD_TXT_UP      30.0f   /* 到点提示的**上边**：条上沿（含 -12 刻度出头）再往上一条字 */
 #define POFV_HUD_TXT_DOWN    14.0f   /* 常驻 lv 的**上边**：条下沿（fy+12）再往下 2 px */
 #define POFV_HUD_TXT_SKILL_COL 0xFF80D0FFu   /* 一手 `[+0x1977c] = 0xff80d0ff` ✓ */
@@ -1086,7 +1094,7 @@ static float pofv_hud_txt_put(float x, float y, const char *s, uint32_t col,
                 ++(*used);
             }
         }
-        x += POFV_HUD_TXT_W;
+        x += POFV_HUD_TXT_ADV;   /* ★ 字距（一手 12 ✓），不是贴图宽 16 ✗ */
     }
     return x;
 }
@@ -1116,7 +1124,7 @@ static void pofv_hud_txt_center_lv(float cx, float y, const char *pre, int v,
                                    uint32_t col, uint32_t tdim, int *used)
 {
     const int nd = (v < 0) ? 0 : ((v >= 10) ? 2 : 1);
-    const float wd = POFV_HUD_TXT_W * (float)(pofv_hud_txt_len(pre) + nd);
+    const float wd = POFV_HUD_TXT_ADV * (float)(pofv_hud_txt_len(pre) + nd);   /* ★ 字距 12（一手）✓ */
     const float x0 = cx - wd * 0.5f;
     const float x1 = pofv_hud_txt_put(x0, y, pre, col, tdim, used);
     if (v >= 0) pofv_hud_txt_put_int(x1, y, v, col, tdim, used);
