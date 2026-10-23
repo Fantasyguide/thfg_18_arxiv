@@ -10595,6 +10595,7 @@ static int on_draw(ce_card_t *c)
                 /* 2026-10-23 卡 109 调试（owner：先试 ce_hud_text_ex 是不是那套字体）：
                  *   在同上下文画一行 `Ex Attack lv3` / 一行 `skill` / 一行 `BOSS lv2`。
                  *   font_id 试 2（一手 TH18 ascii 的 2/3 号字体）。*/
+                ce_log("pofv: [TXTEX] reached, font_id=2");
                 ce_hud_text_ex(200.0f, 400.0f, 0xFFFFFFFFu, 0u, 2, 2, 0, 1.0f, "Ex Attack lv%d", 3);
                 ce_hud_text_ex(200.0f, 420.0f, 0xFFFFFFFFu, 0u, 2, 2, 0, 1.0f, "skill");
                 ce_hud_text_ex(200.0f, 440.0f, 0xFFFFFFFFu, 0u, 2, 2, 0, 1.0f, "BOSS lv%d", 2);
