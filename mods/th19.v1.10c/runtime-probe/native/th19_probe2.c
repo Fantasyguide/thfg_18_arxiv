@@ -33,11 +33,44 @@ static DWORD g_anchor_rva = 0;     /* ini 里配；0 = 未配置 */
 static int   g_scan_mode  = 0;     /* ini: scan=1 ⇒ 主动搜 ctx */
 static DWORD g_scan_next  = 0;
 static int   g_scan_left  = 30;
-static int   g_hook_on     = 0;    /* ini: hook=1 ⇒ 在 0x502999 装钩子，记录段表字段地址 */
+static int   g_hook_on     = 0;
+static int   g_hook_sel    = 0;    /* ini: hook_sel=1..4 ⇒ 只装那一个；0 = 全装 */    /* ini: hook=1 ⇒ 在 0x502999 装钩子，记录段表字段地址 */
 static DWORD g_hook_field  = 0;
 static DWORD g_hook_r      = 0;
 static DWORD g_hook_s      = 0;
-static DWORD g_w0 = 0, g_w4 = 0, g_w8 = 0, g_wc = 0;   /* 四个 float store 各自收到的值 */    /* hook3：0x5029a8 处 xmm0 = 第 2 个 float 参数（s）*/    /* hook2：call 0x50c1d0 返回的 float（首个参数 r）*/    /* 钩子捕获到的 eax（= 段表字段地址，s 写入处） */
+static DWORD g_w0 = 0, g_w4 = 0, g_w8 = 0, g_wc = 0;
+
+static void probe_log(const char *fmt, ...);   /* 前置声明（restore_all_patches 会用到） */
+
+/* 卸载路径：记录装过的补丁点与原字节，能原样写回 */
+#define MAX_PATCH 8
+static struct { DWORD rva; int len; BYTE orig[16]; } g_patched[MAX_PATCH];
+static int g_patch_n = 0;
+
+static void remember_patch(DWORD rva, const BYTE *orig, int len)
+{
+    if (g_patch_n >= MAX_PATCH) return;
+    g_patched[g_patch_n].rva = rva;
+    g_patched[g_patch_n].len = len;
+    memcpy(g_patched[g_patch_n].orig, orig, (size_t)len);
+    g_patch_n++;
+}
+
+static void restore_all_patches(void)
+{
+    int i;
+    for (i = g_patch_n - 1; i >= 0; i--) {
+        BYTE *at = g_base + g_patched[i].rva;
+        DWORD old;
+        if (VirtualProtect(at, (SIZE_T)g_patched[i].len, PAGE_EXECUTE_READWRITE, &old)) {
+            memcpy(at, g_patched[i].orig, (size_t)g_patched[i].len);
+            VirtualProtect(at, (SIZE_T)g_patched[i].len, old, &old);
+            FlushInstructionCache(GetCurrentProcess(), at, (SIZE_T)g_patched[i].len);
+        }
+    }
+    probe_log("[hook] 已恢复 %d 处原字节", g_patch_n);
+    g_patch_n = 0;
+}   /* 四个 float store 各自收到的值 */    /* hook3：0x5029a8 处 xmm0 = 第 2 个 float 参数（s）*/    /* hook2：call 0x50c1d0 返回的 float（首个参数 r）*/    /* 钩子捕获到的 eax（= 段表字段地址，s 写入处） */
 static DWORD g_pat[4]      = {0, 0, 0, 0};  /* ini: pattern / pattern2 / pattern3 */
 static DWORD g_pat_rel     = 0;
 static DWORD g_pat_rel2    = 0;
@@ -260,6 +293,7 @@ static BOOL install_hook(void)
     *p++ = 0xE9;
     *(DWORD *)p = (DWORD)(int)rel; p += 4;
 
+    remember_patch(HOOK_RVA, HOOK_EXPECT, 8);
     if (!VirtualProtect(at, 8, PAGE_EXECUTE_READWRITE, &old)) {
         probe_log("[hook] VirtualProtect 失败：%lu", GetLastError());
         VirtualFree(stub, 0, MEM_RELEASE);
@@ -304,6 +338,7 @@ static BOOL install_hook2(void)
     *p++ = 0xE9;
     *(DWORD *)p = (DWORD)((SIZE_T)(at + 10) - (SIZE_T)(p + 4));
 
+    remember_patch(HOOK2_RVA, HOOK2_EXPECT, 10);
     if (!VirtualProtect(at, 10, PAGE_EXECUTE_READWRITE, &old)) { VirtualFree(stub, 0, MEM_RELEASE); return FALSE; }
     at[0] = 0xE9;
     *(DWORD *)(at + 1) = (DWORD)((SIZE_T)stub - ((SIZE_T)at + 5));
@@ -340,6 +375,8 @@ static BOOL install_hook3(void)
     *p++ = 0xE9;
     *(DWORD *)p = (DWORD)((SIZE_T)(at + 10) - (SIZE_T)(p + 4));
 
+    remember_patch(HOOK2_RVA, HOOK2_EXPECT, 10);
+    remember_patch(HOOK3_RVA, HOOK3_EXPECT, 10);
     if (!VirtualProtect(at, 10, PAGE_EXECUTE_READWRITE, &old)) { VirtualFree(stub, 0, MEM_RELEASE); return FALSE; }
     at[0] = 0xE9;
     *(DWORD *)(at + 1) = (DWORD)((SIZE_T)stub - ((SIZE_T)at + 5));
@@ -374,6 +411,7 @@ static BOOL hook_store5(DWORD rva, const BYTE exp[5], DWORD *slot, const char *t
     *p++ = 0xE9;
     *(DWORD *)p = (DWORD)((SIZE_T)(at + 5) - (SIZE_T)(p + 4));
 
+    remember_patch(rva, exp, 5);
     if (!VirtualProtect(at, 5, PAGE_EXECUTE_READWRITE, &old)) { VirtualFree(stub, 0, MEM_RELEASE); return FALSE; }
     at[0] = 0xE9;
     *(DWORD *)(at + 1) = (DWORD)((SIZE_T)stub - ((SIZE_T)at + 5));
@@ -446,6 +484,7 @@ int __stdcall thcrap_plugin_init(void)
             else if (sscanf(line, "pattern4_rel=0x%lx", &x) == 1) { g_pat_rel4 = (DWORD)x; }
             else if (sscanf(line, "follow=%d", &g_follow_on) == 1) { /* 命中后持续跟踪 */ }
             else if (sscanf(line, "hook=%d", &g_hook_on) == 1) { /* 装钩子 */ }
+            else if (sscanf(line, "hook_sel=%d", &g_hook_sel) == 1) { /* 1..4 只装一个 */ }
         }
         fclose(ini);
     }
@@ -477,12 +516,11 @@ int __stdcall thcrap_plugin_init(void)
         static const BYTE E4[5] = {0xf3,0x0f,0x11,0x40,0x04};
         static const BYTE E8[5] = {0xf3,0x0f,0x11,0x40,0x08};
         static const BYTE EC[5] = {0xf3,0x0f,0x11,0x40,0x0c};
-        install_hook();       /* 0x502999: +0x00（同时记 eax） */
-        install_hook2();
-        install_hook3();
-        hook_store5(0x1029d4u, E4, &g_w4, "+04");   /* s */
-        hook_store5(0x102a24u, E8, &g_w8, "+08");
-        hook_store5(0x102a60u, EC, &g_wc, "+0c");
+        probe_log("[hook] hook_sel=%d（0=全装）", g_hook_sel);
+        if (g_hook_sel == 0 || g_hook_sel == 1) hook_store5(0x1029d4u, E4, &g_w4, "+04");
+        if (g_hook_sel == 0 || g_hook_sel == 2) hook_store5(0x102a24u, E8, &g_w8, "+08");
+        if (g_hook_sel == 0 || g_hook_sel == 3) hook_store5(0x102a60u, EC, &g_wc, "+0c");
+        if (g_hook_sel == 0 || g_hook_sel == 4) install_hook();
     }
 
     InterlockedExchange(&g_running, 1);
