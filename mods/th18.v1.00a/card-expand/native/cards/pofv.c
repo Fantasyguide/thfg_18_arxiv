@@ -9077,11 +9077,11 @@ static int on_tick_2(ce_card_t *c)
                     static int sp_prev;
                     const int sp_now = ce_key_down(CE_VK_SPACE) ? 1 : 0;
                     if (sp_now && !sp_prev) {
-                        /* ★ 2026-10-25 owner：「**你把空格键换成 C3**」✓ */
-                        s_aura_charge = POFV_C3_THRESH;
-                        pofv_c3_dispatch();
-                        ce_log("pofv: [DBG] 空格 ⇒ 直接放 C3（kind=%d lv=%d）",
-                               (int)s_aura_kind, (int)s_c3_lv_n);
+                        /* ★ 2026-10-25 owner：「**空格换 C4**」✓ */
+                        s_aura_charge = POFV_C4_THRESH;
+                        pofv_c4_dispatch();
+                        ce_log("pofv: [DBG] 空格 ⇒ 直接放 C4（kind=%d rank=%d）",
+                               (int)s_aura_kind, pofv_c4_rank());
                     }
                     sp_prev = sp_now;
                 }
