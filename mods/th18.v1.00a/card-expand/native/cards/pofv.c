@@ -11115,8 +11115,12 @@ static int on_draw(ce_card_t *c)
                  *   ② 「整体**偏左**，得和 boss 的那个计时器是**同一个 x**」✓ ⇒ 原生主块 **x = 224**
                  *      （`HUD-LAYOUT.md:56` / `AUDIT.md` §AI ✓）⇒ 主块**右端 226**、小数**左端 228**
                  *      （各 +4，让"秒＋点＋半尺寸小数"这整体的**视觉中心**回到 224 ✓）。*/
-                ce_hud_text_ex(226.0f, 446.0f, tdim4 | 0xFFFFFFu, 0u, 4, 2, 2, 0.0f, "%02d.", (int)sec);
-                ce_hud_text_ex(228.0f, 449.0f, tdim4 | 0xFFFFFFu, 0u, 4, 2, 0, 0.5f, "%02d", (int)frm);
+                /* ★ 2026-10-25 owner 与 boss 逐项比对三条 ✓：
+                 *   ① 「和 boss 比对了**偏左**」⇒ 两块 x 再 **+3**（主块右端 226→**229**、小数左端 228→**231**）✓
+                 *   ② 「小数部分比 boss 一手的**小**」⇒ 小数 scale **0.5 → 0.62** ✓（❓ 手感值，可再微调）
+                 *   ③ 「小数部分**没有和版底贴合**」⇒ 小数 y **449 → 451**（下沿再落 2 px，与主块底线齐）✓ */
+                ce_hud_text_ex(229.0f, 446.0f, tdim4 | 0xFFFFFFu, 0u, 4, 2, 2, 0.0f, "%02d.", (int)sec);
+                ce_hud_text_ex(231.0f, 451.0f, tdim4 | 0xFFFFFFu, 0u, 4, 2, 0, 0.62f, "%02d", (int)frm);
                 /* 2026-10-23 卡 109 调试（owner：先试 ce_hud_text_ex 是不是那套字体）：
                  *   在同上下文画一行 `Ex Attack lv3` / 一行 `skill` / 一行 `BOSS lv2`。
                  *   font_id 试 2（一手 TH18 ascii 的 2/3 号字体）。*/
