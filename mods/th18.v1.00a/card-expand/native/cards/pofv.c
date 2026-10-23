@@ -1064,12 +1064,19 @@ static void pofv_hud_charge_bar(float fx, float fy, float ratio_rei, float ratio
          *   ⇒ ★ 闪烁 = 每 **10 帧**一轮（★ 沿用标签那套节奏 ✓），★ 亮/暗只改**顶点色 alpha** ✓。*/
         {
             const uint32_t base = tdim | (POFV_HUD_CHG_FILL_COL & 0xffffffu);
-            const uint32_t dim  = (0x40u << 24) | (POFV_HUD_CHG_FILL_COL & 0xffffffu);
+            /* ★★ 2026-10-23 owner：「灵力那一段**黄蓝闪**」✗ ——
+             *   原来"能放 C3/C4 且在闪"时只是**亮/暗**（同色改 alpha）✗；
+             *   改成 ★ **黄 / 蓝两色交替**✗：★ 每 10 帧切一次 ✓（沿用原节奏 ✓）。
+             *   判据沿用一手（`s_aura_charge >= 1700` ＋ ★ **没有罩子** ✓）。*/
+            const uint32_t yel  = (0xffu << 24) | 0x00ffc800u;   /* 黄 ✗ */
+            const uint32_t blu  = (0xffu << 24) | 0x0040a0ffu;   /* 蓝 ✗ */
             const int urge = (s_aura_charge >= 1700.0f)   /* = POFV_C3_THRESH ✓（宏在后 ⇒ 用字面量 ✓）*/
                           && !pofv_barrier_have()
                           && (((s_card_frames / 10) & 1) != 0);
-            ce_anm_set_color((uint32_t)s_hud_chg_fill_vm, urge ? dim : base);
-            ce_anm_set_color2((uint32_t)s_hud_chg_fill_vm, urge ? dim : base);
+            ce_anm_set_color((uint32_t)s_hud_chg_fill_vm,
+                             urge ? ((((s_card_frames / 10) & 2) != 0) ? yel : blu) : base);
+            ce_anm_set_color2((uint32_t)s_hud_chg_fill_vm,
+                              urge ? ((((s_card_frames / 10) & 2) != 0) ? yel : blu) : base);
         }
     }
     /* ③ **白段 = 蓄力比例**（规格 ② ✓）：同一左端、**叠在蓝上** ✓ */
