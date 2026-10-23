@@ -7683,9 +7683,12 @@ static void pofv_c3s_tick(void)
                 const int dj = (di < 0) ? di + 36 : di;
                 ce_anm_set_sprite(CE_ABILITY_ANM(), (uint32_t)b->vm,
                                   (uint32_t)CE_ANM_ABILITY_SPRITE_POFV109_C3S_STRIP);
+                /* ★★★ 2026-10-25 owner：「**你的激光的前进方向是激光贴图的长**！」✓
+                 *   ⇒ 长轴 = 前进方向 ⇒ 整条从发射点**往前铺**（弹头在**后方**，不是中心 ✗、更不是往后拖 ✗）
+                 *   ⇒ 绘制点 = `pos + (len/2)·(cosθ, sinθ)` ✓。*/
                 ce_anm_set_pos((uint32_t)b->vm,
-                               b->x - s_c2_dir36[dj][0] * (len * 0.5f),
-                               b->y - s_c2_dir36[dj][1] * (len * 0.5f), 0.0f);
+                               b->x + s_c2_dir36[dj][0] * (len * 0.5f),
+                               b->y + s_c2_dir36[dj][1] * (len * 0.5f), 0.0f);
                 ce_anm_set_scale((uint32_t)b->vm, len / 256.0f, 24.0f / 16.0f);
                 ce_anm_set_rotation((uint32_t)b->vm, 0.0f, 0.0f, b->ang);
             }
