@@ -7694,16 +7694,14 @@ static void pofv_c3s_tick(void)
                      *   · 转向后 = **横条** `POFV109_C3S_STRIP`(256×16) ✓
                      *   · **转向那 8 帧 + 2 帧缓冲**：长度压到 **24 px** ⇒ **24×24 圆球** ✓（owner 要的"压缩成圆球转向"）
                      *   · 位置 = **弹头本体**（不做偏移 ✓ —— 上次"错位"就是偏移造成的 ✗）。*/
+                    /* ★ 2026-10-25 owner：「**绝对不能加两个贴图**」✗ ⇒ 回到**单张横条**；
+                     *   朝向靠 `angleVel`（脚本已加零速那一条 ⇒ `rz` 活了 ✓）。*/
                     const float ag2 = (float)b->age;
-                    const int vert    = (ag2 <= b->C + 18.0f);          /* 段4 结束前 = 竖 ✓ */
-                    const int turning = (ag2 >  b->C + 10.0f) && (ag2 <= b->C + 20.0f);
+                    const int turning = (ag2 > b->C + 10.0f) && (ag2 <= b->C + 20.0f);
                     const float elen  = turning ? 24.0f : len;          /* ★ 转向时压成圆球 ✓ */
                     ce_anm_set_sprite(CE_ABILITY_ANM(), (uint32_t)b->vm,
-                                      (uint32_t)(vert ? CE_ANM_ABILITY_SPRITE_POFV109_C3S_STRIP_V
-                                                      : CE_ANM_ABILITY_SPRITE_POFV109_C3S_STRIP));
-                    ce_anm_set_scale((uint32_t)b->vm,
-                                     vert ? (24.0f / 16.0f)  : (elen / 256.0f),
-                                     vert ? (elen / 256.0f)  : (24.0f / 16.0f));
+                                      (uint32_t)CE_ANM_ABILITY_SPRITE_POFV109_C3S_STRIP);
+                    ce_anm_set_scale((uint32_t)b->vm, elen / 256.0f, 24.0f / 16.0f);
                 }
                 ce_anm_set_pos((uint32_t)b->vm, b->x, b->y, 0.0f);   /* ★ 弹头本体（不做偏移 ✓）*/
                 /* ★★★ 2026-10-25 owner：「全jb错位了：上升段是**横着上升**，转向后没问题，
