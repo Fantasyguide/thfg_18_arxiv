@@ -1,6 +1,7 @@
 # 109 卡 · 蓄力条 HUD —— owner 2026-10-23 报的四个 bug（待修）
 
-> 卡侧载体：TH18 v1.00a。分支 `feat/p109-c34-refactor`。
+> **版本**：TH18 v1.00a（卡侧载体）＋ TH19 v1.10c（效果/贴图来源）。
+> 分支 `feat/p109-c34-refactor`，工作目录 `/home/nipporita/rl-109-sakuya`。
 > 这四条是 **owner 亲自报的观感 bug**，优先级高于早苗 C3/C4 的其余细节。
 
 ## 1. 蓄力条要 **1 px 白色边框**
