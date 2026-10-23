@@ -5952,17 +5952,16 @@ static void pofv_c4_fog_tick(void)
                    (double)s_fog_r_last, (unsigned)(s_fog_c_last & 0xFFFFFFu));
         }
     }
-    if (!s_c4_fog_vm)
-        s_c4_fog_vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
-                          CE_ANM_ABILITY_SCRIPT_POFV109_FOG_CIRCLE, 6);
-    {
+    /* ★★★★ 2026-10-25 owner：「**462 和 461 是同一个东西，不该有两个实现**」✓
+     *   ⇒ 312/462 那台**不再单独起** ✗，颜色层就用 **`s_c4_aura_vm`（脚本 461 = 一手 `script33` 的等价：
+     *     `sprite(-1)` + `drawPoly(1,50)` 程序画圆 + `blendMode(4)` + `layer(21)`）✓
+     *     —— 半径/颜色照样每帧从 boss 的 fog 字段写进去 ✓。*/
+    if (s_c4_aura_vm) {
         const float *pp6 = ce_player_pos();
-        if (s_c4_fog_vm && pp6) vm_set_world_pos((uint32_t)s_c4_fog_vm, pp6[0], pp6[1]);
-    }
-    if (s_c4_fog_vm) {
         const float k6 = s_fog_r_last / POFV_C4_FOG_REF_R;
-        ce_anm_set_scale((uint32_t)s_c4_fog_vm, k6, k6);
-        ce_anm_set_color((uint32_t)s_c4_fog_vm, 0xFF000000u | (s_fog_c_last & 0x00FFFFFFu));
+        if (pp6) vm_set_world_pos((uint32_t)s_c4_aura_vm, pp6[0], pp6[1]);
+        ce_anm_set_scale((uint32_t)s_c4_aura_vm, k6, k6);
+        ce_anm_set_color((uint32_t)s_c4_aura_vm, 0xFF000000u | (s_fog_c_last & 0x00FFFFFFu));
     }
 }
 
