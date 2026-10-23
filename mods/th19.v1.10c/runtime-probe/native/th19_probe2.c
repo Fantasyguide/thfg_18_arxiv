@@ -302,7 +302,7 @@ static BOOL install_hook2(void)
     *(DWORD *)p = (DWORD)(uintptr_t)&g_hook_r; p += 4;
     for (i = 0; i < 10; i++) *p++ = HOOK2_EXPECT[i];
     *p++ = 0xE9;
-    *(DWORD *)p = (DWORD)((SIZE_T)(at + 10) - (SIZE_T)(p + 4) - 1);
+    *(DWORD *)p = (DWORD)((SIZE_T)(at + 10) - (SIZE_T)(p + 4));
 
     if (!VirtualProtect(at, 10, PAGE_EXECUTE_READWRITE, &old)) { VirtualFree(stub, 0, MEM_RELEASE); return FALSE; }
     at[0] = 0xE9;
@@ -338,7 +338,7 @@ static BOOL install_hook3(void)
     *(DWORD *)p = (DWORD)(uintptr_t)&g_hook_s; p += 4;
     for (i = 0; i < 10; i++) *p++ = HOOK3_EXPECT[i];
     *p++ = 0xE9;
-    *(DWORD *)p = (DWORD)((SIZE_T)(at + 10) - (SIZE_T)(p + 4) - 1);
+    *(DWORD *)p = (DWORD)((SIZE_T)(at + 10) - (SIZE_T)(p + 4));
 
     if (!VirtualProtect(at, 10, PAGE_EXECUTE_READWRITE, &old)) { VirtualFree(stub, 0, MEM_RELEASE); return FALSE; }
     at[0] = 0xE9;
@@ -372,7 +372,7 @@ static BOOL hook_store5(DWORD rva, const BYTE exp[5], DWORD *slot, const char *t
     *(DWORD *)p = (DWORD)(uintptr_t)slot; p += 4;
     for (i = 0; i < 5; i++) *p++ = exp[i];
     *p++ = 0xE9;
-    *(DWORD *)p = (DWORD)((SIZE_T)(at + 5) - (SIZE_T)(p + 4) - 1);
+    *(DWORD *)p = (DWORD)((SIZE_T)(at + 5) - (SIZE_T)(p + 4));
 
     if (!VirtualProtect(at, 5, PAGE_EXECUTE_READWRITE, &old)) { VirtualFree(stub, 0, MEM_RELEASE); return FALSE; }
     at[0] = 0xE9;
