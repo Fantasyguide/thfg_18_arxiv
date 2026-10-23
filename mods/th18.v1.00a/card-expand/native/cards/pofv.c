@@ -1171,7 +1171,10 @@ static void pofv_hud_charge_bar(float fx, float fy, float ratio_rei, float ratio
             if (up) {
                 char t[24]; int n2 = 0;
                 while (up[n2] && n2 < 20) { t[n2] = up[n2]; ++n2; }
-                t[n2++] = (char)('0' + lv); t[n2] = 0;
+                /* ★ 2026-10-23：★ **`skill` 不带数字**✗（owner 原话就是 `skill` ✓）；
+                 * 其它两档才拼等级 ✓。*/
+                if (!(t[0] == 's' && t[1] == 'k')) t[n2++] = (char)('0' + lv);
+                t[n2] = 0;
                 hud_text_draw(ux, fy - 20.0f, t, 0.5f, 0xffffffu);
             }
         }
