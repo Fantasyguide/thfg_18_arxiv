@@ -7688,13 +7688,17 @@ static void pofv_c3s_tick(void)
                  *     · 横条 `POFV109_C3S_STRIP`  (256×16) = 转向**后**（横移段）✓
                  *     切换点 = 段 4 结束（`ag > tt + 18`）✓ —— 一手那里正好转了 90° ✓。*/
                 {
-                    const int vert = ((float)b->age <= b->C + 18.0f);   /* 段4 结束前 = 竖条 ✓ */
+                    /* ★★★ 2026-10-25 owner 选 B + 「**贴图本身的压缩拉伸**，转向时要**压缩成一个圆球**」✓：
+                     *   · 只用**横条** `POFV109_C3S_STRIP`（不再切竖条 ✗）；
+                     *   · 朝向靠**运行时旋转**（脚本体已加 `anchor(0,0)` + `rotate(-90°)` 基准 ✓）；
+                     *   · 段 4（转向那 8 帧 + 2 帧缓冲）把长度**压到 24 px** ⇒ 24×24 = **圆球** ✓，
+                     *     转完再按 `len` 拉长 ✓。*/
+                    const float ag2 = (float)b->age;
+                    const int turning = (ag2 > b->C + 10.0f) && (ag2 <= b->C + 20.0f);
+                    const float elen = turning ? 24.0f : len;          /* ★ 转向时压成圆球 ✓ */
                     ce_anm_set_sprite(CE_ABILITY_ANM(), (uint32_t)b->vm,
-                                      (uint32_t)(vert ? CE_ANM_ABILITY_SPRITE_POFV109_C3S_STRIP_V
-                                                      : CE_ANM_ABILITY_SPRITE_POFV109_C3S_STRIP));
-                    ce_anm_set_scale((uint32_t)b->vm,
-                                     vert ? (24.0f / 16.0f) : (len / 256.0f),
-                                     vert ? (len / 256.0f) : (24.0f / 16.0f));
+                                      (uint32_t)CE_ANM_ABILITY_SPRITE_POFV109_C3S_STRIP);
+                    ce_anm_set_scale((uint32_t)b->vm, elen / 256.0f, 24.0f / 16.0f);
                 }
                 ce_anm_set_pos((uint32_t)b->vm, b->x, b->y, 0.0f);   /* ★ 弹头本体（不做偏移 ✓）*/
                 /* ★★★ 2026-10-25 owner：「全jb错位了：上升段是**横着上升**，转向后没问题，
@@ -7703,7 +7707,7 @@ static void pofv_c3s_tick(void)
                  *     · **位置 = 弹头本身**（不做"往前铺/往后拖"的偏移 ✗ —— 那个偏移正是
                  *       "上升段和转向不挨着"的来源：段3 减速时 len 缩到 0、段5 再长回来，头尾会跳 ✗）；
                  *     · **旋转 = θ**（引擎噪声最小的一组，一手纹理长轴 = +x ✓）。*/
-                ce_anm_set_rotation((uint32_t)b->vm, 0.0f, 0.0f, b->ang);
+                ce_anm_set_rotation((uint32_t)b->vm, 0.0f, 0.0f, b->ang);   /* ★ 基准在脚本里 ✓ */
             }
         }
         pos[0] = b->x; pos[1] = b->y; pos[2] = 0.0f;
