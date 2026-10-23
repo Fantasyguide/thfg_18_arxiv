@@ -926,6 +926,10 @@ static ce_hud_vm_text_t s_hud_hits_lbl;
 static int32_t s_hud_chg_track_vm;
 static int32_t s_hud_chg_fill_vm;
 static int32_t s_hud_chg_white_vm;
+/* 2026-10-23 (1) frame = 4 bars of 1px (same as card 116 season.c: top/bottom/left/right).
+ *   Reuse POFV109_HUD_CHARGE: it draws a 1x1 drawRectGrad with resolutionMode(2)
+ *   => set_scale(w,h) is in SURFACE px and anchor is TOP-LEFT (so pos = bar start). */
+static int32_t s_hud_chg_frame[4];
 static int32_t s_hud_chg_tick_vm[POFV_HUD_CHG_TICKS];
 /* ★ **「蓄力 ≥ 标位」时的光晕**（脚本 426；★ owner 2026-10-11 裁决 = **电平**，不是上升沿 ✗）：
  *   每格**各自**一台；`fc >= 标位` ⇒ 起（若还没有）并**常驻**（脚本自带 `jmp` 循环一直呼吸 ✓）；
@@ -1004,13 +1008,14 @@ static void pofv_hud_charge_bar(float fx, float fy, float ratio_rei, float ratio
 {
     const float bx = fx + POFV_HUD_CHG_BORDER;
     const float by = fy + POFV_HUD_CHG_BORDER;
-    int32_t *hv[2 + 1 + POFV_HUD_CHG_TICKS];
+    int32_t *hv[2 + 1 + 4 + POFV_HUD_CHG_TICKS];
     int i, n = 0, alive = 0, missing = 0, kind;
     float fr, fc;
     /* ★ 顺序 = 画序（后建的盖在上面 ✓）：底槽 → 蓝填充 → 白段 → 标 ✓ */
     hv[n++] = &s_hud_chg_track_vm;
     hv[n++] = &s_hud_chg_fill_vm;
     hv[n++] = &s_hud_chg_white_vm;
+    for (i = 0; i < 4; ++i) hv[n++] = &s_hud_chg_frame[i];
     for (i = 0; i < POFV_HUD_CHG_TICKS; ++i) hv[n++] = &s_hud_chg_tick_vm[i];
     for (i = 0; i < n; ++i) { if (*hv[i]) ++alive; else ++missing; }
     if (alive > 0 && missing > 0) {                    /* ★ 部分死 ⇒ 整组重建（保生成序 ✓）*/
@@ -1024,6 +1029,10 @@ static void pofv_hud_charge_bar(float fx, float fy, float ratio_rei, float ratio
         s_hud_chg_fill_vm  = (int32_t)hud_vm_spawn(CE_ANM_ABILITY_SCRIPT_POFV109_HUD_CHARGE, bx, by);
     if (!s_hud_chg_white_vm)                    /* ★ 再白段（盖在蓝上 ✓）*/
         s_hud_chg_white_vm = (int32_t)hud_vm_spawn(CE_ANM_ABILITY_SCRIPT_POFV109_HUD_CHARGE, bx, by);
+    for (i = 0; i < 4; ++i)                     /* 1x1 frame bars */
+        if (!s_hud_chg_frame[i])
+            s_hud_chg_frame[i] = (int32_t)hud_vm_spawn(
+                CE_ANM_ABILITY_SCRIPT_POFV109_HUD_CHARGE, fx, fy);
     for (i = 0; i < POFV_HUD_CHG_TICKS; ++i)    /* ★ 最后 4 枚菱形标（脚本 425；盖在最上 ✓）*/
         if (!s_hud_chg_tick_vm[i]) {
             s_hud_chg_tick_vm[i] = (int32_t)hud_vm_spawn(
@@ -1050,6 +1059,21 @@ static void pofv_hud_charge_bar(float fx, float fy, float ratio_rei, float ratio
                          POFV_HUD_CHG_BLOCK_W_SURF, POFV_HUD_CHG_BLOCK_H_SURF);
         ce_anm_set_color((uint32_t)s_hud_chg_track_vm, tdim | (POFV_HUD_CHG_TRACK_COL1 & 0xffffffu));
         ce_anm_set_color2((uint32_t)s_hud_chg_track_vm, tdim | (POFV_HUD_CHG_TRACK_COL2 & 0xffffffu));
+    }
+    /* (1) frame: 4 white 1px bars. anchor=top-left => pos = start of each bar. */
+    {
+        const float FW = POFV_HUD_CHG_BLOCK_W_SURF;
+        const float FH = POFV_HUD_CHG_BLOCK_H_SURF;
+        const float fpx[4] = { fx - 1.0f, fx - 1.0f, fx - 1.0f, fx + FW };
+        const float fpy[4] = { fy - 1.0f, fy + FH,   fy - 1.0f, fy - 1.0f };
+        const float fsx[4] = { FW + 2.0f, FW + 2.0f, 1.0f, 1.0f };
+        const float fsy[4] = { 1.0f, 1.0f, FH + 2.0f, FH + 2.0f };
+        for (i = 0; i < 4; ++i) {
+            if (!s_hud_chg_frame[i]) continue;
+            ce_anm_set_pos((uint32_t)s_hud_chg_frame[i], fpx[i], fpy[i], 0.0f);
+            ce_anm_set_scale((uint32_t)s_hud_chg_frame[i], fsx[i], fsy[i]);
+            ce_anm_set_color((uint32_t)s_hud_chg_frame[i], 0xffffffffu);
+        }
     }
     /* ② **蓝填充 = 灵力比例**（规格 ① ✓）：左端起、长 `fr × 448` ✓ */
     if (s_hud_chg_fill_vm) {

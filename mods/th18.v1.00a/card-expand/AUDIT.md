@@ -33239,3 +33239,15 @@ owner 给了上面的口径后**改成精确事件**（commit `65c0e178`，本�
   目前**没有脚本引用**这 27 个 sprite ⇒ 对现有卡零影响。
 - **怎么验证的**：`rebuild_safe` **六道门全过**；`anm_ids.h` 里 `ATLAS_POFV109_ASC_0 = 904`、
   `…_17 = 921`（= 字符 `0`），与切图顺序一致。
+
+## §BE-109-20261023f ★ 蓄力条 1 px 白边框（4 条 1px 矩形，照卡 116）
+
+- **文件 → 改了什么**：`native/cards/pofv.c` `pofv_hud_charge_bar()` 新增 `s_hud_chg_frame[4]`
+  （4 台 VM，复用 `POFV109_HUD_CHARGE` 脚本），每帧按上/下/左/右画 1 px 白线：
+  横条 `scale(W+2, 1)`、竖条 `scale(1, H+2)`（`W=452, H=12`）。
+- **为什么**：owner 2026-10-23「蓄力条底下应当有一个 1 px 的白色边框」；上一次我用"一台实心块放大 2px"
+  结果成了白罩子 ⇒ 按 owner 指示照 **卡 116 `season.c`** 的写法（4 条 1px 矩形）重做。
+- **关键依据**：`422_pofv109_hud_charge.anm.txt` 注释写明 `resolutionMode(2)`（1 单位 = 1 表面 px）
+  且 anchor = **左上** ⇒ `set_scale(w,h)` 单位就是表面 px，`set_pos` 给边起点。
+- **谁改的**：本 agent。**影响面**：只加 4 台 VM 到卡 109 的蓄力条；其它卡不受影响。
+- **怎么验证的**：`make rc=0`；`make dev` 全绿；owner 实跑看"外圈 1px 白线且不遮盖内容"。
