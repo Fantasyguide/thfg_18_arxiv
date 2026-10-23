@@ -9006,6 +9006,19 @@ static int on_tick_2(ce_card_t *c)
     /* ★ 蓄力音（一手 ✓）：★ 按下 C 的**上升沿**起一次 `0x2c` ✓（卡侧无循环接口 ✗ ⇒ 不循环 ✓）*/
     if (chg_held && !s_chg_se_prev) ce_play_sound(POFV_SE_CHARGE, ce_player_x());
     s_chg_se_prev = chg_held;
+    /* ★★★ 2026-10-25 owner：「**空格没有放 C4**」✗
+     *   ⇒ 根因：处理器写在 `if (chg_held)` 里面 ⇒ **必须先按住 C 再按空格**才生效 ✗
+     *   ⇒ 挪到按键计算之后、分支之前 ⇒ **任何时候按空格都放 C4** ✓ */
+    {
+        static int sp2_prev;
+        const int sp2_now = ce_key_down(CE_VK_SPACE) ? 1 : 0;
+        if (sp2_now && !sp2_prev) {
+            s_aura_charge = POFV_C4_THRESH;
+            pofv_c4_dispatch();
+            ce_log("pofv: [DBG] 空格 ⇒ 放 C4（kind=%d rank=%d）", (int)s_aura_kind, pofv_c4_rank());
+        }
+        sp2_prev = sp2_now;
+    }
     if (chg_held) { s_c1_rel_latch = 0;   /* ★ 重新按住 ⇒ 下一次释放还要放一份 C1 ✓ */
         /* ★★★★ 2026-10-11 **回归修复**（owner：「灵梦的 C1 完全发不出去，啥也没有」✗）：
          *   ★ 根因 = `s_chg_prev = chg_held;` 原来只写在**释放支内部**（旧行 5287 ✓）
@@ -9071,18 +9084,8 @@ static int on_tick_2(ce_card_t *c)
                 /* ★★★ 2026-10-25（owner：「**空格换成 C4**」✓）——
                  *   原来只是把蓄力**顶到 C4 阈值**（还要松手才发）；现在按一下空格就**直接放 C4** ✓
                  *   （走 `pofv_c4_dispatch()` = 与释放支同一组派发 ✓，按**上升沿**触发一次 ✓）。*/
-                {
-                    static int sp_prev;
-                    const int sp_now = ce_key_down(CE_VK_SPACE) ? 1 : 0;
-                    if (sp_now && !sp_prev) {
-                        /* ★ 2026-10-25 owner：「**空格换 C4**」✓ */
-                        s_aura_charge = POFV_C4_THRESH;
-                        pofv_c4_dispatch();
-                        ce_log("pofv: [DBG] 空格 ⇒ 直接放 C4（kind=%d rank=%d）",
-                               (int)s_aura_kind, pofv_c4_rank());
-                    }
-                    sp_prev = sp_now;
-                }
+                /* ★ 2026-10-25：这段原来在 `if (chg_held)` 里 ⇒ **不按 C 时按空格什么都不发** ✗ */
+                /* ★ 2026-10-25：空格处理器已挪到上面（不再受 `chg_held` 限制）✓ 这里留空 */
                 /* ★★★★★ 2026-10-16 **调试键（owner：「★ **那这样的话，I 键安排一下无敌（参考 108），
                  *   我没有 L 的底力**」✓）**：★ 按住 **I** ⇒ 每帧向 SDK **声明无敌** ✓ —— 走的是
                  *   一手那条路 ✓（`sdk.h:1055-1063` ✓：★ 各卡每帧**声明**自己想要的帧数 ✓，
