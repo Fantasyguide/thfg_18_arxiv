@@ -595,3 +595,39 @@
 ★ 事后 `poll`（100 ms 后）★ 读到的是已被清空的区域。
 ★ ⇒ ★ **必须在 hook 内部当场把 `elem+0x28` 起的若干 dword 抄进自己的缓冲**（不是存指针），★ 再由 poll 打印。
 ★ 这是最后一步，且**实现明确**。
+
+## 18. ★★ 交接状态（探针 v4 待一次实跑）
+
+### 18.1 仪器现状（已装好、已验证）
+
+| 项 | 值 |
+| --- | --- |
+| ★ 源码 | ★ `mods/th19.v1.10c/runtime-probe/native/th19_probe2.c` |
+| ★ 产物 | ★ `th19_probe2.dll`，79360 B，★ md5 `85bfdfcee9` |
+| ★ 装在 modkit | ★ `mods/` 与 `thcrap/bin/` 各两份：`th19_probe2.dll`（规范名）与 `th19_probe9.dll`（同 md5） |
+| ★ ★ 已清理 | ★ `bin/` 与 `mods/` 里旧的 `probe2..probe8` **全部删除** ⇒ ★ 现在**只有一个探针**（★ 之前多个 DLL 同时加载，日志互相污染，是我多轮误判的根源） |
+| ★ 启动标记 | ★ ★ **`=== th19_probe2 v4 ===`**（纯 ASCII，用于确认版本加载） |
+| ★ 日志标记 | ★ `[buf1]`（段表候选）`[buf2]`（同区 +0x10）`[buf3]`（701 区）`[buf4]`（元素头），★ 全部纯 ASCII |
+| ★ ini | ★ `hook=1` / `hook_sel=14` |
+
+### 18.2 机制（为什么改成"当场抄"）
+
+★ `711` 读的段表数据**只在调用瞬间有效**（事后 poll 读到全 0，见 §17.4）。
+★ 所以 v4 在 `711` 的 trampoline 里、`pushad/popad` 保护下执行三段 `rep movsd`：
+
+```
+mov eax,edi
+lea esi,[eax+0x5d4] → mov edi,&g_buf  ; ecx=16 ; rep movsd   ← ctx+0x5ac+0x28（段表）
+lea esi,[eax+0xa04] → mov edi,&g_buf2 ; ecx=8  ; rep movsd   ← +0x458（701 写的 a）
+lea esi,[eax+0x5ac] → mov edi,&g_buf3 ; ecx=8  ; rep movsd   ← 元素头
+```
+
+★ `eax/ecx/esi/edi` 全由 `pushad/popad` 还原 ⇒ 语义不变。
+
+### 18.3 ★ 下一步（只差一次实跑）
+
+1. ★ **完全关掉 TH19** → ★ **重开** → ★ **放一次早苗 C3** → ★ 走完 → 退出；
+2. ★ 日志开头应出现 ★ `=== th19_probe2 v4 ===`（★ 没有就是没重启）；
+3. ★ 然后看 `[buf1]`／`[buf3]` 里有没有
+   ★ `3e490fdb`(0.19634955)／`3ecccccd`(0.4)／`3dcccccd`(0.1)；
+4. ★ 命中 ⇒ ★ 本 goal 达成；★ 全 0 ⇒ ★ 改打 `+0x40`／`+0x4e6c`／`+0x458` 三块（★ 代码里换偏移即可）。
