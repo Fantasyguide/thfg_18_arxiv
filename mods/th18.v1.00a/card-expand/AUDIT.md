@@ -33771,11 +33771,11 @@ owner 给了上面的口径后**改成精确事件**（commit `65c0e178`，本�
 - **真要压被弹音的下一步**（未做）：`0x476c70 play_sound` 入口 5 字节 `jmp` 到 cave 的只读记录器
   （记 id + 返回地址、原样放行），再按 id 屏蔽 —— 属共享层新增 hook，需登记 + `sitecheck`。
 
-## §BE-109-20261025o ★ 切换面（角色）时重置 C3/C4 等级与灵力
+## §BE-109-20261025o ★ 进新的一面（stage 变化）时重置 C3/C4 等级与灵力
 
-- **owner 2026-10-25**：「109 在**切换面数**的时候，必须**重置 lv 和灵力计数**」＋「符合 th19 一手的行为」。
-- **文件 → 改了什么**：`native/cards/pofv.c` 的 `on_tick_2`，在 `s_aura_kind = pofv_aura_kind();`
-  之后加一段面检测（`static int kind_prev`），**面变化那一帧**：
+- **owner 2026-10-25**：「109 在**切换面数**的时候，必须**重置 lv 和灵力计数**」＋「符合 th19 一手的行为」
+  ＋**更正**：「**不是角色变化，是一面进二面等等**」⇒ 触发条件 = **关卡（stage）变化** ✓（第一版判角色是错的 ✗）。
+- **文件 → 改了什么**：`native/cards/pofv.c` 的 `on_tick_2`，在 `on_tick_2` 里加一段关卡检测（`static int stage_prev` + `CE_CURRENT_STAGE()` = `0x4cccdc`），**进新一面那一帧**：
   · `s_c3_lv_n = pofv_c3_lv_init()`（回到该难度初值：L/E/N/H 内部 0、Lunatic/EX 内部 4）
   · `s_c4_lv_n = pofv_c4_lv_init()`（同上，低难内部 2）
   · `s_reiryoku = POFV_REI_C1`（= **开局同一个起步值 500**，不是 0）

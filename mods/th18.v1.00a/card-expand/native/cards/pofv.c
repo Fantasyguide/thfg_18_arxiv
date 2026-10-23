@@ -8965,22 +8965,22 @@ static int on_tick_2(ce_card_t *c)
      *   松开 ⇒ 按一手脚本的 `scaleTime(20,4,0,0)` 收束 20 帧再删 ✓（`sdk.h` 无 interrupt 口 ✗ ⇒ 卡侧复现缩放 ✓）。*/
     s_aura_is_marisa = pofv_aura_marisa();                     /* 0 = 灵梦 / 1 = 魔理沙 ✓（一手字段 `0x4cccf4` ✓）*/
     s_aura_kind = pofv_aura_kind();
-    /* ★★★ 2026-10-25 owner：「109 在**切换面数**的时候，必须**重置 lv 和灵力计数**」✓
-     *   ⇒ 面（角色）一变：C3/C4 等级回到**该难度的初值**、灵力回到起步值 `POFV_REI_C1`、
-     *     蓄力/结界半径清零（否则会带着上一面的等级和灵力上限进来 ✗）。
-     *   `kind_prev` 初值 −1 ⇒ **第一次进不触发**（开局由 `on_load/clear_card` 初始化 ✓）。*/
-    {   static int kind_prev = -1;
-        if (kind_prev >= 0 && kind_prev != s_aura_kind) {
+    /* ★★★★ 2026-10-25 owner 更正：「**不是角色变化，是一面进二面等等**」✓
+     *   ⇒ 触发条件是**关卡（stage）变化**，不是角色切换 ✗（上一版判 `s_aura_kind` 是错的）。
+     *   一手 `CE_CURRENT_STAGE()` = `*(int32_t *)0x4cccdc`（`engine.h:134`，`CURRENT_STAGE` ✓）。
+     *   ⇒ 一面 → 二面那一帧：C3/C4 等级回该难度初值、灵力回起步 `POFV_REI_C1`、蓄力/结界清零 ✓。*/
+    {   static int stage_prev = -1;
+        const int st_now = CE_CURRENT_STAGE();
+        if (stage_prev >= 0 && st_now != stage_prev) {
             s_c3_lv_n = pofv_c3_lv_init();
             s_c4_lv_n = pofv_c4_lv_init();
             s_reiryoku = POFV_REI_C1;
             s_aura_charge = 0.0f;
             s_aura_r = 0.0f;
-            ce_log("pofv: 切换面（kind %d → %d）⇒ 重置：C3 内部 Lv%d / C4 内部 Lv%d / 灵力 %.0f",
-                   kind_prev, (int)s_aura_kind, (int)s_c3_lv_n, (int)s_c4_lv_n,
-                   (double)s_reiryoku);
+            ce_log("pofv: 进新的一面（stage %d → %d）⇒ 重置：C3 内部 Lv%d / C4 内部 Lv%d / 灵力 %.0f",
+                   stage_prev, st_now, (int)s_c3_lv_n, (int)s_c4_lv_n, (double)s_reiryoku);
         }
-        kind_prev = s_aura_kind;
+        stage_prev = st_now;
     }
     s_aura_k = (s_aura_kind == 1) ? POFV_AURA_K_MARISA
              : (s_aura_kind == 3) ? POFV_AURA_K_SANAE
