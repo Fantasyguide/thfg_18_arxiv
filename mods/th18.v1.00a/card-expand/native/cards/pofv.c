@@ -11103,8 +11103,14 @@ static int on_draw(ce_card_t *c)
                  *   ③ 「C4 计时器**至少在透明度层面也得接入 hud 槽位**，不能挡视野」✓
                  *      ⇒ 颜色 A 通道接 **`ce_hud_band_dim_alpha()`**（与蓄力条那套同一个 `tdim` ✓）。*/
                 const uint32_t tdim4 = ((uint32_t)ce_hud_band_dim_alpha() & 0xffu) << 24;
-                ce_hud_text_ex(224.0f, 458.0f, tdim4 | 0xFFFFFFu, 0u, 4, 2, 2, 0.0f,
-                               "%02d.%02d", (int)sec, (int)frm);
+                /* ★★★ 2026-10-25 owner：「**错误的，小数半尺寸**」✓ —— 小数块必须**半尺寸**。
+                 *   为了既不"偏右"也不重叠，两块用**对接**排法（不靠手填绝对 x ✓）：
+                 *     · 主块 `"%02d."` **右对齐到 x = 222**（`align_h = 2`）✓
+                 *     · 小数块 `"%02d"` **左对齐从 x = 224 起**（`align_h = 0`）、`scale = 0.5` ✓
+                 *       ⇒ 主块右端恒在 222、小数左端恒在 224 ⇒ **永远只差 2 px、不重叠、不偏右** ✓
+                 *     · y：主块 458 ✓；小数块半尺寸 ⇒ **下沿对齐**取 **461**（半尺寸高约 6 px ⇒ 458+3）✓ */
+                ce_hud_text_ex(222.0f, 458.0f, tdim4 | 0xFFFFFFu, 0u, 4, 2, 2, 0.0f, "%02d.", (int)sec);
+                ce_hud_text_ex(224.0f, 461.0f, tdim4 | 0xFFFFFFu, 0u, 4, 2, 0, 0.5f, "%02d", (int)frm);
                 /* 2026-10-23 卡 109 调试（owner：先试 ce_hud_text_ex 是不是那套字体）：
                  *   在同上下文画一行 `Ex Attack lv3` / 一行 `skill` / 一行 `BOSS lv2`。
                  *   font_id 试 2（一手 TH18 ascii 的 2/3 号字体）。*/
