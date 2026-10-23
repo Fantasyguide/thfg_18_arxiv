@@ -530,6 +530,11 @@ int __stdcall thcrap_plugin_init(void)
             static const BYTE ES[5] = {0xf3,0x0f,0x11,0x40,0x04};
             if (g_hook_sel == 0 || g_hook_sel == 5) hook_store5(0x102493u, ER, &g_w0, "r@493");
             if (g_hook_sel == 0 || g_hook_sel == 6) hook_store5(0x1024afu, ES, &g_w4, "s@4af");
+            /* ★ 610 handler(0x5024ca) 的 store：0x5024f6 movss [eax+0x24],xmm0（5 字节整） */
+            {
+                static const BYTE E24[5] = {0xf3,0x0f,0x11,0x40,0x24};
+                if (g_hook_sel == 0 || g_hook_sel == 7) hook_store5(0x1024f6u, E24, &g_w8, "610@4f6");
+            }
         }
     }
 
