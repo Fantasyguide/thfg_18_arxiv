@@ -54,7 +54,7 @@ static void test_fmt_init(void)
     char name[64];
 
     printf("§B fmt 记录构造\n");
-    trance_bgm_fmt_init(&f, "trance_bgm_placeholder.wav", 705600u, 2u, 44100u, 16u);
+    trance_bgm_fmt_init(&f, "trance_bgm_placeholder.wav", 705600u, 176400u, 2u, 44100u, 16u);
 
     CHECK(f.wfx_tag == 1, "tag = %u", f.wfx_tag);
     CHECK(f.channels == 2, "ch = %u", f.channels);
@@ -63,8 +63,8 @@ static void test_fmt_init(void)
     CHECK(f.block_align == 4, "block = %u", f.block_align);
     CHECK(f.bits_per_sample == 16, "bits = %u", f.bits_per_sample);
     CHECK(f.cb_size == 0, "cbSize = %u", f.cb_size);
-    /* ★ 内存流的两个字段：整段循环（intro 0）+ 读窗口 = 全长 */
-    CHECK(f.intro_size == 0, "intro = %d（必须 0 = 整段回卷）", f.intro_size);
+    /* ★ 内存流的两个字段：intro = 回绕点（TH13 的 b 轨口径）+ 读窗口 = 全长 */
+    CHECK(f.intro_size == 176400, "intro = %d（应为传入的 intro_bytes）", f.intro_size);
     CHECK(f.track_size == 705600, "track = %d", f.track_size);
     CHECK(f.preload_size == f.track_size, "preload(%d) != track(%d)（引擎自己的口径是相等）",
           f.preload_size, f.track_size);
@@ -77,20 +77,35 @@ static void test_fmt_init(void)
     CHECK(f.fn[15] == 0, "fn[15] 必须是 NUL");
 
     /* 超长名字 + 空名字都不许越界 */
-    trance_bgm_fmt_init(&f, "0123456789abcdefghijklmnop", 100u, 1u, 22050u, 8u);
+    trance_bgm_fmt_init(&f, "0123456789abcdefghijklmnop", 100u, 0u, 1u, 22050u, 8u);
     CHECK(f.fn[15] == 0, "超长名字后 fn[15] = %u", f.fn[15]);
     CHECK(f.block_align == 1 && f.avg_bytes_per_sec == 22050u, "8bit 单声道：block %u avg %u",
           f.block_align, f.avg_bytes_per_sec);
-    trance_bgm_fmt_init(&f, NULL, 100u, 2u, 44100u, 16u);
+    trance_bgm_fmt_init(&f, NULL, 100u, 0u, 2u, 44100u, 16u);
     CHECK(f.fn[0] == 0, "NULL 名字 ⇒ fn 全 0");
 
     /* 同样的入参两次 ⇒ 逐字节相同（纯函数，写进契约） */
     {
         trance_bgm_fmt_t a, b;
-        trance_bgm_fmt_init(&a, "x.wav", 1234u, 2u, 44100u, 16u);
-        trance_bgm_fmt_init(&b, "x.wav", 1234u, 2u, 44100u, 16u);
+        trance_bgm_fmt_init(&a, "x.wav", 1234u, 400u, 2u, 44100u, 16u);
+        trance_bgm_fmt_init(&b, "x.wav", 1234u, 400u, 2u, 44100u, 16u);
         CHECK(memcmp(&a, &b, sizeof a) == 0, "fmt_init 非确定性");
     }
+
+    /* ★★ intro_bytes 的合法性门（2026-10-24 方案 A）：
+     *   · 0 ⇒ 整段循环（老口径）；
+     *   · 按 block_align（4）对齐 —— 半帧的回绕点会让引擎从左右声道中间起播；
+     *   · intro >= pcm 或 block_align = 0 ⇒ 退回 0（绝不写出引擎会读越界的值）。*/
+    trance_bgm_fmt_init(&f, "x.wav", 705600u, 0u, 2u, 44100u, 16u);
+    CHECK(f.intro_size == 0, "intro_bytes=0 ⇒ 整段循环，实得 %d", f.intro_size);
+    trance_bgm_fmt_init(&f, "x.wav", 705600u, 176402u, 2u, 44100u, 16u);
+    CHECK(f.intro_size == 176400, "半帧 intro 必须向下对齐到 block(4)，实得 %d", f.intro_size);
+    trance_bgm_fmt_init(&f, "x.wav", 705600u, 705600u, 2u, 44100u, 16u);
+    CHECK(f.intro_size == 0, "intro == pcm ⇒ 退回 0（不能等于读窗口长度），实得 %d", f.intro_size);
+    trance_bgm_fmt_init(&f, "x.wav", 705600u, 999999u, 2u, 44100u, 16u);
+    CHECK(f.intro_size == 0, "intro > pcm ⇒ 退回 0，实得 %d", f.intro_size);
+    trance_bgm_fmt_init(&f, "x.wav", 705600u, 176400u, 0u, 44100u, 0u);
+    CHECK(f.intro_size == 0 && f.block_align == 0, "block 0 ⇒ intro 退回 0（不许除 0）");
 }
 
 /* ---------------- §C 分段长度（引擎公式） ---------------- */

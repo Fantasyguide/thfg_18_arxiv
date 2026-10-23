@@ -33,7 +33,10 @@
  * ★ 两条**引擎侧**语义（一手反汇编，`th18:0x48acc0` 的 preload 分支，逐条对照）：
  *   · 读取窗口 = `[base, base + track_size)`，`base` = 我们交给构造成器的 PCM 指针；
  *   · 循环回卷 = `cur = base + intro_size`。
- *   ⇒ **想让整段 PCM 无缝循环，就把 `intro_size` 设 0、`track_size` 设成 PCM 全长。**
+ *   ⇒ `intro_size = 0` + `track_size = PCM 全长` = 整段无缝循环；
+ *     `intro_size = intro 段字节数` + `track_size = intro + 循环体` = **TH13 的 b 轨口径**
+ *     （播完一整条回到循环点，而不是回到文件开头）。★★ 2026-10-24 起我们走的就是后者
+ *     （见 `trance_bgm_fmt_init` 的 `intro_bytes`：素材带 intro，一手值取自主曲 fmt）。
  */
 typedef struct {
     uint8_t  fn[16];
@@ -66,10 +69,10 @@ _Static_assert(offsetof(trance_bgm_fmt_t, bits_per_sample)   == 0x2e, "bits_per_
  * 再喂给引擎的内存流构造成器。生成器 = `tools/make_trance_bgm.py`
  * （TH18 自己的曲子 + naive 低音放大 + TH13 的 b 命名）。
  *
- * ★ 单个 PCM 缓冲的上限：**24 MiB**。理由：我们**一次只装一条**曲子的**循环段**
- *   （生成器丢掉 intro、降到 22050 Hz）。用户 2026-09-14 把素材面扩到 **14 首**（7 道中 + 7 关底）后，
- *   最大的一条是 **6 面关底 `th18_14b` = 18.79 MiB = 19,701,056 B**
- *   （`th18_14`：`track_size − intro_size` = 43956512 − 4557728 = 39402112 B @44100，÷2 降采样）
+ * ★ 单个 PCM 缓冲的上限：**24 MiB**。理由：我们**一次只装一条**曲子的**整条素材**
+ *   （intro + 循环体，22050 Hz）。★ 2026-10-24 方案 A 起素材**带 intro**（对齐 TH13 的 b 轨），
+ *   所以最大的一条变成 **6 面关底 `th18_14b` = 20.96 MiB = 21,978,256 B**
+ *   （`th18_14`：`track_size` = 43956512 B @44100 ÷2 降采样 = intro 569716 帧 + 循环体 5496246 帧）
  *   ⇒ 旧的 16 MiB 装不下它，这里抬到 24 MiB（余量 ~22%）。
  *   ⚠ 抬高的**安全性**：这块内存是 `VirtualAlloc` **按需分配**的（只在起流那一刻按实际文件大小申请、
  *   `finish_release()` 立刻 `VirtualFree`），**不是** DLL 的静态数据 ⇒ DLL 文件体积/常驻内存不受影响；
@@ -91,9 +94,13 @@ _Static_assert(offsetof(trance_bgm_fmt_t, bits_per_sample)   == 0x2e, "bits_per_
 #define TRANCE_BGM_CB_MUTE  (-10000)
 
 /* ---- fmt 记录 ---- */
-/* 按 (channels, rate, bits, pcm_bytes) 填一条**自己用**的 fmt：整段循环（intro = 0）。
+/* 按 (channels, rate, bits, pcm_bytes, intro_bytes) 填一条**自己用**的 fmt。
+ * `intro_bytes` = 素材里 intro 段的字节数（**循环回绕点**）：
+ *   · `0`（或越界/半帧） ⇒ 整段循环（2026-10-24 之前的老口径）；
+ *   · `intro_game × avg`（卡侧按**主曲 fmt 的 intro_size** 用 avg 比例换算） ⇒ TH13 的 b 轨口径。
  * `name` 只用于日志/调试（内存流路径**不查表**，名字不进 thbgm.fmt 索引）。*/
 void trance_bgm_fmt_init(trance_bgm_fmt_t *f, const char *name, uint32_t pcm_bytes,
+                         uint32_t intro_bytes,
                          uint32_t channels, uint32_t rate, uint32_t bits);
 
 /* ---- 曲名：TH13 的 b 变体命名法 ----
