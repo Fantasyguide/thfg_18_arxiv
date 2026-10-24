@@ -309,7 +309,7 @@
     "internal_name": "STOCK",
     "initial_unlocked": 1,
     "category": 0,
-    "price_tier": 8,
+    "price_tier": 6,
     "weight": 2,
     "sprite_large": 162,
     "sprite_small": 163
@@ -583,7 +583,7 @@
     "internal_name": "SUNFLOWER",
     "category": 0,
     "initial_unlocked": 1,
-    "price_tier": 9,
+    "price_tier": 7,
     "weight": 2,
     "sprite_large": 194,
     "sprite_small": 195
