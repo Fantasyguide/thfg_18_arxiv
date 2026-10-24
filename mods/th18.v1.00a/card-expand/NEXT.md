@@ -5017,3 +5017,14 @@ Player `0x17`，一手见 `native/engine.h`）⇒ 与 X 入口差**一帧相位*
 - **扩容路径（只改文件，不需要新站点）**：抬 `CE_SHT_SLOTS`（数组区原地长到预留格数，上限 `0xff`）+ 在
   `assets/sht/append_shooterset.py` 里写槽位；数据区基点已让到 `0x4e0`（`AUDIT.md` §CQ / 本文件 §1w 已完成）。
 - **协作口径**：后续要新 shooterset 的卡**先来找 108 要预算**；要一次性大扩容就走上面那条路并同步 `CAPACITY.md` 台账。
+
+
+## ability.anm entry 余量回收计划（2026-10-24 加）
+
+- **现状**：`ability.anm` entry 用到 **232 / 256**，余量 **9.4%**，低于台账口径 10% ⇒ `make check` 的 capcheck 判红。
+- **为什么先豁免**：卡本身能正常构建/运行（`make dev` 19 步全绿），只是"再加卡"的空间不足；回收要逐条核引用，属独立一轮工作。
+- **回收路径（按性价比）**：
+  1. 逐条核对 `assets/ability/ORDER.txt` 与各 `scripts/*.anm.txt`，删掉**没有任何脚本引用**的 entry（`build_ability.py --verify-only` 会校验一遍）；
+  2. 合并重复图集（例如同图不同切法）；
+  3. 若确实无法回收，再考虑抬 `MAX_ENTRIES`（要同步 `sites.py` 与 cave size，代价高）。
+- **验收**：余量回到 ≥ 10%，然后**删掉 `capcheck.py` 的 WAIVERS 里 `ability_entry` 这一条**。
