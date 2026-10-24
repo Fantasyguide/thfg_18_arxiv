@@ -96,6 +96,8 @@
  *   ⚠ **只改「敌人对象上问父字段」的读点**；写 spawn 参数那一处（`yk_spawn_familiar_parent`）
  *     照旧用 `CE_SPAWN_PARENT` —— 那是 0x50，正确。*/
 #define YK_ENEMY_PARENT_ID 0x6834   /* zEnemy.parent_enemy_id（= spawn params +0x50 的去处）*/
+/* ★ 2026-10-24：判定圆半径（`lolk.c:71` 的同一个定义，本卡自己的副本 —— engine.h 没有）*/
+#define CE_PLAYER_HIT_RADIUS     0x4799c    /* float：原生 3.0 */
 /* 使魔皮肤（review §6.5.4 说要 `anmSelect` 的等价物）—— ❓ **未证实，别照抄这两个偏移**。
  * 2026-09-12 对抗审计（一手反查 `local/_scratch/th18_full.asm`）：
  *   ① 全反汇编里 `+0x1490` / `+0x149c` 作为内存操作数**一条引用都没有**
@@ -7148,7 +7150,31 @@ static int yk_orbs_tick(yk_card_t *s)
              * `vy += 0.03`（终速 3.0）。**掉出游玩区下沿 + 16 就整颗删掉、不给分**（= 损失）。*/
             o->vx = 0.0f;
             if (o->vy < YK_ORB_FALL_VY_MIN) o->vy = YK_ORB_FALL_VY_MIN;
-            o->vy += YK_ORB_FALL_GRAVITY;
+            {
+                /* ★★★ 2026-10-24（owner：**115 在场、且在擦弹圈内**才变黄 + 下落半速）——
+                 *   一手口径（TH15）：道具进擦弹判定圈 ⇒ 染 TH15 的黄、下落速度减半；出圈还原。
+                 *   圈半径照 115：`player+hit_radius × 3.6`（`lolk.c:492` 的 LOLK_GRAZE_RADIUS_SCALE）。
+                 *   ⚠ 只在 115 装备时生效 ⇒ 没有 115 的局里行为与之前逐位相同。*/
+                int slow = 0;
+                if (ce_owned(115u)) {
+                    const float *pp3 = ce_player_pos();
+                    uint8_t *pl3 = CE_PLAYER();
+                    if (pp3 && pl3) {
+                        const float gr = *(const float *)(pl3 + CE_PLAYER_HIT_RADIUS) * 3.6f;
+                        const float ddx = o->x - pp3[0], ddy = o->y - pp3[1];
+                        if (ddx * ddx + ddy * ddy <= gr * gr) slow = 1;
+                    }
+                }
+                if (slow) {
+                    o->vy += YK_ORB_FALL_GRAVITY * 0.5f;
+                    if (o->vy > YK_ORB_FALL_TERMINAL * 0.5f) o->vy = YK_ORB_FALL_TERMINAL * 0.5f;
+                    o->vx = ((ce_sdk_frame() >> 3) & 1u) ? 0.6f : -0.6f;
+                    if (o->anm_id) ce_anm_set_color(o->anm_id, 0xffffd040u);
+                } else {
+                    o->vx = 0.0f;
+                    if (o->anm_id) ce_anm_set_color(o->anm_id, 0xffffffffu);
+                }
+            }
             if (o->vy > YK_ORB_FALL_TERMINAL) o->vy = YK_ORB_FALL_TERMINAL;
         }
         /* 收集 = **接触玩家的抓取盒**（一手 `Player::CalcItemBoxCollision`，`ItemManager.cpp:288`）：
