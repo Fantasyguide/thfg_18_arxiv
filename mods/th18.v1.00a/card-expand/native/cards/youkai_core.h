@@ -751,12 +751,19 @@ int yk_m_laser_beam_bars_resident(int live_bars, int rate);
  * **TH18 侧落点**：TH18 的行表里 `+0x1c..+0x1f` 是**死字段**（268 条全 0）⇒ 那个 `+0x1e` 带不过来；
  * 但「灵梦/魔理沙 = 全行 > 0、咲夜/妖夢 = 全行 0」恰好是**逐角色常量** ⇒ 用 **set 区间**判：
  * 本卡认领的组里 `0x54..0x58`（霊夢）与 `0x59..0x5d`（魔理沙）染；`0x5e..0x62`（咲夜）、
- * `0x63..0x67`（早苗）与兜底 `0x16`（幽々子）**不染**（= 一手口径；要染属 `❓ 自定`，未做）。*/
+ * `0x63..0x67`（早苗）与兜底 `0x16`（幽々子）按**一手**不染。
+ * ★★ 2026-10-24 **owner 定案：「还得有早苗和咲夜的染红啊」** ⇒ 咲夜 `0x5e..0x62` 与早苗 `0x63..0x67`
+ *   **一起染**。这一条是 `❓ 自定`（TH08 的 `ply02as`/`ply03as` 的 `+0x1e` 全是 0 ⇒ 原作就是不染），
+ *   登记见 `TUNING.md`。兜底 `0x16` 仍不染。*/
 #define YK_FENGMA_TINT_RGB   0x00ff4040u  /* TH18 的 color dword（`0xAARRGGBB`）：R=ff G=40 B=40 ⇒ 红 */
 #define YK_FENGMA_SET_R0     0x54
 #define YK_FENGMA_SET_R4     0x58
 #define YK_FENGMA_SET_M0     0x59
 #define YK_FENGMA_SET_M4     0x5d
+#define YK_FENGMA_SET_S0     0x5e    /* ★ 2026-10-24 owner 定案：咲夜也染（❓自定，一手是不染）*/
+#define YK_FENGMA_SET_S4     0x62
+#define YK_FENGMA_SET_A0     0x63    /* ★ 早苗也染（同上）*/
+#define YK_FENGMA_SET_A4     0x67
 
 /* 这一组（shooter set 号）在妖逢魔时要不要染红（一手见上：只有霊夢/魔理沙那一侧的 `+0x1e > 0`）。*/
 int yk_fengma_tint_set(int set_index);

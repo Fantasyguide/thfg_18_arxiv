@@ -1866,7 +1866,9 @@ int yk_m_laser_beam_bars_resident(int live_bars, int rate)
 int yk_fengma_tint_set(int set_index)
 {
     return (set_index >= YK_FENGMA_SET_R0 && set_index <= YK_FENGMA_SET_R4)
-        || (set_index >= YK_FENGMA_SET_M0 && set_index <= YK_FENGMA_SET_M4);
+        || (set_index >= YK_FENGMA_SET_M0 && set_index <= YK_FENGMA_SET_M4)
+        || (set_index >= YK_FENGMA_SET_S0 && set_index <= YK_FENGMA_SET_S4)   /* ★ 咲夜（❓自定）*/
+        || (set_index >= YK_FENGMA_SET_A0 && set_index <= YK_FENGMA_SET_A4);  /* ★ 早苗（❓自定）*/
 }
 
 uint32_t yk_fengma_tint_dword(uint32_t color_in)
