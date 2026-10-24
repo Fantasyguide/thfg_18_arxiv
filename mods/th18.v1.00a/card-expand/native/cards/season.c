@@ -313,6 +313,7 @@ typedef struct {
 
 /* ★ 池是 DLL 静态区：ce_state 只有 496 字节，装不下几十颗点（见 AUDIT AF12 的同款静态池）*/
 static season_point_t s_pt[SEASON_POINT_POOL];
+static uint32_t s_season_absorb_seen;   /* ★ 111 全屏吸收闸 */
 
 /* ★ 掉落统计（诊断用，静态区）：每 600 帧打一条汇总，方便对「哪些敌人没掉」对账 */
 static int32_t s_stat_mid, s_stat_boss, s_stat_skip, s_stat_points;
@@ -837,6 +838,16 @@ static void points_tick(ce_card_t *c, season_card_t *s)
                                                  : CE_PLAYER_ITEM_ATTRACT_RU));
         if (r > 0.0f) ring_r2 = r * r;
         poc = *(float *)(pl + CE_PLAYER_POC_HEIGHT);
+    }
+
+    /* ★★ 2026-10-24（owner）：111 的全屏吸收要连**自建池**一起收 —— 季节道具不在引擎池里，
+     *   只能本卡自己做：收下（走 point_collect 的记账/音效/升档）+ 从池里摘掉。*/
+    if (ce_absorb_should_run(&s_season_absorb_seen)) {
+        while (s->n_pt > 0) {
+            season_point_t *ap = &s_pt[0];
+            if (ap->id) point_collect(c, s, ap);
+            point_remove(s, 0);
+        }
     }
 
     while (i < s->n_pt) {

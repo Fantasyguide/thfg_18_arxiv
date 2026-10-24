@@ -1518,6 +1518,7 @@ static void ufo_tok_vm_kill(int slot, ufo_tok_t *t)
  *   ⚠ 令牌消失必须过 `ufo_tok_vm_kill`（令牌 VM + 五边形框，铁律见那里的注），否则留幽灵。*/
 #define UFO_SWEEP_MONEY_PER_TOKEN 10
 static uint32_t s_sweep_seen;
+static uint32_t s_absorb_seen;   /* ★ 111 全屏吸收闸 */
 
 static void ufo_sweep_to_money(void)
 {
@@ -6253,6 +6254,12 @@ static int on_tick_2(ce_card_t *c)
                    ufo_dup_bag_count() + ufo_dup_tok_count() + ufo_dup_bomb_count());
     if (ce_dup_should_run(&s_dup_seen)) { ufo_dup_run(s); ufo_dup_tokens(s); }
     if (ce_sweep_should_run(&s_sweep_seen)) ufo_sweep_to_money();   /* ★ 92 清扫：飞碟 token → 金钱 */
+      /* ★★ 2026-10-24（owner）：111 全屏吸收 → 场上飞碟掉落的道具当场收下 */
+      if (ce_absorb_should_run(&s_absorb_seen)) {
+          int ai;
+          for (ai = 0; ai < UFO_DROP_POOL; ++ai)
+              if (s_drops[ai].anm_id) ufo_drop_collect(s, ai);
+      }
     ce_dup_publish((uint32_t)ce_card_id(c), ufo_dup_bag_count());
     if (ce_dup_should_run(&s_dup_seen)) ufo_dup_run(s);
 

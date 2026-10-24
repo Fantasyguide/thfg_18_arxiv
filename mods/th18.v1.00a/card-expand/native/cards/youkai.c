@@ -6454,6 +6454,23 @@ static void yk_orb_kill_all(void)
  *      —— 刻符在场上成批出现，量级比 token 大得多）—— 见 `TUNING.md` 的 108 段。*/
 #define YK_SWEEP_MONEY_PER_ORB 1
 static uint32_t s_sweep_seen;
+static uint32_t s_yk_absorb_seen;   /* ★ 111 全屏吸收闸 */
+
+/* ★★ 2026-10-24（owner）：111 全屏吸收 → 场上的刻符（自建池）也当场收给自机。*/
+static int yk_orb_collect(yk_card_t *s, float x, float y);   /* 前向声明（定义在下面）*/
+
+static void yk_absorb_all(yk_card_t *s)
+{
+    unsigned i;
+    for (i = 0; i < YK_ORB_MAX; ++i) {
+        yk_orb_t *o = &s_orb[i];
+        if (!o->used) continue;
+        yk_orb_collect(s, o->x, o->y);   /* 走本卡自己的记账（灵界点/信仰）*/
+        yk_orb_kill(o);
+    }
+    s_orb_live = 0;
+    ce_log_key("youkai: 111 全屏吸收 —— 刻符全部收下");
+}
 
 static void yk_sweep_to_money(yk_card_t *s)
 {
@@ -11255,6 +11272,7 @@ static int on_tick_2(ce_card_t *c)
         }
     }
     if (ce_sweep_should_run(&s_sweep_seen)) yk_sweep_to_money(s);   /* ★ 92 清扫：刻符 → 金钱 */
+      if (ce_absorb_should_run(&s_yk_absorb_seen)) yk_absorb_all(s);   /* ★ 111 全屏吸收 */
     yk_orbs_tick(s);
     {
         uint32_t graze = *(const uint32_t *)(uintptr_t)CE_ADDR_GRAZE;

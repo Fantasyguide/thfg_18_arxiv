@@ -859,6 +859,9 @@ static int signal_sweep_items(signal_card_t *s)
      *   自建 VM；一手（TH10/TH11）里信仰点**就是道具**（type 3/9），这两条全屏收**天然包含它们**
      *   ⇒ 补 `faith_collect_all(~0u)`（全收，与哪张卡无关）。详见 `faith.h` / `faith.c` 的注释。*/
     int m = faith_collect_all(~0u);
+    /* ★ 2026-10-24（owner）：自建池（季节道具 / 108 刻符 / 117 动物灵 / 112 掉落 / 109 灵力道具）
+     *   不在引擎池里 ⇒ 广播一次「吸收」，让它们在自己的 tick 里把自家那批收给自机。*/
+    ce_absorb_bump();
 
     n += m;
     if (n > 0) {

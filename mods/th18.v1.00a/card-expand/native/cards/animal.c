@@ -1558,6 +1558,7 @@ static void token_remove(int i)
  *   消失过 `token_remove()`（它同时删 VM 并 swap-remove）。*/
 #define ANIMAL_SWEEP_MONEY_PER_TOKEN 10
 static uint32_t s_sweep_seen;
+static uint32_t s_absorb_seen;   /* ★ 111 全屏吸收闸 */
 
 static void animal_sweep_to_money(void)
 {
@@ -3953,6 +3954,10 @@ static int on_tick_2(ce_card_t *c)
     ce_dup_publish((uint32_t)ce_card_id(c), (int)s_n_tok);
     if (ce_dup_should_run(&s_dup_seen)) animal_dup_run();
     if (ce_sweep_should_run(&s_sweep_seen)) animal_sweep_to_money();   /* ★ 92 清扫：动物灵 token → 金钱 */
+      /* ★★ 2026-10-24（owner）：111 全屏吸收 → 场上的动物灵 token 也当场收下 */
+      if (ce_absorb_should_run(&s_absorb_seen)) {
+          while (s_n_tok > 0) { token_collect(s, &s_tok[0]); token_remove(0); }
+      }
     /* ★ 2026-10-01（跨卡只读标志；交接 = `HANDOFF-108-CROSSCARD-SHIFT.md`）：每帧按 `roaring(s)`
      *   重算「暴走咆哮中」——**零发明**（判据现成：`core.ready || core.hypering`），
      *   也正好绕开「还有没有别的入口把咆哮打开」这个未普查项（交接 §6.1）。粘性；删卡由
