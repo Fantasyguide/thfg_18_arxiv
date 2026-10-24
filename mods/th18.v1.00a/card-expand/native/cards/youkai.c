@@ -10631,6 +10631,10 @@ static void yk_fengma_tint_bullets(void)
         uint32_t packed, vmid, want;
         uint8_t *vm;
         if (*(const int32_t *)(b + CE_PB_STATE) == 0) continue;         /* 空槽 */
+          /* ★★★ 2026-10-24（owner：**只有妖子机的弹幕染红，妖本体不染红**）——
+           *   `CE_PB_OPTION`（player_bullet+0xe4）= 发射它的 zPlayerOption*（PlayerBullet__create 0x45e3ae 第 5 参）
+           *   ⇒ 本体主炮行（row+0x20 = slot 0）不传 ⇒ NULL ⇒ 不染；子机行传那台 option ⇒ 非 NULL ⇒ 染。*/
+          if (!*(void *const *)(b + CE_PB_OPTION)) continue;
         packed = *(const uint32_t *)(b + CE_PB_PACKED_ID);
         if (!yk_fengma_tint_set((int)((packed >> 8) & 0xffu))) continue; /* 不是那两位的妖侧组 */
         vmid = *(const uint32_t *)(b + CE_PB_VM_ID);
