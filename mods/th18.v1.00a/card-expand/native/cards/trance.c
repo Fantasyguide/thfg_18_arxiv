@@ -3668,7 +3668,11 @@ static void on_item_frame(ce_card_t *c)
      *   边沿触发（`dbg_key_prev`），只在游玩帧跑 ⇒ 不会在菜单/商店里误触发。*/
 #if TRANCE_DEBUG_KEY
     {
-        const int down = (CE_DEBUG_SPACE_KEYS && ce_key_down(CE_VK_SPACE)) ? 1 : 0;
+        /* ★ 2026-10-24 owner：「113 的空格给灵重新开一下，我要测灵界」
+         *   ⇒ 只认**本卡自己的** `TRANCE_DEBUG_KEY`（=1），**不再受**全仓 `CE_DEBUG_SPACE_KEYS`
+         *   （那个是 P27 `e73c2997`「全仓调试空格键统一摘除」关掉的 ✗，109/117 共用）。
+         *   ⇒ 影响面**只有 113** ✓ 其它卡的调试空格仍然关着 ✓ */
+        const int down = (TRANCE_DEBUG_KEY && ce_key_down(CE_VK_SPACE)) ? 1 : 0;
         if (down && !s->dbg_key_prev) {
             if (ce_key_down(CE_VK_SHIFT)) {
                 /* Shift+空格：灌一格（200）。走 core 的加法 ⇒ 跨格判定与一手同一条路。*/
