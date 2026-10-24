@@ -11078,6 +11078,8 @@ static int on_tick_2(ce_card_t *c)
            *   没有 115 的局里该因子恒 1.0 ⇒ 本段一个字节都不改（逐位不变）。
            *   ⚠ 只作用于 `st == 1`（飘落阶段）；飞散/过回收线/被吸引 不动。*/
           {
+              static uint32_t s_pow_orig[POFV_POWER_MAX];
+              static uint8_t  s_pow_tinted[POFV_POWER_MAX];
               uint8_t *im4 = CE_ITEM_MANAGER();
               const int slow4 = im4 && *(const float *)(im4 + CE_ITEM_SLOWDOWN) < 0.999f;
               int k4;
@@ -11090,9 +11092,30 @@ static int on_tick_2(ce_card_t *c)
                           if (it->vy > POFV_POWER_FALL_MAX * 0.5f) it->vy = POFV_POWER_FALL_MAX * 0.5f;
                           it->x += ((ce_sdk_frame() >> 3) & 1u) ? 0.6f : -0.6f;   /* 抖动 */
                       }
-                      ce_anm_set_color((uint32_t)it->vm, 0xffffd040u);            /* TH15 的黄 */
-                  } else {
-                      ce_anm_set_color((uint32_t)it->vm, 0xffffffffu);
+                      /* ★★ 2026-10-24（owner：**109 灵力自带的那层透明度没了**）——
+                       *   上一版我直接写 `0xffffd040` / `0xffffffff`，把 **alpha 也一起覆盖**了 ✗
+                       *   （蓝点本来是半透明的）⇒ 改成**只换 RGB、保 alpha**，并且第一次染时记下原色，
+                       *   出圈时按原色还原（同样只换 RGB）。*/
+                      {
+                          const uint8_t *vmc = (const uint8_t *)ce_anm_get_vm((uint32_t)it->vm);
+                          if (vmc) {
+                              const uint32_t cur = *(const uint32_t *)(vmc + CE_ANM_VM_COLOR1);
+                              if (!s_pow_tinted[k4]) {
+                                  s_pow_orig[k4] = cur;
+                                  s_pow_tinted[k4] = 1;
+                              }
+                              ce_anm_set_color((uint32_t)it->vm,
+                                               ce_color_keep_alpha(cur, 0x00ffd040u));
+                          }
+                      }
+                  } else if (s_pow_tinted[k4]) {
+                      const uint8_t *vmc2 = (const uint8_t *)ce_anm_get_vm((uint32_t)it->vm);
+                      if (vmc2) {
+                          const uint32_t cur2 = *(const uint32_t *)(vmc2 + CE_ANM_VM_COLOR1);
+                          ce_anm_set_color((uint32_t)it->vm,
+                                           ce_color_keep_alpha(cur2, s_pow_orig[k4] & 0x00ffffffu));
+                      }
+                      s_pow_tinted[k4] = 0;
                   }
               }
           }

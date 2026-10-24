@@ -8548,7 +8548,13 @@ static void yk_hud_claim(ce_card_t *c, yk_card_t *s)
     blk.h = YK_HUD_BLOCK_H;
     blk.side = CE_HUD_SIDE_PINNED;                 /* 非 pinned 会被 pinned 入口拒掉 */
     s->hud_ready = (uint8_t)(ce_hud_slot_claim_pinned_card(
-        ce_card_id(c), &blk, YK_HUD_PIN_X, YK_HUD_PIN_Y, &s->hud) ? 1 : 0);
+        ce_card_id(c), &blk, YK_HUD_PIN_X,
+              /* ★★★ 2026-10-24（owner：「货架系统的 108 怎么把 109 顶上去了？」）——
+               *   本卡 pinned 块占底边最左那一行（256×53），而 109 的蓄力槽是**优先级 100、
+               *   要占满底边整行**；pinned 又是"先摆且是障碍"（`sdk_core` z8）⇒ 108 一占，
+               *   109 只能被抬到上一行。⇒ 109 在场时把 108 整体上移 **46**（109 块高 42 + 4 间隙）；
+               *   109 不在场时位置逐像素不变。*/
+              (ce_owned(109u) ? YK_HUD_PIN_Y - 46.0f : YK_HUD_PIN_Y), &s->hud) ? 1 : 0);
     /* ★ 2026-10-15（owner 报「108 + 77 + 71 同装 ⇒ 左下角**留出了主动卡的位置**」✗ 的**只读**诊断 ✓）：
      *   打一行「引擎判据 `mgr+0x38` vs 货架剩余宽」——有卡面 ⇒ 起点 124 ⇒ 宽 **700** ✓；
      *   没有 ⇒ 起点 68 ⇒ 宽 **756** ✓（底边右端 `CE_HUD_X_MAX` = 824 ✓，算式见 `sdk_core.h` 的让位段 ✓）。
