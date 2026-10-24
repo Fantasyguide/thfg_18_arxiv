@@ -5166,7 +5166,21 @@ static void __attribute__((noinline)) yk_transfer_tick(yk_card_t *s)
                 if (le_fam) parent = *(const uint32_t *)(le_boss + CE_ENEMY_ID);
                 if (!parent) continue;                             /* 只看子敌人 / 接管的使魔 */
                 if (yk_map_has_id(&s_map, id)) continue;            /* 已在映射层 ⇒ 那边已喂，别重复 */
-                if (yk_orbit_find_id(id)) continue;                 /* 绕转使魔走下面那条支 */
+                if (yk_orbit_find_id(id)) {
+                    /* ★★★★★ 2026-10-24（**修「绕转使魔转伤恒 0」**）：
+                     *   交表顺序 = ① 这里（`seen = 0` 在本帧开头）→ ② 本扫描 → ③ 清表
+                     *   （查不到就 `memset`）→ ④ 绕转采样（在**清表之后**）。
+                     *   绕转使魔**在这里被显式跳过**（它们的差分在 ④ 算），原来就**不置 `seen`**
+                     *   ⇒ ③ 把它们当「查不到」`memset` ⇒ ④ 的 `yk_xfam_find()` 必 NULL ⇒
+                     *   重建条目 `life = lc` ⇒ **差分恒 0** ⇒ `yk_transfer_feed(...)` 一次都跑不到 ✗。
+                     *   ⇒ 这里给已存在的条目补 `seen = 1`（条目由 ④ 首次创建；本帧首次创建的那一只
+                     *   本来也不该有差分 ✓），让 ③ 放过它 ⇒ ④ 拿得到上帧 `life` ⇒ 差分成立 ✓。
+                     *   （没选「把 ④ 移到 ③ 之前」：那要动更大一段的顺序；也没选「绕转单开一张表」：
+                     *     改动最大。补一格 `seen` 是三条路里最小且语义最直的一条。）*/
+                    yk_xfam_t *xo = yk_xfam_find(id);
+                    if (xo) xo->seen = 1;
+                    continue;                                       /* 绕转使魔走下面那条支 */
+                }
                 pe = ce_enemy_by_id(em, (int32_t)parent);
                 if (!pe) continue;
                 /* 判据：母机是 boss 系（`CE_EM_BOSS_IDS[4]` **或** 母机自己的 `own_boss_id != 0`）。
