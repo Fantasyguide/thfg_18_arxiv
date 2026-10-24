@@ -49,7 +49,10 @@
  *        （原生 **script49** 同配方），0→24 帧**慢**长到 90 半径、24→34 帧**快**冲到 640
  *        （罩满游玩区），颜色一路**慢慢**转成纯白 ⇒ **顶点 = 纯白 + 满 alpha = 全屏白（"全屏死亡"）**。
  *   三者都在释放点、同一帧起（"几乎同时"）；光线在层 6（原生层号），圆盘在层 19。*/
-#define GW_RAYS_SCRIPT        400      /* 金色威光总控（照原生 script47）*/
+#define GW_RAYS_SCRIPT        CE_ANM_ABILITY_SCRIPT_GREAT_WORK_RAYS   /* ★ 2026-10-24 修：原来写死 400，
+                                                     *   而 ability.anm 的 400 = **109 的神灵本体（狼灵贴图）**
+                                                     *   ⇒ 按 92 会画出一只跟着自机的横着的狼灵 VM。
+                                                     *   92 的威光总控是 **394**（`394_great_work_rays`）。*/
 #define GW_RAYS_LAYER         6        /* 原生层号（script47/48 的 layer(6)）*/
 /* 三个脚本的自然寿命（比脚本里的 `delete()` 略短 —— **必须在 VM 还活着时清句柄**，
  *  否则 VM 池把 id 回收给别人之后，我们会去动别人的 VM）。*/
@@ -294,6 +297,9 @@ static int gw_take_enemies(int64_t *hp_sum, int32_t *money, int32_t *breaks)
         ce_log("great_work: 其中 %d 只带免伤位 —— 照写 life = 0 杀掉（不走伤害闸）", no_dmg);
     if (n == 0 && dead)
         ce_log("great_work: 没可转的敌人（已死/收尾 %d）", dead);
+    /* ★ 2026-10-24：1 档也要能看出「这一扫到底看到几只」 */
+    ce_log_key("gw: enemies n=%d dead=%d no_dmg=%d money=%d breaks=%d",
+               n, dead, no_dmg, *money, *breaks);
     return n;
 }
 
@@ -388,7 +394,7 @@ static void gw_resolve(ce_card_t *c)
               }
           }
     }
-    ce_log("great_work: (顶点结算) converted %d bullets + %d enemies + %d items + %d faith dots "
+    ce_log_key("great_work: (顶点结算) converted %d bullets + %d enemies + %d items + %d faith dots "
            "(%d from faith) (hp %lld) -> %d money items, %d boss phase(s) broken; recharge %d frames (%.1f s)",
            bullets, enemies, items, faith_n, (int)faith_money, (long long)hp_sum, money, breaks,
            frames, (double)frames / 60.0);

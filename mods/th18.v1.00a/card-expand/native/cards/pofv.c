@@ -501,6 +501,36 @@ static float s_combo_last_x, s_combo_last_y;   /* 连击事件的落点（击破
 #define POFV_NATKILL_DEN 120             /* p = 1/120 ✓（期望 1/60 s ✓，owner 推导待确认 🟡）*/
 static int32_t s_period_timer;
 static int   s_boss_prev;   /* ★ owner 2026-10-05：boss 表 0→1 的**边沿**（进 boss 清屏一次 ✓）*/
+/* ★★★ 2026-10-24（owner：「召唤物本体没有清零」「出现了一个明显的野贴图」）——
+ *   92 伟大之作的**清扫代数**这条路上，109 原来是**空白**（全仓只有 108/112/116/117 实现了）
+ *   ⇒ 灵力道具（卡私有池 + 自己的 VM）没人清 ⇒ 场上留"野贴图"。
+ *   这里补上：逐颗 → 换成金钱 → 删 VM → 清池。
+ *   ❓ 面值自定：1 颗灵力道具 = `POFV_SWEEP_MONEY_PER_ITEM` 枚金钱（与 117 的每 token 10 枚不同口径，
+ *     灵力道具成批出现）。*/
+#define POFV_SWEEP_MONEY_PER_ITEM 1
+static uint32_t s_sweep_seen_gw;
+
+static void pofv_sweep_to_money(void)
+{
+    int i, n = 0, k;
+    for (i = 0; i < POFV_POWER_MAX; ++i) {
+        pofv_power_t *it = &s_power.s[i];
+        float p[3];
+        if (!it->active) continue;
+        p[0] = it->x; p[1] = it->y; p[2] = 0.0f;
+        for (k = 0; k < POFV_SWEEP_MONEY_PER_ITEM; ++k) {
+            if (!ce_spawn_item(2u, p, -1.5707964f, 1.7f)) ce_money_pocket(1);
+        }
+        if (it->vm) { ce_anm_delete((uint32_t)it->vm); it->vm = 0; }
+        it->active = 0;
+        ++n;
+    }
+    if (n) {
+        pofv_power_pool_init(&s_power);   /* 整池归零（live / seq 计数一并收敛）*/
+        ce_log_key("pofv: 92 清扫 —— %d 颗灵力道具换成金钱（每颗 %d 枚）", n, POFV_SWEEP_MONEY_PER_ITEM);
+    }
+}
+
 /* ★ HUD（owner：「**HUD 只需要本侧即可**」✓ ⇒ 只一套 ✓）：数字走 `ce_hud_number_set`（ANM 图元 ✓）、
  *   标签 `hits` 走 `ce_hud_vm_text_set`（原生 font2 字形 + 可带颜色 ⇒ 黄/灰闪 ✓）
  * ❓ 位置：一手 `y = 32.0`、`x = …(296 比例) + 16.0`（**引擎坐标系** ⇒ 本卡 UI 空间换算未核 ⇒ 先取 32/… 近似，登记 TUNING）
@@ -11075,6 +11105,11 @@ static int on_tick_2(ce_card_t *c)
                                                 *   `_semantic()` 语义 = 「没有 106 时」⇒ 106 在场时线偏高、
                                                 *   道具在同一高度就会被提前吸走（与 108 永点同一个 bug）。*/
                                                ce_poc_height(), &got_pts);
+          /* ★ 2026-10-24：A/B 结果——狼灵 VM 的真因是 **92 的 GW_RAYS_SCRIPT 写死 400**（撞 109 神灵本体），
+           *   与本条清扫无关 ⇒ 恢复启用。*/
+          if (ce_sweep_should_run(&s_sweep_seen_gw)) pofv_sweep_to_money();
+
+
           /* ★★★ 2026-10-24（owner：**有弹幕在擦弹圈内 ⇒ 全屏道具变黄 + 抖动 + 下落半速**）——
            *   判据 = 115 写进引擎的那个因子 `itemmgr+0xe6bb14`（`CE_ITEM_SLOWDOWN`）< 1.0
            *   （115 擦弹中写 `LOLK_SLOW_START/100`、恢复写 1.0）⇒ 与 115 同帧一致；

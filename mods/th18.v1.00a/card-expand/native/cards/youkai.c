@@ -6455,7 +6455,7 @@ static void yk_orb_kill_all(void)
 #define YK_SWEEP_MONEY_PER_ORB 1
 static uint32_t s_sweep_seen;
 
-static void yk_sweep_to_money(void)
+static void yk_sweep_to_money(yk_card_t *s)
 {
     unsigned i;
     int n = 0, k;
@@ -6474,8 +6474,12 @@ static void yk_sweep_to_money(void)
     }
     if (n) {
         s_orb_live = 0;
-        ce_log("youkai: 92 清扫 —— %d 颗刻符换成金钱（每颗 %d 枚）", n, YK_SWEEP_MONEY_PER_ORB);
+        ce_log_key("youkai: 92 清扫 —— %d 颗刻符换成金钱（每颗 %d 枚）", n, YK_SWEEP_MONEY_PER_ORB);
     }
+    /* ★★ 2026-10-24（owner：「召唤物本体没有清零」）—— 92 清扫时同时撤使魔本体
+     *   （`yk_drop_all` 是本卡唯一撤退口：撤 VM + 清表 + 断链）。*/
+    if (s) yk_drop_all(s, "gw sweep");
+    ce_log_key("youkai: sweep orbs=%d", n);
 }
 
 /* 生成一颗刻符（TH08 的 `ItemManager::spawn_item(pos, 7, state)`，`th08:0x4400a0` 的 type 7 那一档）。
@@ -11250,7 +11254,7 @@ static int on_tick_2(ce_card_t *c)
             for (q = 0; q < YK_GAUGE_TEXT_MAX; ++q) yk_hud_vm_log("digit", s->hud_digit[q]);
         }
     }
-    if (ce_sweep_should_run(&s_sweep_seen)) yk_sweep_to_money();   /* ★ 92 清扫：刻符 → 金钱 */
+    if (ce_sweep_should_run(&s_sweep_seen)) yk_sweep_to_money(s);   /* ★ 92 清扫：刻符 → 金钱 */
     yk_orbs_tick(s);
     {
         uint32_t graze = *(const uint32_t *)(uintptr_t)CE_ADDR_GRAZE;

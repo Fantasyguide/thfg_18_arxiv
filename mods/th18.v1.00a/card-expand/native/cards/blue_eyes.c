@@ -38,6 +38,9 @@ static void bar_destroy(be_state_t *s, int fade)
     s->bar_bg_id = 0; s->bar_id = 0;
 }
 
+#define BE_SWEEP_MONEY 1   /* ★ 2026-10-24 owner 削弱：3 → 1 张 */
+static uint32_t s_be_sweep_seen;
+
 static void dismiss(ce_card_t *c, const char *why)
 {
     be_state_t *s = ce_state(c, be_state_t);
@@ -84,6 +87,18 @@ static int on_active_tick(ce_card_t *c, uint32_t elapsed)
     be_state_t *s = ce_state(c, be_state_t);
     uint8_t *p = CE_PLAYER();
     if (!s || !p) return 0;
+    /* ★★ 2026-10-24（92 清扫）：场上的青眼白龙 → 换金钱 + 清 VM（龙是纯 VM，敌人扫描看不见它）*/
+    if (s->anm_id && ce_sweep_should_run(&s_be_sweep_seen)) {
+        float wp[3];
+        int k;
+        wp[0] = s->x; wp[1] = s->y; wp[2] = s->z;
+        for (k = 0; k < BE_SWEEP_MONEY; ++k) {
+            if (!ce_spawn_item(2u, wp, -1.5707964f, 1.7f)) ce_money_pocket(1);
+        }
+        ce_log_key("blue_eyes: 92 清扫 —— 龙换成金钱（%d 枚）", BE_SWEEP_MONEY);
+        dismiss(c, "gw sweep");
+        return 0;
+    }
     if (!ce_anm_get_vm(s->anm_id)) {                       /* 引擎把 VM 收掉了（O29h）：龙没了就结束 */
         ce_log("blue_eyes: dragon vm gone at frame %u", s->frames);
         s->anm_id = 0; s->beam_id = 0;
