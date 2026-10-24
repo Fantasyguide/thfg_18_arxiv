@@ -103,6 +103,43 @@ void trance_bgm_fmt_init(trance_bgm_fmt_t *f, const char *name, uint32_t pcm_byt
                          uint32_t intro_bytes,
                          uint32_t channels, uint32_t rate, uint32_t bits);
 
+/* ============================ 2. 口径（素材 ⟷ 主曲）============================
+ *
+ * ★★ 2026-10-24（`th18_06b` 错位事故的正面防线）：**素材的长度是由"哪个主曲口径"决定的**。
+ *   主曲 fmt 的 `track_size` / `intro_size` 是 44100 口径的字节数，我们的素材是 22050 口径
+ *   ⇒ 换算 `ours = engine × our_avg ÷ e_avg`。这一条是**独立量**：左边是文件真实字节数
+ *   （生成期定死），右边是引擎当前那路 BGM 的 fmt（运行期一手）⇒ 两边对不上就说明
+ *   **这份文件不是给这个主曲做的**，此时接管一定会错位（循环点/总长差多少，每圈就差多少）。
+ *
+ * 事故账（一手）：零售 `th18_06`（leveledit **关**）= intro 6.5074 s + loop 105.5463 s
+ *   = **112.0537 s**；leveledit **开**时主曲被换成 `th18_06.ogg` + `.loop.ogg`
+ *   = 30.9678 + 74.3226 = **105.2904 s**（thcrap bgmmod 的 `intro_size` = 第一个文件的解码字节）。
+ *   `th18_06b_rearr` 一份文件服务两个口径 ⇒ 拿 105.29 s 的素材按 6.5074 s 的循环点播，
+ *   每圈往回跳 **24.46 s**。现在两份文件（`…wav` 零售 / `…le.wav` leveledit）+ 这道闸。
+ *
+ * 单位：字节。`tol` 传 **1 帧**（= block_align，2ch/16bit ⇒ 4 B）；换算里有向下取整，
+ *   一手的两条口径在实测里差 0–1 帧（leveledit 的 ogg 解码帧数取整），所以给 1 帧余量。
+ */
+
+/* `engine` 口径的字节数 → 我们的字节数（`e_avg` = 主曲 fmt 的 avg，`our_avg` = 素材的 avg）。
+ * `e_avg`/`our_avg` 任一为 0 ⇒ 0（不猜）。*/
+uint32_t trance_bgm_caliber_bytes(uint32_t e_bytes, uint32_t e_avg, uint32_t our_avg);
+
+/* 口径闸：`mat_bytes`（素材真实字节数，可传全长或 intro 长度）与主曲换算值是否相符（±tol）。
+ * 返回 1 = 相符；0 = 不符。**不符 ⇒ 不接管**（保持主曲），绝不"先放上去再说"。*/
+int trance_bgm_caliber_match(uint32_t mat_bytes, uint32_t e_bytes,
+                             uint32_t e_avg, uint32_t our_avg, uint32_t tol);
+
+/* intro 闸（`trance_bgm.c` 的 `bgm_seek_to_engine` 用；也是"别把 intro_size 写成 0"的最后一道）：
+ *   `intros`    = 本次要写进我们自己 fmt 的 intro 字节数（主曲 fmt 换算出来的）
+ *   `cal_intro` = 加载时**口径匹配**给出的 intro 字节数（= 素材自带 intro 的正身）
+ *   `tol`       = 1 帧
+ * 返回 0 = 通过；
+ *     -1 = 素材自带 intro（cal_intro ≠ 0）而这次算出来是 **0** ⇒ **拒绝接管**：
+ *          写 `intro_size = 0` 会让引擎每播完一圈就回到文件开头 = **每圈重放 intro**；
+ *     -2 = 两边差 > tol（主曲 fmt 在这几帧里被换过 / 读到了别的口径）⇒ 拒绝接管。*/
+int trance_bgm_intro_gate(uint32_t intros, uint32_t cal_intro, uint32_t tol);
+
 /* ---- 曲名：TH13 的 b 变体命名法 ----
  * 一手（`th13:0x405b1d`）：把当前曲名里**扩展名前的那个 `.` 覆盖成 `'b'` + NUL**
  *   ⇒ `"th13_01.wav"` → `"th13_01b"`，紧接着 `FUN_0043afc0`（`th13:0x43b004`）在末尾补 `".wav"`

@@ -107,6 +107,12 @@
 /* 环 = 8 段（引擎构造成器给的就是 8；见 AUDIT §CV/§CW 与 `engine/_shared` §8.2）*/
 #define TRANCE_BGM_RING_SEGS 8
 
+/* `bgm_seek_to_engine()` 的"**拒绝本次接管**"返回值（正常值是 PCM 内偏移 ≥ 0）。
+ * ★★ 2026-10-24：以前的退路是"seek 不成就从素材 0 秒起播" —— 那正是用户听到的
+ *   「时间对不上」（主曲在 30 s，我们从 0 s 响），比"这次灵界没有灵界版 BGM"糟得多。
+ *   ⇒ 口径 / intro / 帧时钟任一不过 ⇒ 返回它，调用方 `finish_release()` 收干净、主 BGM 不动。*/
+#define TBGM_SEEK_REFUSE (-1)
+
 /* ---- 引擎面 ---- */
 #define TBGM_ADDR_DSOUND      0x56ad8cu   /* 全局：DirectSound 侧对象（引擎自己 `MOV ECX,[0x56ad8c]`）*/
 #define TBGM_ADDR_BGM_PTR     0x570484u   /* 全局：引擎唯一一路 BGM 流对象指针 */
@@ -198,6 +204,12 @@ static int      s_selfcheck = -1;           /* -1 = 还没跑 */
 /* 素材（真音频）：PCM 由 VirtualAlloc 拿，`s_wav` 指向它内部 ⇒ 生命周期与 `s_stream` 绑在一起 */
 static uint8_t  *s_pcm;
 static uint32_t  s_pcm_bytes;
+/* ★★ 2026-10-24：本次素材**自带 intro** 的字节数（= 加载时"口径匹配"给出的循环点）。
+ *   两个用途：① 写进我们自己的 fmt（`intro_size`）；② intro 闸的参照物 ——
+ *   `bgm_seek_to_engine()` 每帧重算的那个值必须与它相等（±1 帧），
+ *   否则说明主曲 fmt 在这几帧里被换成了**另一条口径**（leveledit 开/关）⇒ 拒绝接管。
+ *   ⚠ 它只能在**口径闸通过之后**才有值（0 表示"素材按这个口径没有 intro"或"还没核对"）。*/
+static uint32_t  s_mat_intro;
 static trance_bgm_wav_t s_wav;
 static char      s_dll_dir[MAX_PATH];       /* **DLL 自己所在目录**（尾带反斜杠），解析一次后复用 */
 static int       s_asset_dir_state;         /* 0 = 没试过，1 = 成功，-1 = 失败 */
@@ -403,8 +415,31 @@ static void apply_material_mode(char *fname, size_t cap, const char *mode)
     snprintf(fname, cap, "%s", buf);
 }
 
-/* 读一条 WAV 进内存 + 解析。返回 0 = ok（`*out_pcm` 要调 VirtualFree），否则负的拒绝码。*/
-static int load_variant(const char *fname, uint8_t **out_alloc, trance_bgm_wav_t *out_wav,
+/* 第二个口径的文件名：`<stem>.wav` → `<stem>.le.wav`（**leveledit 口径**）。
+ * 为什么需要第二个名字：二面 boss 的主曲被 leveledit 换成 `th18_06.ogg` + `.loop.ogg`
+ * ⇒ 主曲口径从零售的 112.0537 s 变成 105.2904 s（intro 6.5074 s → 30.968 s）。
+ * 一份素材服务两个口径就是这次"每圈往回跳 24.46 s"的根因 ⇒ 两份文件 + 下面的口径闸。
+ * 规则：在**最后一个 `.`（扩展名）之前**插 `.le`；没有扩展名就追加 `.le`。
+ * 返回 0 = ok；-1 = 空/太短/cap 不够。*/
+static int le_variant_name(const char *fname, char *out, size_t cap)
+{
+    const char *dot;
+    size_t base;
+
+    if (!fname || !out || !cap) return -1;
+    dot  = strrchr(fname, '.');
+    base = dot ? (size_t)(dot - fname) : strlen(fname);
+    if (base == 0 || base + 3u >= cap) return -1;
+    memcpy(out, fname, base);
+    memcpy(out + base, ".le", 3);
+    if (dot) snprintf(out + base + 3, cap - base - 3, "%s", dot);
+    else     out[base + 3] = 0;
+    return 0;
+}
+
+/* 读一条 WAV 进内存 + 解析。返回 0 = ok（`*out_pcm` 要调 VirtualFree），否则负的拒绝码。
+ * `quiet` = 1 ⇒ "文件不在"不单独打日志（多候选口径时由调用方统一说明，免得两条候选各刷一遍）。*/
+static int load_variant(const char *fname, int quiet, uint8_t **out_alloc, trance_bgm_wav_t *out_wav,
                         char *used_path, size_t used_cap)
 {
     char   path[MAX_PATH * 2];
@@ -428,15 +463,17 @@ static int load_variant(const char *fname, uint8_t **out_alloc, trance_bgm_wav_t
         }
     }
     if (h == INVALID_HANDLE_VALUE) {
-        char list[MAX_PATH * TBGM_MAX_ASSET_DIRS + 64];
-        size_t used = 0;
-        list[0] = 0;
-        for (i = 0; i < ndirs && used + MAX_PATH + 8 < sizeof list; ++i) {
-            int w = snprintf(list + used, sizeof list - used, "%s    %s%s\n", i ? "" : "\n", dirs[i], fname);
-            if (w > 0) used += (size_t)w;
+        if (!quiet) {
+            char list[MAX_PATH * TBGM_MAX_ASSET_DIRS + 64];
+            size_t used = 0;
+            list[0] = 0;
+            for (i = 0; i < ndirs && used + MAX_PATH + 8 < sizeof list; ++i) {
+                int w = snprintf(list + used, sizeof list - used, "%s    %s%s\n", i ? "" : "\n", dirs[i], fname);
+                if (w > 0) used += (size_t)w;
+            }
+            ce_log("trance-bgm: 素材不在（%d 条候选全试过）：%s"
+                   "  （生成 = tools/make_trance_bgm.py；部署 = 三处之一，见 AUDIT §CO-6）", ndirs, list);
         }
-        ce_log("trance-bgm: 素材不在（%d 条候选全试过）：%s"
-               "  （生成 = tools/make_trance_bgm.py；部署 = 三处之一，见 AUDIT §CO-6）", ndirs, list);
         return -1;
     }
 
@@ -558,6 +595,36 @@ static void bgm_probe(const char *tag, void *stream)
 static uint32_t rdu32(const void *p, uint32_t off) { return *(const uint32_t *)((const uint8_t *)p + off); }
 static void     wru32(void *p, uint32_t off, uint32_t v) { *(uint32_t *)((uint8_t *)p + off) = v; }
 
+/* ★★ 2026-10-24（`th18_06b` 错位事故）：**主曲口径** = 引擎当前那一路 BGM 的 fmt 三元组。
+ *   `intro` = 循环点、`track` = 读取窗口（= 曲目总长），都是 **44100 口径的字节数**（一手：
+ *   `thbgm.fmt` 的 `+0x18`/`+0x1c`；leveledit 时由 thcrap bgmmod 的 `track_pcm_t` 填成
+ *   "第一个 ogg 的解码字节 / intro+loop 的解码字节"）。读不到 / 不自洽 ⇒ 返回 -1（**不猜**）。
+ *   位置一律走描述符（`stream + 0x10`，见 `TBGM_OFF_DESC` 那条注释）。*/
+typedef struct {
+    uint32_t intro;
+    uint32_t track;
+    uint32_t avg;
+} tbgm_engine_fmt_t;
+
+static int read_engine_fmt(void *engine, tbgm_engine_fmt_t *out)
+{
+    uint32_t edesc, efmt;
+
+    if (!engine || !out) return -1;
+    edesc = rdu32(engine, TBGM_OFF_DESC);
+    if (edesc < 0x10000u || edesc > 0x7fffffffu) return -1;
+    efmt = rdu32((const void *)(uintptr_t)edesc, TBGM_OFF_FMT);
+    if (efmt < 0x10000u || efmt > 0x7fffffffu) return -1;
+    out->intro = rdu32((const void *)(uintptr_t)efmt, TBGM_FMT_OFF_INTRO);
+    out->track = rdu32((const void *)(uintptr_t)efmt, TBGM_FMT_OFF_TRACK);
+    out->avg   = rdu32((const void *)(uintptr_t)efmt, TBGM_FMT_OFF_AVG);
+    /* 与 `trance_bgm_wav_parse` 同一条一致性门：intro/track/avg 必须自洽（否则不猜）。
+     * `intro == 0` 是**合法**的（主曲本来就没有 intro），所以这里不要求非 0。*/
+    if (out->track <= out->intro || out->track > (64u << 20) ||
+        out->avg < 8000u || out->avg > 1000000u) return -1;
+    return 0;
+}
+
 /* 读**主曲 fmt 的 intro**（一手 `th18:0x48acc0` 的 preload 分支用的那个字段），
  * 按 avg 比例换算成**我们素材的 intro 字节数** → 循环点；读不到/不自洽 ⇒ 0。
  *
@@ -567,20 +634,11 @@ static void     wru32(void *p, uint32_t off, uint32_t v) { *(uint32_t *)((uint8_
  *   所以两边算出来的循环点逐采样一致（差 ≤ 1 帧 = 0.045 ms）。*/
 static uint32_t engine_intro_bytes(void *engine, uint32_t our_avg, uint32_t our_block)
 {
-    uint32_t edesc, efmt, eintro, etrack, eavg, intro;
+    tbgm_engine_fmt_t f;
+    uint32_t intro;
 
-    if (!engine || !our_avg) return 0;
-    edesc = rdu32(engine, TBGM_OFF_DESC);
-    if (edesc < 0x10000u || edesc > 0x7fffffffu) return 0;
-    efmt = rdu32((const void *)(uintptr_t)edesc, TBGM_OFF_FMT);
-    if (efmt < 0x10000u || efmt > 0x7fffffffu) return 0;
-    eintro = rdu32((const void *)(uintptr_t)efmt, TBGM_FMT_OFF_INTRO);
-    etrack = rdu32((const void *)(uintptr_t)efmt, TBGM_FMT_OFF_TRACK);
-    eavg   = rdu32((const void *)(uintptr_t)efmt, TBGM_FMT_OFF_AVG);
-    /* 与 `trance_bgm_wav_parse` 同一条一致性门：intro/track/avg 必须自洽（否则不猜）*/
-    if (!eintro || etrack <= eintro || etrack > (64u << 20) || eavg < 8000u || eavg > 1000000u)
-        return 0;
-    intro = (uint32_t)((uint64_t)eintro * our_avg / eavg);
+    if (!our_avg || read_engine_fmt(engine, &f) != 0) return 0;
+    intro = trance_bgm_caliber_bytes(f.intro, f.avg, our_avg);
     if (our_block) intro -= intro % our_block;        /* 对齐整帧（半帧会让回绕点串道）*/
     return intro;
 }
@@ -602,68 +660,78 @@ static uint32_t engine_intro_bytes(void *engine, uint32_t our_avg, uint32_t our_
  *    一手日志实测两路差 **17.1 s**（主曲 7.50 s vs 我们 24.61 s 的循环起点）。
  *
  * 落地一条（`play` 之后）：把补 buffer 游标 `cur` 挪到 `base + S_ours`，再整环重填 8 段。
- * ⚠ **不要碰 DS 虚表**：2026-09-14 那次闪退就是猜 vtable 槽号猜错了（见文件头 §2 与 AUDIT §CR）。*/
-static uint32_t bgm_seek_to_engine(void *engine, void *ours, uint32_t our_pcm,
-                                   uint32_t our_avg, uint32_t our_block)
+ * ⚠ **不要碰 DS 虚表**：2026-09-14 那次闪退就是猜 vtable 槽号猜错了（见文件头 §2 与 AUDIT §CR）。
+ *
+ * ★★ 2026-10-24（`th18_06b` 错位事故）：本函数是**最后一道闸**，返回值加了一个"拒绝接管"：
+ *   `>= 0` = 起播位置；`TBGM_SEEK_REFUSE` = 本次**不收管**（调用方 `finish_release()`，主 BGM 一个
+ *   字节都不动）。三种拒绝：帧时钟不可用 / 主曲 fmt 读不通 / **素材 intro 与主曲口径不符**
+ *   （`trance_bgm_intro_gate`：最要命的是"素材带 intro 却算成 0"= 每圈重放 intro）。*/
+static int32_t bgm_seek_to_engine(void *engine, void *ours, uint32_t our_pcm,
+                                  uint32_t our_avg, uint32_t our_block)
 {
-    uint32_t edesc, ebase, ecur, efmt, eintro = 0u, etrack = 0u, eavg = 176400u, eremain;
-    uint32_t pos_abs = 0u, pos_read = 0u, so, intros = 0u, odesc, obase, osize;
-    int      clock_ok, have_pos = 0, have_fmt = 0;
-    const char *pos_src = "描述符";
+    tbgm_engine_fmt_t ef;
+    uint32_t edesc, ebase, ecur, eintro, etrack, eavg, eremain;
+    uint32_t pos_abs, pos_read = 0u, so, intros = 0u, odesc, obase, osize;
+    int      gate;
 
-    if (!engine || !ours || !our_pcm || !our_avg) return 0;
+    if (!engine || !ours || !our_pcm || !our_avg) return TBGM_SEEK_REFUSE;
     edesc = rdu32(engine, TBGM_OFF_DESC);
     ebase = edesc ? rdu32((const void *)(uintptr_t)edesc, TBGM_OFF_BASE) : 0;
     ecur  = edesc ? rdu32((const void *)(uintptr_t)edesc, TBGM_OFF_CUR)  : 0;
-    efmt  = edesc ? rdu32((const void *)(uintptr_t)edesc, TBGM_OFF_FMT)  : 0;
 
-    /* ① 主曲 fmt：intro（= 循环点）/ track / avg 三个数都要（一手值，不猜）。*/
-    if (edesc >= 0x10000u && edesc <= 0x7fffffffu &&
-        efmt  >= 0x10000u && efmt  <= 0x7fffffffu) {
-        uint32_t i = rdu32((const void *)(uintptr_t)efmt, TBGM_FMT_OFF_INTRO);
-        uint32_t t = rdu32((const void *)(uintptr_t)efmt, TBGM_FMT_OFF_TRACK);
-        uint32_t a = rdu32((const void *)(uintptr_t)efmt, TBGM_FMT_OFF_AVG);
-        if (t > i && t <= (64u << 20) && a >= 8000u && a <= 1000000u) {
-            eintro = i; etrack = t; eavg = a; have_fmt = 1;
-            eremain = rdu32((const void *)(uintptr_t)edesc, TBGM_OFF_REMAIN);
-            if (eremain <= etrack) pos_read = etrack - eremain;   /* 读盘位置（**只作对照**）*/
-        }
+    /* ① 主曲 fmt：intro（= 循环点）/ track / avg 三个数都要（一手值，不猜）。读不到 ⇒ 不接管。*/
+    if (read_engine_fmt(engine, &ef) != 0) {
+        ce_log_key("trance-bgm: 读不通主曲 fmt（desc=%p）⇒ 本次不接管（无从核对素材口径）",
+                   (void *)(uintptr_t)edesc);
+        return TBGM_SEEK_REFUSE;
     }
+    eintro = ef.intro;
+    etrack = ef.track;
+    eavg   = ef.avg;
+    eremain = rdu32((const void *)(uintptr_t)edesc, TBGM_OFF_REMAIN);
+    if (eremain <= etrack) pos_read = etrack - eremain;   /* 读盘位置（**只作对照**）*/
 
-    /* ② 位置来源：**墙钟**优先（≈ 耳朵听到的位置，含 intro）。
-     *    引擎是"读盘跑在播放前面"的 —— `remaining` 减的是**读盘位置**，拿它 seek 会偏后
-     *    一个已缓冲量（最多十几秒）⇒ 只在拿不到帧时钟时才退回描述符。*/
-    clock_ok = (s_watch_obj != NULL && s_watch_frames > 0);
-    if (clock_ok) {
-        pos_abs = (uint32_t)((uint64_t)s_watch_frames * eavg / 60u);   /* 秒 × 176400 */
-        pos_src = "帧时钟(≈听感位置)";
-        have_pos = 1;
-    } else if (ebase && ecur >= ebase) {
-        pos_abs = ecur - ebase;
-        have_pos = 1;
+    /* ② 位置来源：**帧时钟**（≈ 耳朵听到的位置，含 intro）。
+     *    ★ 2026-10-24：**删掉"描述符位置"兜底**。描述符的 `cur`/`remaining` 是**读盘位置**，
+     *    它跑在耳朵前面最多一整个环（8 段 = 16 s）；拿它 seek 正是"偏后一个缓冲"那类错位。
+     *    帧时钟不可用（我们还没观察过这路 BGM 对象）⇒ **拒绝接管**：这次灵界没有灵界版 BGM
+     *    （主曲继续放），比放一个错位置的声音好 —— 本模块的纪律是"宁可不放，不许放错"。*/
+    if (s_watch_obj != engine) {
+        ce_log_key("trance-bgm: 帧时钟还没对上引擎这路 BGM（watch %p / engine %p，帧 %u）⇒ 本次不接管"
+                   "（描述符位置是读盘位置，会偏后最多一整环 %u B ≈ %.1f s，不能拿来 seek）",
+                   s_watch_obj, engine, (unsigned)s_watch_frames,
+                   (unsigned)s_ring_bytes, (double)s_ring_bytes / (double)our_avg);
+        return TBGM_SEEK_REFUSE;
     }
-    if (!have_pos) {
-        ce_log("trance-bgm: 读不到主曲播放位置（desc=%p base=%p cur=%p，帧时钟 %u 帧）⇒ 不 seek",
-               (void *)(uintptr_t)edesc, (void *)(uintptr_t)ebase, (void *)(uintptr_t)ecur,
-               (unsigned)s_watch_frames);
-        return 0;
-    }
-    if (!have_fmt) {
-        ce_log("trance-bgm: 拿不到/读不通主曲 fmt 记录（desc=%p fmt=%p）⇒ 不 seek",
-               (void *)(uintptr_t)edesc, (void *)(uintptr_t)efmt);
-        return 0;
-    }
+    /* `s_watch_frames == 0` 是**合法值**（对象这一帧才出现 ⇒ 主曲就在 0 秒），不是"读不到"：
+     * 旧写法把它当成"没时钟"而退回描述符，正是这次要修的那半边。*/
+    pos_abs = (uint32_t)((uint64_t)s_watch_frames * eavg / 60u);   /* 帧 × (eavg/60) */
 
     /* ③ **绝对位置**（★ 2026-10-24：不再减 intro）：
      *    22050/2ch/16bit ⇒ 每帧 60 分之一秒 = 88200/60 = **1470 B**（7.50 s ⇒ 661500 B）。
      *    公式写成 `pos_abs × our_avg ÷ eavg` = "按 fmt 的 avg 换算"，与本批的 `帧 × 1470` 同一个数。*/
-    so = (uint32_t)((uint64_t)pos_abs * our_avg / eavg);
+    so = trance_bgm_caliber_bytes(pos_abs, eavg, our_avg);
 
     /* ④ 循环点 / 卷回：intro_ours = 主曲 intro × avg 比例（与生成器切的 intro 段逐采样一致）。
      *    主曲播超过一整条（intro + 循环体）后引擎自己回到 intro ⇒ 我们按同一条规则卷回
-     *    （否则墙钟一直涨，位置会跑到循环体之外）。*/
+     *    （否则墙钟一直涨，位置会跑到循环体之外）。
+     *    ★★ 这里同时是 **intro 闸**（`trance_bgm_intro_gate`）：本次算出的 intro 必须等于
+     *    加载时"口径匹配"给出的那个（±1 帧）。最要命的一条：素材自带 intro 而这里算成 0
+     *    ⇒ **拒绝接管**，绝不写 `intro_size = 0`（那 = 每圈从文件开头重放 intro）。*/
     intros = engine_intro_bytes(engine, our_avg, our_block);
     if (intros >= our_pcm) intros = 0u;               /* 素材比主曲 intro 还短 ⇒ 不设循环点 */
+    gate = trance_bgm_intro_gate(intros, s_mat_intro, our_block ? our_block : 1u);
+    if (gate != 0) {
+        ce_log_key("trance-bgm: 素材 %s 与主曲口径不符（素材 %u B / intro %u B vs 主曲 %u B / %u B）"
+                   " ⇒ 本次灵界不改 BGM（intro 闸 %d：%s）",
+                   s_variant[0] ? s_variant : "-", (unsigned)our_pcm, (unsigned)s_mat_intro,
+                   (unsigned)trance_bgm_caliber_bytes(etrack, eavg, our_avg),
+                   (unsigned)trance_bgm_caliber_bytes(eintro, eavg, our_avg),
+                   gate,
+                   gate == -1 ? "素材带 intro 却要写 intro_size = 0（会每圈重放 intro）"
+                              : "两边 intro 差超过 1 帧（主曲口径被换过）");
+        return TBGM_SEEK_REFUSE;
+    }
     if (intros) {
         if (so >= intros) so = intros + (so - intros) % (our_pcm - intros);
         /* so < intros ⇒ 主曲还在 intro 段 ⇒ 我们也在 intro 段的同一时刻（原样）*/
@@ -678,18 +746,22 @@ static uint32_t bgm_seek_to_engine(void *engine, void *ours, uint32_t our_pcm,
     s_fmt.intro_size = (int32_t)intros;
 
     odesc = rdu32(ours, TBGM_OFF_DESC);
-    if (!odesc) { ce_log("trance-bgm: 拿不到第二路的缓冲描述符 ⇒ 不做 seek"); return 0; }
+    if (!odesc) {
+        ce_log_key("trance-bgm: 拿不到第二路的缓冲描述符 ⇒ 本次不接管");
+        return TBGM_SEEK_REFUSE;
+    }
     obase = rdu32((const void *)(uintptr_t)odesc, TBGM_OFF_BASE);
     osize = rdu32((const void *)(uintptr_t)odesc, TBGM_OFF_SIZE);
-    /* 写之前的三条一致性校验（任何一条不过就只记一笔、绝不写）：
-     *   ① 基址像个指针；② 窗口长度 == 我们素材的 PCM 全长（构造成器从 fmt->track_size 写进去的）；
-     *   ③ 目标偏移落在 [0, PCM 全长] 内。*/
+    /* 写之前的三条一致性校验（任何一条不过就**不接管**：不写游标却又照常起播 = 从素材 0 秒响，
+     * 那正是"时间对不上"）：① 基址像个指针；② 窗口长度 == 我们素材的 PCM 全长
+     * （构造成器从 fmt->track_size 写进去的）；③ 目标偏移落在 [0, PCM 全长] 内。*/
     if (!obase || obase < 0x10000u || obase > 0x7fffffffu || osize != our_pcm || so > our_pcm) {
-        ce_log("trance-bgm: seek 前校验没过（desc=%p base=%p size=%u 期望 %u，so=%u）⇒ 不写游标",
-               (void *)(uintptr_t)odesc, (void *)(uintptr_t)obase, osize, our_pcm, so);
-        return 0;
+        ce_log_key("trance-bgm: seek 前校验没过（desc=%p base=%p size=%u 期望 %u，so=%u）⇒ 本次不接管",
+                   (void *)(uintptr_t)odesc, (void *)(uintptr_t)obase, osize, our_pcm, so);
+        return TBGM_SEEK_REFUSE;
     }
     wru32((void *)(uintptr_t)odesc, TBGM_OFF_CUR, obase + so);
+    (void)ebase; (void)ecur;    /* 只留给下面这行"对照"日志（读盘位置 / 游标都不作位置来源）*/
     /* ★ 日志必须打**真实位置**（`pos_abs`），不能打 `se + eintro` ——
      *   旧写法在"减 intro 再 clamp"之后恒等于 intro 长度，把真实的 7.50 s 藏成了 24.61 s，
      *   正是这次查因被耽误最久的地方。*/
@@ -698,10 +770,10 @@ static uint32_t bgm_seek_to_engine(void *engine, void *ours, uint32_t our_pcm,
      *   主曲播过一整条之后墙钟一直在涨，直接拿墙钟秒数比会打出一个假的 −90 s。
      *   进灵界时主曲还在 intro 段 ⇒ 这一行**不该再出现 clamp 过的 "0.00 s"**；
      *   两路差 ≤ 50 ms 就算对上了（chroma hop 20 ms + 60 fps 帧量子 16.7 ms）。*/
-    ce_log("trance-bgm: 同时间点 seek（位置来源：%s）：主曲 %.2f s（含 intro %.2f s）"
+    ce_log("trance-bgm: 同时间点 seek（位置来源：帧时钟(≈听感位置)）：主曲 %.2f s（含 intro %.2f s）"
            "⇒ 第二路游标 %.2f s / %.2f s；两路差 = %+.0f ms；"
            "对照：墙钟 %.2f s / 读盘位置 %.2f s（差 = 已缓冲量，环 %u B）",
-           pos_src, pos_abs / (double)eavg, eintro / (double)eavg,
+           pos_abs / (double)eavg, eintro / (double)eavg,
            so / (double)our_avg, our_pcm / (double)our_avg,
            ((double)so / (double)our_avg
             - (double)((pos_abs >= etrack)
@@ -764,6 +836,7 @@ static void finish_release(void)
     if (s_stream) { bgm_destroy(s_stream); s_stream = NULL; }
     if (s_pcm) { VirtualFree(s_pcm, 0, MEM_RELEASE); s_pcm = NULL; }
     s_pcm_bytes       = 0;
+    s_mat_intro       = 0;                 /* 口径 intro 只在"本次接管"里有效 */
     s_engine_bgm_seen = NULL;
     s_paused_ours     = 0;
     s_progress        = 0;
@@ -785,6 +858,7 @@ int ce_trance_bgm_start(void)
     int   hr = 0, out = 0, track_src, rc;
     uint32_t seg;
     char  cur[40], fname[48];
+    tbgm_engine_fmt_t efmt;
 
     if (s_phase != TBGM_IDLE) return 1;                  /* 幂等：已经在接管 */
     /* ★ 冷却：刚因为"换曲/对象没了"撤过流 ⇒ 60 帧内不再起（防"起-撤"每帧打转，
@@ -828,36 +902,132 @@ int ce_trance_bgm_start(void)
         apply_material_mode(fname, sizeof fname, mode);
     }
 
-    /* ② 读素材（真音频；文件不在 / 坏了 / 太大 ⇒ 不接管）。三条候选目录由 `load_variant`
-     *    自己按顺序试，失败时把三条**完整路径**都打进日志。*/
-    rc = load_variant(fname, &s_pcm, &s_wav, NULL, 0);
-    if (rc != 0) {
-        if (rc == -1)      ++s_stat_nofile;
-        else if (rc == -3) ++s_stat_toobig;
-        else if (rc == -4) ++s_stat_alloc;
-        else               ++s_stat_badwav;
+    /* ② **主曲口径**（一手：引擎当前那一路 BGM 的 fmt）。读不到 ⇒ 不接管：
+     *    没有这个三元组就无从核对素材，硬起第二路就是"放一个不知道对不对的东西"。*/
+    if (read_engine_fmt(bgm, &efmt) != 0) {
         ++s_stat_fail;
-        /* 同一种失败只详报一次（一次灵界一行的刷屏没有意义），换曲目再报。*/
-        if (strcmp(s_last_fail, fname) != 0) {
-            snprintf(s_last_fail, sizeof s_last_fail, "%s", fname);
-            ce_log("trance-bgm: REFUSED - 素材 \"%s\" 不可用 rc=%d（当前曲名 \"%s\"，来源 %s）"
-                   " ⇒ 本次灵界**不改 BGM**", fname, rc, cur, track_src == 0 ? "引擎当前曲名" : "关卡表兜底");
+        if (strcmp(s_last_fail, "<nofmt>") != 0) {
+            snprintf(s_last_fail, sizeof s_last_fail, "<nofmt>");
+            ce_log_key("trance-bgm: 读不到主曲 fmt（BGM %p 的描述符/fmt 不成立）⇒ 本次灵界不改 BGM", bgm);
         }
         return 0;
     }
 
-    /* ③ 我们自己的 fmt 记录：**带 intro**（TH13 的 b 轨口径；intro = 循环回绕点）。
+    /* ③ 读素材 + **口径闸**（二选一：零售口径 / leveledit 口径）。
+     *
+     *   候选：① `<名>.wav`（零售口径，16 首 + 06 都走它）
+     *         ② `<名>.le.wav`（leveledit 口径：二面 boss 的主曲被换成了
+     *            `th18_06.ogg`(30.9678 s) + `th18_06.loop.ogg`(74.3226 s) = 105.2904 s）
+     *
+     *   ★★ 判据（**核心，防"放错 24 s"**）：素材文件的**真实 PCM 全长**必须等于
+     *   `主曲 fmt 的 track × our_avg ÷ e_avg`，容差 **1 帧**（= block_align = 4 B）。
+     *   左边是生成期定死的文件字节数（独立量），右边是运行期一手 fmt ⇒ 两条口径总长差
+     *   596,524 B（6.76 s），比容差大四个数量级 ⇒ 放错必被拒。
+     *   两条都不符 ⇒ **不接管**（主曲继续放），绝不"先放上去再说"。*/
+    {
+        char cand[2][64];
+        char le[64];
+        int  i, n_cand, chosen = -1, mismatch = 0;
+
+        cand[0][0] = cand[1][0] = 0;
+        snprintf(cand[0], sizeof cand[0], "%s", fname);
+        n_cand = 1;
+        if (le_variant_name(fname, le, sizeof le) == 0) {
+            snprintf(cand[1], sizeof cand[1], "%s", le);
+            n_cand = 2;
+        }
+        for (i = 0; i < n_cand && chosen < 0; ++i) {
+            uint32_t our_ba, our_avg, want_intro;
+
+            if (!cand[i][0]) continue;
+            s_pcm = NULL;
+            rc = load_variant(cand[i], i > 0, &s_pcm, &s_wav, NULL, 0);
+            if (rc == -1) continue;                   /* 这个口径的文件不在 ⇒ 试下一条候选 */
+            if (rc != 0) {
+                if (rc == -3)      ++s_stat_toobig;
+                else if (rc == -4) ++s_stat_alloc;
+                else               ++s_stat_badwav;
+                ++s_stat_fail;
+                /* 同一种失败只详报一次（一次灵界一行的刷屏没有意义），换曲目再报。*/
+                if (strcmp(s_last_fail, cand[i]) != 0) {
+                    snprintf(s_last_fail, sizeof s_last_fail, "%s", cand[i]);
+                    ce_log("trance-bgm: REFUSED - 素材 \"%s\" 不可用 rc=%d（当前曲名 \"%s\"，来源 %s）"
+                           " ⇒ 本次灵界**不改 BGM**", cand[i], rc, cur,
+                           track_src == 0 ? "引擎当前曲名" : "关卡表兜底");
+                }
+                /* 卡侧每帧都会重试 `start()` ⇒ 这种"文件坏了/太大"的重试要 1 s 一次，
+                 * 否则就是每帧读十几 MB（判据由 `s_last_fail` 负责只报一次）。*/
+                s_restart_block = 60;
+                return 0;
+            }
+            our_ba  = (uint32_t)s_wav.channels * (uint32_t)(s_wav.bits / 8u);
+            our_avg = (uint32_t)s_wav.rate * our_ba;
+            want_intro = trance_bgm_caliber_bytes(efmt.intro, efmt.avg, our_avg);
+            if (our_ba) want_intro -= want_intro % our_ba;
+            /* ★★ 口径闸：长度是**独立量**（文件字节 vs 主曲 fmt 换算）⇒ 这一行就是拦网。*/
+            if (!trance_bgm_caliber_match(s_wav.pcm_bytes, efmt.track, efmt.avg, our_avg, our_ba)) {
+                mismatch = 1;
+                ++s_stat_fail;
+                if (strcmp(s_last_fail, "<caliber>") != 0) {
+                    snprintf(s_last_fail, sizeof s_last_fail, "<caliber>");
+                    /* ⚠ "素材 intro" 一栏 = 本次口径**要求**的 intro（素材自己的 intro 不是 WAV 里的
+                     *   显式字段，只能与口径一起判；见 `trance_bgm_core.h` §2 的说明）。*/
+                    ce_log_key("trance-bgm: 素材 %s 与主曲口径不符（素材 %u B / intro %u B vs 主曲 %u B / %u B）"
+                               " ⇒ 本次灵界不改 BGM",
+                               cand[i], (unsigned)s_wav.pcm_bytes, (unsigned)want_intro,
+                               (unsigned)trance_bgm_caliber_bytes(efmt.track, efmt.avg, our_avg),
+                               (unsigned)want_intro);
+                }
+                VirtualFree(s_pcm, 0, MEM_RELEASE);
+                s_pcm = NULL;
+                continue;
+            }
+            chosen = i;
+            s_mat_intro = want_intro;
+            s_pcm_bytes = s_wav.pcm_bytes;
+            snprintf(s_variant, sizeof s_variant, "%s", cand[i]);
+            ce_log_key("trance-bgm: 素材口径核对通过：\"%s\"（%s口径）%u B = 主曲 track %u B × %u/%u"
+                       "（差 %d B，容差 1 帧 = %u B）；intro %u B = %.3f s",
+                       cand[i], (i == 1) ? "leveledit " : "零售",
+                       (unsigned)s_pcm_bytes, (unsigned)efmt.track,
+                       (unsigned)our_avg, (unsigned)efmt.avg,
+                       (int)((int64_t)s_pcm_bytes - (int64_t)trance_bgm_caliber_bytes(efmt.track, efmt.avg, our_avg)),
+                       (unsigned)our_ba, (unsigned)s_mat_intro, s_mat_intro / 88200.0);
+        }
+        if (chosen < 0) {
+            if (mismatch) {
+                if (strcmp(s_last_fail, "<caliber>") != 0) {
+                    snprintf(s_last_fail, sizeof s_last_fail, "<caliber>");
+                    ce_log_key("trance-bgm: 素材 \"%s\"%s%s 都不符合主曲口径（主曲 track %u B @avg %u）"
+                               " ⇒ 本次灵界不改 BGM（宁可不放，不许放错）",
+                               cand[0], n_cand > 1 ? " / \"" : "", n_cand > 1 ? cand[1] : "",
+                               (unsigned)efmt.track, (unsigned)efmt.avg);
+                }
+            } else {
+                ++s_stat_nofile;                  /* 两条候选都不在（候选 0 的完整路径已由 load_variant 打出）*/
+                ++s_stat_fail;
+                if (strcmp(s_last_fail, cand[0]) != 0) {
+                    snprintf(s_last_fail, sizeof s_last_fail, "%s", cand[0]);
+                    ce_log_key("trance-bgm: 两条口径的素材都不在（\"%s\"%s%s）⇒ 本次灵界不改 BGM",
+                               cand[0], n_cand > 1 ? " / \"" : "", n_cand > 1 ? cand[1] : "");
+                }
+            }
+            /* 卡侧每帧都会重试 `start()` ⇒ 这种"口径不符/没有素材"的重试要 1 s 一次：
+             * 口径不符要读十几 MB 再丢掉，60 fps 重试就是几百 MB/s 的文件 I/O。*/
+            s_restart_block = 60;
+            return 0;
+        }
+    }
+
+    /* ④ 我们自己的 fmt 记录：**带 intro**（TH13 的 b 轨口径；intro = 循环回绕点）。
      *    ★ 用的是 **data 载荷**的长度，不是文件长度（44 B 的 RIFF 头不算音频）。
      *    ★★ 2026-10-24 方案 A：intro 段的字节数 = **主曲 fmt 的 `intro_size`（一手值）**
      *       按 avg 比例换算（44100→22050 ⇒ ÷2）。生成器切的 intro 段用的就是同一个一手值
      *       ⇒ 回绕点与主曲的循环点逐采样对齐（实测 lag ≈ 0）。
-     *       读不到一手 intro ⇒ 0（= 老口径：素材只有循环体时整段循环）。*/
-    s_pcm_bytes = s_wav.pcm_bytes;
+     *    ★ 这里用的是**口径闸通过时记下的那个值**（`s_mat_intro`）—— 与 `bgm_seek_to_engine`
+     *      每帧重算的值必须相等（intro 闸），两边不同就说明主曲口径在这几帧里被换过。*/
     {
-        uint32_t our_ba  = (uint32_t)s_wav.channels * (uint32_t)(s_wav.bits / 8u);
-        uint32_t our_avg = (uint32_t)s_wav.rate * our_ba;
-        trance_bgm_fmt_init(&s_fmt, fname, s_pcm_bytes,
-                            engine_intro_bytes(bgm, our_avg, our_ba),
+        trance_bgm_fmt_init(&s_fmt, s_variant, s_pcm_bytes, s_mat_intro,
                             s_wav.channels, s_wav.rate, s_wav.bits);
         ce_log("trance-bgm: 素材 fmt：%u/%uch/%ubit，avg %u B/s；intro %u B = %.3f s"
                "（= 主曲 fmt 的 intro_size 按 avg 换算；0 = 整段循环）",
@@ -922,20 +1092,21 @@ int ce_trance_bgm_start(void)
     }
     s_progress        = 0;
     s_paused_ours     = 0;
-    snprintf(s_variant, sizeof s_variant, "%s", fname);
+    /* `s_variant` 在口径闸选文件那一刻就写好了（可能是 `.le.wav`）—— 这里不要再被 `fname` 盖掉。*/
     s_last_fail[0] = 0;                          /* 这次成功了，失败记录作废 */
 
     /* ⑥ 起播（loop）+ 立刻把淡化起点写下去：`play` 内部会把我们的音量设成"用户满音量"
      *    （一手 `0x48a440` 尾段调 `0x48a5a0(this,0)`）⇒ 不马上覆盖就会有 1 帧的满音量重叠。*/
     /* ★★ 起播与"同时间点"的落地顺序（三件事，缺一件就"接不上"）：
-     *   ① **先把游标挪到目标位置**（`bgm_seek_to_engine` 写描述符 `+0x84`）；
-     *   ② **临时把 fmt 的循环点设成同一个偏移** ⇒ 万一起播路径里跑了引擎自己的 reset
-     *      （`0x48acc0` 的 preload 支：`cur = base + fmt->intro_size`），它落的也是同一处
-     *      —— 两条路互为保险，谁先谁后都对；
+     *   ① **先 play**（`0x48a440`；它内部会对描述符跑 `reset(rewind=0)` 把游标抹回 base）；
+     *   ② **再 poke 游标**（`bgm_seek_to_engine` 写描述符 `+0x84`）+ 把 fmt 的循环点设成同一个
+     *      偏移 ⇒ 万一起播路径里又跑了引擎自己的 reset（`0x48acc0` 的 preload 支：
+     *      `cur = base + fmt->intro_size`），它落的也是同一处 —— 两条路互为保险；
      *   ③ 循环点**不再回收成 0**（★ 2026-10-24）：素材带 intro 之后，`intro_size` = 素材的
      *      intro 字节数 = **原曲的循环点**，之后的回卷必须回到那里（回到 0 = 重放 intro）。
-     *   ⚠ 位置来源用**墙钟**（≈ 听到的位置）：引擎是"读盘跑在播放前面"的，
-     *     描述符的 `remaining` 是**读盘位置**，拿它 seek 会偏后一个已缓冲量（最多十几秒）。*/
+     *   ⚠ 位置来源只用**帧时钟**（≈ 听到的位置）：引擎是"读盘跑在播放前面"的，
+     *     描述符的 `remaining` 是**读盘位置**，拿它 seek 会偏后一个已缓冲量（最多十几秒）；
+     *     帧时钟不可用时 `bgm_seek_to_engine` 直接返回 `TBGM_SEEK_REFUSE`（不接管）。*/
     bgm_probe("ctor 后", s_stream);
     /* ★★ 2026-09-15 订正（两次）：**重编曲版（`rearr`）也做同时间点 seek**，而且**顺序必须是
      *   play → poke → 整环重填**（上一版写成 poke → play 是**无效**的）。
@@ -964,20 +1135,28 @@ int ce_trance_bgm_start(void)
      *   ④ 位置来源用**帧时钟**（≈ 听到的位置）：引擎"读盘跑在播放前面"，描述符的 `remaining`
      *      是**读盘位置**，拿它 seek 会偏后一个已缓冲量（最多十几秒）。
      *   ⑤ 循环点 = 素材的 intro 字节数（`bgm_seek_to_engine` 里按一手 intro 再写一次，
-     *      两边同式同值）；seek 失败 ⇒ 保持 fmt_init 的那份（读不到一手 intro 时就是 0）。*/
-    s_seek_pos   = 0;                       /* 清零：seek 失败就老老实实从 0 起播 */
+     *      两边同式同值）；★ 这里**不再有"seek 失败就从 0 秒起播"那条退路**：
+     *      `bgm_seek_to_engine` 拒绝时会返回 `TBGM_SEEK_REFUSE`，我们就**整个不接管**
+     *      （从素材 0 秒响 = 用户听到的"时间对不上"，比没有灵界版 BGM 更糟）。*/
+    s_seek_pos   = 0;                       /* 清零：只有真的 seek 成功才写 */
     s_ring_bytes = seg * 8u;                /* 环长（`bgm_seek_to_engine` 只用来打日志）*/
-    bgm_play_at(s_stream, 0);               /* ② 先 play（此后 poke 才不会被 reset 抹掉）*/
+    /* ★ 只能有一次 `play`：`play` 内部会对描述符调 `reset(rewind=0)` 把游标抹回 base，
+     *   所以顺序必须是 play → poke → 整环重填（见下面 ②③）。*/
+    bgm_play_at(s_stream, 0);               /* ① 先 play（此后 poke 才不会被 reset 抹掉）*/
     if (s_engine_bgm_seen && !s_noseek) {
-        bgm_play_at(s_stream, 0);          /* 先 play：否则下面的 poke 会被 play 内部的 reset 抹掉 */
-        uint32_t so = bgm_seek_to_engine(s_engine_bgm_seen, s_stream, s_pcm_bytes,
-                                         s_fmt.avg_bytes_per_sec, s_fmt.block_align);
-        s_seek_pos = so;                                    /* 记下来（日志/诊断用）*/
-        if (so && so < s_pcm_bytes) {
+        int32_t so = bgm_seek_to_engine(s_engine_bgm_seen, s_stream, s_pcm_bytes,
+                                        s_fmt.avg_bytes_per_sec, s_fmt.block_align);
+        if (so < 0) {                       /* 闸不过（口径 / intro / 帧时钟）⇒ 放弃本次接管 */
+            ce_log_key("trance-bgm: 同时间点 seek 的闸不过（口径/intro/帧时钟）⇒ 放弃本次接管"
+                       "（第二路已收，主 BGM 一个字节不动；本次灵界没有灵界版 BGM）");
+            finish_release();
+            return 0;
+        }
+        s_seek_pos = (uint32_t)so;                          /* 记下来（日志/诊断用）*/
+        if (so > 0 && (uint32_t)so < s_pcm_bytes) {
             for (int i = 0; i < TRANCE_BGM_RING_SEGS; ++i) (void)bgm_refill(s_stream);   /* ③ */
         } else {
-            ce_log("trance-bgm: seek 目标不可用（so=%u / %u B）⇒ 从素材 0 秒起播",
-                   (unsigned)so, (unsigned)s_pcm_bytes);
+            ce_log("trance-bgm: 起播位置 = 0（主曲就在 0 秒）⇒ 按 ctor 预填的环直接放");
         }
         bgm_probe("poke 后", s_stream);
     }
@@ -989,7 +1168,7 @@ int ce_trance_bgm_start(void)
     ++s_stat_start;
     ce_log("trance-bgm: OK 第二路起播：素材 \"%s\"（当前曲名 \"%s\"，来源 %s）"
            "PCM %u B = %u ms，%u/%uch/%ubit，seg %u B = %u ms，环 %u ms，引擎 BGM %p - 交叉淡化 %d 帧",
-           fname, cur, track_src == 0 ? "引擎当前曲名" : "关卡表兜底",
+           s_variant, cur, track_src == 0 ? "引擎当前曲名" : "关卡表兜底",
            (unsigned)s_pcm_bytes,
            (unsigned)((uint64_t)s_pcm_bytes * 1000u / s_fmt.avg_bytes_per_sec),
            (unsigned)s_fmt.samples_per_sec, (unsigned)s_fmt.channels, (unsigned)s_fmt.bits_per_sample,
@@ -1055,6 +1234,10 @@ void ce_trance_bgm_tick(void)
     if (cur_bgm != s_watch_obj) { s_watch_obj = cur_bgm; s_watch_frames = 0; }
     else if (cur_bgm) ++s_watch_frames;
 
+    /* ★ 冷却倒计时必须**在 IDLE 早退之前**：换曲撤流 / 口径闸拒绝都会把相位打回 IDLE，
+     *   放在早退之后就永远走不完（2026-10-24 顺带修：旧位置在 ① 之下，撤一次就再也不会重启）。*/
+    if (s_restart_block > 0) --s_restart_block;
+
     if (s_phase == TBGM_IDLE || !s_stream) return;
 
     /* ① 引擎换过 BGM 对象（换曲 / 关卡重载）：旧对象可能已被释放 ⇒ 立刻撤、绝不碰它。*/
@@ -1080,7 +1263,6 @@ void ce_trance_bgm_tick(void)
         finish_release();
         return;
     }
-    if (s_restart_block > 0) --s_restart_block;
 
     /* ② 暂停镜像（同一个函数，绘制路径也会调它）*/
     ce_trance_bgm_pause_poll();

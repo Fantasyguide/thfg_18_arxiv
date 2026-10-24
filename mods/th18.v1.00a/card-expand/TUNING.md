@@ -592,13 +592,19 @@ python3 tools/make_trance_rearr.py --stem th18_06 \
   文件 **22050 Hz / 2ch / 16 bit**，峰值 **−0.30 dBFS**。
 * **响度**（`--intro-loudness-match ref`：intro 段单独匹配主曲 intro；主曲 intro/loop 本身差 1.85 LU）：
   整首 **−13.415 vs 主曲 −13.407（Δ−0.008）**；intro **Δ−0.001**；loop **Δ−0.002**（全部 ≤0.5）。
-* **落盘**：`<modkit>/thcrap/bin/bgm/` + `<modkit>/mods/bgm/` + `<modkit>/game/bgm/` +
-  `local/th18.v1.00a/trance_bgm/`，四处 md5 = **`6cea0dd44640a197fa939e822f7dfc8e`**。
-* **备份**：零售 112.05 s 那份 = `th18_06b_rearr.wav.bak-20261024` **并另存**
-  `th18_06b_rearr.retail-112s.bak`（`thcrap/bin/bgm/` 与 `local/…/trance_bgm/`，md5 `339597e4…`）；
+* **落盘（★★ 2026-10-24 第二轮订正：两份文件、按主曲口径选）**
+  - `th18_06b_rearr.wav` = **零售口径 112.0537 s**（intro 6.5074 s，md5 **`339597e4…`**）
+  - `th18_06b_rearr.le.wav` = **leveledit 口径 105.2904 s**（intro 30.968 s，md5 **`6cea0dd4…`**）
+  - 两处都要：`<modkit>/thcrap/bin/bgm/` + `local/th18.v1.00a/trance_bgm/`（各自同 md5）
+  - 为什么不是"一份文件服务两个口径"：`ce_trance_bgm_start()` 现在拿**主曲 fmt** 的
+    `track/intro`（44100 口径）按 avg 比例换算出"这份素材该有多长"，与**文件真实 PCM 全长**
+    比，容差 1 帧；不符再试 `.le.wav`；两条都不符 ⇒ **不接管**（主曲继续放）。两条口径的总长
+    差 **596,524 B（6.76 s）** ⇒ 放错必被拒（这就是"每圈往回跳 24.46 s"的正面防线）。
+    日志（`ce_log_key`）：`trance-bgm: 素材 %s 与主曲口径不符（素材 %u B / intro %u B vs 主曲 %u B / %u B）⇒ 本次灵界不改 BGM`。
+* **备份**：零售 112.05 s 的另一份 = `th18_06b_rearr.retail-112s.bak`；
   `mods/bgm` / `game/bgm` 的旧件（2,327,296 帧的循环体口径）备份为 `.bak-20261024`。
 * **⚠ 下一轮别再按零售口径重渲 `th18_06b`**：`da5d8ef9` 那条「17 首统一带 intro」是**零售**口径，
-  对 `th18_06b` **不适用**（主曲已被 leveledit 换掉）。
+  对 `th18_06b` **不适用**（主曲已被 leveledit 换掉）；leveledit 口径的成品要落到 **`.le.wav`**。
 
 
 ### 2.0b ★ 113 的**灵界主炮组**（TH13 灵界 set10 复刻，2026-09-13）
