@@ -45,7 +45,8 @@ static inline uint8_t *ce_shop_pick_random(int tier_lo, int tier_hi, uint8_t **e
     return ((ce_fn_pick_t)CE_FN_SHOP_PICK_RANDOM)(&e, tier_lo, tier_hi, exclude, n) ? e : 0;
 }
 
-/* 日志 ce_log 由 sdk/public.h 声明；每次调用写入 th18_card_expand.log 一行。*/
+/* 日志 `ce_log` / `ce_log_key`（以及 trace / 墨迹探针这类高频探针）统一受 `sdk/public.h` 的总闸
+ * `CE_DEV_DUMP` 管：2 = 全部、1 = 只留关键行、0 = 全部编译成空（发布默认）。*/
 
 /* 音效：play_sound(id) 是 stdcall，声像位置走 xmm2（世界 x）。三行内联汇编，AUDIT O22。*/
 static inline void ce_play_sound(uint32_t id, float x)
@@ -914,7 +915,14 @@ void ce_sdk_active_tick(void *self, const ce_hooks_t *h);
 void ce_sdk_active_reset(void *self, const ce_hooks_t *h, int clear_recharge);
 
 /* sdk.c */
-void ce_sdk_trace(uint32_t id, unsigned slot, const char *name);   /* trace 开着才记；每张卡每槽记第一次 */
+/* ★ 2026-10-24：trace 探针也受日志总闸管（它嵌在 `CE_STUB*` 里，**每帧每张卡都调** ⇒ 必须零开销）：
+ *   2 档才有 `ce_sdk_trace_impl`；0/1 档调用点直接编译成 `((void)0)`。*/
+#if CE_DEV_DUMP >= 2
+void ce_sdk_trace_impl(uint32_t id, unsigned slot, const char *name);  /* trace 开着才记；每张卡每槽记第一次 */
+#define ce_sdk_trace(id, slot, name) ce_sdk_trace_impl((id), (slot), (name))
+#else
+#define ce_sdk_trace(id, slot, name) ((void)0)
+#endif
 /* 伤害层（§AA）：★ 2026-09-13 起**落笔点搬到了卡链遍历之后**（断点 `BP_ce_bullet_damage_final`，
  * `th18:0x45e7ff`；原因与一手见 `BP30-IMPLEMENTATION.md` §1、`CARD-NATIVE-CONFLICT-AUDIT.md` §B-1）：
  * 原来落笔在 `+0x28` 的桩里，与原生 25 Saki / 54 Momoyo（**同槽、从 shooter 重算**）抢同一条链，
@@ -1286,12 +1294,24 @@ void ce_hud_slot_log_all(const char *tag);
 
 /* ★ 2026-10-03z15：**墨迹探针**（定义在 `sdk.c`）——把一支 HUD VM 的真实绘制依据打全：
  * 有效落点（脚本 pos + pos2 + 实体 pos）、**贴图尺寸**（`+0x74/+0x78`）、缩放、层、sprite 号。
- * 用途：声明块的大小/位置按**实测墨迹**定，而不是靠推（owner 反复指出 log 与屏幕不一致那一类问题）。*/
-void ce_hud_vm_probe(const char *tag, uint32_t id);
+ * 用途：声明块的大小/位置按**实测墨迹**定，而不是靠推（owner 反复指出 log 与屏幕不一致那一类问题）。
+ * ★ 2026-10-24：同样受 `CE_DEV_DUMP` 管 —— 只在 2 档有实现；0/1 档调用点编译成 `((void)0)`。*/
+#if CE_DEV_DUMP >= 2
+void ce_hud_vm_probe_impl(const char *tag, uint32_t id);
+#define ce_hud_vm_probe(tag, id) ce_hud_vm_probe_impl((tag), (id))
+#else
+#define ce_hud_vm_probe(tag, id) ((void)0)
+#endif
 
 /* ★ 2026-10-03z17：**声明块可视化**（定义在 `sdk.c`；每帧调一次）——
  * 用 `stock_rect`（脚本 104）画出每个已认领块的 4 条边：绿 = 货架、黄 = PINNED、青 = RIGHT。
- * 目的：把"分配器以为的块"和"屏幕上真正画出来的 UI"放在一起对照。*/
+ * 目的：把"分配器以为的块"和"屏幕上真正画出来的 UI"放在一起对照。
+ *
+ * ★ 2026-10-24（owner：「**把 hud 货架系统的框重新打开**」）—— 本函数**重新启用**
+ * （`sdk.c` 的 `CE_HUD_DEBUG_BLOCKS` = 1），并新增一档：**共享带的包围盒**
+ * （`ce_hud_band_rect()` = 所有已认领块 ∪ 原生卡面）用**品红**单独描一圈。
+ * ⚠ **纯调试、玩家看不见**；它**不读也不写** `ce_hud_band_dim_*` 的任何判据/alpha
+ * （只把 dim/alpha 打进日志）。**发布前把那个宏改回 0**（一行，代码保留）。*/
 void ce_hud_debug_blocks_tick(void);
 
 /* ★ z50：**原生主动卡与共享带同步压暗**（定义在 `sdk.c`；每帧调一次）——

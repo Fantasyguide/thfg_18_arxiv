@@ -115,3 +115,20 @@
 每条 claim 标 **CONFIRMED（一手，附地址）/ REFUTED（附反证）/ OPEN（说清缺什么）**。
 本 DLL 只解开了「**顶点这一层能不能被我们驱动**」这一个分支；**109 要的效果本身**（网格从哪来、跟不跟 boss）
 仍是 OPEN。
+
+## Q. 对另一支（`native/th18_bgwarp.c`）的唯一改动：`retire` 开关（2026-10-22）
+
+**为什么**：C 方案（owner 从一开始要的）要求"**引擎那份 aura 退休**，由 route_b 一个 pass 画两处透镜"
+⇒ 否则两份扭曲叠在同一批像素上，后画的会采到先画的 ⇒ **透明度叠影**（owner 实测现象）。
+
+**为什么不能复用现有旋钮**：`amp_mul = 0` **做不到** —— `inject_swirl()` 里
+径向项 `x += t*nx`（`& y += t*ny`）**不受 `amp_mul` 缩放**（只有 `sin(...)*amp*8` 那项乘了 `mul`）✗
+
+**改动（最小、默认不生效）**：
+- 新增 ini `retire`（默认 **0**）+ 静态 `g_retire_logged`；
+- `hook_upload()` 里，若 `retire=1` 且是舞台网格/允许碰敌方网格 ⇒ 把该网格**所有顶点 alpha 置 0** 后 `return`
+  （既不再扭、也看不见）；同时打一行 `[退休] retire=1 ⇒ 网格 %dx%d 全部 alpha=0`；
+- `retire=0` 时**行为与改动前逐字一致**（只在 ini 读到 1 时才走新分支）✓
+
+**怎么验证**：`game/th18_bgwarp.ini` 里 `retire = 1` ⇒ 进 boss 战 ⇒ 日志出现 `[退休] …`
+且**画面里 boss 那个扭曲消失**；再配合 `game/th18_routeb.ini` 的 `two = 1`（我们画两份）⇒ 两边都在且无叠影 ✓

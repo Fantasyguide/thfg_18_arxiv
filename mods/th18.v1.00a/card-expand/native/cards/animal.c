@@ -1573,7 +1573,7 @@ static void animal_sweep_to_money(void)
         token_remove(i);
         ++n;
     }
-    if (n) ce_log("animal: 92 清扫 —— %d 只动物灵 token 换成金钱（每只 %d 枚）",
+    if (n) ce_log_key("animal: 92 清扫 —— %d 只动物灵 token 换成金钱（每只 %d 枚）",
                   n, ANIMAL_SWEEP_MONEY_PER_TOKEN);
 }
 

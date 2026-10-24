@@ -1,3 +1,4 @@
+import os
 #!/usr/bin/env python3
 """sitecheck.py —— **新站点/新落点入库前的机器体检**（只读：读真 exe + 三份声明，不写任何文件）。
 
@@ -72,7 +73,7 @@ REPO = MOD.parents[2]                             # 仓库根
 EXE = REPO / "local" / "th18.v1.00a" / "th18.exe"
 PATCH = MOD / "patch" / "th18.v1.00a.js"
 PATCH_TEST = MOD / "patch-test" / "th18.v1.00a.js"
-MODKIT = Path("/mnt/d/项目/幻想指南/18/th18_modkit")
+MODKIT = Path(os.environ.get("MODKIT_DIR", "") or ".")
 BASE_TSA = MODKIT / "thcrap" / "repos" / "nmlgc" / "base_tsa" / "th18.v1.00a.js"
 
 try:

@@ -206,6 +206,103 @@ static void check_beam_spec_files(void)
     CHECK(n == YK_M_LASER_BEAM_TIERS);                  /* 逐档一支（5 支）*/
 }
 
+/* ★★★★★ 2026-10-24：**卡侧源码闸的公共底座** —— 读一个 .c → 剥掉两种注释（行注释 + 块注释；
+ *   字符串 / 字符字面量原样保留，里面的斜杠斜杠不是注释）→ **去掉全部空白**（这样 `++i ; continue ;`
+ *   这种写法也一并命中）。返回 malloc 串（调用者 free）；失败返回 0。
+ *   为什么卡侧检查要读源码而不是跑运行期：`yk_familiars_tick()` / `on_ctor()` 都要整个
+ *   `CE_ENEMY_FOREACH` + 引擎字段 + `ce_state`，宿主机单测链不起来；而这两条 bug
+ *   （「循环体自推 `i`」「save 定义了没人调」）的形态都是**纯代码结构**的 ⇒ 直接钉源码最可靠。*/
+static char *yk_card_code_nospace(const char *path)
+{
+    char *src = yk_slurp(path);
+    char *code, *nows;
+    size_t r = 0, w = 0, k = 0;
+    int in_line = 0, in_block = 0, in_str = 0, in_chr = 0;
+
+    if (!src) return 0;
+    code = (char *)malloc(strlen(src) + 1u);
+    nows = (char *)malloc(strlen(src) + 1u);
+    if (!code || !nows) { free(code); free(nows); free(src); return 0; }
+    while (src[r]) {
+        char c = src[r], n = src[r + 1u];
+        if (in_line)  { if (c == '\n') in_line = 0; ++r; continue; }
+        if (in_block) { if (c == '*' && n == '/') { in_block = 0; r += 2; } else ++r; continue; }
+        if (in_str)   { code[w++] = c; if (c == '\\' && n) { code[w++] = n; r += 2; continue; }
+                        if (c == '"') in_str = 0;
+                        ++r; continue; }
+        if (in_chr)   { code[w++] = c; if (c == '\\' && n) { code[w++] = n; r += 2; continue; }
+                        if (c == '\'') in_chr = 0;
+                        ++r; continue; }
+        if (c == '/' && n == '/') { in_line = 1; r += 2; continue; }
+        if (c == '/' && n == '*') { in_block = 1; r += 2; continue; }
+        if (c == '"')      in_str = 1;
+        else if (c == '\'') in_chr = 1;
+        code[w++] = c;
+        ++r;
+    }
+    code[w] = 0;
+    for (r = 0; code[r]; ++r)
+        if (code[r] != ' ' && code[r] != '\t' && code[r] != '\n' && code[r] != '\r') nows[k++] = code[r];
+    nows[k] = 0;
+    free(code);
+    free(src);
+    return nows;
+}
+
+/* ★★★★★ 2026-10-24（**修「`++i; continue;` 双增量」的反向闸**）：
+ *   卡侧 `yk_familiars_tick()` 的发射口槽扫是 `for (i = 0; i < YK_EMIT_SLOTS; ++i)`，
+ *   而循环体里原先有**四处**写成 `++i; continue;`（type 黑名单 / 无出点 (0,0) / 没出过弹 / 体上炮口）
+ *   ⇒ 与 `for` 的增量叠加**跳两格**：被拒槽的**下一个槽**这一帧根本不进循环体 ⇒ 不调
+ *   `yk_note_slot()` ⇒ `yk_frame_begin()` 已清 `seen` ⇒ 帧末 `yk_frame_end()` 判「敌人没了」
+ *   ⇒ 发 `YK_ACT_WITHDRAW` **真删使魔** ⇒ 那一格映射使魔永远建不出来（建了下一帧又删）。*/
+static void check_emit_slot_advance(void)
+{
+    char *nows = yk_card_code_nospace("cards/youkai.c");
+    CHECK(nows != 0);
+    if (!nows) return;
+    CHECK(strstr(nows, "++i;continue;") == 0);      /* ← 双增量：一处都不许有 */
+    CHECK(strstr(nows, "++i;") == 0);               /* ← 更强：`i` 只由 `for` 的增量推进，循环体绝不自推 */
+    /* 正面（防「为了过闸把循环删了」）：槽扫循环还在，且每个未被拒的槽仍会走到 `yk_note_slot()` */
+    CHECK(strstr(nows, "for(i=0;i<YK_EMIT_SLOTS;++i){") != 0);
+    CHECK(strstr(nows, "if(yk_note_slot(&s_map,id,i,active,wxy,&act))yk_run_action(s,&act);") != 0);
+    free(nows);
+}
+
+/* ★★★★★ 2026-10-24（**修「`yk_run_save108()` 定义了但没人调」的闸**）：
+ *   P31a 的意图 = 换面时把 run 级字段（`piv` / `piv_base` / `orbs` / `gauge` / 各项计数）带回上一关。
+ *   实现必须是 **save（旧）→ 初始化/清零 → restore（新）**。原来的代码只写了 `keep108 = s_run_keep108`
+ *   （那个全局**从没被写过**，恒 0）⇒ 末尾 restore 把 0 写回 ⇒ NORMAL 的 `piv = 100000` 被抹成 0、
+ *   `piv − piv_base` 每关从 0 重算（上一关的「额外最大得点」丢掉）、HUD 夜点每关回 `000000`、人妖槽被清。
+ *   ⇒ 这条闸钉三件事：① `on_ctor` 里**确实**调了 `yk_run_save108(s)`；② 它的调用点在
+ *   `yk_piv_reset()`/难度初值**之前**；③ restore 在**最后**、且从栈上快照 `keep108` 读；
+ *   ④ 两条「新局」路径（`on_run_reset` / `on_delete`）都把快照清掉（不许复用上局）。*/
+static void check_run_keep_save_restore(void)
+{
+    char *nows = yk_card_code_nospace("cards/youkai.c");
+    const char *p_save, *p_piv, *p_restore;
+    int n_clear = 0;
+    const char *p = 0;
+
+    CHECK(nows != 0);
+    if (!nows) return;
+    p_save    = strstr(nows, "yk_run_save108(s)");
+    p_piv     = strstr(nows, "yk_piv_reset(&s->piv");
+    p_restore = strstr(nows, "yk_run_restore108(s,&keep108)");
+    CHECK(p_save != 0);                             /* ① 定义了就必须有人调 */
+    CHECK(p_piv != 0);
+    CHECK(p_restore != 0);
+    if (p_save && p_piv && p_restore) {
+        CHECK(p_save < p_piv);                      /* ② 顺序：save 在清零/难度初值之前 */
+        CHECK(p_piv < p_restore);                   /* ③ restore 在最后（清零之后）*/
+    }
+    CHECK(strstr(nows, "if(!was_fresh108&&s&&s->piv>0){yk_run_save108(s);keep108=s_run_keep108;have108=1;}") != 0);
+    CHECK(strstr(nows, "if(have108)yk_run_restore108(s,&keep108);") != 0);
+    /* ④ 两处「新局」清快照：`on_run_reset` 与 `on_delete` */
+    while ((p = strstr(p ? p + 1 : nows, "memset(&s_run_keep108,0,sizeofs_run_keep108);")) != 0) ++n_clear;
+    CHECK(n_clear == 2);
+    free(nows);
+}
+
 static yk_action_t s_acts[YK_FAM_MAX];
 
 /* ★★★ 2026-09-30（owner 实跑：「一面 3 只大蝴蝶生成了两次两个使魔」）：
@@ -1089,6 +1186,28 @@ int main(void)
     CHECK(yk_transfer_clamp(-5, 60) == 0);
     CHECK(YK_TRANSFER_DEN == 2);                                  /* 用户 2026-09-12 定案 1/2 */
     CHECK(YK_TRANSFER_CAP_PER_FRAME == 0);                        /* ★ 占位：还没封顶 */
+
+    /* ★★★★ 2026-10-20（owner：「出界的使魔也会扣 boss 血 + 顺手打穿下一根血条」）：
+     *   **一根血条的钳** —— `current` 就是这一根的剩余；`amount` 再大也只能扣到 0。
+     *   判据逐条：`(amount, current) → 施加量`。*/
+    CHECK(yk_bar_damage_clamp(500, 100) == 100);   /* ★ owner 那条：current=100, amount=500 ⇒ 只扣 100 */
+    CHECK(yk_bar_damage_clamp(100, 100) == 100);   /* 刚好打空这一根（不越界）*/
+    CHECK(yk_bar_damage_clamp(50, 100) == 50);     /* 比一根小 ⇒ 原样 */
+    CHECK(yk_bar_damage_clamp(500, 1) == 1);       /* 只剩 1 点 ⇒ 只扣 1 点 */
+    CHECK(yk_bar_damage_clamp(500, 0) == 0);       /* 这一根已经空了 ⇒ 一点都不能带到下一根 */
+    CHECK(yk_bar_damage_clamp(500, -7) == 0);      /* 异常负值（已死/读错）⇒ 不扣 */
+    CHECK(yk_bar_damage_clamp(0, 100) == 0);
+    CHECK(yk_bar_damage_clamp(-1, 100) == 0);      /* 负伤害不倒加血 */
+
+    /* ★★★★ 2026-10-20（owner：「使魔**出界**了也会扣 boss 血」）：**消失时的喂料门**。
+     *   目标行为 = 「只有真被打死且死讯新鲜才喂」；出界（没有死亡广播）一笔都不喂。*/
+    CHECK(YK_XFAM_DEATH_FRAME_WINDOW == 4u);
+    CHECK(yk_xfam_gone_should_feed(1, 1, 0) == 1);   /* 被打死（KILLED/BOMB_KILL）+ 广播新鲜 ⇒ 喂 */
+    CHECK(yk_xfam_gone_should_feed(1, 1, 4) == 1);   /* 窗口边界（引擎死亡 → 下一帧才发现，实际差 1）*/
+    CHECK(yk_xfam_gone_should_feed(1, 1, 5) == 0);   /* 过期广播 ⇒ 不喂（别拿旧死讯当这一笔）*/
+    CHECK(yk_xfam_gone_should_feed(1, 0, 1) == 0);   /* ECL delete / enmKillAll ⇒ 不是我们打的 ⇒ 不喂 */
+    CHECK(yk_xfam_gone_should_feed(0, 0, 0) == 0);   /* ★ 出界/离场：**一条死亡广播都没有** ⇒ 不喂 */
+    CHECK(yk_xfam_gone_should_feed(0, 1, 0) == 0);   /* 自称「被打死」但没见到广播 ⇒ 不信 */
 
     /* life 采样（逐帧差分的边界）*/
     memset(&e, 0, sizeof e);
@@ -2371,10 +2490,10 @@ int main(void)
             CHECK(yk_fengma_tint_set(0x58) == 1);
             CHECK(yk_fengma_tint_set(0x59) == 1);            /* 魔理沙 M0..M4 */
             CHECK(yk_fengma_tint_set(0x5d) == 1);
-            CHECK(yk_fengma_tint_set(0x5e) == 0);            /* 咲夜：一手全是 0 ⇒ 不染 */
-            CHECK(yk_fengma_tint_set(0x62) == 0);
-            CHECK(yk_fengma_tint_set(0x63) == 0);            /* 早苗（TH16 数据）⇒ 一手口径下不染 */
-            CHECK(yk_fengma_tint_set(0x67) == 0);
+            CHECK(yk_fengma_tint_set(0x5e) == 1);   /* ★ 2026-10-24 owner：咲夜也染 */            /* 咲夜：一手全是 0 ⇒ 不染 */
+            CHECK(yk_fengma_tint_set(0x62) == 1);
+            CHECK(yk_fengma_tint_set(0x63) == 1);   /* ★ owner：早苗也染 */            /* 早苗（TH16 数据）⇒ 一手口径下不染 */
+            CHECK(yk_fengma_tint_set(0x67) == 1);
             CHECK(yk_fengma_tint_set(0x16) == 0);            /* 兜底组（幽々子）⇒ 不染 */
             /* 染色 dword：只换低 24 位（BGR），**alpha 必须原样**（一手只写 `+0x1f0/1/2` 三个字节）*/
             CHECK(yk_fengma_tint_dword(0x80000000u) == 0x80ff4040u);
@@ -3135,6 +3254,8 @@ int main(void)
     check_beam_member_covers_entry();       /* ★ 第三十三批：束贴图铺满整条 entry 行宽（「一缕一缕」的闸）*/
     check_beam_spec_files();
     check_orbit_gift_ledger();              /* ★ 2026-09-30：绕转使魔「一只敌人只补一次」的判定 */
+    check_emit_slot_advance();              /* ★ 2026-10-24：槽扫不许「`++i; continue;`」双增量（会误删使魔）*/
+    check_run_keep_save_restore();          /* ★ 2026-10-24：P31a 的 save/restore 顺序（换面不许清夜点/刻符）*/
 
     /* ── leveledit（第三方米斯蒂亚补丁）同开时的使魔归属 ────────────────────────────────
      * 口径见 `HANDOFF-108-LEVELEDIT-FAMILIARS.md` §1 ✓；判据与一手出处见 `youkai_core.h` 那段 ✓。
@@ -3164,6 +3285,43 @@ int main(void)
     /* ★ 没装 108 ⇒ 连「那场」都不成立 ⇒ 接管整条链死掉（调用侧 `le_here && is_their_familiar` ✓）*/
     CHECK(yk_le_mode(0, YK_LE_SUB_INDEX_MIN, 0, 0) == 0);
     CHECK(yk_le_mode(0, 62, 0, 0) == 0);
+
+    /* ★★★ 2026-10-20（owner 口径回滚）：**符卡练习里自动发 108** —— 「进练习发一张，retry 后没有」。
+     *   历史：`da946d56` 实装 → `d4bc54ed` 加「reset_cards 抹掉后补发」→ `28ff8307` 整条删掉
+     *   （owner：retry 后 108 没了）。**现在 owner 明确**：那个「retry 后消失」是**要的测试特性**
+     *   （「有 108 / 没 108」的对照）⇒ 补发不做。下面把「判据」与「发不发」逐条钉死。*/
+
+    /* ---- 判据 `yk_practice_is_spell(start_kind, spell_id, practice_mode, replay_playing)` ---- */
+    CHECK(YK_PRACTICE_START_KIND_SPELL == 5);   /* 一手：`0x4cf438 == 5`（唯一写点 th18:0x46cfce）*/
+    CHECK(YK_PRACTICE_MODE_SPELL == 0x20u);     /* 一手：`GAME_FLAGS 0x4cccc8 & 0x30`（引擎自己的练习位）*/
+    CHECK(yk_practice_is_spell(5, 8, 0x20u, 0) == 1);   /* ★ 正常符卡练习（实跑那局 cand0=5 / cand2=8）*/
+    CHECK(yk_practice_is_spell(5, 0, 0x00u, 0) == 1);   /* ① 成立就够（GAME_FLAGS 还没置位也不影响）*/
+    CHECK(yk_practice_is_spell(5, 8, 0x00u, 0) == 1);   /* 同上：① 是主判据，不依赖兜底 */
+    CHECK(yk_practice_is_spell(1, 8, 0x00u, 0) == 0);   /* ★ 普通关卡（start_kind=1，GAME_FLAGS 无练习位）⇒ 不发 */
+    CHECK(yk_practice_is_spell(5, -1, 0x20u, 0) == 0);  /* ② `0x4ccd14 == -1` ⇒ 一定不是练习 */
+    CHECK(yk_practice_is_spell(5, -1, 0x00u, 0) == 0);  /* 同上，兜底也救不了（② 是必要条件）*/
+    CHECK(yk_practice_is_spell(4, 8, 0x00u, 0) == 0);   /* ★ 关卡练习（start_kind=4，不是符卡练习）⇒ 不发 */
+    CHECK(yk_practice_is_spell(6, 8, 0x00u, 0) == 0);   /* Extra（start_kind=6）⇒ 不发 */
+    CHECK(yk_practice_is_spell(2, 8, 0x20u, 1) == 0);   /* ★ 回放（3 兜底必须让路：发卡会改回放轨迹）*/
+    CHECK(yk_practice_is_spell(2, 8, 0x00u, 1) == 0);   /* 回放 + 没有练习位 ⇒ 同样不发 */
+    CHECK(yk_practice_is_spell(4, 8, 0x20u, 0) == 1);   /* 🟡 兜底：① 被改写但引擎练习位在 ⇒ 救急发 */
+
+    /* ---- 决策 `yk_practice_grant_decision(in_practice, owned, already_granted)` ---- */
+    CHECK(YK_PRACTICE_GRANT_NONE == 0);
+    CHECK(YK_PRACTICE_GRANT_SEND == 1);
+    CHECK(YK_PRACTICE_GRANT_SKIP_OWNED == 2);
+    CHECK(yk_practice_grant_decision(1, 0, 0) == YK_PRACTICE_GRANT_SEND);       /* ★ 进练习、手上没有 ⇒ 发一张 */
+    CHECK(yk_practice_grant_decision(1, 0, 1) == YK_PRACTICE_GRANT_NONE);       /* ★★ retry 后（已试过）⇒ **不发** */
+    CHECK(yk_practice_grant_decision(1, 1, 0) == YK_PRACTICE_GRANT_SKIP_OWNED); /* 练习槽本来就带了 ⇒ 跳过 */
+    CHECK(yk_practice_grant_decision(1, 1, 1) == YK_PRACTICE_GRANT_NONE);       /* 手上已有且发过 ⇒ 什么都不做 */
+    CHECK(yk_practice_grant_decision(0, 0, 0) == YK_PRACTICE_GRANT_NONE);       /* ★ 正常关卡 ⇒ 不发 */
+    CHECK(yk_practice_grant_decision(0, 1, 0) == YK_PRACTICE_GRANT_NONE);       /* 正常关卡 + 有 108 ⇒ 不发 */
+    CHECK(yk_practice_grant_decision(0, 0, 1) == YK_PRACTICE_GRANT_NONE);       /* 非练习 ⇒ 连"已试过"都不看 */
+
+    /* ---- 组合：把判据喂给决策（= youkai.c 里那三行）---- */
+    CHECK(yk_practice_grant_decision(yk_practice_is_spell(5, 8, 0x20u, 0), 0, 0) == YK_PRACTICE_GRANT_SEND);
+    CHECK(yk_practice_grant_decision(yk_practice_is_spell(1, 8, 0x00u, 0), 0, 0) == YK_PRACTICE_GRANT_NONE);
+    CHECK(yk_practice_grant_decision(yk_practice_is_spell(5, 8, 0x20u, 0), 0, 1) == YK_PRACTICE_GRANT_NONE);
 
     printf("youkai_core: %d checks, %d failed\n", s_pass + s_fail, s_fail);
     return s_fail ? 1 : 0;

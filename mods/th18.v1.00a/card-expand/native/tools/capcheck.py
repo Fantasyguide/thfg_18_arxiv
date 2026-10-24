@@ -113,6 +113,9 @@ POOLS = [
 #   ⚠ 豁免 ≠ 放行：这一行照旧排在**最前面**、照旧打 ⚠。
 WAIVERS = {
     "sht_groups": "SHT 容量扩容计划",
+    # ★ 2026-10-24：232/256 = 余量 9.4% < 10%，但卡本身构建/运行正常（make dev 19/19），
+    #   回收要逐条核引用 ⇒ 先按口径登记计划，回收完就删这一条（见 NEXT.md 同名小节）。
+    "ability_entry": "ability.anm entry 余量回收计划",
 }
 
 BEGIN = "<!-- capcheck:appendix:begin"

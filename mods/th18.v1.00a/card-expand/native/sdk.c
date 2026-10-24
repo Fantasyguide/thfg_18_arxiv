@@ -12,6 +12,12 @@
  *                      2026-09-13 起是**纯观察者**（不写 regs->esi、不调卡回调），只打 `score-out:` 那行，
  *                      用来在实跑日志里看见引擎的高度系数（满额支 engine == ours，线下支 engine < ours）。
  *   BP_ce_bomb_spent   0x4203bc  do_bomb 里 consume_bomb 刚返回。沿卡链表调 on_bomb_spent()。
+ *   BP_ce_death_save_spent 0x40a44b  Card__death_save_bomb_revive 0x40a2a0 两处扣 CURRENT_BOMBS
+ *                      （0x40a3ed / 0x40a42c，**不写 MAX**）之后的汇合点。此刻 MAX 未动、CURRENT 已扣完
+ *                      ⇒ spent = MAX − CURRENT，沿卡链表调 on_death_save_spent(spent)。
+ *                      ★ 这条路**不走** consume_bomb ⇒ 上面那条抓不到；带「腐化」(70) 时那 1–2 发会被
+ *                      每帧钉回 ⇒ 每次死亡免费（AUDIT §BE `BE-CORRUPTION-DEATHSAVE-2026-10-19`）。
+ *                      卡侧自己扣 B 的路（108 的「有 106 多扣 1」）走 `ce_death_save_spent_note()` 同一个广播。
  *   BP_ce_enemy_drop   0x430510  Enemy__drop_items_and_notify_cards 入口（ecx = zEnemyDrop = enemy+0x623c，不是敌人）。撒附加表之前
  *                                沿卡链表调 on_enemy_drop_pre(counts)，counts = zEnemyDrop+0x04 起 20 个 int32；主掉落 +0x00 已经撒过（S10）。
  *                                卡循环之后施加**乘法层** ce_drop_apply()（EVENTS-CONTRACT §2）。
@@ -132,6 +138,10 @@ int ce_give_card(uint32_t id, uint32_t mode, uint32_t notify)
 }
 
 /* ---- trace ---- */
+/* ★ 2026-10-24（日志总闸）：trace 探针**函数**只在 `CE_DEV_DUMP >= 2` 时才存在 —— 它嵌在 `CE_STUB*` 里，
+ *   **每帧每张卡都调**。0/1 档时 sdk.h 把调用点编译成 `((void)0)`，这里连函数都不编。
+ *   （`s_trace`/`s_seen` 留着：它们是**状态**，`ce_sdk_setup` 会清零 `s_seen`（sdk.c 后面），
+ *     且 5 KB 只在 .bss、不占文件字节 ⇒ 守闸反而要拆一处 memset，不如留着。）*/
 static int      s_trace;
 #define CE_TRACE_SLOTS 40                  /* 21 个虚表槽 + 事件 0x54..0x88（槽号/4 当数组下标 ⇒ 40 覆盖到 0x9c）*/
                                           /* 后四个 = collect-2x 事件（伪偏移，无虚表槽，仅 trace 记首次命中用）*/
@@ -140,7 +150,8 @@ static uint8_t  s_seen[CE_SDK_MAX_BEHAVIORS][CE_TRACE_SLOTS];
 
 void ce_sdk_set_trace(int on) { s_trace = on; }
 
-void ce_sdk_trace(uint32_t id, unsigned slot, const char *name)
+#if CE_DEV_DUMP >= 2
+void ce_sdk_trace_impl(uint32_t id, unsigned slot, const char *name)
 {
     if (!s_trace) return;
     unsigned k = 0, n = ce_sdk_behavior_count();
@@ -150,6 +161,7 @@ void ce_sdk_trace(uint32_t id, unsigned slot, const char *name)
     s_seen[k][slot / 4] = 1;
     ce_log("trace: card %u %s (+0x%02x) first hit", id, name, slot);
 }
+#endif
 
 void ce_sdk_register_or_log(const ce_behavior_t *b)
 {
@@ -952,8 +964,10 @@ static const hud_font_t HUD_FONTS[] = {
  *   **墨迹探针**：把一支 HUD VM 的**真实绘制依据**一次打全 ——
  *   · 有效落点 = 脚本 pos(+0x30) + pos2(+0x4e4) + 实体 pos(+0x5f0)（引擎就是这么算的）；
  *   · **贴图尺寸** `+0x74/+0x78`（zAnmVmPrefix.sprite_size）+ 缩放 `+0x54` + 层 `+0x18`。
- *   ⇒ 有了"落点 + 贴图尺寸×缩放"，**声明块该多大就是算出来的**，不再靠推。*/
-void ce_hud_vm_probe(const char *tag, uint32_t id)
+ *   ⇒ 有了"落点 + 贴图尺寸×缩放"，**声明块该多大就是算出来的**，不再靠推。
+ * ★ 2026-10-24：受日志总闸管 —— 只在 `CE_DEV_DUMP >= 2` 时存在（`sdk.h` 里 0/1 档调用点编译成空）。*/
+#if CE_DEV_DUMP >= 2
+void ce_hud_vm_probe_impl(const char *tag, uint32_t id)
 {
     const uint8_t *vm = id ? (const uint8_t *)ce_anm_get_vm(id) : 0;
     if (!vm) { ce_log("hud.vm %s id %u: (no VM)", tag ? tag : "?", (unsigned)id); return; }
@@ -982,6 +996,7 @@ void ce_hud_vm_probe(const char *tag, uint32_t id)
                (double)(sp[0] + p2[0] + ep[0]), (double)(sp[1] + p2[1] + ep[1]));
     }
 }
+#endif  /* CE_DEV_DUMP >= 2 */
 
 /* ★★★★ 2026-10-03z17（owner：「**你能不能把声明块画出来？**」）——
  *   **把分配器"以为的"块直接画在屏幕上**（4 条边 = 4 支 `stock_rect` VM）：这样
@@ -995,9 +1010,20 @@ void ce_hud_vm_probe(const char *tag, uint32_t id)
  *   ⚠ 关掉它：把下面这个宏改成 0（调试完成后一行）。*/
 /* ★★★ 2026-10-03z57（owner：「**然后你可以拆框了**」）—— 声明块调试覆盖层**关掉**。
  *   它已完成使命（113 的 100+px 偏差、110/111 的墨迹溢出、108 的底部溢出都是靠它定位的 ✓）。
- *   要再用就把这里改成 1（其余代码原样保留 ✓）。*/
+ *   要再用就把这里改成 1（其余代码原样保留 ✓）。
+ *
+ * ★★★★★ 2026-10-24（owner：「**把 hud 货架系统的框重新打开**」）—— **重新打开 = 1** ✓。
+ *   · 这是**调试覆盖层**（玩家看不见 ✓）：它不参与 HUD 的显隐/淡化/排布，只**多画几支
+ *     `stock_rect` VM** 把"分配器以为的框"描出来 ✓；
+ *   · 上一轮（z57）按 owner 的话关掉、这一次按 owner 的话开回来 ⇒ **同一个开关，一行** ✓；
+ *   · 新增一档：★ **共享带的包围盒**（`ce_hud_band_rect()` = 所有已认领块 ∪ 原生卡面）
+ *     单独用**品红**描一圈 ✓ —— owner 指认的就是这个东西（「候选 2 = `ce_hud_band`」），
+ *     每块自己的 4 条边仍是 绿(货架)/黄(PINNED)/青(RIGHT) ✓；
+ *   · ⚠ **只读**：不碰 `ce_hud_band_dim_tick/dimmed/alpha` 的任何判据与数值 ✓
+ *     （owner 明令：那是玩家可见的 HUD，不许为了调试去动它 ✗）。
+ *   ⚠ **发布前置 0**：正式发包 / `make release` 之前把这里改回 **0**（一行，其余代码保留 ✓）。*/
 #ifndef CE_HUD_DEBUG_BLOCKS
-#define CE_HUD_DEBUG_BLOCKS 0
+#define CE_HUD_DEBUG_BLOCKS 0   /* ★ 2026-10-24 发版：关掉货架框（0 时连 stock_rect VM 都不建）*/
 #endif
 
 #if CE_HUD_DEBUG_BLOCKS
@@ -1007,6 +1033,11 @@ static int      s_dbg_rows;                      /* 已经建好的行数（按*
 static int32_t  s_dbg_stage = -1;               /* ★ z25：池子对应的关卡号（换关要整池重建）*/
 static int32_t  s_dbg_retry[CE_HUD_DBG_MAX];    /* ★ z32：每行每 30 帧最多重建一次（不洪水）*/
 static int32_t  s_dbg_last_id[CE_HUD_DBG_MAX]; /* ★ z32：每行上次打日志时的卡 id（换卡就再打一次）*/
+/* ★ 2026-10-24：**共享带的包围盒**（`ce_hud_band_rect()` 的矩形）——1 圈 4 条边，颜色**品红**。
+ *   与"每块"那套分开存：块数上限 16 与本框无关（带永远只有 1 个）✓。*/
+static uint32_t s_dbg_band_edge[4];
+static int32_t  s_dbg_band_retry;              /* 同 `s_dbg_retry`：最多每 30 帧重建一次 */
+static int32_t  s_dbg_band_logged;             /* 上次打日志时的带宽（-1 = 还没打过）*/
 
 static uint32_t hud_dbg_spawn_edge(const float *p)
 {
@@ -1033,6 +1064,9 @@ void ce_hud_debug_blocks_tick(void)
         for (i = 0; i < CE_HUD_DBG_MAX; ++i)
             for (e = 0; e < 4; ++e) s_dbg_edge[i][e] = 0;   /* 引擎已清 ⇒ 只作废句柄 */
         s_dbg_rows = 0;
+        for (e = 0; e < 4; ++e) s_dbg_band_edge[e] = 0;     /* ★ 2026-10-24：带的框同样整池作废 */
+        s_dbg_band_retry = 0;
+        s_dbg_band_logged = -1;
     }
     if (n > s_dbg_rows) {                        /* 按**实际块数**懒惰加行（不预开 257 行）*/
         const float org[3] = { 0.0f, 0.0f, 0.0f };
@@ -1049,8 +1083,8 @@ void ce_hud_debug_blocks_tick(void)
         }
         s_dbg_rows = n;
     }
-    if (!s_dbg_rows) return;
-
+    /* ★ 2026-10-24：这里原来有一条 `if (!s_dbg_rows) return;` —— 打开"带的框"之后**不能早退** ✗
+     *   （块数为 0 时带也可能有矩形，比如只剩原生卡面在场）⇒ 改成 `s_dbg_rows == 0` 时循环空转 ✓。*/
     for (i = 0; i < s_dbg_rows; ++i) {
         uint32_t col;
         /* ★★★ 2026-10-03z32（owner：「**不可能被画面盖住，因为它大体是透明的**」）——
@@ -1109,7 +1143,69 @@ void ce_hud_debug_blocks_tick(void)
             ce_anm_set_color(s_dbg_edge[i][3], col);
         }
     }
-    (void)bx; (void)by; (void)bw; (void)bh;
+    /* ════════════════════════════════════════════════════════════════════════════
+     * ★★★★★ 2026-10-24（owner：「**把 hud 货架系统的框重新打开**」）——
+     *   **共享带（货架包围盒）的框**：`ce_hud_band_rect()` 给的矩形 = **所有已认领块的并集
+     *   ∪ 原生「当前主动卡」卡面**（`sdk_core.c` 的 `hud_band_union()`），也就是"整条左下角 HUD
+     *   在分配器眼里占的那一块" ⇒ 品红一圈画出来，与每块自己的 绿/黄/青 区分开 ✓。
+     *
+     *   ⚠ **纯只读 + 纯调试**：
+     *     · 不读也不写 `ce_hud_band_dim_*`（判据 / dimmed / alpha 一个字节都不动 ✓，
+     *       owner 明令「不要动 ce_hud_band 的 alpha/判据」）；
+     *     · 只多起 4 支 `stock_rect`（脚本 104）VM，玩家版把 `CE_HUD_DEBUG_BLOCKS` 改回 0 就一支都不建 ✓。
+     *   ⚠ 生命周期与"每块"那套**同款**：按关卡整池作废、句柄查不到才重建（每 30 帧最多一次，
+     *     不洪水 ✓）；带为空时把四条边**透明隐藏**（不删）✓。
+     *   ════════════════════════════════════════════════════════════════════════════ */
+    {
+        const float t = 2.0f;                    /* 边宽 2 表面 px（与每块那套同宽）*/
+        const uint32_t col_band = 0xB0FF00FFu;   /* A=0xB0（与每块同透明度）+ 品红 */
+        ce_hud_band_rect(&bx, &by, &bw, &bh);    /* 表面 px；(bx,by) = **左下角**，y 向下增大 */
+        for (e = 0; e < 4; ++e) {
+            if (s_dbg_band_edge[e] && ce_anm_get_vm(s_dbg_band_edge[e])) continue;
+            if (s_dbg_band_retry > 0) { --s_dbg_band_retry; continue; }
+            {
+                const float org[3] = { 0.0f, 0.0f, 0.0f };
+                s_dbg_band_edge[e] = hud_dbg_spawn_edge(org);
+                s_dbg_band_retry = 30;
+            }
+        }
+        if (bw > 0.0f && bh > 0.0f) {
+            /* 边心口径与"每块"那套逐字一致（`drawRect` 以 VM 位置为中心画）*/
+            if (s_dbg_band_edge[0]) {            /* 上边：中心 = (x+w/2, y−h) */
+                ce_anm_set_pos(s_dbg_band_edge[0], bx + bw * 0.5f, by - bh, 0.0f);
+                ce_anm_set_scale(s_dbg_band_edge[0], bw, t);
+                ce_anm_set_color(s_dbg_band_edge[0], col_band);
+            }
+            if (s_dbg_band_edge[1]) {            /* 下边：中心 = (x+w/2, y) */
+                ce_anm_set_pos(s_dbg_band_edge[1], bx + bw * 0.5f, by, 0.0f);
+                ce_anm_set_scale(s_dbg_band_edge[1], bw, t);
+                ce_anm_set_color(s_dbg_band_edge[1], col_band);
+            }
+            if (s_dbg_band_edge[2]) {            /* 左边：中心 = (x, y−h/2) */
+                ce_anm_set_pos(s_dbg_band_edge[2], bx, by - bh * 0.5f, 0.0f);
+                ce_anm_set_scale(s_dbg_band_edge[2], t, bh);
+                ce_anm_set_color(s_dbg_band_edge[2], col_band);
+            }
+            if (s_dbg_band_edge[3]) {            /* 右边：中心 = (x+w, y−h/2) */
+                ce_anm_set_pos(s_dbg_band_edge[3], bx + bw, by - bh * 0.5f, 0.0f);
+                ce_anm_set_scale(s_dbg_band_edge[3], t, bh);
+                ce_anm_set_color(s_dbg_band_edge[3], col_band);
+            }
+        }
+        else {
+            for (e = 0; e < 4; ++e)
+                if (s_dbg_band_edge[e]) ce_anm_set_color(s_dbg_band_edge[e], 0x00ffffffu);
+        }
+        /* 日志：带的矩形变了才打一行（不刷屏）⇒ 这一行就是"框画在哪"的机器判据 ✓ */
+        if (s_dbg_band_logged != (int32_t)bw) {
+            s_dbg_band_logged = (int32_t)bw;
+            ce_log("hud: debug band frame（**品红**）= 货架包围盒 x %.0f..%.0f y %.0f..%.0f (%.0fx%.0f) "
+                   "| dim=%d alpha=%d（本行只读：框不参与淡化判据）",
+                   (double)bx, (double)(bx + bw), (double)(by - bh), (double)by,
+                   (double)bw, (double)bh,
+                   ce_hud_band_dim_dimmed(), (int)ce_hud_band_dim_alpha());
+        }
+    }
 }
 #else
 void ce_hud_debug_blocks_tick(void) { }
@@ -1131,9 +1227,25 @@ void ce_hud_native_face_dim_tick(void)
     int32_t root;
     uint8_t *vm, *head, *node;
     uint32_t a;
-    int guard = 0, nw = 0;
+    int guard = 0, nw = 0, wr = 0, k = 0;
     static uint32_t s_wa = 0xffffffffu;
     static int s_wn = -1;
+    /* ★★★★ 2026-10-25（性能 C2，owner 诊断「全程固定付」）：**只在 alpha 变化时写**。
+     *   改前：每帧对**每一支**子 VM 无条件写 4–5 个 dword（`color_1` / `color_2` + 2 × 3 个插值器）
+     *   ⇒ 5 支 VM × 8 次写 = 40 次/帧，而且`IsBadWritePtr` 也要跟着跑 15 次/帧。
+     *   改后：`(alpha, 第 k 支子 VM 指针)` 与上一次写过的**都相同** ⇒ 跳过写（本帧 0 次写）。
+     *   ★ **为什么不会漏（为什么可以跳）**：
+     *     ① 我们写的是 `initial = goal = current = a` 三处**同时**写 ⇒ 引擎的插值器**没有可动的余量**
+     *        （`current` 每帧被写成 `current + (goal−current)·k` = `current` 本身）⇒ 不写它也不会回弹 ✓；
+     *     ② alpha 变了 ⇒ `a != s_wa` ⇒ 全表重写 ✓；
+     *     ③ **树重建/换卡**（子 VM 换了对象）⇒ 第 k 支指针变了 ⇒ 该支重写 ✓（这一条必须有：
+     *        否则"换了一张主动卡、alpha 没变"会让新卡面的子 VM 永远压不暗 ✗）；
+     *     ④ 别的代码**擅自改**了我们写过的颜色/alpha？⇒ 那种情况下 `a` 也没变 —— 这是**改前就有**的
+     *        同一个假设（改前每帧重写能盖掉它、改后盖不掉）。但本仓**只有这一个函数**写原生卡面
+     *        子 VM 的 `color_1/2` 与 `alpha1/2` 插值器（`grep` 过：`CE_MGR_SEL_CARD_VM` 只在这里用），
+     *        所以假设成立 ✓；真出问题把下面那个 `forced` 常量改成 1 即可（一行，回到每帧无条件写）。*/
+    static uint8_t *s_wch[8];      /* 上一次真正写过的第 k 支子 VM（指针变了 ⇒ 必须重写）*/
+    const int forced = 0;          /* 诊断开关：1 = 退回"每帧无条件写"（改前行为）*/
 
     if (!mgr) return;
     root = *(const int32_t *)(mgr + CE_MGR_SEL_CARD_VM);
@@ -1163,28 +1275,34 @@ void ce_hud_native_face_dim_tick(void)
             !IsBadWritePtr(ch + CE_ANM_VM_COLOR1, 8) &&
             !IsBadWritePtr(ch + CE_ANM_VM_ALPHA1_I, 0x20) &&
             !IsBadWritePtr(ch + CE_ANM_VM_ALPHA2_I, 0x20)) {
-            const uint32_t old = *(const uint32_t *)(ch + CE_ANM_VM_COLOR1);
-            const uint32_t old2 = *(const uint32_t *)(ch + CE_ANM_VM_COLOR2);
-            int32_t *i1, *i2;
-            *(uint32_t *)(ch + CE_ANM_VM_COLOR1) = (a << 24) | (old & 0x00ffffffu);
-            *(uint32_t *)(ch + CE_ANM_VM_COLOR2) = (a << 24) | (old2 & 0x00ffffffu);
-            /* ★ z51：**连插值器一起写**（`initial/goal/current` 三处）——否则引擎每帧用
-             *   它算出的 `current` 覆盖颜色 A ⇒ 我们和引擎**交替胜出 = 闪烁** ✓（owner 实跑）。*/
-            i1 = (int32_t *)(ch + CE_ANM_VM_ALPHA1_I);
-            i2 = (int32_t *)(ch + CE_ANM_VM_ALPHA2_I);
-            i1[CE_ANM_VM_INTERP_INITIAL / 4] = (int32_t)a;
-            i1[CE_ANM_VM_INTERP_GOAL / 4]    = (int32_t)a;
-            i1[CE_ANM_VM_INTERP_CURRENT / 4] = (int32_t)a;
-            i2[CE_ANM_VM_INTERP_INITIAL / 4] = (int32_t)a;
-            i2[CE_ANM_VM_INTERP_GOAL / 4]    = (int32_t)a;
-            i2[CE_ANM_VM_INTERP_CURRENT / 4] = (int32_t)a;
-            ++nw;
+            ++nw;                                        /* 支数（日志口径不变）*/
+            if (forced || a != s_wa || k >= 8 || s_wch[k] != ch) {
+                const uint32_t old = *(const uint32_t *)(ch + CE_ANM_VM_COLOR1);
+                const uint32_t old2 = *(const uint32_t *)(ch + CE_ANM_VM_COLOR2);
+                int32_t *i1, *i2;
+                *(uint32_t *)(ch + CE_ANM_VM_COLOR1) = (a << 24) | (old & 0x00ffffffu);
+                *(uint32_t *)(ch + CE_ANM_VM_COLOR2) = (a << 24) | (old2 & 0x00ffffffu);
+                /* ★ z51：**连插值器一起写**（`initial/goal/current` 三处）——否则引擎每帧用
+                 *   它算出的 `current` 覆盖颜色 A ⇒ 我们和引擎**交替胜出 = 闪烁** ✓（owner 实跑）。*/
+                i1 = (int32_t *)(ch + CE_ANM_VM_ALPHA1_I);
+                i2 = (int32_t *)(ch + CE_ANM_VM_ALPHA2_I);
+                i1[CE_ANM_VM_INTERP_INITIAL / 4] = (int32_t)a;
+                i1[CE_ANM_VM_INTERP_GOAL / 4]    = (int32_t)a;
+                i1[CE_ANM_VM_INTERP_CURRENT / 4] = (int32_t)a;
+                i2[CE_ANM_VM_INTERP_INITIAL / 4] = (int32_t)a;
+                i2[CE_ANM_VM_INTERP_GOAL / 4]    = (int32_t)a;
+                i2[CE_ANM_VM_INTERP_CURRENT / 4] = (int32_t)a;
+                if (k < 8) s_wch[k] = ch;
+                ++wr;                                    /* 本帧真正写了几支（诊断）*/
+            }
         }
+        ++k;
         node = *(uint8_t *const *)(node + 0x4);
     }
+    for (; k < 8; ++k) s_wch[k] = 0;   /* 尾部的旧登记作废（支数变少时下一帧照样重写）*/
     if (s_wa != a || s_wn != nw) {
         s_wa = a; s_wn = nw;
-        ce_log("hud: native face 耦合(每帧) 写 %d 支 band alpha=%u", nw, (unsigned)a);
+        ce_log("hud: native face 耦合(每帧) 支 %d 写 %d band alpha=%u", nw, wr, (unsigned)a);
     }
 }
 
@@ -1204,6 +1322,16 @@ int ce_ptr_readable(const void *p, unsigned n)
 {
     return p && !IsBadReadPtr(p, n);
 }
+
+/* ★★★ 2026-10-25（性能 C2，owner 诊断「它一次就摸 8 MB」）：**发布编译掉**。
+ *   本函数是 z58 的"验证件"（比对活弹链表 vs 2000 槽数组扫描），**诊断任务早已完成**
+ *   （结论写进 `AUDIT.md` §BE #279 / `sdk.h` 的 `CE_BULLET_LIVE_FOR_EACH` 注释）。
+ *   它每秒（60 帧节流）仍要摸一遍 8 MB 地址空间（2000 个 4 KB 跨度的地址 ⇒ 全 cache miss），
+ *   只为打一行日志 —— 在 `CE_DEV_DUMP = 0`（发布默认）时**连日志都没有**，
+ *   纯属白付 ⇒ 用 `#if CE_DEV_DUMP >= 1` 把实现整块编译掉，1/2 档照旧可用。
+ *   ⚠ 调用点（`ce_sdk_active_tick`）一字不改：0 档时 `ce_bullet_scan_probe()` 是下面的空函数，
+ *     链接不缺符号、也不会有"未使用"警告。*/
+#if CE_DEV_DUMP >= 1
 
 void ce_bullet_scan_probe(void)
 {
@@ -1270,8 +1398,15 @@ void ce_bullet_scan_probe(void)
            idx_first[0], idx_first[1], idx_first[2], idx_first[3]);
 }
 
+#else  /* CE_DEV_DUMP == 0：发布档 —— 8 MB 平扫整个不进二进制（调用点照旧编译通过）*/
+
+void ce_bullet_scan_probe(void) { }
+
+#endif  /* CE_DEV_DUMP >= 1 */
+
 void ce_hud_slot_log_all(const char *tag)
 {
+#if CE_DEV_DUMP >= 2                 /* ★ 2026-10-24：纯日志函数 ⇒ 受总闸管（0/1 档整个体编译掉）*/
     int i, n = ce_hud_slot_count();
     float bx, by, bw, bh;
     const int card_face = hud_card_present(*(void *const *)(CE_ABILITY_MGR() + CE_MGR_SELECTED_ACTIVE));
@@ -1308,6 +1443,9 @@ void ce_hud_slot_log_all(const char *tag)
                (double)ui, (int)sw, (int)sh);
     }
     ce_log("hud: ===== end =====");
+#else
+    (void)tag;
+#endif
 }
 
 void ce_hud_vm_text_set(ce_hud_vm_text_t *t, float x, float y, uint32_t bgra,
@@ -1382,7 +1520,21 @@ void ce_hud_vm_text_set_font(ce_hud_vm_text_t *t, float x, float y, uint32_t bgr
             /* ★ 第 52 轮（owner：「`.` 得往左移动，其他字符不要移动」）：**只把点这一格往左挪**
              *   （贴图里点的墨迹居中，字格又宽 ⇒ 看着离前一个数字太远）。步进 `adv` 不动 ⇒
              *   后面的字符位置一个都不变。挪动量 = 1.5 × `adv_dot` 的屏幕量（≈12 px @1280）。*/
-            pos[0] = pen - ((*p == '.') ? f->adv_dot * 1.0f * sx * dat : 0.0f);   /* ★ 第 54 轮：1.5 → 1.0（owner：「有点过左了」）*/
+            /* ★★★ 2026-10-24（owner：TH15 章节结算的**击破率小数点偏移**）——
+             *   **实测**（`assets/ability/font2/FONT2_DOT.png` 与源 `ascii_1280.png` sprite211，同一结论）：
+             *     数字 16×32 墨迹 (1,6,15,24) ⇒ 墨迹中心 x = 8.00 = 单元中心 x = 8.00（居中）
+             *     点   16×32 墨迹 (1,18,7,24) ⇒ 墨迹中心 x = **4.00**（比单元中心**左 4 px**）
+             *   VM 的 `pos` 是**精灵中心** ⇒ 点放到 `pen` 时墨迹已在 `pen−4`；旧代码再减 `adv_dot`（负向）
+             *   ⇒ 累计偏左 12 px @1280，且历次调参（1.5 → 1.0）方向全是"再往左"，越调越偏。
+             *   ⇒ 正确：墨迹中心落在它自己那格步进的中点 ⇒ 反向补 `+adv_dot`（= 往右 4 UI）。*/
+            /* ★★★ 2026-10-24 第二轮（owner 实测反馈：−adv_dot「太左」/ +adv_dot「和小数数字正好重合」）——
+             *   把几何算清楚（单位 = 表面积 px，`pen` 与精灵像素同尺度；dat = UI 缩放，此处 2）：
+             *     数字精灵 16×32，墨迹 x∈[1,15) ⇒ 墨迹 14 px 宽、恰好铺满 14 px 的步进（相邻数字刚好相接）
+             *     点   精灵 16×32，墨迹 x∈[1,7)  ⇒ 墨迹 **6 px** 宽，而它的步进只有 `adv_dot×dat` = 8 px
+             *   ⇒ 点**不可能**在自己的步进里居中（居中会让墨迹探进下一个数字 6 px，就是 owner 看到的"重合"）
+             *   ⇒ 只能把它摆在「前一个数字右缘之后、下一个数字左缘之前」的 8 px 窗口里，左右各留 1 px：
+             *     目标墨迹左缘 = pen − 6 ⇒ `pos = pen + 1` ⇒ 偏移 = `adv_dot×0.125×sx×dat`（此处 = 1 px）。*/
+            pos[0] = pen + ((*p == '.') ? f->adv_dot * 0.125f * sx * dat : 0.0f);   /* ★ 2026-10-24：1/8 格（左右各留 1 px）*/
             pos[1] = ytop + f->vm_dy * sy * dat; pos[2] = 0.0f;
             if (*id && !ce_anm_get_vm(*id)) { *id = 0; t->shown[slot] = 0; }
             if (!*id) {
@@ -1496,7 +1648,9 @@ static int32_t  s_score_in_total;        /* 这一颗我们真正落下去的 G�
 /* ★★ 2026-09-16zl：**站点命中轨迹**（头号崩溃的下一把刀）。
  * 每次命中的站点与上一次不同就打一行 —— `ce_log` 每行都 open/write/close（必 flush），
  * 所以**崩溃前最后一行 = 直接点名是哪条站点命中之后跳错的**，不用再靠时序夹逼。
- * 只读、零内存写；命中的站点名是编译期字符串常量 ⇒ 指针比较就够。*/
+ * 只读、零内存写；命中的站点名是编译期字符串常量 ⇒ 指针比较就够。
+ * ★ 2026-10-24：受日志总闸管 —— 只在 `CE_DEV_DUMP >= 2` 时存在；0/1 档整个调用编译成 `((void)0)`。*/
+#if CE_DEV_DUMP >= 2
 static const char *s_site_last;
 static unsigned  s_site_hits;
 static void ce_site_trail(const char *name)
@@ -1506,6 +1660,9 @@ static void ce_site_trail(const char *name)
     s_site_last = name;
     ce_log("site: %s（累计第 %u 次命中）", name, s_site_hits);
 }
+#else
+#define ce_site_trail(name) ((void)0)
+#endif
 
 /* ★★ 站点自检门（2026-09-18）：把「一手不变量」在**运行期**查一遍，对不上就记一行（每个调用点只记一次）。
  * 它是**证据门**，不是拦截器：默认不改任何行为（少数几处另加 fail-safe，见各自注释）。
@@ -1519,7 +1676,7 @@ void ce_assume_fail(const char *what)
     for (i = 0; i < s_n; ++i) if (s_seen[i] == what) return;
     if (s_n < 32u) {
         s_seen[s_n++] = what;
-        ce_log("★ assume FAIL: %s（站点自检不成立；只记一次、行为不变）", what);
+        ce_log_key("★ assume FAIL: %s（站点自检不成立；只记一次、行为不变）", what);
     }
 }
 
@@ -1555,7 +1712,7 @@ static void ce_retaddr_set(x86_reg_t *regs, uint32_t target)
         static unsigned s_bad_n;
         if (s_bad_n < 8u) {
             ++s_bad_n;
-            ce_log("★ retaddr 拒绝：0x%08x 不是「模块映像内的可执行页」（第 %u 次）—— 保持原返回地址"
+            ce_log_key("★ retaddr 拒绝：0x%08x 不是「模块映像内的可执行页」（第 %u 次）—— 保持原返回地址"
                    "（池页/MEM_PRIVATE 一律拒收：那是 thcrap 断点池，跳进去就是头号崩溃）",
                    (unsigned)target, s_bad_n);
         }
@@ -1784,6 +1941,55 @@ int __cdecl BP_ce_bomb_spent(x86_reg_t *regs, void *bp_info)
             ce_sdk_trace(ce_card_id(card), 0x60, "on_bomb_spent");
         }
     }
+    return BP_EXEC_ORIGINAL;
+}
+
+/* ============================ ★★★ 死亡消耗 B（死亡回避）============================
+ * 两个来源共用同一条广播（`on_death_save_spent`，trace 0x7c）：
+ *   ① **引擎的死亡回避** `Card__death_save_bomb_revive` `0x40a2a0`（原生卡 23 = 死秽回避之药，
+ *      由 `CardEirin__on_player_death_after_deathbomb` `0x40a4f0` 在虚表 `+0x0c` 里调；`+0x0c` 的返回值
+ *      被 `Player__on_tick__body` `0x45c121 or edi,eax` 收集（广播循环 `0x45c114`–`0x45c121`），非 0 ⇒ 跳过 `0x45d090` 的扣命）：
+ *      它在 `0x40a3ed` / `0x40a42c` 各扣 1 发 `CURRENT_BOMBS 0x4ccd58`（每处钳 0、再钳 `MAX_BOMBS 0x4ccd64`），
+ *      **从不写 MAX**，也**不走 consume_bomb** ⇒ `BP_ce_bomb_spent` 完全抓不到它。
+ *      站点 `0x40a44b` 在两次扣之后、`MAX` 尚未被任何东西改之前 ⇒ `spent = MAX − CURRENT` 就是真实花掉的发数。
+ *   ② **卡侧自己扣的 B**（如 108 的「有 106 ⇒ 死决多扣 1」）：那一路直接写 `CURRENT_BOMBS`，
+ *      站点也看不见 ⇒ 由卡在扣完之后调 `ce_death_save_spent_note(n)` 报一次。
+ * 为什么要这条：带「腐化」(70) 时它每帧把 `CURRENT` 钉回 `MAX` ⇒ 不走 consume_bomb 的扣减等于没扣
+ * ⇒ **每次死亡免费、残机永不减**（owner 2026-10-19 定的真 bug）。见 AUDIT §BE `BE-CORRUPTION-DEATHSAVE-2026-10-19`。
+ * 没有卡声明 `on_death_save_spent` ⇒ 一个字都不写（与原生逐位相同）。*/
+static void ce_death_save_spent_dispatch(int32_t spent)
+{
+    uint8_t *mgr;
+    unsigned guard = 0;
+
+    if (spent <= 0) return;
+    mgr = CE_ABILITY_MGR();
+    if (!mgr) return;
+    for (const uint8_t *node = *(const uint8_t *const *)(mgr + CE_MGR_CARD_LIST_FIRST);
+         node && guard < 256;
+         node = *(const uint8_t *const *)(node + CE_NODE_NEXT), ++guard) {
+        uint8_t *card = *(uint8_t *const *)(node + CE_NODE_CARD);
+        if (!card) continue;
+        const ce_hooks_t *h = hooks_of(card);
+        if (h && h->on_death_save_spent) {
+            h->on_death_save_spent((ce_card_t *)card, spent);
+            ce_sdk_trace(ce_card_id(card), 0x7c, "on_death_save_spent");
+        }
+    }
+}
+
+/* 卡侧入口（`sdk/public.h` 有语义约定）：**调用前**已经扣了 B，这里只广播。*/
+void ce_death_save_spent_note(int32_t spent)
+{
+    ce_death_save_spent_dispatch(spent);
+}
+
+/* 站点 0x40a44b：`mov eax,[esi+0x47784]`（6 字节，无相对寻址）。此刻两次扣 B 都做完了、MAX 还没动。*/
+int __cdecl BP_ce_death_save_spent(x86_reg_t *regs, void *bp_info)
+{
+    (void)regs; (void)bp_info;
+    ce_site_trail("ce_death_save_spent");
+    ce_death_save_spent_dispatch(CE_MAX_BOMBS() - CE_CURRENT_BOMBS());
     return BP_EXEC_ORIGINAL;
 }
 
@@ -2475,7 +2681,7 @@ static void ce_cave_overlap(void)
             if (b > a && b < a + 0x30u) {
                 ++s_cave_ovl;
                 if (s_cave_ovl <= 10)
-                    ce_log("★★ CAVE OVERLAP #%u: [%s] %08x 与 [%s] %08x 落进同一格（差 %d 字节）",
+                    ce_log_key("★★ CAVE OVERLAP #%u: [%s] %08x 与 [%s] %08x 落进同一格（差 %d 字节）",
                            s_cave_ovl, s_caves[i].name, a, s_caves[k].name, b, (int)(b - a));
             }
         }
@@ -2494,7 +2700,7 @@ static void ce_cave_watch(void)
             if (*(const uint8_t *)(uintptr_t)(c->cave + k) != c->head[k]) {
                 ++s_cave_clobber;
                 if (s_cave_clobber <= 20)
-                    ce_log("★★ CAVE CLOBBERED #%u: [%s] cave %08x 第 %u 字节 %02x -> %02x（帧 %u）"
+                    ce_log_key("★★ CAVE CLOBBERED #%u: [%s] cave %08x 第 %u 字节 %02x -> %02x（帧 %u）"
                            "—— 这个 cave 的代码被谁改了/清零了",
                            s_cave_clobber, c->name, c->cave, k, c->head[k],
                            *(const uint8_t *)(uintptr_t)(c->cave + k), s_cave_ticks);
@@ -2620,6 +2826,8 @@ static void ce_mem_map_dump(void)
  * 发现异常（id 越界、链表长度 != num_total、owned 高位非零）时再打一行。下一份用户日志可直接
  * 证明是「id 污染 / manager 坏」还是「纯美术」。零写入、纯只读；只在 ItemManager tick 帧界跑。 */
 static int32_t s_integrity_stage = (-0x7fffffff - 1);
+/* ★ 2026-10-25（性能 C2）：非首帧的**节流相** —— 见 `ce_integrity_check()` 里那段。*/
+static unsigned s_integrity_slow;
 static void ce_integrity_check(void)
 {
     uint8_t *mgr = CE_ABILITY_MGR();
@@ -2632,6 +2840,21 @@ static void ce_integrity_check(void)
     stage = CE_CURRENT_STAGE();
     first = (stage != s_integrity_stage);
     if (first) s_integrity_stage = stage;
+
+    /* ★★★★ 2026-10-25（性能 C2）：**每 60 帧一次**（首帧永远跑）。
+     *   本探针的语义 = 「**每关开场**沿卡链 dump 一遍 + 之后**只在发现异常时**再打一行」
+     *   （见上面的函数头）。也就是说它**本来就不是**每帧都要的观测量：
+     *   异常是**状态**（`id` 越界 / `num_total` 对不上 / `owned` 高位非零），
+     *   坏掉之后**下一帧还在**，晚 ≤ 60 帧（= 1 秒）发现与当帧发现没有区别；
+     *   而"每关开场那一次"由 `first` 保证**一帧都不晚** ✓。
+     *   开销：改前 = 每帧一次卡链走（≤256 节点）+ `owned[]` 的 128..254 平扫；
+     *         改后 = 同样的活每 60 帧一次（首帧那次保留）⇒ 固定开销 ÷60 ✓。
+     *   ⚠ 想回到每帧：把 `60u` 改成 `1u`（一行）。*/
+    if (!first) {
+        if (++s_integrity_slow % 60u) return;
+    } else {
+        s_integrity_slow = 0;
+    }
 
     total   = *(const int32_t *)(mgr + CE_MGR_NUM_TOTAL);
     active  = *(const int32_t *)(mgr + CE_MGR_NUM_ACTIVE);
@@ -2670,8 +2893,21 @@ static void ce_integrity_check(void)
         ce_log("integrity[stage %d]: CARD MANAGER INTEGRITY FAILURE — 请把以上行贴给维护者", stage);
 }
 
+/* ★ 2026-10-19（owner 拍板 B）：**符卡练习里自动装 108** 的卡侧入口（实现在 `cards/youkai.c`）。
+ *   为什么需要从**帧点**叫，而不是 108 自己的 `on_ctor` / `on_tick_2`：
+ *   练习模式从**存档的另一个卡组槽**重建牌组（`AbilityManager__reset_cards 0x407DA0`，
+ *   `engine/card/th18/02-lifecycle.md` §6）⇒ 108 不在那个卡组里 ⇒ 它的回调**根本不存在** ✗。
+ *   本帧点（`BP_ce_item_frame`）是**与卡组无关**的、每个正常游玩帧恰好到一次的地方 ⇒ 在这里发一次卡。
+ *   ⚠ 该函数自带全部判据 / 幂等 / 日志：非符卡练习**逐字 no-op**（不读卡表、不发卡）；
+ *     符卡练习里也只在 `0x4cf438 == 5 && 0x4ccd14 >= 0 && CE_PLAYER() && CE_ABILITY_MGR()` 时才动
+ *     （判据一手表见 `cards/youkai.c` 该函数上方的 2026-10-19b 订正段）。
+ *   改共享件登记见 `AUDIT.md` §BE-108-PRACTICE-EQUIP-2026-10-19。*/
+void yk_practice_equip_once(void);
+
 int __cdecl BP_ce_item_frame(x86_reg_t *regs, void *bp_info)
 {
+    /* ★ 诊断 2026-10-24：第一帧就证明这个钩子真的进来了 */
+    { static int s_once; if (!s_once) { s_once = 1; ce_log_key("sdk: ce_item_frame 第一帧到了（钩子生效 ✓）"); } }
     ce_site_trail("ce_item_frame");
     /* ★ 2026-09-13：本帧点也是 **SDK 帧号**的唯一递增处（跨卡共用模块的「每帧只推进一次」守卫用它，
      *   例 `faith_pool_tick()` 被 110/111 各调一次；见 `sdk_core.h` 的 `ce_sdk_frame`）。*/
@@ -2688,7 +2924,7 @@ int __cdecl BP_ce_item_frame(x86_reg_t *regs, void *bp_info)
         static uint32_t s_bomb_prev;
         uint32_t bomb_now = *(volatile uint32_t *)(uintptr_t)CE_ADDR_BOMB_MGR;
         if (s_bomb_prev && !bomb_now)
-            ce_log("★ bomb ptr 归零（帧 %u）：BOMB_PTR 0x%08x -> 0（历史崩点 do_bomb+0x8c 的前置条件）",
+            ce_log_key("★ bomb ptr 归零（帧 %u）：BOMB_PTR 0x%08x -> 0（历史崩点 do_bomb+0x8c 的前置条件）",
                    (unsigned)ce_sdk_frame(), (unsigned)s_bomb_prev);
         s_bomb_prev = bomb_now;
     }
@@ -2986,6 +3222,9 @@ int __cdecl BP_ce_item_frame(x86_reg_t *regs, void *bp_info)
             ce_sdk_trace(ce_card_id(card), 0x68, "on_item_frame");
         }
     }
+    /* ★ 2026-10-19（owner 拍板 B）：符卡练习自动装 108 —— **放在卡链遍历之后**（发卡会改链表 / 重建
+     *   HUD 列表，不能在遍历中途动它）。非符卡练习 = 读两个全局（`0x4cf438` / `0x4ccd14`）+ return。*/
+    yk_practice_equip_once();
     return BP_EXEC_ORIGINAL;
 }
 
@@ -3438,6 +3677,9 @@ int ce_sdk_setup(uint8_t *base, int trace)
          *   两条都是 2026-09-16 的「二分（临时）」摘的、**从没回填** ⇒ 静默失效。sitecheck 四项全过。*/
         { "ce_item_score_in", CE_BP_ITEM_SCORE_IN_RVA, 8 },
         { "ce_bomb_spent",  CE_BP_BOMB_SPENT_RVA,  5 },
+        /* ★ 2026-10-19（腐化 70 × 原生 23）：死亡回避的扣 B **不走 consume_bomb** ⇒ 单独一条；
+         *   不挂 = 带 70 时每次死亡免费（原 bug 原样复现）⇒ 必须在这里「挂不上直接 FAIL」。*/
+        { "ce_death_save_spent", CE_BP_DEATH_SAVE_SPENT_RVA, 6 },
         /* ⛔ ce_death_result / ce_poc_gate_a / ce_poc_gate_b / ce_chain_node_guard：仍 park（见 §BE-FE）*/
         { "ce_enemy_drop",  CE_BP_ENEMY_DROP_RVA,  6 },
         /* ★★ 2026-09-22 恢复（本表曾被 2026-09-16/17 的「二分」整片注释掉，但那些站点后来
@@ -3492,7 +3734,7 @@ int ce_sdk_setup(uint8_t *base, int trace)
         char hex[3 * 16];
         char *q = hex;
         for (unsigned k = 0; k < bps[i].len; ++k) q += sprintf(q, "%02x ", p[k]);
-        ce_log("FAIL: sdk: breakpoint %s not applied (%u bytes at +%08x: %s)",
+        ce_log_key("FAIL: sdk: breakpoint %s not applied (%u bytes at +%08x: %s)",
                bps[i].name, bps[i].len, bps[i].rva, hex);
         ++n_bp_fail;
     }
@@ -3529,7 +3771,7 @@ int ce_sdk_setup(uint8_t *base, int trace)
         const uint8_t *p = base + CE_BH_SHT_DBASE_RVA;
         uint32_t got = (uint32_t)p[2] | ((uint32_t)p[3] << 8) | ((uint32_t)p[4] << 16) | ((uint32_t)p[5] << 24);
         if (p[0] != 0x8d || p[1] != 0x82 || got != (uint32_t)CE_SHT_DATA_BASE) {
-            ce_log("FAIL: sdk: pl0X.sht 96-slot expansion binhack not applied "
+            ce_log_key("FAIL: sdk: pl0X.sht 96-slot expansion binhack not applied "
                    "(+%08x: %02x %02x imm32=%#x, expected 8d 82 imm32=%#x) — pl0X.sht 是 %d 格影像，"
                    "基点还是 %#x 的话主炮会按错位 0x%x 字节读组",
                    CE_BH_SHT_DBASE_RVA, p[0], p[1], got, (unsigned)CE_SHT_DATA_BASE,
@@ -3720,7 +3962,7 @@ int __cdecl BP_ce_bullet_damage_final(x86_reg_t *regs, void *bp_info)
             *cb = 0;
             ++s_bullet_cb_guarded;
             if (s_bullet_cb_guarded <= 5 || (s_bullet_cb_guarded % 500) == 0)
-                ce_log("★ bullet +0xe8 guard: 弹 %08x 的 +0xe8 = %08x 不是合法代码地址 ⇒ 清 0"
+                ce_log_key("★ bullet +0xe8 guard: 弹 %08x 的 +0xe8 = %08x 不是合法代码地址 ⇒ 清 0"
                        "（否则 0x45e8c0 call eax ⇒ 0xC0000005，见 crashdumps）（#%u）",
                        (unsigned)regs->edi, (unsigned)cbv, s_bullet_cb_guarded);
         }
@@ -3910,7 +4152,7 @@ int __cdecl BP_ce_chain_node_guard(x86_reg_t *regs, void *bp_info)
          *   只有炸弹/屏幕特效/奖杯通知那几家；对照上下文一行就能区分。）*/
         ++s_chain_changed;
         if (s_chain_changed <= 20)
-            ce_log("★ chain CHANGED #%u: node %08x on_tick %08x -> %08x , this %08x -> %08x",
+            ce_log_key("★ chain CHANGED #%u: node %08x on_tick %08x -> %08x , this %08x -> %08x",
                    s_chain_changed, node, sl->tick, tick, sl->thisp, thisp);
         sl->tick = tick; sl->thisp = thisp;
         verify = 1;
@@ -3921,7 +4163,7 @@ int __cdecl BP_ce_chain_node_guard(x86_reg_t *regs, void *bp_info)
         if (!ce_addr_exec(tick)) {
             ++s_chain_bad;
             if (s_chain_bad <= 10 || (s_chain_bad % 100) == 0)
-                ce_log("★★ chain guard #%u（槽位表已满、无监视）: node %08x 的 on_tick = %08x 不可执行 ⇒ 跳过 call",
+                ce_log_key("★★ chain guard #%u（槽位表已满、无监视）: node %08x 的 on_tick = %08x 不可执行 ⇒ 跳过 call",
                        s_chain_bad, node, tick);
             regs->eax = CE_CHAIN_SKIP_EAX;
             ce_retaddr_set(regs, CE_CHAIN_RESUME);
@@ -3950,7 +4192,7 @@ int __cdecl BP_ce_chain_node_guard(x86_reg_t *regs, void *bp_info)
         if (s_chain_bad <= 10 || (s_chain_bad % 100) == 0) {
             ce_mod_desc(tick, m_tick, sizeof m_tick);
             ce_mod_desc(thisp, m_this, sizeof m_this);
-            ce_log("★★ chain guard #%u: node %08x 的 on_tick = %08x (%s) 不是可执行地址 ⇒ 本帧跳过这次 call"
+            ce_log_key("★★ chain guard #%u: node %08x 的 on_tick = %08x (%s) 不是可执行地址 ⇒ 本帧跳过这次 call"
                    "（否则 0x401355 call eax = 0xC0000005；返回 1 走 0x4013b7 空转）"
                    " order=%d flags=%#x this=%08x (%s) visit=%u changed=%u",
                    s_chain_bad, node, tick, m_tick,
@@ -4078,7 +4320,7 @@ static int ce_poc_gate_common(x86_reg_t *regs, uint32_t fall_through)
         } else {
             static int warned;
             if (!warned) { warned = 1;
-                ce_log("WARN: poc-gate: 可疑操作数 (line %.1f, player.y %.1f) @esi=%p — 本次按"
+                ce_log_key("WARN: poc-gate: 可疑操作数 (line %.1f, player.y %.1f) @esi=%p — 本次按"
                        "「不吸」处理（见 AUDIT §BE-EP）", (double)line, (double)py, (const void *)pl); }
         }
     }
@@ -4205,7 +4447,7 @@ int __cdecl BP_ce_enemy_damage(x86_reg_t *regs, void *bp_info)
     if (!s_enemy_damage_selfcheck) {
         s_enemy_damage_selfcheck = 1;
         if (ev.enemy != (void *)(data - 0x122c))
-            ce_log("WARN: sdk: ce_enemy_damage selfcheck: full=%p data=%p (expect full = data - 0x122c)",
+            ce_log_key("WARN: sdk: ce_enemy_damage selfcheck: full=%p data=%p (expect full = data - 0x122c)",
                    ev.enemy, (void *)data);
     }
 

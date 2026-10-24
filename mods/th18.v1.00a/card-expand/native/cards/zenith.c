@@ -44,6 +44,7 @@
  *     的小星点，染色用那把剑的 trailColor；
  *   ⚠ **ribbon 仍然没有**（引擎无顶点条带通道）：那条弧线依旧由 `script380` 的残影顶替。
  *   ⚠ 光照（原版两处 `Lighting.AddLight`）也没法做（引擎无动态光照通道）。*/
+#define ZN_SE_EVERY     4          /* ★ 2026-10-24 owner「太吵」：每 4 把剑播一次（1 = 旧行为）*/
 #define ZN_SPARK_LAYER  14         /* 星芒 / 尘埃：压在剑刃（13）之上 */
 #define ZN_OVERLAY_MUL  1.25f      /* 原版第二遍白叠的放大倍数 */
 #define ZN_BLADE_SCALE  0.55f      /* ⚠ 必须与脚本 379 的 `scale(0.55f, 0.55f)` 一致（C 每帧会写 scale 做镜像）*/
@@ -416,7 +417,10 @@ static int on_tick_2(ce_card_t *c)
     ce_anm_set_pos(id, fx, fy, pz);           /* 出膛那帧先摆在膛口（下一帧起走椭圆）*/
     ce_anm_set_color(id, 0x00ffffffu);
     zn_did_fire(&s->st);
-    ce_play_sound(ZN_SE_SLASH, fx);
+    /* ★★ 2026-10-24（owner：**天顶剑的声音太吵了**）—— 原来**每一把剑**都播一次 `se_slash`，
+     *   多把同帧出鞘就叠成噪音 ⇒ 每 `ZN_SE_EVERY` 把剑才播一次（`ZN_SE_EVERY = 1` 恢复旧行为）。*/
+    if (ZN_SE_EVERY <= 1 || ((s->st.fired - 1u) % (uint32_t)ZN_SE_EVERY) == 0u)
+        ce_play_sound(ZN_SE_SLASH, fx);
     if (s->st.fired <= 3 || s->st.fired % 20 == 0)
         ce_log("zenith: blade #%u at frame %u, fam (%.1f, %.1f) -> (%.1f, %.1f) v|%.1f| ai0 %.0f sprite %d, live %d",
                s->st.fired, s->st.frames, fx, fy, fx + aim.dx, fy + aim.dy,

@@ -11,7 +11,7 @@ CC        := $(TOOLCHAIN)/bin/i686-w64-mingw32-gcc
 OBJDUMP   := $(TOOLCHAIN)/bin/i686-w64-mingw32-objdump
 
 TARGET := th18_bgwarp.dll
-SRC    := th18_bgwarp.c
+SRC    := th18_bgwarp.c route_b.c bgwarp_core.c
 DEF    := th18_bgwarp.def
 
 CFLAGS  := -O2 -Wall -Wextra
@@ -25,6 +25,7 @@ $(TARGET): $(SRC) $(DEF)
 # 把源码里写死的 RVA / 签名字节 / 结构偏移拿去和真 exe 逐字节对账（换 build 后先跑这个）
 check:
 	python3 check_constants.py
+	python3 check_d3d.py
 
 verify: $(TARGET)
 	@echo "--- 位数 / 类型 ---"
@@ -38,3 +39,18 @@ clean:
 	rm -f $(TARGET) *.o
 
 .PHONY: all check verify clean
+
+# 一条命令发布：把产物发到 modkit 的两个位置，并回读校验（四处同 md5 才算发成功）
+#   make deploy [MODKIT=/mnt/d/项目/幻想指南/18/th18_modkit]
+MODKIT ?= /mnt/d/项目/幻想指南/18/th18_modkit
+deploy: $(TARGET)
+	@set -e; \
+	src=$$(md5sum $(TARGET) | cut -d' ' -f1); \
+	cp -f $(TARGET) "$(MODKIT)/mods/$(TARGET)"; \
+	cp -f $(TARGET) "$(MODKIT)/thcrap/bin/mod_$(TARGET)"; \
+	a=$$(md5sum "$(MODKIT)/mods/$(TARGET)" | cut -d' ' -f1); \
+	b=$$(md5sum "$(MODKIT)/thcrap/bin/mod_$(TARGET)" | cut -d' ' -f1); \
+	echo "src      $$src"; echo "mods/    $$a"; echo "bin/     $$b"; \
+	if [ "$$src" = "$$a" ] && [ "$$src" = "$$b" ]; then \
+		echo "✓ 发布成功（三处同 md5）"; \
+	else echo "✗ 回读 md5 不一致，发布失败"; exit 1; fi

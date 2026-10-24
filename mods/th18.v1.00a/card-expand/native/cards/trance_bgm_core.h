@@ -33,7 +33,10 @@
  * ★ 两条**引擎侧**语义（一手反汇编，`th18:0x48acc0` 的 preload 分支，逐条对照）：
  *   · 读取窗口 = `[base, base + track_size)`，`base` = 我们交给构造成器的 PCM 指针；
  *   · 循环回卷 = `cur = base + intro_size`。
- *   ⇒ **想让整段 PCM 无缝循环，就把 `intro_size` 设 0、`track_size` 设成 PCM 全长。**
+ *   ⇒ `intro_size = 0` + `track_size = PCM 全长` = 整段无缝循环；
+ *     `intro_size = intro 段字节数` + `track_size = intro + 循环体` = **TH13 的 b 轨口径**
+ *     （播完一整条回到循环点，而不是回到文件开头）。★★ 2026-10-24 起我们走的就是后者
+ *     （见 `trance_bgm_fmt_init` 的 `intro_bytes`：素材带 intro，一手值取自主曲 fmt）。
  */
 typedef struct {
     uint8_t  fn[16];
@@ -66,10 +69,10 @@ _Static_assert(offsetof(trance_bgm_fmt_t, bits_per_sample)   == 0x2e, "bits_per_
  * 再喂给引擎的内存流构造成器。生成器 = `tools/make_trance_bgm.py`
  * （TH18 自己的曲子 + naive 低音放大 + TH13 的 b 命名）。
  *
- * ★ 单个 PCM 缓冲的上限：**24 MiB**。理由：我们**一次只装一条**曲子的**循环段**
- *   （生成器丢掉 intro、降到 22050 Hz）。用户 2026-09-14 把素材面扩到 **14 首**（7 道中 + 7 关底）后，
- *   最大的一条是 **6 面关底 `th18_14b` = 18.79 MiB = 19,701,056 B**
- *   （`th18_14`：`track_size − intro_size` = 43956512 − 4557728 = 39402112 B @44100，÷2 降采样）
+ * ★ 单个 PCM 缓冲的上限：**24 MiB**。理由：我们**一次只装一条**曲子的**整条素材**
+ *   （intro + 循环体，22050 Hz）。★ 2026-10-24 方案 A 起素材**带 intro**（对齐 TH13 的 b 轨），
+ *   所以最大的一条变成 **6 面关底 `th18_14b` = 20.96 MiB = 21,978,256 B**
+ *   （`th18_14`：`track_size` = 43956512 B @44100 ÷2 降采样 = intro 569716 帧 + 循环体 5496246 帧）
  *   ⇒ 旧的 16 MiB 装不下它，这里抬到 24 MiB（余量 ~22%）。
  *   ⚠ 抬高的**安全性**：这块内存是 `VirtualAlloc` **按需分配**的（只在起流那一刻按实际文件大小申请、
  *   `finish_release()` 立刻 `VirtualFree`），**不是** DLL 的静态数据 ⇒ DLL 文件体积/常驻内存不受影响；
@@ -91,10 +94,51 @@ _Static_assert(offsetof(trance_bgm_fmt_t, bits_per_sample)   == 0x2e, "bits_per_
 #define TRANCE_BGM_CB_MUTE  (-10000)
 
 /* ---- fmt 记录 ---- */
-/* 按 (channels, rate, bits, pcm_bytes) 填一条**自己用**的 fmt：整段循环（intro = 0）。
+/* 按 (channels, rate, bits, pcm_bytes, intro_bytes) 填一条**自己用**的 fmt。
+ * `intro_bytes` = 素材里 intro 段的字节数（**循环回绕点**）：
+ *   · `0`（或越界/半帧） ⇒ 整段循环（2026-10-24 之前的老口径）；
+ *   · `intro_game × avg`（卡侧按**主曲 fmt 的 intro_size** 用 avg 比例换算） ⇒ TH13 的 b 轨口径。
  * `name` 只用于日志/调试（内存流路径**不查表**，名字不进 thbgm.fmt 索引）。*/
 void trance_bgm_fmt_init(trance_bgm_fmt_t *f, const char *name, uint32_t pcm_bytes,
+                         uint32_t intro_bytes,
                          uint32_t channels, uint32_t rate, uint32_t bits);
+
+/* ============================ 2. 口径（素材 ⟷ 主曲）============================
+ *
+ * ★★ 2026-10-24（`th18_06b` 错位事故的正面防线）：**素材的长度是由"哪个主曲口径"决定的**。
+ *   主曲 fmt 的 `track_size` / `intro_size` 是 44100 口径的字节数，我们的素材是 22050 口径
+ *   ⇒ 换算 `ours = engine × our_avg ÷ e_avg`。这一条是**独立量**：左边是文件真实字节数
+ *   （生成期定死），右边是引擎当前那路 BGM 的 fmt（运行期一手）⇒ 两边对不上就说明
+ *   **这份文件不是给这个主曲做的**，此时接管一定会错位（循环点/总长差多少，每圈就差多少）。
+ *
+ * 事故账（一手）：零售 `th18_06`（leveledit **关**）= intro 6.5074 s + loop 105.5463 s
+ *   = **112.0537 s**；leveledit **开**时主曲被换成 `th18_06.ogg` + `.loop.ogg`
+ *   = 30.9678 + 74.3226 = **105.2904 s**（thcrap bgmmod 的 `intro_size` = 第一个文件的解码字节）。
+ *   `th18_06b_rearr` 一份文件服务两个口径 ⇒ 拿 105.29 s 的素材按 6.5074 s 的循环点播，
+ *   每圈往回跳 **24.46 s**。现在两份文件（`…wav` 零售 / `…le.wav` leveledit）+ 这道闸。
+ *
+ * 单位：字节。`tol` 传 **1 帧**（= block_align，2ch/16bit ⇒ 4 B）；换算里有向下取整，
+ *   一手的两条口径在实测里差 0–1 帧（leveledit 的 ogg 解码帧数取整），所以给 1 帧余量。
+ */
+
+/* `engine` 口径的字节数 → 我们的字节数（`e_avg` = 主曲 fmt 的 avg，`our_avg` = 素材的 avg）。
+ * `e_avg`/`our_avg` 任一为 0 ⇒ 0（不猜）。*/
+uint32_t trance_bgm_caliber_bytes(uint32_t e_bytes, uint32_t e_avg, uint32_t our_avg);
+
+/* 口径闸：`mat_bytes`（素材真实字节数，可传全长或 intro 长度）与主曲换算值是否相符（±tol）。
+ * 返回 1 = 相符；0 = 不符。**不符 ⇒ 不接管**（保持主曲），绝不"先放上去再说"。*/
+int trance_bgm_caliber_match(uint32_t mat_bytes, uint32_t e_bytes,
+                             uint32_t e_avg, uint32_t our_avg, uint32_t tol);
+
+/* intro 闸（`trance_bgm.c` 的 `bgm_seek_to_engine` 用；也是"别把 intro_size 写成 0"的最后一道）：
+ *   `intros`    = 本次要写进我们自己 fmt 的 intro 字节数（主曲 fmt 换算出来的）
+ *   `cal_intro` = 加载时**口径匹配**给出的 intro 字节数（= 素材自带 intro 的正身）
+ *   `tol`       = 1 帧
+ * 返回 0 = 通过；
+ *     -1 = 素材自带 intro（cal_intro ≠ 0）而这次算出来是 **0** ⇒ **拒绝接管**：
+ *          写 `intro_size = 0` 会让引擎每播完一圈就回到文件开头 = **每圈重放 intro**；
+ *     -2 = 两边差 > tol（主曲 fmt 在这几帧里被换过 / 读到了别的口径）⇒ 拒绝接管。*/
+int trance_bgm_intro_gate(uint32_t intros, uint32_t cal_intro, uint32_t tol);
 
 /* ---- 曲名：TH13 的 b 变体命名法 ----
  * 一手（`th13:0x405b1d`）：把当前曲名里**扩展名前的那个 `.` 覆盖成 `'b'` + NUL**

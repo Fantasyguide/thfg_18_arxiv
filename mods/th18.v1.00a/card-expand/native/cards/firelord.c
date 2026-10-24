@@ -51,6 +51,9 @@ static void impact_fx(float x, float y, float z)
     ce_screen_shake(FL_SHAKE_TIME, FL_SHAKE_START, FL_SHAKE_END);
 }
 
+#define FL_SWEEP_MONEY 1   /* ★ 2026-10-24 owner 削弱：3 → 1 张 */
+static uint32_t s_fl_sweep_seen;
+
 static void dismiss(ce_card_t *c, const char *why)
 {
     fl_state_t *s = ce_state(c, fl_state_t);
@@ -116,6 +119,18 @@ static int on_active_tick(ce_card_t *c, uint32_t elapsed)
     fl_state_t *s = ce_state(c, fl_state_t);
     uint8_t *p = CE_PLAYER();
     if (!s || !p) return 0;
+    /* ★★ 2026-10-24（92 清扫，owner：炎魔这类召唤实体也要清、换成 **3 张**金钱卡）*/
+    if (s->anm_id && ce_sweep_should_run(&s_fl_sweep_seen)) {
+        float wp[3];
+        int k;
+        wp[0] = s->x; wp[1] = s->y; wp[2] = s->z;
+        for (k = 0; k < FL_SWEEP_MONEY; ++k) {
+            if (!ce_spawn_item(0x12u, wp, -1.5707964f, 1.7f)) ce_money_pocket(1);   /* ★ 0x12 = **金钱卡**（不是金钱点 type 2）*/
+        }
+        ce_log_key("firelord: 92 清扫 —— 炎魔换成金钱（%d 枚）", FL_SWEEP_MONEY);
+        dismiss(c, "gw sweep");
+        return 0;
+    }
     if (s->intro_left > 0) {                               /* 登场聚气：目标位置每帧几颗向中心汇聚的粒子；本体、判定、血条都还没有 */
         fl_step_t st = fl_step(s, 0);
         float pz = ce_player_pos()[2];

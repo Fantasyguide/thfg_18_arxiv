@@ -1,0 +1,30 @@
+script script473 {
+    /* 109 · 蓄力条 HUD 文字的**一个字形**（16×16，一格一台 VM）—— 复刻 TH19 的**一手画法**。
+     *
+     * 一手出处（TH19 v1.10c，2026-10-24 读）：
+     *   · 字形 = `data/ANM/ascii/ascii_1280.png` 的**三行细体**（y=176/192/208，格 16×16、32 格/行）；
+     *     `data/ascii1280.anm` 的 sprite 表里**原生就有**这 96 格（`sprite98..193 = 16×16`，
+     *     `thanm -l 8` 一手）= `sprite98: { x: 0, y: 176, w: 16, h: 16 }` …
+     *     ⇒ 本仓用 `ATLAS_POFV109_ASC`（`assets/ability/ascii/POFV109_ASC_C00..C95.png`）**逐像素照切**。
+     *   · 文字本体 = 引擎的"字符串入队 + 逐字画"那套（`FUN_004e7610` → `FUN_004e6c30` → 每帧
+     *     `FUN_004e5850` 逐字设 sprite/pos/color 再画）；本仓没有那个 API 的等价物
+     *     （`ce_hud_text_ex` 只能在 `on_draw` 里、卡侧调不到 ⇒ 实测日志有、像素无），
+     *     所以**用 VM 复刻同一条链**：**一个字形 = 一台 VM**，卡侧每帧 `ce_anm_set_sprite` 换格号 ✓。
+     *
+     * 与同卡其它 HUD 脚本同款口径（先例 422 / 425 / 426）：
+     *   `layer(25)`（HUD 层）+ `resolutionMode(2)`（1 单位 = 1 表面 px，贴图 16 texel = 16 表面 px）。
+     * 锚点 = **精灵默认锚（锚心）** ⇒ 卡侧给的是**格子中心**（左上角 + 8, +8）。
+     * 顶点色**恒白**（这里写死、卡侧每帧再按 TH19 的一手色覆写）—— 字号/缩放恒 1.0，
+     * 不缩放（一手就是 16 px 这一档；16 格×32 = 512 满宽 ⇒ 1:1 才是原版尺寸）。*/
+    sprite(@POFV109_ASC_C00);   /* 默认 = 空格那一格（C00 全透明）；卡侧每字换 `C00 + 格号` */
+    layer(25);
+    resolutionMode(2);
+    resampleMode(1);
+    color(255, 255, 255);
+    color2(255, 255, 255);
+    alpha(255);
+    alpha2(255);
+    stop();
+    interruptLabel(1);
++20: delete();
+}

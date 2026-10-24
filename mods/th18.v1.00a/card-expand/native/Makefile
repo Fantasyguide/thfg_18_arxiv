@@ -2,9 +2,19 @@
 ROWS ?= 255
 PATCH := ../patch/th18.v1.00a.js
 
-.PHONY: all quick check package gen verify files clean test-host anm anm-verify atlas-check sht sht-verify ecl ecl-ufo snd-check voice dll dllx87 dllverify
+.PHONY: all quick check package gen verify files clean test-host anm anm-verify atlas-check sht sht-verify ecl ecl-ufo snd-check voice dll dllx87 dllverify dev
 
 all: quick dll
+
+## dev —— ★ owner 的唯一开发/发布入口（2026-10-20）：校验 → 构建 → 发布 → 回读 → 汇总。
+##   任何一步红就停，并打印「哪一步 / 为什么 / 怎么修」；不会在 main 上构建，不会带冲突标记构建。
+##   用法（modkit 路径必须传，脚本不写死本机路径）：
+##     make dev MODKIT_DIR="/mnt/d/项目/幻想指南/18/th18_modkit"
+##     make dev MODKIT_DIR="..." DEVFLAGS="--skip-build"
+##     make dev MODKIT_DIR="..." DEVFLAGS="--full"        # 额外核对发布 zip 与 modkit 同批
+dev:
+	python3 tools/devbuild.py --modkit "$(MODKIT_DIR)" $(DEVFLAGS)
+
 
 ## quick —— 日常开发反馈：主机 C 单测 + 可导入的 Python 单测。
 quick: test-host
@@ -36,7 +46,10 @@ check: quick cards-check anm-verify sht-verify snd-check dllx87 dllverify
 	python3 tools/engine_abi_check.py
 	python3 tools/anm_hud_alpha_check.py
 	python3 ../assets/check_anm_rules.py   # ★ 2026-10-15：anm「看不见」类 linter（弧类缺 iset($I1) / rotate(0) 零弧）
-	python3 tools/check_modkit_packages.py --modkit "$${MODKIT_DIR:-/mnt/d/项目/幻想指南/18/th18_modkit}"; rc=$$?; if [ $$rc -eq 2 ]; then echo "  ⚠ 本机没装那个 modkit ⇒ 同开护栏跳过（装了就是硬拦）"; else exit $$rc; fi
+	@python3 tools/check_modkit_packages.py --modkit "$${MODKIT_DIR:-}" >/tmp/.mkpkg.log 2>&1; rc=$$?; \
+	 if [ -z "$${MODKIT_DIR:-}" ]; then echo "  ⚠ 没给 MODKIT_DIR ⇒ 同开护栏跳过（本步不猜本机路径）"; rc=0; fi; \
+	 if [ $$rc -eq 2 ]; then echo "  ⚠ 该 modkit 没装 ⇒ 同开护栏跳过（装了就是硬拦）"; rc=0; fi; \
+	 if [ $$rc -ne 0 ]; then cat /tmp/.mkpkg.log; exit $$rc; fi; echo "  ✓ modkit 同开护栏通过"
 	python3 ../../../../tooling/check-docs.py
 
 ## package —— 生成可安装的完整发布包。
@@ -65,6 +78,9 @@ voice_ids.h: ../assets/voice/ORDER.txt $(wildcard ../assets/voice/*.wav) ../patc
 ##             见 pl_anm_ids.h）→ build/
 ## ability-text —— 原版卡（id < 57）的文案：改 `ability.txt`（逐字节外科手术，源在 local/）。
 ##   为什么不是 cards.js：`native/text.c` 的文案重定向只覆盖 id >= 57（见 assets/derive_ability_txt.py 的头注）。
+##   ★★ 2026-10-19：**同时生成 `patch/th18/abilities.js`** —— 光盖 `ability.txt` 会被 base_tsa 的
+##      `gentext#card_desc`（`th18/abilities.js`，lang_zh-hans 自带中文原生文本）在运行时整段换掉；
+##      我们排在 lang_zh-hans 之后，JSON 合并后 `"0_0"` 才是空白卡说明的真正来源（见脚本头注）。
 ability-text:
 	python3 ../assets/derive_ability_txt.py
 
@@ -163,9 +179,16 @@ CC      := $(TOOLCHAIN)/bin/i686-w64-mingw32-gcc
 OBJDUMP := $(TOOLCHAIN)/bin/i686-w64-mingw32-objdump
 endif
 DLL       := th18_card_expand.dll
+# ★★★ 日志总闸（定义在 `sdk/public.h`）：0 = 全关（**发布默认**，`ce_log` 编译成 `((void)0)`）
+#   1 = 只留关键行（build 戳 / 错误·FAIL / 一次性状态）　　2 = 全部（= 改造前的行为，排查用）
+#   用法：`make dll CE_DEV_DUMP=2`。★ make 不跟踪命令行变量 ⇒ 用 `build/.dev_dump` 记下当前值，
+#   值一变就写新戳 ⇒ 所有 .o 重编（否则「刚编过 0 档，再 CE_DEV_DUMP=2」会静默什么都不做）。
+CE_DEV_DUMP ?= 0
+DUMP_STAMP  := build/.dev_dump
+$(shell mkdir -p build; [ "`cat $(DUMP_STAMP) 2>/dev/null`" = "$(CE_DEV_DUMP)" ] || echo $(CE_DEV_DUMP) > $(DUMP_STAMP))
 # -fno-math-errno：让 sqrtf 编成一条 sqrtss。不加的话它会带一条「负数就调 libm 设 errno」的退路，
 # 而 libm 的 float 返回值走 st0，我们这边接它就得用 fstp —— 直接顶掉下面 dllx87 的「零 x87」不变式。
-CFLAGS    := -O2 -Wall -Wextra -mfpmath=sse -msse2 -fno-math-errno -I.
+CFLAGS    := -O2 -Wall -Wextra -mfpmath=sse -msse2 -fno-math-errno -I. -DCE_DEV_DUMP=$(CE_DEV_DUMP)
 LDFLAGS   := -shared -static-libgcc -s -lkernel32 -luser32 -Wl,--no-insert-timestamp
 
 ## dll    —— 编 DLL（依赖 gen 出的 sites_gen.h）
@@ -176,7 +199,7 @@ OBJS      := $(SRCS:.c=.o)
 ##   （2026-09-12 实际踩到：`sdk/public.h` 里的 `ce_hooks_t` 尾部加了新槽，而它不在表里
 ##    ⇒ 别的卡的 .o 不会重编，新的 `sdk.c` 会去读它们那截短的旧结构 = 越界读）。
 ##   `anm_ids.h` 同理（`sdk.h` include 它，`make anm` 会重写它）。`sdk/*.h` 用通配兜住。
-%.o: %.c card_expand.h sites_gen.h thcrap_bp.h cards_def.h sdk.h sdk_core.h engine.h shop_core.h sound.h voice_ids.h sht_ids.h anm_ids.h $(wildcard sdk/*.h) $(wildcard cards/*.h)
+%.o: %.c card_expand.h sites_gen.h thcrap_bp.h cards_def.h sdk.h sdk_core.h engine.h shop_core.h sound.h voice_ids.h sht_ids.h anm_ids.h $(DUMP_STAMP) $(wildcard sdk/*.h) $(wildcard cards/*.h)
 	$(CC) $(CFLAGS) -c -o $@ $<
 $(DLL): $(OBJS) th18_card_expand.def
 	$(CC) $(CFLAGS) -o $@ $(OBJS) th18_card_expand.def $(LDFLAGS)
@@ -218,6 +241,11 @@ test-host:
 ##   以及「快照只在正常态采、同一次 miss 只写一遍」。
 	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_ice_cream_core tests/test_ice_cream_core.c cards/ice_cream_core.c
 	./tests/build/test_ice_cream_core
+## ★ 2026-10-19（70 腐化 × 原生 23 死秽回避）：**「死亡消耗了 B」记进预算**的纯逻辑 ——
+##   MAX −= spent（钳 ≥0）+ CURRENT = MAX（"B 还是满的"）；连撞 7/7→5/5→3/3→1/1→0/0；
+##   没有事件（按 B 自救 / 救场卡）时一个数都不动。语义见 cards/corruption_core.h 头注。
+	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_corruption_core tests/test_corruption_core.c cards/corruption_core.c
+	./tests/build/test_corruption_core
 ## ★ 2026-10-03（92 伟大之作）：血量 → 金钱枚数（至少 1 / 至多上限）与「转换量 → 冷却帧数」
 ##   （底价 + 弹幕数·单价 + 血量·单价，钳上下限）。
 	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_great_work_core tests/test_great_work_core.c cards/great_work_core.c
@@ -270,6 +298,11 @@ test-host:
 	./tests/build/test_faith_core
 	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_mof_core tests/test_mof_core.c cards/mof_core.c cards/faith_core.c
 	./tests/build/test_mof_core
+## ★ 2026-10-19（owner 实跑：118「已经拥有的卡还会再发一张」）：发放计划纯逻辑 ——
+##   区间 106..117 / 109 恒不发 / `owned[id] != 0` ⇒ 不发 / 升序 / cap / NULL 不挡。
+##   一手理由 = `0x411460` 自己不查 `owned[]`（见 `cards/give12_core.h` 头注释）。
+	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_give12_core tests/test_give12_core.c cards/give12_core.c
+	./tests/build/test_give12_core
 ## test_mof_green_core —— ★★ 2026-09-18（110 变绿）：名单表的**不变式**（脚本差 ÷ 5 == 变体差、
 ##   sprite 差 == 变体差 × 12）+ 判据（只认「此刻真的改上了」的行、只认 enemy.anm）+ 关掩码与逐帧计划 +
 ##   内存原语（swap 备份 / apply 幂等 / restore 精确还原）+ 运行期同形体检。见 `cards/mof_green_core.h`。

@@ -2,6 +2,10 @@
 
 > **版本**：TH18 v1.00a（`th18.exe`，imagebase `0x400000`）。本文裸地址默认属该版本；引用其他版本须写成 `th16:0x…`。
 
+**素材来源与版权：[`NOTICE.md`](NOTICE.md)** —— 本 mod 的部分图像 / 音效**切自其他东方 Project 作品**
+（及少数第三方游戏），逐条登记了「哪些是我们自绘/程序生成的、哪些是切来的、切自哪一作哪张图」、
+版权归属（上海アリス幻樂団 / ZUN）与「权利方要求即移除」的承诺；**灵界版 BGM 的 MIDI 来源**也在里面。
+
 把 `zTableCardData[]` 从 `.data` 搬进 codecave，为「加新卡」腾出行数。
 **「加一张卡到底改了什么」的追溯表在 [`MAP.md`](MAP.md)**——150 条 binhack、7 个断点、5 个 codecave 各自的出处。
 **想加一张卡：读 [`DATA.md`](DATA.md)**（登记，JSON）和 **[`SDK.md`](SDK.md)**（行为，C）；已有的卡在 [`CARDS.md`](CARDS.md)。

@@ -1080,6 +1080,24 @@ SDK_SITES = [
     ("ce_bomb_spent", 0x4203bc, 5, "a1c0f24c00",
      "do_bomb 里 consume_bomb(0x4574d0) **刚返回**那一条：mov eax,ds:0x4cf2c0，5 字节绝对寻址无相对量。"
      "0x4574d0 全库只有 0x4203b7 一个调用方，所以这里不多不少覆盖每一次炸弹消耗；沿卡链表调 on_bomb_spent()"),
+    # ★★★ 2026-10-19（腐化 70 × 原生卡 23 死秽回避之药 = 简单无敌）：**死亡回避的 B 消耗**必须单独成事件 ——
+    #   它**不走** consume_bomb（上面那条抓不到），所以带 70 时那 1–2 发会被「每帧钉 CURRENT = MAX」白送回。
+    #   一手全链（AUDIT §BE `BE-CORRUPTION-DEATHSAVE-2026-10-19`）：
+    #     · `Card__death_save_bomb_revive` `0x40a2a0` 在 `0x40a3ed` / `0x40a42c` 各做一次
+    #       「CURRENT_BOMBS 0x4ccd58 − 1 → 钳 0 → 钳 MAX_BOMBS 0x4ccd64」，**从不写 MAX**；
+    #     · 全函数唯一调用方 = `0x40a534`（在 `CardEirin__on_player_death_after_deathbomb` `0x40a4f0` 里，
+    #       = 原生卡 23 的虚表 `+0x0c` 处理器；`+0x0c` 由 `Player__on_tick__body` `0x45c114`–`0x45c121` 广播（`call [eax+0xc]` + `or edi,eax`）、
+    #       返回值被 OR 起来、非 0 就跳过 `0x45d090` 的扣命 ⇒ 这就是「免费命」的来源）；
+    #     · 站点选在两扣**之后**的汇合点 `0x40a44b`：`8b 86 84 77 04 00` = mov eax,[esi+0x47784]
+    #       （6 字节、无相对寻址、窗内无分支；`0x40a434 je 0x40a44b` 落在**窗口首字节** ⇒ 安全）。
+    #       此刻 **MAX 未动、CURRENT 已扣完** ⇒ `spent = MAX − CURRENT` = 这一次真正花掉的发数（1 或 2；
+    #       含别的卡在 `+0x10` 里先扣的那一发，如 108 的「有 106 ⇒ 多扣 1」—— 但 70 每帧钉 CURRENT=MAX
+    #       会把那种卡侧写入抹掉，所以 108 自己也要 `ce_death_save_spent_note()` 报一次）。
+    ("ce_death_save_spent", 0x40a44b, 6, "8b8684770400",
+     "Card__death_save_bomb_revive 0x40a2a0 两处扣 B（0x40a3ed / 0x40a42c）之后的汇合点："
+     "mov eax,[esi+0x47784]（6 字节、无相对寻址）。此刻 MAX_BOMBS(0x4ccd64) 未动、CURRENT_BOMBS(0x4ccd58) 已扣完 "
+     "⇒ spent = MAX − CURRENT = 这次死亡回避真正花掉的 B 数；沿卡链表调 on_death_save_spent(spent)。"
+     "★ 这条路不走 consume_bomb ⇒ ce_bomb_spent 抓不到；不单独记账时「腐化」会让每次死亡免费"),
     ("ce_enemy_drop", 0x430510, 6, "558bec83ec20",
      "Enemy__drop_items_and_notify_cards 入口（thiscall，**ecx = zEnemyDrop = enemy+0x623c，不是敌人对象**；"
      "一手 0x430499 `lea ecx,[edi+0x623c]`、ECL dropItems 0x42d0c0 同）：push ebp/mov ebp,esp/sub esp,0x20，无相对寻址。"
@@ -1368,6 +1386,10 @@ _SDK_KEEP_NAMED = {
     "ce_option_shot_gate",            # 0x40a9c3：装备卡子机开火闸（113 灵界 / 117 咆哮）
     "ce_item_score_in",               # 0x446bf9：**计分层唯一的落笔点**（107/110/111/113 的 ce_score_declare）
     "ce_bomb_spent",                  # 0x4203bc：六张卡的 .on_bomb_spent（corruption/senro/signal/th06rank/truesilver/whirlwind）
+    # ★ 2026-10-19（腐化 70 × 原生 23）：**死亡回避的扣 B 不走 consume_bomb** ⇒ 单独成事件。
+    #   不装 = 带 70 时每次死亡免费（原 bug 原样复现）；消费方只有 70 的 .on_death_save_spent。
+    #   站点窗口四项（`sitecheck.py 0x40a44b 6`）：W1 长度 6≥5 / W2 整指令 1 条 6 字节 / W3 窗内无分支 / W4 零重叠 ✓。
+    "ce_death_save_spent",            # 0x40a44b：原生卡 23（死秽回避之药）的死亡回避消耗（1–2 发）
     "ce_repopulate_native_option",   # 111：不建原生 4 格子机（并走引擎自己的清空）
     "ce_native_option_muzzle",       # 111：原生子机膛口发出的弹**整发跳过**（激光与导弹都在这条上）
     # ★★ 2026-09-19（owner 口径「对于明确是bug的部分，先解决吧」）：把**功能站点**从 `i < 10` 的
@@ -1815,6 +1837,7 @@ def emit_header(sites, unlock_reads, order_sites, menu_binhacks):
               # "#define CE_BP_ITEM_SCORE_IN_RVA ...
               "#define CE_BP_ITEM_MONEY_RVA 0x%06x" % (_sdk_rva("ce_item_money") - 0x400000),
               "#define CE_BP_BOMB_SPENT_RVA 0x%06x" % (_sdk_rva("ce_bomb_spent") - 0x400000),
+              "#define CE_BP_DEATH_SAVE_SPENT_RVA 0x%06x" % (_sdk_rva("ce_death_save_spent") - 0x400000),
               "#define CE_BP_ENEMY_DROP_RVA 0x%06x" % (_sdk_rva("ce_enemy_drop") - 0x400000),
               "#define CE_BP_ITEM_FRAME_RVA 0x%06x" % (_sdk_rva("ce_item_frame") - 0x400000),
               "#define CE_BP_ITEM_COLLECT_RVA 0x%06x" % (_sdk_rva("ce_item_collect") - 0x400000),

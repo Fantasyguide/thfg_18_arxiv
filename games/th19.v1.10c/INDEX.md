@@ -126,4 +126,16 @@ RTTI 链子跑完（`local/th19.v1.10c/th19-rtti.json`，448 个 vftable），ZU
   [`games/th20.v1.00a/INDEX.md`](../th20.v1.00a/INDEX.md) §2b-3 / §2b-4。
 - 兄弟作（TH09 花映塚）：[`games/th09.v1.50a/INDEX.md`](../th09.v1.50a/INDEX.md)、
   [`engine/versus/th09/01`](../../engine/versus/th09/01-versus-loop.md)。
+## ★★★ 2026-10-16 · **`th19.exe` 代码段是密文 ⇒ 静态反汇编（含 Ghidra）读不到真代码**（实测 ✓）
+
+★ `th19.exe`（**2163416 字节** ✓）：★ **`.text` 熵 = 8.000** ✓（★ 完美均匀 ⇒ 压缩/加密 ✓；★ 正常 x86 ≈ 6.0–6.5 ✓），
+★ 头/中 16 字节 `b30b0c26…`／`22890cbe…` ✓（★ 随机样 ✗）；★ 对照 `.rdata` 熵 **4.966** ✓（正常 ✓）。
+★ **无** `UPX`/`ASPack`/`Petite`/`Themida` 特征串 ✗ ⇒ ★ 不是特征壳 ✓、★ 是**自带解密** ✓。
+★ `bootstrap.py th19`：★ 只认出 **184 个"函数"** ✗，★ **全在 `.bind`（数据段 ✓）** ✗（最大者 `0x654315` = RVA `0x254315` ✓）；
+★ 搜 opcode `0x2BC`/`0x2BD` ⇒ ★ **0 命中** ✗。
+⇒ ★ 要读 TH19 引擎代码（如 ECL 解释器 handler ✓）★ **必须先有运行时解包映像** ✓（★ 起游戏后内存 dump／脱壳 ✓）；
+★ 这也**解释**了此前的 ★ `decomp/all.c`（≈7.6 MB ✓）★ 只能来自运行时映像 ✓。
+★ **数据侧可用** ✓：★ `…/th19/data/` 的 `plXX.ecl`／`*.anm` ✓ ⇒ ★ `thecl -d 19 -j -x` ／ `thanm -l 19` 可文本化 ✓
+★（★ **必验字节数** ✗：★ 失败时重定向留 **0 字节**空文件 ✓ —— 本次踩过 ✓）。
+
 - 挖库手册：[`tooling/ghidra/README.md`](../../tooling/ghidra/README.md)。

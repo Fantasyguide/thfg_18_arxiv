@@ -49,7 +49,10 @@
  *        （原生 **script49** 同配方），0→24 帧**慢**长到 90 半径、24→34 帧**快**冲到 640
  *        （罩满游玩区），颜色一路**慢慢**转成纯白 ⇒ **顶点 = 纯白 + 满 alpha = 全屏白（"全屏死亡"）**。
  *   三者都在释放点、同一帧起（"几乎同时"）；光线在层 6（原生层号），圆盘在层 19。*/
-#define GW_RAYS_SCRIPT        400      /* 金色威光总控（照原生 script47）*/
+#define GW_RAYS_SCRIPT        CE_ANM_ABILITY_SCRIPT_GREAT_WORK_RAYS   /* ★ 2026-10-24 修：原来写死 400，
+                                                     *   而 ability.anm 的 400 = **109 的神灵本体（狼灵贴图）**
+                                                     *   ⇒ 按 92 会画出一只跟着自机的横着的狼灵 VM。
+                                                     *   92 的威光总控是 **394**（`394_great_work_rays`）。*/
 #define GW_RAYS_LAYER         6        /* 原生层号（script47/48 的 layer(6)）*/
 /* 三个脚本的自然寿命（比脚本里的 `delete()` 略短 —— **必须在 VM 还活着时清句柄**，
  *  否则 VM 池把 id 回收给别人之后，我们会去动别人的 VM）。*/
@@ -109,11 +112,16 @@ typedef void (__attribute__((thiscall)) *gw_fn_player_die_t)(void *player);
 typedef void (__attribute__((thiscall)) *gw_fn_commit_death_t)(void *player);
 
 /* 把这张卡的充能**当帧改成** `frames`（照引擎写充能那一支：zTimer 的 prev/cur/cur_f + 总时长）。*/
+/* ★★ 2026-10-24（owner：**换面不清零**）—— 卡对象重建 / 换面时充能三元组会回到默认。
+ *   ⇒ 文件级记住「当前剩余帧」，每帧同步，换关时写回。*/
+static int32_t s_gw_recharge_left;
+
 static void gw_set_recharge(ce_card_t *c, int32_t frames)
 {
     uint8_t *p = (uint8_t *)c;
     if (!p || frames < 0) return;
     *(int32_t *)(p + CE_CARD_RECHARGE_TIMER)     = frames - 1;      /* +0x34 prev */
+    s_gw_recharge_left = frames;
     *(int32_t *)(p + CE_CARD_RECHARGE_TIMER + 4) = frames;          /* +0x38 cur  */
     *(float   *)(p + CE_CARD_RECHARGE_TIMER + 8) = (float)frames;   /* +0x3c cur_f*/
     *(int32_t *)(p + CE_CARD_RECHARGE_TIME)      = frames;          /* +0x48 总时长 */
@@ -294,6 +302,9 @@ static int gw_take_enemies(int64_t *hp_sum, int32_t *money, int32_t *breaks)
         ce_log("great_work: 其中 %d 只带免伤位 —— 照写 life = 0 杀掉（不走伤害闸）", no_dmg);
     if (n == 0 && dead)
         ce_log("great_work: 没可转的敌人（已死/收尾 %d）", dead);
+    /* ★ 2026-10-24：1 档也要能看出「这一扫到底看到几只」 */
+    ce_log_key("gw: enemies n=%d dead=%d no_dmg=%d money=%d breaks=%d",
+               n, dead, no_dmg, *money, *breaks);
     return n;
 }
 
@@ -375,10 +386,20 @@ static void gw_resolve(ce_card_t *c)
                        *(int32_t *)(pl + CE_PLAYER_STATE));
             }
         } else {
-            ce_log("great_work: 自机在无敌中 ⇒ 豁免这一死（owner 口径）");
-        }
+              /* ★★★ 2026-10-24（owner：**「削弱一下：无敌挡伟大之作，会让无敌帧清零」**）——
+               *   原来豁免这一死之后无敌还剩多少就留多少（恋恋那 4 帧能白嫖一次结算）。
+               *   ⇒ 现在豁免的同时**把自机无敌计时器清零**（prev/cur/cur_f 全写 0）：
+               *     豁免的代价 = 无敌立刻用完，不能既躲掉死亡又继续无敌。*/
+              if (inv) {
+                  const int32_t had = inv->cur;
+                  inv->prev = 0; inv->cur = 0; inv->cur_f = 0.0f;
+                  ce_log("great_work: 自机在无敌中 ⇒ 豁免这一死，并清零剩余无敌帧（原剩 %d 帧）", (int)had);
+              } else {
+                  ce_log("great_work: 自机在无敌中 ⇒ 豁免这一死（无计时器可清）");
+              }
+          }
     }
-    ce_log("great_work: (顶点结算) converted %d bullets + %d enemies + %d items + %d faith dots "
+    ce_log_key("great_work: (顶点结算) converted %d bullets + %d enemies + %d items + %d faith dots "
            "(%d from faith) (hp %lld) -> %d money items, %d boss phase(s) broken; recharge %d frames (%.1f s)",
            bullets, enemies, items, faith_n, (int)faith_money, (long long)hp_sum, money, breaks,
            frames, (double)frames / 60.0);
@@ -487,6 +508,9 @@ static void gw_fx_kill(ce_card_t *c)
  *      落到别人头上的同号 VM。三条生命周期（换关/局末/删卡）那条路才真删（那时它们一定还在窗口内）。*/
 static int on_tick_2(ce_card_t *c)
 {
+    /* ★ 每帧同步剩余冷却：换面时写回的是「剩下的」，不是整段 */
+    {   const int32_t r = *(const int32_t *)((const uint8_t *)c + CE_CARD_RECHARGE_TIMER + 4);
+        if (r >= 0) s_gw_recharge_left = r; }
     gw_card_t *s = ce_state(c, gw_card_t);
     const float *pp;
     if (!s) return 0;
@@ -505,8 +529,13 @@ static int on_tick_2(ce_card_t *c)
     return 0;
 }
 
-static void on_stage_start(ce_card_t *c) { gw_fx_kill(c); }
-static void on_run_reset(ce_card_t *c)   { gw_fx_kill(c); }
+static void on_stage_start(ce_card_t *c)
+{
+    gw_fx_kill(c);
+    /* ★ 换面不清零：把上一面剩下的冷却写回来 */
+    if (s_gw_recharge_left > 0) gw_set_recharge(c, s_gw_recharge_left);
+}
+static void on_run_reset(ce_card_t *c)   { gw_fx_kill(c); s_gw_recharge_left = 0; }
 static void on_delete(ce_card_t *c)      { gw_fx_kill(c); }
 
 CE_CARD(92, .active_recharge = GW_BASE, .on_activate = on_activate, .on_tick_2 = on_tick_2,

@@ -235,9 +235,10 @@
 
 | 写者 | 文件:行号 | 写什么 | 什么时候写 | 删卡/换关写回？ | 判定 |
 | --- | --- | --- | --- | --- | --- |
-| **70 腐化** | `cards/corruption.c:32`/`33` | `MAX_BOMBS = 7`、`CURRENT = MAX` | `ctor`（每关开场引擎再调一次，`ce_fresh_acquire` 挡掉） | ✅ `on_delete` 写回 7（`:99`）+ 钳当前数 | **设计如此**（`AUDIT` §BE 2026-09-12 已修） |
-| **70 腐化** | `cards/corruption.c:44` | `MAX_BOMBS -= 1` | 每次 `on_bomb_spent` | ✅ 同上 | 同上 |
-| **70 腐化** | `cards/corruption.c:56`/`69` | `CURRENT_BOMBS = MAX_BOMBS` | `on_stage_start` + **每帧** `on_tick_2` | ✅ 删卡后不再钉 | 设计如此，**但与 58–62 / 79 互作**（§1.7.1、§2.2） |
+| **70 腐化** | `cards/corruption.c:63`/`64` | `MAX_BOMBS = 7`、`CURRENT = MAX` | `ctor`（每关开场引擎再调一次，`ce_fresh_acquire` 挡掉） | ✅ `on_delete` 写回 7（`:161`）+ 钳当前数 | **设计如此**（`AUDIT` §BE 2026-09-12 已修） |
+| **70 腐化** | `cards/corruption.c:74`–`76` | `MAX_BOMBS -= 1` + `CURRENT` 拉回 `MAX`（"B 还是满的"） | 每次 `on_bomb_spent`（**正常 B**，走 `consume_bomb` `0x4574d0`） | ✅ 同上 | 同上 |
+| **70 腐化** | `cards/corruption.c:107`–`115` | ★ **`MAX_BOMBS -= spent`**（`spent` = 1 或 2）+ `CURRENT = MAX` | ★ **死亡消耗**：① 原生死亡回避（`0x40a2a0` 只扣 `CURRENT`）经新站点 `ce_death_save_spent` `0x40a44b` 上报；② 卡侧 `ce_death_save_spent_note()`（108 的「有 106 多扣 1」） | ✅ 同上（`on_delete` 写回 7） | **设计如此**（owner 2026-10-19「只动上限、B 还是满的」；`AUDIT` §BE `BE-CORRUPTION-DEATHSAVE-2026-10-19`） |
+| **70 腐化** | `cards/corruption.c:87`/`131` | `CURRENT_BOMBS = MAX_BOMBS` | `on_stage_start` + **每帧** `on_tick_2` | ✅ 删卡后不再钉 | 设计如此，**但与 58–62 / 79 互作**（§1.7.1、§2.2）|
 | **58–62 皇家** | `cards/royal.c:33` | `MAX_BOMBS += 1`（`<7` 才加） | 集齐五张那一刻（`ctor`） | ❌ 不写回（一次性赠予，无「撤销」概念） | **可疑**：与 70 语义互斥（§1.7.1） |
 | **58–62 皇家** | `cards/royal.c:29` | `LIVES_MAX += 1`（`<7` 才加） | 同上 | ❌ 不需要 | 设计如此 |
 | **69 加倍** | `cards/double.c:31` | `CURRENT_LIVES -= 1` | 每次 `+0x0c` | ❌ 无法回滚 | **已验证必错**（§1.2.1） |

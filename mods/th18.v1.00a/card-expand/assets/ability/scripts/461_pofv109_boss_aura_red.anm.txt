@@ -1,0 +1,17 @@
+script script461 {
+    // ★★★★★ 2026-10-25 owner：「**你直接拆掉换 layer5 的那个**」✓
+    //   一手 `effect.anm script18`（同一个 `BossCard6_et` 发射器的**副 sprite**，
+    //   `engine/anm/th18/08-bosscard-et-color-layer.md` §2）：
+    //     `ins_300(sprite6)` / `ins_304(5)` layer(5) / `ins_402(16,192)` 缩放 / `ins_400(128,384)` 位置 /
+    //     `ins_415(0,0,0.02617994)` 每帧转 0.026 rad
+    //   ⇒ 本脚本照它：**普通贴图（我们烤的径向渐变圆，256×256）+ layer(5) + 每帧自转**
+    //     ＋**默认混合（不写 blendMode = 普通 alpha）** ✓（反色那套 `blendMode(4)` 已拆掉 ✗）。
+    //     半径/颜色仍由卡侧每帧写（读 boss 的 fog 字段 ✓）。
+    sprite(@FOG_CIRCLE);   /* 资产名是 FOG_CIRCLE（无 POFV109_ 前缀）*/
+    layer(5);                        // ★ 一手：副层 5（在 21 之下）✓
+    alpha(128);                      // ★ 一手 script18 没写 alpha；取 128 半透（❓可调）
+    color(255, 255, 255);
+    angleVel(0.0f, 0.0f, 0.02617994f);   // ★ 一手：每帧 0.026 rad 自转 ✓
+    scale(1.0f, 1.0f);
+    stop();
+}

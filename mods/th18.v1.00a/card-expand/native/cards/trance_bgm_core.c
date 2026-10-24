@@ -9,6 +9,7 @@
 /* ------------------------------------------------------------------ fmt 记录 */
 
 void trance_bgm_fmt_init(trance_bgm_fmt_t *f, const char *name, uint32_t pcm_bytes,
+                         uint32_t intro_bytes,
                          uint32_t channels, uint32_t rate, uint32_t bits)
 {
     uint32_t ba, avg;
@@ -38,13 +39,54 @@ void trance_bgm_fmt_init(trance_bgm_fmt_t *f, const char *name, uint32_t pcm_byt
     f->cb_size            = 0;
 
     /* ★ 内存流路径的两个字段（一手 `th18:0x48acc0` 的 preload 分支）：
-     *   `track_size` = **读取窗口长度** ⇒ 给整段 PCM 全长；
-     *   `intro_size` = **循环回卷点** ⇒ 给 0 = 整段无缝循环。
-     *   `preload_size` 照引擎自己的口径与 track_size 取同值（TH18 全 18 条实测相等）。*/
+     *   `track_size` = **读取窗口长度** ⇒ 给整段 PCM 全长（= intro + 循环体）；
+     *   `intro_size` = **循环回卷点** ⇒ 给素材里 intro 段的字节数（**TH13 的 b 轨口径**：
+     *   带 intro，播完一整条回到 `intro_size` 处而不是回到 0）。
+     *   `preload_size` 照引擎自己的口径与 track_size 取同值（TH18 全 18 条实测相等）。
+     *
+     * ★★ 2026-10-24（方案 A，对齐 TH13）：素材**改成带 intro**了 —— 以前 `intro_size = 0`
+     *   （素材只装循环体），主曲还在 intro 段时只能从循环起点起播（差一整个 intro 剩余长度，
+     *   一手日志实测 17.1 s）。现在 `intro_bytes` 由卡侧按**主曲 fmt 的 intro_size**（一手值）
+     *   用 avg 比例换算后传进来 ⇒ 回绕点 = 原曲的循环点。
+     *   ⚠ 合法性：`0 <= intro_bytes < pcm_bytes` 且按 `block_align` 对齐（半帧会让回绕点串道）；
+     *   越界/半帧 ⇒ 退回 0（= 老行为：整段循环），**绝不写一个引擎会读越界的值**。*/
     f->track_offset = 0;               /* 内存流不看它（没有文件句柄）*/
     f->preload_size = (int32_t)pcm_bytes;
-    f->intro_size   = 0;
+    if (ba != 0u && intro_bytes > 0u && intro_bytes < pcm_bytes) {
+        intro_bytes -= intro_bytes % ba;              /* 对齐到整帧（block_align）*/
+        if (intro_bytes >= pcm_bytes) intro_bytes = 0u;
+    } else {
+        intro_bytes = 0u;
+    }
+    f->intro_size   = (int32_t)intro_bytes;
     f->track_size   = (int32_t)pcm_bytes;
+}
+
+/* ------------------------------------------------------------------ 口径（素材 vs 主曲） */
+
+uint32_t trance_bgm_caliber_bytes(uint32_t e_bytes, uint32_t e_avg, uint32_t our_avg)
+{
+    /* 64 位中间量：track 最大 43956512 B × 88200 会溢出 32 位乘法。*/
+    if (e_avg == 0u || our_avg == 0u) return 0u;
+    return (uint32_t)(((uint64_t)e_bytes * (uint64_t)our_avg) / (uint64_t)e_avg);
+}
+
+int trance_bgm_caliber_match(uint32_t mat_bytes, uint32_t e_bytes,
+                             uint32_t e_avg, uint32_t our_avg, uint32_t tol)
+{
+    uint32_t want = trance_bgm_caliber_bytes(e_bytes, e_avg, our_avg);
+    uint32_t diff = (mat_bytes > want) ? (mat_bytes - want) : (want - mat_bytes);
+
+    return diff <= tol;
+}
+
+int trance_bgm_intro_gate(uint32_t intros, uint32_t cal_intro, uint32_t tol)
+{
+    /* ★ 最要命的一条：素材带 intro（循环点 = cal_intro），但这次算出来 0
+     *   ⇒ 绝不能"intro_size = 0 硬上"（那 = 每圈从文件开头重放 intro）。*/
+    if (intros == 0u && cal_intro != 0u) return -1;
+    if (intros > cal_intro) return ((intros - cal_intro) <= tol) ? 0 : -2;
+    return ((cal_intro - intros) <= tol) ? 0 : -2;
 }
 
 /* ------------------------------------------------------------------ 曲名：TH13 的 b 命名法 */
@@ -247,9 +289,25 @@ int trance_bgm_core_selfcheck(void)
         if (trance_bgm_wav_parse(buf, sizeof buf, &w) != TRANCE_BGM_WAV_E_TRUNC) return 18;
     }
 
-    /* ⑥ 缓冲上限必须**够装最大的那条循环段**（否则那条曲子会被静默拒绝）。
-     *    14 首素材里最大的一条是 6 面关底 `th18_14b` = 18.79 MiB = 19701056 B（见头文件那条注释）。*/
-    if (TRANCE_BGM_MAX_PCM < 19701056u) return 17;
+    /* ⑥ 缓冲上限必须**够装最大的那条素材**（否则那条曲子会被静默拒绝）。
+     *    ★ 2026-10-24 起素材带 intro ⇒ 最大的一条 = 6 面关底 `th18_14b`
+     *    = `track_size / 2` = 43956512 / 2 = **21978256 B = 20.96 MiB**（见头文件那条注释）。*/
+    if (TRANCE_BGM_MAX_PCM < 21978256u) return 17;
+
+    /* ⑦ 口径闸：拿**真值**钉死（一手 = `thbgm.fmt` 的零售 `th18_06` + leveledit 的 ogg 对）。
+     *    零售 `th18_06`：track 19,766,272 B @avg 176400 ⇒ 22050 口径 9,883,136 B；
+     *                    intro 1,147,904 B ⇒ 573,952 B（= 6.5074 s）。
+     *    leveledit 主曲：105.2904 s ⇒ 2,321,653 帧 × 4 B = 9,286,612 B；intro 682,839 帧 = 2,731,356 B。
+     *    ⇒ 两条口径的总长差 **596,524 B（6.76 s）**，比 1 帧容差大四个数量级：
+     *      放错文件必被拒（这就是 06 那次"每圈往回跳 24.46 s"的正面防线）。*/
+    if (trance_bgm_caliber_bytes(19766272u, 176400u, 88200u) != 9883136u) return 19;
+    if (trance_bgm_caliber_bytes(1147904u, 176400u, 88200u) != 573952u)  return 20;
+    if (trance_bgm_caliber_match(9883136u, 19766272u, 176400u, 88200u, 4u) != 1) return 21;
+    if (trance_bgm_caliber_match(9286612u, 19766272u, 176400u, 88200u, 4u) != 0) return 22;
+    if (trance_bgm_caliber_match(9883136u + 8u, 19766272u, 176400u, 88200u, 4u) != 0) return 23;
+    if (trance_bgm_intro_gate(0u, 573952u, 4u) != -1) return 24;               /* 自带 intro 却算成 0 ⇒ 拒 */
+    if (trance_bgm_intro_gate(573952u, 573952u, 4u) != 0) return 25;
+    if (trance_bgm_intro_gate(573952u + 8u, 573952u, 4u) != -2) return 26;      /* 差 > 1 帧 ⇒ 拒 */
 
     return 0;
 }

@@ -54,7 +54,7 @@ static void test_fmt_init(void)
     char name[64];
 
     printf("§B fmt 记录构造\n");
-    trance_bgm_fmt_init(&f, "trance_bgm_placeholder.wav", 705600u, 2u, 44100u, 16u);
+    trance_bgm_fmt_init(&f, "trance_bgm_placeholder.wav", 705600u, 176400u, 2u, 44100u, 16u);
 
     CHECK(f.wfx_tag == 1, "tag = %u", f.wfx_tag);
     CHECK(f.channels == 2, "ch = %u", f.channels);
@@ -63,8 +63,8 @@ static void test_fmt_init(void)
     CHECK(f.block_align == 4, "block = %u", f.block_align);
     CHECK(f.bits_per_sample == 16, "bits = %u", f.bits_per_sample);
     CHECK(f.cb_size == 0, "cbSize = %u", f.cb_size);
-    /* ★ 内存流的两个字段：整段循环（intro 0）+ 读窗口 = 全长 */
-    CHECK(f.intro_size == 0, "intro = %d（必须 0 = 整段回卷）", f.intro_size);
+    /* ★ 内存流的两个字段：intro = 回绕点（TH13 的 b 轨口径）+ 读窗口 = 全长 */
+    CHECK(f.intro_size == 176400, "intro = %d（应为传入的 intro_bytes）", f.intro_size);
     CHECK(f.track_size == 705600, "track = %d", f.track_size);
     CHECK(f.preload_size == f.track_size, "preload(%d) != track(%d)（引擎自己的口径是相等）",
           f.preload_size, f.track_size);
@@ -77,20 +77,35 @@ static void test_fmt_init(void)
     CHECK(f.fn[15] == 0, "fn[15] 必须是 NUL");
 
     /* 超长名字 + 空名字都不许越界 */
-    trance_bgm_fmt_init(&f, "0123456789abcdefghijklmnop", 100u, 1u, 22050u, 8u);
+    trance_bgm_fmt_init(&f, "0123456789abcdefghijklmnop", 100u, 0u, 1u, 22050u, 8u);
     CHECK(f.fn[15] == 0, "超长名字后 fn[15] = %u", f.fn[15]);
     CHECK(f.block_align == 1 && f.avg_bytes_per_sec == 22050u, "8bit 单声道：block %u avg %u",
           f.block_align, f.avg_bytes_per_sec);
-    trance_bgm_fmt_init(&f, NULL, 100u, 2u, 44100u, 16u);
+    trance_bgm_fmt_init(&f, NULL, 100u, 0u, 2u, 44100u, 16u);
     CHECK(f.fn[0] == 0, "NULL 名字 ⇒ fn 全 0");
 
     /* 同样的入参两次 ⇒ 逐字节相同（纯函数，写进契约） */
     {
         trance_bgm_fmt_t a, b;
-        trance_bgm_fmt_init(&a, "x.wav", 1234u, 2u, 44100u, 16u);
-        trance_bgm_fmt_init(&b, "x.wav", 1234u, 2u, 44100u, 16u);
+        trance_bgm_fmt_init(&a, "x.wav", 1234u, 400u, 2u, 44100u, 16u);
+        trance_bgm_fmt_init(&b, "x.wav", 1234u, 400u, 2u, 44100u, 16u);
         CHECK(memcmp(&a, &b, sizeof a) == 0, "fmt_init 非确定性");
     }
+
+    /* ★★ intro_bytes 的合法性门（2026-10-24 方案 A）：
+     *   · 0 ⇒ 整段循环（老口径）；
+     *   · 按 block_align（4）对齐 —— 半帧的回绕点会让引擎从左右声道中间起播；
+     *   · intro >= pcm 或 block_align = 0 ⇒ 退回 0（绝不写出引擎会读越界的值）。*/
+    trance_bgm_fmt_init(&f, "x.wav", 705600u, 0u, 2u, 44100u, 16u);
+    CHECK(f.intro_size == 0, "intro_bytes=0 ⇒ 整段循环，实得 %d", f.intro_size);
+    trance_bgm_fmt_init(&f, "x.wav", 705600u, 176402u, 2u, 44100u, 16u);
+    CHECK(f.intro_size == 176400, "半帧 intro 必须向下对齐到 block(4)，实得 %d", f.intro_size);
+    trance_bgm_fmt_init(&f, "x.wav", 705600u, 705600u, 2u, 44100u, 16u);
+    CHECK(f.intro_size == 0, "intro == pcm ⇒ 退回 0（不能等于读窗口长度），实得 %d", f.intro_size);
+    trance_bgm_fmt_init(&f, "x.wav", 705600u, 999999u, 2u, 44100u, 16u);
+    CHECK(f.intro_size == 0, "intro > pcm ⇒ 退回 0，实得 %d", f.intro_size);
+    trance_bgm_fmt_init(&f, "x.wav", 705600u, 176400u, 0u, 44100u, 0u);
+    CHECK(f.intro_size == 0 && f.block_align == 0, "block 0 ⇒ intro 退回 0（不许除 0）");
 }
 
 /* ---------------- §C 分段长度（引擎公式） ---------------- */
@@ -281,6 +296,63 @@ static void test_wav_parse(void)
           "失败时没把出参清零");
 }
 
+/* ---------------- §H 口径闸（素材 ⟷ 主曲） ---------------- */
+/* ★★ 2026-10-24 `th18_06b` 错位事故的正面防线：一条素材只能服务**一个**主曲口径。
+ *   真值（一手）：
+ *     · 零售 `th18_06`（`thbgm.fmt`）：intro 1,147,904 B / track 19,766,272 B @avg 176400
+ *       ⇒ 22050/2ch/16bit 口径 = intro 573,952 B（6.5074 s）/ 全长 9,883,136 B（112.0537 s）
+ *     · leveledit 主曲（`th18_06.ogg` 30.9678 s + `th18_06.loop.ogg` 74.3226 s）：
+ *       intro 5,462,712 B / track 18,573,224 B ⇒ 22050 口径 = intro 2,731,356 B（30.968 s）
+ *       / 全长 9,286,612 B（105.2904 s）
+ *   ⇒ 两条口径总长差 **596,524 B**；放错 = 循环点按 6.5074 s 写、素材真 intro 到 30.968 s。*/
+static void test_caliber(void)
+{
+    const uint32_t E_AVG  = 176400u;          /* 主曲 fmt 的 avg（44100/2ch/16bit）*/
+    const uint32_t OUR_AVG = 88200u;          /* 我们素材的 avg（22050/2ch/16bit）*/
+    const uint32_t BA      = 4u;              /* block_align = 1 帧 */
+    const uint32_t R_TRACK = 19766272u, R_INTRO = 1147904u;    /* 零售 th18_06 @44100 */
+    const uint32_t L_TRACK = 18573224u,  L_INTRO = 5462712u;   /* leveledit 主曲 @44100 */
+
+    printf("§H 口径闸（素材 ⟷ 主曲；th18_06b 错位事故）\n");
+
+    /* 换算：44100 口径 → 22050 口径（正好 ÷2，但走的是 avg 比例，不是写死的 /2）*/
+    CHECK(trance_bgm_caliber_bytes(R_TRACK, E_AVG, OUR_AVG) == 9883136u,
+          "零售 track ⇒ %u（want 9883136）", trance_bgm_caliber_bytes(R_TRACK, E_AVG, OUR_AVG));
+    CHECK(trance_bgm_caliber_bytes(R_INTRO, E_AVG, OUR_AVG) == 573952u,
+          "零售 intro ⇒ %u（want 573952 = 6.5074 s）", trance_bgm_caliber_bytes(R_INTRO, E_AVG, OUR_AVG));
+    CHECK(trance_bgm_caliber_bytes(L_TRACK, E_AVG, OUR_AVG) == 9286612u,
+          "leveledit track ⇒ %u（want 9286612）", trance_bgm_caliber_bytes(L_TRACK, E_AVG, OUR_AVG));
+    CHECK(trance_bgm_caliber_bytes(L_INTRO, E_AVG, OUR_AVG) == 2731356u,
+          "leveledit intro ⇒ %u（want 2731356 = 30.968 s）", trance_bgm_caliber_bytes(L_INTRO, E_AVG, OUR_AVG));
+
+    /* ★ 核心判据：**素材比主曲短 ⇒ 不接管**（= 零售主曲正撞上 leveledit 口径的素材）*/
+    CHECK(trance_bgm_caliber_match(9883136u, R_TRACK, E_AVG, OUR_AVG, BA) == 1, "零售素材 vs 零售主曲应相符");
+    CHECK(trance_bgm_caliber_match(9286612u, R_TRACK, E_AVG, OUR_AVG, BA) == 0,
+          "★ 素材比主曲短 596524 B 却没被拒（= 那次每圈往回跳 24.46 s 的口子）");
+    /* 反向：素材比主曲长同样要拒（leveledit 主曲 + 零售素材）*/
+    CHECK(trance_bgm_caliber_match(9883136u, L_TRACK, E_AVG, OUR_AVG, BA) == 0,
+          "★ 素材比主曲长 596524 B 却没被拒");
+    CHECK(trance_bgm_caliber_match(9286612u, L_TRACK, E_AVG, OUR_AVG, BA) == 1, "leveledit 素材 vs leveledit 主曲应相符");
+
+    /* 容差 = 1 帧：±4 B 过、±8 B 拒（ogg 解码帧数取整会带来 0–1 帧差）*/
+    CHECK(trance_bgm_caliber_match(9883136u + BA, R_TRACK, E_AVG, OUR_AVG, BA) == 1, "+1 帧应过");
+    CHECK(trance_bgm_caliber_match(9883136u - BA, R_TRACK, E_AVG, OUR_AVG, BA) == 1, "-1 帧应过");
+    CHECK(trance_bgm_caliber_match(9883136u + 2u * BA, R_TRACK, E_AVG, OUR_AVG, BA) == 0, "+2 帧必须拒");
+
+    /* 退化入参不许除 0 / 不许把"读不到口径"当成"相符"*/
+    CHECK(trance_bgm_caliber_bytes(R_TRACK, 0u, OUR_AVG) == 0u, "e_avg=0 ⇒ 0");
+    CHECK(trance_bgm_caliber_bytes(R_TRACK, E_AVG, 0u) == 0u, "our_avg=0 ⇒ 0");
+    CHECK(trance_bgm_caliber_match(9883136u, R_TRACK, 0u, OUR_AVG, BA) == 0, "e_avg=0 ⇒ 不符（不猜）");
+
+    /* intro 闸：**intro 不等 ⇒ 不接管**；素材自带 intro 却算成 0 ⇒ 更得拒（每圈重放 intro）*/
+    CHECK(trance_bgm_intro_gate(573952u, 573952u, BA) == 0, "同 intro 应过");
+    CHECK(trance_bgm_intro_gate(0u, 573952u, BA) == -1, "★ 素材带 intro 却写成 0 没被拒");
+    CHECK(trance_bgm_intro_gate(2731356u, 573952u, BA) == -2, "★ intro 差 2.1 MB 没被拒（放错口径）");
+    CHECK(trance_bgm_intro_gate(573952u + BA, 573952u, BA) == 0, "intro +1 帧应过");
+    CHECK(trance_bgm_intro_gate(573952u + 2u * BA, 573952u, BA) == -2, "intro +2 帧必须拒");
+    CHECK(trance_bgm_intro_gate(0u, 0u, BA) == 0, "主曲本来就没 intro ⇒ 0 是对的");
+}
+
 /* ---------------- §G 自检 ---------------- */
 static void test_selfcheck(void)
 {
@@ -304,6 +376,7 @@ int main(void)
     test_xfade();
     test_variant_name();
     test_wav_parse();
+    test_caliber();
     test_selfcheck();
     printf("\n%d 断言，%d 失败\n", g_asserts, g_fail);
     return g_fail ? 1 : 0;

@@ -223,6 +223,14 @@ typedef struct {
      *   ⚠ 先判 `ev->is_player_bullet`：同一个池里还有原生卡与各卡 `ce_damage_rect` 放的源。
      *   ⚠ 加在结构体**最后**（`ce_hooks_t` 全是静态常量的指定初始化器 ⇒ 尾部加字段不影响旧卡）。*/
     void (*on_bullet_hit)(ce_card_t *, const ce_bullet_hit_t *);
+    /* ★★★ 2026-10-19（腐化 70 × 原生 23 死秽回避之药）：**死亡消耗了 B**（`spent` = 已经扣掉的发数 1–2）。
+     *   两个来源，语义相同：
+     *     ① 站点 `ce_death_save_spent` `0x40a44b`：原生死亡回避 `0x40a2a0` 扣完 CURRENT（`0x40a3ed`/`0x40a42c`）
+     *        之后的汇合点 ⇒ `spent = MAX_BOMBS − CURRENT_BOMBS`（此刻 MAX 还没动）；
+     *     ② 卡侧 `ce_death_save_spent_note(n)`：别的卡在 `+0x10` 里自己扣了 B（108 的「有 106 多扣 1」）。
+     *   ⚠ 只做记账：**不要**在这里扣 CURRENT（扣已经发生过了）；要「把这次消耗记进自己的预算」就在这里改自己的量。
+     *   ⚠ 加在结构体**最后**（`ce_hooks_t` 全是静态常量的指定初始化器 ⇒ 尾部加字段不影响旧卡）。*/
+    void (*on_death_save_spent)(ce_card_t *, int32_t spent);
 } ce_hooks_t;
 
 /* 改这张卡当前的自机弹伤害倍率（千分比）。只在值真的变了的时候调（古锭刀在终符沿、衔尾蛇在叠层时）。*/
@@ -265,4 +273,56 @@ void ce_set_bullet_damage_permille(ce_card_t *c, int permille);
 int ce_give_card(uint32_t id, uint32_t mode, uint32_t notify);
 int ce_destroy_card(ce_card_t *victim);
 ce_card_t *ce_pick_random_card(ce_card_t *exclude);
-void ce_log(const char *fmt, ...);
+
+/* ══════════════════════════════════════════════════════════════════════════════
+ * ★★★ 日志总闸 `CE_DEV_DUMP` —— owner 2026-10-24「所有 log 行，统一收敛到开发态开关是否 dump」。
+ *
+ *   CE_DEV_DUMP = 0  **发布默认**：`ce_log` / `ce_log_key` 全部编译成 `((void)0)`
+ *                     ⇒ 调用点**参数不求值、格式化串不进二进制、一个字节都不写盘**。
+ *                     改造前热路径每行一次 open/append/close：一局 11–23 MB + 成堆文件 I/O，
+ *                     这里**全部消失**（不是"少写"，是编译器把整条调用删掉）。
+ *   CE_DEV_DUMP = 1  **关键行**（机师/实跑诊断用；每局 ≤ 20 行）：`ce_log_key` 生效，`ce_log` 仍为空。
+ *                     关键行 = build 戳 / 错误·FAIL / 一次性状态（清单见 `TUNING.md` §「日志总闸」）。
+ *   CE_DEV_DUMP = 2  **全部**（= 改造前的行为；排查用）。
+ *
+ *   ★ 为什么把 `ce_log` 从**函数**改成**宏**：全仓 1112 个调用点**一行都不用改**，且闸关时编译器
+ *     把整条调用（含参数求值与格式化串）删干净 —— 这是**真正的零开销**。函数版关掉只能省写盘，
+ *     参数字符串仍占 .rdata、va_list 仍要建、调用照跳。
+ *   ★ 日志**代码一条不删**（硬约束）：只是编译期决定进不进二进制 —— `make dll CE_DEV_DUMP=2` 随时开回来。
+ *   ⚠ 实现名 `ce_log_impl` = 旧的 `ce_log`（dll_main.c）。它**不**参与闸门，只被下面的宏引用。
+ *     全仓 grep 过：**没有任何地方对 `ce_log` 取地址 / 当函数指针用**（只有调用）⇒ 改成宏是安全的。
+ * ══════════════════════════════════════════════════════════════════════════════ */
+#ifndef CE_DEV_DUMP
+#define CE_DEV_DUMP 0
+#endif
+
+/* 写盘层（dll_main.c 的旧 ce_log 本体）。`ce_verdict` 也走它 —— 那是「硬失败」通道：
+ *   闸关时**我们的日志文件一个字都不写**，但结论仍镜像进 thcrap 的日志（见 dll_main.c 的 ce_verdict）。*/
+void ce_log_impl(const char *fmt, ...);
+
+#if CE_DEV_DUMP >= 2
+#define ce_log(...)      ce_log_impl(__VA_ARGS__)
+#else
+#define ce_log(...)      ((void)0)      /* 0/1 档：整条调用连参数一起消失 */
+#endif
+
+#if CE_DEV_DUMP >= 1
+#define ce_log_key(...)  ce_log_impl(__VA_ARGS__)   /* 关键行（0 档也编译成空）*/
+#else
+#define ce_log_key(...)  ((void)0)
+#endif
+
+/* ★★★ 2026-10-19（腐化 70 × 原生 23 死秽回避之药 = 简单无敌）：**卡侧「死亡消耗了 B」的上报通道**。
+ *
+ * 引擎自己那条死亡回避（`Card__death_save_bomb_revive 0x40a2a0`）由站点 `0x40a44b` 自动上报
+ * （`BP_ce_death_save_spent`，spent = MAX − CURRENT）。但**卡侧**也有一条会在死亡时扣 B 的路，
+ * 它直接写 `CURRENT_BOMBS`（不走 `consume_bomb` ⇒ `on_bomb_spent` 也抓不到）：
+ *   · 108 永夜抄：`on_death_before_deathbomb` 里「有 106 ⇒ 决死多扣 1 个 B」（owner 2026-10-11 口径）。
+ * 那种写入会被「腐化」每帧的 `CURRENT = MAX` 钉回去（= 白送），所以扣完必须调本函数报一次：
+ * 沿卡链表广播 `on_death_save_spent(NULL 卡的 spent)`，由收方（腐化）把它记进自己的预算。
+ *
+ * 语义约定：
+ *   · `spent` = 这一次死亡**已经真的从 CURRENT 扣掉**的发数（> 0；≤ 0 直接忽略）；
+ *   · 调用**前**先完成扣 B（本函数只广播、不写引擎值）；收方回写 CURRENT 是它自己的事；
+ *   · 没有收方（没带腐化）= 空转，一个字节都不写 ⇒ 旧行为逐位不变。*/
+void ce_death_save_spent_note(int32_t spent);

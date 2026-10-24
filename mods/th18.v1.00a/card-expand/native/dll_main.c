@@ -19,6 +19,12 @@ static void (*s_log_printf)(const char *, ...);
 uintptr_t (*ce_func_get)(const char *);
 static char s_logpath[MAX_PATH];
 
+/* ★★★ 2026-10-24（owner：「所有的 log 行，统一收敛到开发态开关是否 dump」）——
+ *   下面这一层（打开/追加/关闭 + `ce_log_impl`）**只在 `CE_DEV_DUMP >= 1` 时进二进制**。
+ *   0 档（发布默认）时：`ce_log`/`ce_log_key` 是 `sdk/public.h` 里的 `((void)0)`，
+ *   连本文件的 `open_log`/`vlog` 都不编 ⇒ **一个调用、一条格式化串、一次文件 I/O 都没有**。*/
+#if CE_DEV_DUMP >= 1
+
 static FILE *open_log(const char *mode)
 {
     FILE *f = fopen(s_logpath, mode);
@@ -42,16 +48,24 @@ static void vlog(const char *fmt, va_list ap)
     fclose(f);
 }
 
-void ce_log(const char *fmt, ...)
+/* 旧 `ce_log` 的本体（名字换了：`ce_log` 现在是 sdk/public.h 里的宏）。不参与闸门 ——
+ * 它只被 `ce_log`（2 档）/`ce_log_key`（≥1 档）两个宏引用。*/
+void ce_log_impl(const char *fmt, ...)
 {
     va_list ap; va_start(ap, fmt); vlog(fmt, ap); va_end(ap);
 }
+
+#endif  /* CE_DEV_DUMP >= 1 */
 
 void ce_verdict(const char *fmt, ...)
 {
     char buf[512];
     va_list ap; va_start(ap, fmt); vsnprintf(buf, sizeof buf, fmt, ap); va_end(ap);
-    ce_log("%s", buf);
+#if CE_DEV_DUMP >= 1
+    ce_log_impl("%s", buf);        /* 硬失败（guard/FAIL）：1 档起进我们自己的日志文件 */
+#endif
+    /* ★ thcrap 那条镜像**永远在**（0 档也是）—— 它是"本 DLL 被卸掉/没装上"的唯一现场，
+     *   且不写我们自己的日志文件，所以不违反「0 = 全关」。*/
     if (s_log_printf) s_log_printf("[th18_card_expand] %s\n", buf);
 }
 
@@ -102,27 +116,38 @@ void ce_log_dir(char *out, size_t cap)
 int __stdcall thcrap_plugin_init(void)
 {
     init_log_path();
-    FILE *f = open_log("w");                       /* 每次启动新开一份 */
+#if CE_DEV_DUMP >= 1
+    FILE *f = open_log("w");                       /* 每次启动新开一份（0 档不建文件：全关）*/
     if (f) {
         time_t t = time(NULL);
         char ts[32]; strftime(ts, sizeof ts, "%Y-%m-%d %H:%M:%S", localtime(&t));
         fprintf(f, "=== th18_card_expand %s ===\n", ts);
         fclose(f);
     }
+#endif
     HMODULE th = GetModuleHandleA("thcrap.dll");
     if (th) {
         s_log_printf = (void (*)(const char *, ...))GetProcAddress(th, "log_printf");
         ce_func_get  = (uintptr_t (*)(const char *))GetProcAddress(th, "func_get");
     }
-    ce_log("thcrap exports: log_printf=%s func_get=%s",
-           s_log_printf ? "ok" : "MISSING", ce_func_get ? "ok" : "MISSING");
+    ce_log_key("thcrap exports: log_printf=%s func_get=%s",
+               s_log_printf ? "ok" : "MISSING", ce_func_get ? "ok" : "MISSING");
+#if CE_DEV_DUMP >= 1
     if (s_log_printf) s_log_printf("[th18_card_expand] loaded; log -> %s\n", s_logpath);
+#else
+    /* ★★ 2026-10-24（owner：「游玩的 log 关了吧」）—— 发布档**一行都不写**：
+     *   连 "loaded; 日志 dump = OFF" 这句也不打（它会在游戏目录建/追加 th18_card_expand.log）。
+     *   ⇒ 只有 CE_DEV_DUMP >= 1 才写。*/
+#if CE_DEV_DUMP >= 1
+    if (s_log_printf) s_log_printf("[th18_card_expand] loaded; 日志 dump = OFF (CE_DEV_DUMP=0)\n");
+#endif
+#endif
 
     if (!retail_table_looks_right((const uint8_t *)GetModuleHandleA(NULL))) {
         ce_verdict("guard: not th18 v1.00a as expected — unloading myself");
         return 1;                                   /* 非 0 = 让 thcrap 卸掉本 DLL */
     }
-    ce_log("guard: retail table signature ok");
+    ce_log_key("guard: retail table signature ok");
     return 0;
 }
 

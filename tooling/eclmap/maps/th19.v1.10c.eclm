@@ -1,0 +1,38 @@
+!eclmap
+# TH19 v1.10c 手写 eclmap —— 约定见同目录 README.md
+# 只收「handler 已读到」或「ECL 结构自证」的条目；未定的一律不写（thecl 回落 ins_NNN）。
+# 证据格式：`# 证据: <地址/出处>；<判据>`
+!ins_names
+# ---- 系统码（<300，另一分支；语义引 engine/ecl/th16/04 与 ECL 用法）----
+1 unitDelete        # 证据: ECL 结构；每个函数末尾 ins_1()
+23 wait             # 证据: ECL 用法 + th13 fmt=S（ins_23(60) / ins_23([-1])）
+# ---- 游戏码（300+；handler 由 0x505560 字节表 + 0x50524c 指针表 定位）----
+300 spawnUnit       # 证据: ECL 用法 ins_300("ExAttack2",x,y,hp,?,?) + spawn 助手 0x50d410
+400 movePos         # 证据: ECL 用法 ins_400(±%G, 448)（y=448=版底）；th13 fmt=ff
+514 timeLimit       # 证据: ECL 用法 ins_514(0,0,1800,"BossDead")
+521 escapeLabel     # 证据: ECL 用法 ins_521(0,"BossEscape")
+522 spellName       # 证据: ECL 用法 ins_522(0,1800,0,"風符「…」") + 与卡名对照
+570 rankTableInt    # 证据: ECL 用法 ins_570($C,3,3,5,4,3,3,4,5)（8 档）
+571 rankTableFloat  # 证据: ECL 用法 ins_571(%F,8,16,8,8,16,12,24,24)（8 档）
+601 emitFire        # 证据: handler 0x50221b；出生点 = 基准(0x4f2c)+偏移(0x4e6c)，写弹 +0x8/+0xc/+0x10
+602 etTypeColor     # 证据: handler 0x502366 写 [0x5ac][槽][0]/[4]；★ 语义由 owner 2026-10-18 弹型表定案
+                    #   type 0..49（38 = 激光段），见 engine/ecl/th19/02-bullet-types.md
+603 etOffsetXY      # 证据: handler 0x5023c2；[0x4e6c][槽][0]=x、[4]=y
+605 etSpeedRange    # 证据: handler 0x502624；[0x1c]=上限、[0x20]=下限
+606 etCount2        # 证据: handler 0x502695；u16 [0x46c]、u16 [0x46e]
+607 etStyle         # 证据: handler 0x5026fc；u16 [0x470]
+608 etField2        # 证据: handler 0x502740；int [0x478]、[0x47c]（含义未证）
+618 etOffsetPolar   # 证据: handler 0x502432；[0x4e6c][槽] = (r·cosθ, r·sinθ)
+620 etBasePos       # 证据: handler 0x502511；[0x4f2c][槽][0]=x、[4]=y、[8]=1.0f 有效标志
+569 solveRayToField  # 证据: handler 0x504f38；与 288x448/中心(0,224) 矩形求交，两 float 输出经 0x50d060 写回
+600 etReset          # 证据: handler 0x50200c；memset 0x488 + 默认 +0x14=0/+0x1c=2.0/+0x46c=1/+0x46e=1/+0x478=0x15/+0x47c=0x26/+0x474=0x23
+609 etPathSeg        # 证据: handler 0x5027a3；段号=p1；段结构 emitter+0x28+k*0x2c
+611 etPathSegCursor  # 证据: handler 0x5027a3；同 609 但段号取内部游标 [this+0x4e2c+p0*4]
+614 etCopy           # 证据: handler 0x50213c；整块复制 emitter(a)->emitter(b)（rep movs 0x488 B）
+624 setCallback      # 证据: handler 0x501458；this+0x5640=0、this+0x5648=funcptr[i]
+700 etSpawnVec3      # 证据: handler 0x502b6a；写 +0x08/+0x0c/+0x10/+0x448（前三个即 601 的出生点 vec3）
+701 etConfig5        # 证据: handler 0x502c26；写 +0x458..+0x468 五个并列 dword（不是"四段时长"）
+703 etEmitWithPath   # 证据: handler 0x503408；段表 memcpy 进 spawn 描述符后 spawn
+711 etEmitWithPath2  # 证据: handler 0x50388c；703 的姊妹版（换 0x40f620 初始化）
+1023 clampSet500    # 证据: handler 0x504c7f；clamp(p0,0,500) -> 0x40f1e0 存进全局 [+0xff8e8]
+1034 readGlobalPair # 证据: handler 0x504ef2；读 0x5d1ac8-[this+0x5638]*0x3c 的两个 int（钳 [-1,7]）

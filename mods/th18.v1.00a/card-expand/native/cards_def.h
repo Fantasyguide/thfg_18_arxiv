@@ -12,6 +12,7 @@
 #include <stdint.h>
 
 #define CE_ROW_BYTES        0x34
+#define CE_RETAIL_LAST_ID   56        /* 原生卡 id 上界：0..56 = 57 张（56 = NULL 空槽哨兵、57 = BACK 卡背）*/
 #define CE_CARD_ID_MIN      58        /* 56 = NULL 空槽、57 = BACK 卡背，原生哨兵 */
 #define CE_CARD_ID_MAX      254
 #define CE_CARD_MAX_NEW     197       /* = id 空间大小（58..254，= `CE_CARD_ID_MAX`−`CE_CARD_ID_MIN`+1）。
@@ -87,6 +88,34 @@ unsigned ce_weight_override(uint8_t *table, unsigned nrows, int retail_weight, i
  * 而静态 binhack 早已把菜单结构撑到 255 项 —— 卡组编成于是读到没建出来的卡对象，按 Z 就崩（AUDIT §AG）。 */
 int ce_weight_override_fit(uint8_t *table, unsigned nrows, int retail_weight, int new_weight,
                            const uint32_t *new_ids, unsigned n_new, unsigned *changed);
+
+/* ★ 发版卡池（owner 2026-10-24 逐字）：**原生卡退场** —— 把 TH18 自己的卡（id 0..56）从
+ *   「初始可携带」/「贪欲之壶发牌池」/「商店可购买」三处一起摘掉，**唯一例外**是商店固定上架的资源卡。
+ *
+ * 三处其实只有两个字段在管（一手见 engine/card/th18/05-shop-and-money.md §4、07-registry.md）：
+ *   · 贪欲之壶（id 63）**没有自己的池子**：它调 `ce_shop_pick_random` → 商店的 `0x416F50`
+ *     ⇒ 壶的池子 == 商店随机池 ⇒ 摘一处 = 两处一起摘 ✓（`cards/pot.c` 头注）。
+ *   · 商店 = 随机池（`+0x14 ∉ {0,6}`，按 `+0x14` 压份）+ loop1（`+0x14 == 0` 且
+ *     `is_available_at_stage == 1` ⇒ **每次必上架**）+ loop2（`+0x18 ∈ 1..5` 且本关匹配 ⇒
+ *     `is_available_at_stage == 2` ⇒ **本关必上架**）。
+ *   · 初始可携带 = `+0x24`（新档创建时拷进 `unlocked_cards[]`，`0x4636d5`）+ 编成菜单可见位 `+0x20`
+ *     （`0x4149de` 的「可见 && 已解锁」筛选）。
+ *
+ * ⇒ 一行退场的写法只有这一种（**不是**把 weight 写 0！0 是 loop1 的「必上架」哨兵）：
+ *     `+0x14 := 6`（CE_SHOP_NEVER_WEIGHT，退出随机池，壶也抽不到）
+ *     `+0x18 := 0`  仅当原值 ∈ 1..5（否则 loop2 在本关把它强行塞回商店）
+ *     `+0x20 := 0`（编成菜单不可见）、`+0x24 := 0`（新档不再解禁）
+ *
+ * **保留原样的 id**（`ce_native_keep`）：`0` BLANK（商店「空白卡换购」分支用的特殊卡，从不上架）、
+ *   `1/2/5/6`（EXTEND/BOMB/PENDULUM/DANGO = 残机/炸弹/加钱/火力，`+0x14 == 0` ⇒ loop1 每次必上架，
+ *   owner 点名保留）、`56/57`（NULL 空槽 / BACK 卡背哨兵）。
+ *
+ * ⚠ 表行**不按 id 排序**（原生表物理顺序就是乱的：行 8 是 id 38、行 13 是 id 16 …），所以本函数
+ *   **按 `+0x04` 的 id 线性扫**，不能 `table + id*0x34`（`ce_weight_override` 的零售循环之所以还能用，
+ *   是因为它遍历的物理行 1..55 恰好覆盖 id 1..55 那一整批 —— 别再学它）。
+ * 返回改了几行（幂等：第二次调用返回 0）。null_row / back_row（56/57）永不改。*/
+int      ce_native_keep(uint32_t id);
+unsigned ce_native_retire(uint8_t *table, unsigned nrows);
 
 int  ce_shop_capacity_check(const uint8_t *table, unsigned nrows, unsigned *pool, unsigned *guaranteed,
                             char *err, unsigned cap);

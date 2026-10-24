@@ -1949,6 +1949,62 @@ static int signal_bullet_in_graze(const uint8_t *b, const uint8_t *pl, uint32_t 
  *   只跑 `0x7d0` 次、**漏掉最后一张真弹**（`mgr+0x108c + 1999*0xfa0`；池共 2001 块）——
  *   那是 ZUN 的 off-by-one，`lolk.c` 照抄了它。本卡多扫一格（`mgr+0xec + 2000*0xfa0` 仍在池内，
  *   池尾 = `mgr+0x7a228c`）⇒ 不跟着漏。（登记在报告里，未改共享件。）*/
+/* ★★★ 2026-10-12z62（goal ③ 收口）——本处**必须保留下标语义**（下标收进 `counted[]` 稍后消费 ✓）
+ *   ⇒ 用 SDK 的**带下标池遍历**（不是链表变体 ✓）。
+ * ⚠ **判据微变（进 owner 清单）**：原来只跳 `0/3/4` ⇒ **`state=5`（池尾哨兵）会被收进来** ✗
+ *   ⇒ 现在显式跳过 `5` ✓（哨兵不是弹，不该被跟踪/擦弹 ✓）。
+ *
+ * ★★★★ 2026-10-25（性能 C2，owner 诊断「二面被放大 / **全程固定付**」）：把这个**逐槽判据**
+ *   抽成一个函数 —— 让"扫帧（整池）"和"跳帧（只复核缓存）"两条路**共用同一份判据**
+ *   （判据一字不改 ✓，只是调用点从 1 个变 2 个）。*/
+static int signal_bullet_graze_candidate(const uint8_t *b, const uint8_t *pl, int focus)
+{
+    uint16_t st = *(const uint16_t *)(b + CE_BULLET_STATE);
+    uint32_t flags;
+    float br;
+
+    /* `state`：0 空 / 3 被自机打掉 / 4 消弹中 / **5 池尾哨兵（假弹）** ⇒ 都跳过 ✓
+     * （一手 `0x4249c8` / `0x42901d`；`0x4248a0` 的分派器只对活弹 1/2 跑）。*/
+    if (st == 0 || st == 3 || st == 4 || st == 5) return 0;
+    flags = *(const uint32_t *)(b + CE_BULLET_FLAGS);
+    if (!(flags & SIGNAL_BULLET_FLAG_COLLIDE)) return 0;      /* 引擎在这一行早退（`0x4248cf`）*/
+    br = *(const float *)(b + SIGNAL_BULLET_RADIUS);
+    if (!(br > 0.0f)) return 0;                               /* `0x4248e9` */
+    if (flags & SIGNAL_BULLET_FLAG_SCALED) br *= *(const float *)(b + SIGNAL_BULLET_SIZE_SCALE);
+    return signal_bullet_in_graze(b, pl, flags, br, focus);
+}
+
+/* ★★★★ 2026-10-25（性能 C2）——**整池平扫降频，但擦弹节奏一帧不少**（两半设计）：
+ *
+ *   · **扫帧**（每 `SIGNAL_GRAZE_SCAN_PERIOD` = 2 帧一次）：整池 2000 槽（照旧）⇒ **发现新进圈的弹**；
+ *   · **跳帧**：只复核**上一帧那 ≤36 颗**（`SIGNAL_REMILIA_TRACK_MAX`）—— 用**同一个**
+ *     `signal_bullet_graze_candidate()` 逐颗重判（死了 / 出圈 / 出屏的当场掉出缓存）。
+ *
+ *   ★ **为什么这样不会漏、也不会改数值**（逐条）：
+ *     ① `signal_remilia_tick()` **仍然每帧被调一次** ⇒ 每弹 `1 + 11 = 12` 帧的冷却阶梯
+ *        （`SIGNAL_REMILIA_GRAZE_OFF_FRAMES`）**一帧不少** ⇒ 计入次数、`ce_do_graze()` 的
+ *        擦弹计数 / 火花 / `se_graze.wav` **与改前逐帧等价** ✓。
+ *        （★ 如果连 `remilia_tick` 也降到 2 帧一次，冷却会走成 24 帧 ⇒ **擦弹直接砍半** ✗ —— 所以不能那样省。）
+ *     ② 跳帧里**还在圈里的弹**仍在缓存里、仍每帧被喂 ⇒ 一帧不丢；
+ *        只有"**本帧才第一次进圈、而本帧恰好是跳帧**"的弹晚 1 帧被计入 —— 它那 12 帧的相位整体
+ *        后移 1 帧，**总量不变**（一颗弹在圈里待 N 帧 ⇒ 计入次数 = ⌊N/12⌋+1，与相位无关）✓。
+ *     ③ 擦弹圈的最小判定尺寸：圆模式 = `pr + max(br/2.5, 40) ≥ 43 px`（一手 `0x4b92c4` 的下限）、
+ *        矩形模式 = 弹框 + `24 px` 外扩（一手 `0x4b92a4`）—— 后者半高更小，但**穿过它仍需
+ *        ≈ 2×(半高+24) ≥ 48 px 的位移**；本作弹速上界 < 20 px/帧 ⇒ 一颗弹**不可能**"在**一个**
+ *        跳帧里进圈又出圈" ⇒ 跳帧里漏判的只可能是"擦过**角**上的 1–2 px"，影响 = 那**一颗弹
+ *        少一次**擦弹（它本来整个停留期会吃 1+ 次；没有任何累计量依赖那一次）✓。
+ *     ④ 池扫上界仍是 `CE_BM_BULLET_COUNT + 1`（那个 ZUN 的 off-by-one 仍然被兜住 ✓ ——
+ *        扫帧用的还是同一个 `CE_BULLET_POOL_FOR_EACH_IDX` ✓）。
+ *
+ *   ⚠ 想回到每帧：把 `SIGNAL_GRAZE_SCAN_PERIOD` 改成 1（一行）。
+ *   ⚠ 缓存存的是**槽号**（不是指针），且每帧都重跑 `state`/`flags`/半径/几何 四道判据 ⇒
+ *     槽被回收再复用时算出来的仍是"这一帧它到底在不在圈里"，不存在"指向已死弹"的悬空引用 ✓。*/
+#define SIGNAL_GRAZE_SCAN_PERIOD 2
+static uint16_t s_graze_key[SIGNAL_REMILIA_TRACK_MAX];   /* 候选缓存（槽号；≤36 项）*/
+static int32_t  s_graze_key_n;
+static unsigned s_graze_phase;                            /* 0 = 本帧整池扫；>0 = 本帧跳（还差几帧）*/
+static uint32_t s_graze_frames, s_graze_slots, s_graze_rechecks;   /* 诊断（`ce_log` 只在 2 档）*/
+
 static int32_t signal_graze_scan(signal_card_t *s)
 {
     uint8_t *mgr = CE_BULLET_MGR();
@@ -1957,29 +2013,32 @@ static int32_t signal_graze_scan(signal_card_t *s)
     int focus, n = 0;
     unsigned i;
 
-    if (!mgr || !pl) return 0;
+    if (!mgr || !pl) { s_graze_key_n = 0; s_graze_phase = 0; return 0; }
     focus = *(const int32_t *)(pl + SIGNAL_OFF_PLAYER_FOCUS) != 0;
 
-    /* ★★★ 2026-10-12z62（goal ③ 收口）——本处**必须保留下标语义**（下标收进 `counted[]` 稍后消费 ✓）
-     *   ⇒ 用 SDK 的**带下标池遍历**（不是链表变体 ✓）。
-     *   ⚠ **判据微变（进 owner 清单）**：原来只跳 `0/3/4` ⇒ **`state=5`（池尾哨兵）会被收进来** ✗
-     *   ⇒ 现在显式跳过 `5` ✓（哨兵不是弹，不该被跟踪/擦弹 ✓）。*/
-    CE_BULLET_POOL_FOR_EACH_IDX(b, i) {
-        uint16_t st = *(const uint16_t *)(b + CE_BULLET_STATE);
-        uint32_t flags;
-        float br;
-
-        if (n >= SIGNAL_REMILIA_TRACK_MAX) break;            /* 原上界在循环条件里（等价 ✓）*/
-        /* `state`：0 空 / 3 被自机打掉 / 4 消弹中 / **5 池尾哨兵（假弹）** ⇒ 都跳过 ✓
-         * （一手 `0x4249c8` / `0x42901d`；`0x4248a0` 的分派器只对活弹 1/2 跑）。*/
-        if (st == 0 || st == 3 || st == 4 || st == 5) continue;
-        flags = *(const uint32_t *)(b + CE_BULLET_FLAGS);
-        if (!(flags & SIGNAL_BULLET_FLAG_COLLIDE)) continue;      /* 引擎在这一行早退（`0x4248cf`）*/
-        br = *(const float *)(b + SIGNAL_BULLET_RADIUS);
-        if (!(br > 0.0f)) continue;                               /* `0x4248e9` */
-        if (flags & SIGNAL_BULLET_FLAG_SCALED) br *= *(const float *)(b + SIGNAL_BULLET_SIZE_SCALE);
-        if (signal_bullet_in_graze(b, pl, flags, br, focus)) keys[n++] = (uint16_t)i;
+    if (s_graze_phase == 0) {
+        /* ---- 扫帧：整池（发现新弹）---- */
+        s_graze_phase = SIGNAL_GRAZE_SCAN_PERIOD;
+        ++s_graze_frames;
+        s_graze_slots += (uint32_t)CE_BM_BULLET_COUNT;
+        CE_BULLET_POOL_FOR_EACH_IDX(b, i) {
+            if (n >= SIGNAL_REMILIA_TRACK_MAX) break;            /* 原上界在循环条件里（等价 ✓）*/
+            if (signal_bullet_graze_candidate(b, pl, focus)) keys[n++] = (uint16_t)i;
+        }
+    } else {
+        /* ---- 跳帧：只复核缓存里那几颗（≤36 槽，代价与 2000 槽无关）---- */
+        int32_t k;
+        --s_graze_phase;
+        ++s_graze_rechecks;
+        s_graze_slots += (uint32_t)s_graze_key_n;
+        for (k = 0; k < s_graze_key_n && n < SIGNAL_REMILIA_TRACK_MAX; ++k) {
+            const uint8_t *b = mgr + CE_BM_BULLETS + (size_t)s_graze_key[k] * CE_BULLET_STRIDE;
+            if (signal_bullet_graze_candidate(b, pl, focus)) keys[n++] = s_graze_key[k];
+        }
     }
+    /* 缓存 = 本帧的候选集（扫帧 = 新扫出来的；跳帧 = 复核后还在的）*/
+    s_graze_key_n = n;
+    { int32_t k; for (k = 0; k < n; ++k) s_graze_key[k] = keys[k]; }
 
     /* ★★ 2026-09-16m 用户口径：「**逐帧的擦弹应当完全调用擦弹函数，包括发音效，掉点之类的**」
      *   ⇒ 本帧**真的算了一次擦弹**的那些弹，逐颗调引擎自己的 `Player__do_graze`（`0x45e160`）：
@@ -2001,6 +2060,13 @@ static int32_t signal_graze_scan(signal_card_t *s)
             if (ce_do_graze((const float *)(b + CE_BULLET_POS))) ++fired;
         }
         s->extra_graze_fired = fired;            /* 诊断：真正调成功的次数 */
+        /* ★ 2026-10-25（性能 C2）**一次性计数器**（`ce_log` ⇒ `CE_DEV_DUMP ≥ 2` 才进二进制）：
+         * 每 600 帧一行 = "整池扫的频率 / 摸过的槽数 / 复核了多少次"的机器判据。
+         * 改前：`slots == 墙上帧数 × 2000`；改后：`slots ≈ 墙上帧数 × (2000/2 + ≤36/2)` ✓。*/
+        if (n > 0 && (s->remilia.frames % 600) == 0)
+            ce_log("signal: [PERF] graze frames=%u scans(diag)=%u rechecks=%u slots=%u period=%d",
+                   s->remilia.frames, (unsigned)s_graze_frames, (unsigned)s_graze_rechecks,
+                   (unsigned)s_graze_slots, SIGNAL_GRAZE_SCAN_PERIOD);
         return c;
     }
 }
@@ -3140,6 +3206,11 @@ static void signal_support_reset(ce_card_t *c, signal_card_t *s)
     }
     ce_invuln_request((uint32_t)SIGNAL_ID_NUM, 0);
     signal_remilia_reset(&s->remilia);
+    /* ★ 2026-10-25（性能 C2）：擦弹扫描的**候选缓存**也一起清（否则删卡/换关后
+     *   "上一关的槽号"会留在缓存里 ⇒ 下一关第一帧拿旧槽号去复核，白白多查几格；
+     *   正确性上无害（跳帧那一路每颗都重判 state/几何），但状态收干净是本仓纪律）。*/
+    { int gi; for (gi = 0; gi < SIGNAL_REMILIA_TRACK_MAX; ++gi) s_graze_key[gi] = 0;
+      s_graze_key_n = 0; s_graze_phase = 0; }
     if (s->remilia_ring) {                       /* ★ 长持续效果铁律：擦弹圈也要收 */
         if (ce_anm_get_vm(s->remilia_ring)) ce_anm_interrupt(s->remilia_ring, 1);
         s->remilia_ring = 0;

@@ -41,6 +41,9 @@ static void harvest(plant_state_t *s, const plant_def_t *def)
            def->tag, s->harvests, s->frames, ok, def->items, def->item_type, s->hp);
 }
 
+#define PLANT_SWEEP_MONEY 1
+static uint32_t s_plant_sweep_seen;   /* 92 清扫代数（每次发动只清一次）*/
+
 void plant_clear(ce_card_t *c, const plant_def_t *def, const char *why)
 {
     plant_state_t *s = ce_state(c, plant_state_t);
@@ -91,6 +94,18 @@ int plant_tick(ce_card_t *c, const plant_def_t *def, uint32_t elapsed)
 {
     plant_state_t *s = ce_state(c, plant_state_t);
     if (!s) return 0;
+    /* ★★ 2026-10-24（92 清扫）：种着的植物 → 换金钱 + 清 VM（植物本体是纯 VM，敌人扫描看不见它）*/
+    if (s->anm_id && ce_sweep_should_run(&s_plant_sweep_seen)) {
+        float wp[3];
+        int k;
+        wp[0] = s->x; wp[1] = s->y; wp[2] = s->z;
+        for (k = 0; k < PLANT_SWEEP_MONEY; ++k) {
+            if (!ce_spawn_item(0x12u, wp, -1.5707964f, 1.7f)) ce_money_pocket(1);   /* ★ 0x12 = **金钱卡**（不是金钱点 type 2）*/
+        }
+        ce_log_key("plant: 92 清扫 —— %s 的植物换成金钱（%d 枚）", def->tag, PLANT_SWEEP_MONEY);
+        plant_clear(c, def, "gw sweep");
+        return 0;
+    }
     if (!ce_anm_get_vm(s->anm_id)) {                       /* 引擎把 VM 收掉了（O29h 同款）：本体没了就结束 */
         ce_log("%s: body vm gone at frame %u", def->tag, s->frames);
         s->anm_id = 0;

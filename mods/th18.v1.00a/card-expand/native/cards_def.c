@@ -175,6 +175,40 @@ int ce_weight_override_fit(uint8_t *table, unsigned nrows, int retail_weight, in
     return new_weight;
 }
 
+/* ── 发版卡池：原生卡退场 ──────────────────────────────────────────────
+ * 语义与「为什么是 6 不是 0」全在 cards_def.h 的注释里（一手地址也在那里）。纯字节编辑，无平台依赖。 */
+int ce_native_keep(uint32_t id)
+{
+    switch (id) {
+    case 0:                          /* BLANK：商店「空白卡换购」分支的特殊卡，从不上架，保持原样 */
+    case 1: case 2: case 5: case 6:  /* EXTEND / BOMB / PENDULUM / DANGO：+0x14==0 ⇒ loop1 每次必上架 */
+    case CE_RETAIL_LAST_ID:          /* 56 NULL 空槽哨兵 */
+    case CE_RETAIL_LAST_ID + 1:      /* 57 BACK 卡背哨兵 */
+        return 1;
+    default:
+        return 0;
+    }
+}
+
+unsigned ce_native_retire(uint8_t *table, unsigned nrows)
+{
+    unsigned changed = 0;
+    for (unsigned r = 0; r < nrows; ++r) {
+        uint8_t *row = table + r * CE_ROW_BYTES;
+        uint32_t id = get32(row + 0x04);
+        if (id > CE_RETAIL_LAST_ID) continue;          /* 新卡 / 空槽 */
+        if (ce_native_keep(id)) continue;
+        int diff = 0;
+        if (get32(row + 0x14) != (uint32_t)CE_SHOP_NEVER_WEIGHT) { put32(row + 0x14, CE_SHOP_NEVER_WEIGHT); diff = 1; }
+        if (get32(row + 0x20) != 0) { put32(row + 0x20, 0); diff = 1; }
+        if (get32(row + 0x24) != 0) { put32(row + 0x24, 0); diff = 1; }
+        uint32_t dmode = get32(row + 0x18);
+        if (dmode >= 1 && dmode <= 5) { put32(row + 0x18, 0); diff = 1; }   /* loop2（本关必上架）*/
+        if (diff) ++changed;
+    }
+    return changed;
+}
+
 unsigned ce_build_order(uint32_t *out, unsigned cap,
                         const uint32_t *retail, const uint32_t *retail_cat, unsigned nretail,
                         const uint32_t *new_ids, const uint32_t *new_cat, unsigned nnew,
