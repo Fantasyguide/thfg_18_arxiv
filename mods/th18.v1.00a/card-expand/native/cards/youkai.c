@@ -6589,6 +6589,10 @@ static int yk_bomb_active(void)
                                  *   不影响道具/计分，见 `yk_popup_spawn` 的降级日志）*/
 #define YK_POPUP_GLYPHS     5
 #define YK_POPUP_ANM_LAYER  19   /* owner 2026-10-15: 会爆出一大堆永点, +N 的 layer 得在上面 => 取世界层最高档 19 (永点 7 / 道具 12 / 弹幕 14-16 都在下面) */
+/* ★★★ 2026-10-24（owner：`+N` 一直不显示；世界层这条路所有字段都对却画不出来）——
+ *   浮字改走 **UI 列表**（`ce_anm_spawn_ui` + 层 25 + 表面坐标 ×2 + 字号 ×2），
+ *   与 109 自己的 HUD 数字（`hud_vm_spawn` 那套，显示正常）同一条路。*/
+#define YK_POPUP_UI_LAYER   25
 /* ★★★ 2026-10-01（owner 第三轮：「依旧没有发红字」；实跑日志已证**字建出来了**）：
  *   日志判据（`th18_card_expand.log`，build 17:54:12）：`youkai/popup spawn: tag root/part/orbit
  *   value 16 …` **86 行**、`youkai/kill:` **64 行**、`youkai/zone: opened 41 … bullets 104`
@@ -6707,7 +6711,7 @@ static void yk_popup_spawn(float x, float y, int32_t value, int kind, uint32_t c
     anm = yk_player_anm();
     if (!anm) { p->n = 0; ce_log_key("popup: yk_player_anm() == NULL => popup dropped"); return; }
     for (i = 0; i < (int)p->n; ++i) {
-        uint32_t id = yk_vm_spawn(anm, YK_GAUGE_SCRIPT_FONT[ch], YK_POPUP_ANM_LAYER);
+        uint32_t id = ce_anm_spawn_ui(anm, YK_GAUGE_SCRIPT_FONT[ch], 0);
         if (!id) {
               ce_log_key("popup: VM spawn FAILED script=%d layer=%d glyph=%d => popup dropped",
                          (int)YK_GAUGE_SCRIPT_FONT[ch], (int)YK_POPUP_ANM_LAYER, (int)p->g[i]);
@@ -6737,8 +6741,8 @@ static void yk_popup_tick(void)
         life = (p->kind == 1) ? (int)YK_POPUP_TIME_LIFE : (int)YK_POPUP_SCORE_LIFE;
         if (++p->age >= life) { yk_popup_kill(p); continue; }
         if (p->kind == 0) p->y -= 0.5f;
-        if (p->kind == 0) { step = 8.0f; base_x = p->x - (float)p->n * 4.0f; }
-        else              { step = 7.0f; base_x = p->x - (float)p->n * 3.5f; }
+        if (p->kind == 0) { step = 8.0f * p->scale; base_x = p->x - (float)p->n * 4.0f * p->scale; }
+        else              { step = 7.0f * p->scale; base_x = p->x - (float)p->n * 3.5f * p->scale; }
         for (i = 0; i < (unsigned)p->n; ++i) {
             uint32_t id = p->vm[i];
             float gx = base_x + (float)i * step;
@@ -6761,8 +6765,21 @@ static void yk_popup_tick(void)
               {
                   uint8_t *vm0 = (uint8_t *)ce_anm_get_vm(id);
                   if (!vm0) { p->vm[i] = 0; continue; }
-                  *(volatile float *)(vm0 + 0x5f0) = gx;
-                  *(volatile float *)(vm0 + 0x5f4) = p->y;
+                  /* ★★ 2026-10-24 第二轮（owner：位置跑到左上角 + 样式不对）——
+                   *   UI 列表吃的是 **640×480 字面量空间**（不是表面 px，×2 是错的；
+                   *   一手口径见 `cards/pofv.c` 的 `hud_vm_spawn` 那段被 owner 实跑纠正过的注释）。
+                   *   世界/ECL 坐标 → 表面 = `(640 + x×DAT, 32 + y×DAT)`（DAT=2）⇒
+                   *   折到 640 字面量空间就是 **`(320 + x, 16 + y)`**：
+                   *     x=−192 ⇒ 128、x=+192 ⇒ 512（游玩区 384 宽居中）✓；y=0 ⇒ 16、y=448 ⇒ 464 ✓。*/
+                  /* ★★ 2026-10-24 第三轮（owner：位置对了但**整体缩小一半**、阵列间距也跟着缩一半）——
+                   *   字面量空间里字形要 ×2 才是原大小（640 字面量 px = 2 表面 px）；
+                   *   同理**阵列内每格的相对位移**（step 7 / 3.5 那套，是 640 世界单位）也要 ×2，
+                   *   否则字放大、间距没放大 ⇒ 挤在一起。
+                   *   ⇒ 位置拆成「基准点 = 320+x / 16+y」+「相对偏移 ×2」。*/
+                  *(volatile float *)(vm0 + 0x5f0) = 480.0f + gx * 2.0f - 16.0f;   /* ★ owner 实测：整体偏右下各 16 表面 px */   /* ★ 表面 x 基 = 480（= 448 游玩区中心 + TH09_DX(−32)），
+                                                             *   与 `cards/pofv.c:889` 的 `POFV_HUD_SURF_X` 同一口径
+                                                             *   （那是 owner 实跑校准过"修了 114514 次"的公式）；用 640 会偏右 160 */
+                  *(volatile float *)(vm0 + 0x5f4) = 32.0f + p->y * 2.0f - 16.0f;  /* 表面坐标：32 + y*DAT */
                   *(volatile float *)(vm0 + 0x5f8) = 0.0f;
               }
             /* ★★★ 2026-09-30（**P0：浮字 UI「十分偏移」**，见 `AUDIT.md` §BE #162）：
@@ -6777,10 +6794,10 @@ static void yk_popup_tick(void)
             {
                 uint8_t *vm = (uint8_t *)ce_anm_get_vm(id);
                 if (vm) {
-                    *(volatile uint32_t *)(vm + 0x18) = (uint32_t)YK_POPUP_ANM_LAYER;   /* vm+0x18 = layer
+                    *(volatile uint32_t *)(vm + 0x18) = (uint32_t)YK_POPUP_UI_LAYER;   /* vm+0x18 = layer
                                                         *   （`engine.h:305`：`set_layer 0x4066b0` 写它）*/
                     *(volatile uint32_t *)(vm + CE_ANM_VM_FLAGS_HI) =
-                        (*(const uint32_t *)(vm + CE_ANM_VM_FLAGS_HI) & ~0x1c00000u) | 0x800000u;
+                        (*(const uint32_t *)(vm + CE_ANM_VM_FLAGS_HI) & ~0x1c00000u);
                 }
             }
             dx0 = pp ? (int)(gx - pp[0]) : 0;
@@ -6802,7 +6819,25 @@ static void yk_popup_tick(void)
                 else a = 0x50;
             }
             (void)ce_anm_set_color(id, ((uint32_t)a << 24) | (p->color & 0x00ffffffu));
-            (void)ce_anm_set_scale(id, p->scale, p->scale);
+              /* ★★★ 2026-10-24（owner：`+N` 老是不出现 · 实跑 `popup-tick: … c1=50ffffd0 a1i=00000000`）——
+               *   引擎在**绘制前**会用插值器覆盖两个 color 的 A（一手 `0x47c7f2 mov %al,0x527` /
+               *   `0x47c82f` 那一带，两组各一份）⇒ 我们写的 `color_1.A = 0x50` 在绘制时被
+               *   `alpha1=0` 盖回 **0** ⇒ 完全透明 ⇒ 浮字永远看不见。
+               *   ⇒ 必须**同时把两组插值器写成目标 alpha**（初始/目标/当前三格都写，float）。
+               *   ⚠ 与 106 判定点同一机制、方向相反：那边清 0 来隐藏，这边写 0x50 才可见。*/
+              {
+                  uint8_t *vm2 = (uint8_t *)ce_anm_get_vm(id);
+                  if (vm2) {
+                      const float af = (float)a;
+                      *(volatile float *)(vm2 + CE_ANM_VM_ALPHA1_I + CE_ANM_VM_INTERP_INITIAL) = af;
+                      *(volatile float *)(vm2 + CE_ANM_VM_ALPHA1_I + CE_ANM_VM_INTERP_GOAL)    = af;
+                      *(volatile float *)(vm2 + CE_ANM_VM_ALPHA1_I + CE_ANM_VM_INTERP_CURRENT) = af;
+                      *(volatile float *)(vm2 + CE_ANM_VM_ALPHA2_I + CE_ANM_VM_INTERP_INITIAL) = af;
+                      *(volatile float *)(vm2 + CE_ANM_VM_ALPHA2_I + CE_ANM_VM_INTERP_GOAL)    = af;
+                      *(volatile float *)(vm2 + CE_ANM_VM_ALPHA2_I + CE_ANM_VM_INTERP_CURRENT) = af;
+                  }
+              }
+            (void)ce_anm_set_scale(id, p->scale * 2.0f, p->scale * 2.0f);   /* ★ 字面量空间：字形要 ×2 */
               {   static unsigned s_pt;
                   if (s_pt < 10u) { ++s_pt;
                       {   const uint8_t *v = (const uint8_t *)ce_anm_get_vm(id);
@@ -7096,7 +7131,15 @@ static int yk_orbs_tick(yk_card_t *s)
          *     PoC 线以上时会把它**吸走**（这条就是那一路）。*/
         if (o->state == YK_ORB_STATE_FALL && !dead) {
             const float *pp2 = ce_player_pos();
-            if (pp2 && pp2[1] < ce_poc_height_semantic()) {
+            /* ★★★ 2026-10-24（owner：**有 106 时不该上线回收**）—— TH06 没有这套 PoC 自动收；
+               *   106 在场时关掉这条（永点继续自然下落，靠自机去吃）。*/
+              /* ★★★ 2026-10-24 订正（owner：**「你应该读的是真 PoC 线高度」**）——
+               *   上一版我加了 `!ce_owned(106)` 去挡，方向错了 ✗：病根是**读错了那一层**。
+               *   · `ce_poc_height_semantic()` = **不含「遮」**的生效值（语义 = 「没有 106 时」）
+               *     ⇒ 106 在场时它比真实线高 ⇒ 明明在线上方的永点被判成"在线以下" ⇒ 立刻被吸走 ✗
+               *   · `ce_poc_height()` = **引擎字段当下的真值**（106 的「遮」已算进去）✓
+               *   （`sdk.h` 的 PoC 三条纪律就是这么分的，见那一段。）*/
+              if (pp2 && pp2[1] < ce_poc_height()) {
                 o->state = YK_ORB_STATE_HOMING;                 /* 转归航（= TH08 的 AUTOCOLLECT）*/
             }
         }
