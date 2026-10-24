@@ -18,9 +18,10 @@
 8. **判定点隐藏（`t06_hide_hitbox_dot()`）—— 两个相位都写**：
    · **`on_item_frame`（优先级 0x1e）**= **主笔**：晚于所有卡的更新回调（`on_tick_2` = 0x16）与玩家 tick（0x17，判定点 VM 在那里建）、早于**全部**绘制阶段（层 18 = 0x28）⇒ 本帧最后一笔，谁都盖不掉；
    · `on_draw`（虚表 `+0x48`，优先级 0x33）= 兜底（那一笔晚于本帧绘制，只对下一帧有效）；
-   写什么：`color_1 = 0x00FFFFFF`（alpha 0）**＋ alpha 插值器三格 `initial/goal/current = 0`**（`vm+0x140`；引擎每帧用 `current` 覆盖 `color_1.A`）；
+   写什么：`color_1 = 0x00FFFFFF`（alpha 0）**＋ `color_2` 的 A 字节 = 0**（绘制早退 `0x4812e8` 判两路 A 都 0，与 `colorMode` 无关）**＋ alpha 插值器三格 `initial/goal/current = 0`**（`vm+0x140`；引擎每帧用 `current` 覆盖 `color_1.A`）；
    四道门 = 游戏线程 / 自机 / 聚焦 / `player+0x476b0` 句柄（VM 没了就跳过）。
    ★ 2026-10-25 修 owner 报的「106 的隐藏被 108 覆盖」：根因是**相位**（原来只在 0x33 写 ⇒ 落在绘制之后），详见 `AUDIT.md` §BE-106-HITBOX-108-2026-10-25；探针 `T06R-DOT:` 行（`CE_DEV_DUMP≥1`）给实跑判据。
+   ★★ 2026-10-25 追加（owner 一手「没有拿掉逆时针转的那一个」）：判定点是**两颗** VM —— 正转那颗 = `player+0x476b0`（effect.anm script `0x1a`），**反转那颗 = 它的子 VM**（script26 第 0 帧 `scriptNew(script25)` = script `0x19`，`angleVel(-0.10471976)`）。子 VM 由 `AnmLoaded__instantiate_child_vm` `0x4888f0` 建、挂在 `父+0x594`（`list_of_children`）⇒ `t06_hide_hitbox_dot()` 沿 `父+0x598` 走一层、对每颗子 VM 同样压（`t06_hide_one_vm()`）；探针多一行 `T06R-DOT2:`（每个子 VM 一行，`script` 应为 `25`）。一手与改动清单见 `AUDIT.md` §BE-106-HITBOX-108-2026-10-25 §6。
 9. 收尾：`on_run_reset`（`th06rank.c:525`）与 `on_delete`（`th06rank.c:516`）撤三层声明（满 P 闸 / 「遮」/ 不画线）并 `memset` 私有状态。
 10. 纯逻辑（难度表 `th06rank_core.c:14`、增减 `th06rank_core.c:49`/`:61`、帧条件 `th06rank_core.c:89`、分档 `th06rank_core.c:98`/`:105`、窗口 `th06rank_core.c:176`）全在 core；本文件只接线（`th06rank.c:12-13` 自述）。
 

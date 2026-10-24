@@ -34155,3 +34155,42 @@ owner 给了上面的口径后**改成精确事件**（commit `65c0e178`，本�
 - `make test-host` rc=0（25 组单测全过）；
 - 实跑判据（owner）：装 106 + 108，按住 Shift ⇒ 判定点**不出现**；`CE_DEV_DUMP=1` 时日志里
   `T06R-DOT:` 行的 `(alpha 00)` 与 `a1i=00000000` **恒定**；若某帧出现 `alpha ff` / `a1i≠0`，那一帧就是有人又在写这一格。
+
+### 6. ★★ 追加（同一轮，owner 一手）：判定点其实是**两颗 VM**（正转 + 反转）
+
+> owner 2026-10-25 一手：「**106 没有拿掉逆时针转的那一个**」/「判定点指示应该是 2 个 VM，正转和反转的两个东西」。
+> ⇒ §2 的①「判定点 = `player+0x476b0` 那**一支** VM」只说对了一半 —— 那是**正转**那颗。
+
+#### 6.1 第二颗（反转）是谁 —— 一手三件
+
+| # | 事实 | 出处 |
+| --- | --- | --- |
+| ① | `player+0x476b0` 那颗 = effect.anm **script 0x1a（script26）**：`sprite(sprite23)`（`eff_sloweffect.png` 的判定点环）+ `angleVel(+0.05235988)`（+3°/帧 = 正转）；**第 0 帧 `scriptNew(script25)`** | `local/th18.v1.00a/anm/effect/effect.anm.txt:570-588`（`scriptNew` 在 :580） |
+| ② | 子 = **script 0x19（script25）**：**同一个 `sprite23`**、`angleVel(-0.10471976)`（−6°/帧 = **反转**）⇒ 就是 owner 说的"逆时针那个"；effect.anm 里只有 script26 这一处 spawn 它 | 同上 `:550-568`；`grep -rn "scriptNew(script25)" local/th18.v1.00a/anm/` 在 effect.anm 只有一行 |
+| ③ | `scriptNew` = opcode **500** → handler `0x479a96` → `0x4888f0`（**会把子挂到父**）；`scriptNewRoot`（504 → `0x488a40`）才是孤儿 | `0x488971 mov [esi+0x5c0],ebx`（`child.parent_vm = 父`）+ `0x4889e7`–`0x488a11`（头插进 `父+0x594`）；ExpHP labels：`0x479a96 = 500__scriptNew`、`0x479cc0 = 504__scriptNewRoot` |
+| ④ | 子链表的读法与引擎自己的同形 | `父+0x598` = 第一个子结点；结点 = `child+0x584`，`node[0]` = 子 VM（init `0x4074b4`）、`node[+4]` = next；`interrupt_tree` `0x488c19`/`0x488c24`/`0x488c43` 逐条同形；ExpHP `zAnmVmSuffix`（`+0x40`/`+0x50`，基址 `0x544`）|
+
+⇒ **不需要第二个 player 句柄**：`player+0x476b4` 是另一条线（`eff_deadcircle.png` 的 `script27` = `0x1b`、
+layer 6、`0x45b98c push 0x1b`，只在 `player+0x476bc > 0` 时建），**不是**判定点的反转那颗；
+`player+0x476be` **更不是句柄** —— 全 exe **一次也没有** `0x476be` 这个位移（原始字节扫 `be 76 04 00` 零命中），
+它只是 `player+0x476bc` 那个 **dword 倒计时的高半**（`0x45b91d cmp DWORD PTR [edi+0x476bc],0` / `0x45bc23` 写），
+而那个倒计时只决定 script27 建不建。
+反转那颗**没有自己的 player 字段** —— 它就是父 VM 的子 VM，沿 `list_of_children` 取。
+
+#### 6.2 改了什么（`native/cards/th06rank.c`）
+
+| # | 符号 | 改了什么 |
+| --- | --- | --- |
+| 1 | `t06_hide_one_vm()`（新）| 一台 VM 的压法抽成函数：`color_1 = 0x00FFFFFF` **＋ `color_2` 的 A 字节 = 0**（绘制早退 `0x4812e8` 判 `color_1.A==0 && color_2.A==0`，两路都清与脚本的 `colorMode` 无关）**＋ alpha 插值器三格 = 0**（`vm+0x140`）|
+| 2 | `t06_hide_hitbox_dot()` | 父 VM 照旧写；**新增**：沿 `父+0x598` 的子链表走一层，对每颗子 VM 调 `t06_hide_one_vm()`（有界 8 颗、实际恒 1）。父句柄 / 门序 / 相位（`on_item_frame` 0x1e 主笔 + `on_draw` 0x33 兜底）全不变 |
+| 3 | `t06_dot_probe()` | 父行 `T06R-DOT:` 末尾加 `children=%u`；**新增 `T06R-DOT2:` 行**：每个子 VM 一行（`id` / `script`（应为 **25**）/ `c1(alpha)` / `a1i` / `fl(visible)`），单独 200 行额度 |
+
+为什么 0x1e 那一笔一定能压到子 VM：子 VM 是父脚本**第 0 帧**造的，而父 VM 由引擎在**玩家 tick（0x17）**建
+（`0x45b450`）⇒ 0x1e 永远晚于它（同 §2 的相位论证）。
+
+#### 6.3 怎么验证的
+
+- `make dll CE_DEV_DUMP=1` rc=0；`make test-host` rc=0（215 + 各组断言全过）；
+- 实跑判据（owner）：装 106，按住 Shift ⇒ **两颗都不显示**；`CE_DEV_DUMP=1` 的日志里应看到
+  `T06R-DOT: … (alpha 00) a1i=00000000 … children=1` **加一行** `T06R-DOT2: … script=25(0x19) c1=00ffffff (alpha 00) a1i=00000000`
+  ⇒ 两行都恒 00 才算压住；若 `children=0` ⇒ 子链表没挂上（回到 §6.1 重查），若某帧 `alpha ff` ⇒ 那一帧有人在写。
