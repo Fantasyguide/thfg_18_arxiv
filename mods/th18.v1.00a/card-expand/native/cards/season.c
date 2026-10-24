@@ -1971,23 +1971,16 @@ static int on_draw(ce_card_t *c)
          *   ⚠ owner 特别交代：**releaseable 在 0 级 / 不可解放时必须 alpha(0)**（脚本 label 3 的隐藏态）
          *     ⇒ 这一支只在 can_release 时写 hud alpha，否则显式写 0，绝不能被"统一透明度"点亮。*/
         {
+            /* ★★ 2026-10-24（owner：“统一接 sdk” + “季节指示消失了”）——
+             *   上一版我**只写插值器三格、没写 color_1.A**：这两支脚本的初始态是 `alpha(0)`，
+             *   引擎绘制读的就是 color_1.A ⇒ 结果整支恒透明（季节指示消失）。
+             *   ⇒ 改用 SDK 的统一写法 `ce_hud_dim_apply_a()`：它**同时**写 color_1.A 与两组插值器三格。
+             *   ⚠ releaseable 在不可解放时必须 0（脚本 label 3 的隐藏态），不许被统一透明度点亮。*/
             const int can_rel = (level >= 1) && (s->rel_frames <= 0);
-            int ab_ids[2]; float ab_as[2]; int ab_n = 0;
-            if (s->hud_glyph) { ab_ids[ab_n] = s->hud_glyph; ab_as[ab_n] = (float)(s->hud.alpha & 0xffu); ++ab_n; }
-            if (s->hud_strip) { ab_ids[ab_n] = s->hud_strip;
-                                ab_as[ab_n] = can_rel ? (float)(s->hud.alpha & 0xffu) : 0.0f; ++ab_n; }
-            for (fi = 0; fi < ab_n; ++fi) {
-                uint8_t *avm = (uint8_t *)ce_anm_get_vm((uint32_t)ab_ids[fi]);
-                if (!avm) continue;
-                *(volatile float *)(avm + CE_ANM_VM_ALPHA1_I + CE_ANM_VM_INTERP_INITIAL) = ab_as[fi];
-                *(volatile float *)(avm + CE_ANM_VM_ALPHA1_I + CE_ANM_VM_INTERP_GOAL)    = ab_as[fi];
-                *(volatile float *)(avm + CE_ANM_VM_ALPHA1_I + CE_ANM_VM_INTERP_CURRENT) = ab_as[fi];
-                *(volatile float *)(avm + CE_ANM_VM_ALPHA2_I + CE_ANM_VM_INTERP_INITIAL) = ab_as[fi];
-                *(volatile float *)(avm + CE_ANM_VM_ALPHA2_I + CE_ANM_VM_INTERP_GOAL)    = ab_as[fi];
-                *(volatile float *)(avm + CE_ANM_VM_ALPHA2_I + CE_ANM_VM_INTERP_CURRENT) = ab_as[fi];
-            }
-        }
-        for (fi = 0; fi < SEASON_FRAME_N; ++fi)
+            const int32_t hud_a = (int32_t)(s->hud.alpha & 0xffu);
+            if (s->hud_glyph) ce_hud_dim_apply_a((uint32_t)s->hud_glyph, hud_a);
+            if (s->hud_strip) ce_hud_dim_apply_a((uint32_t)s->hud_strip, can_rel ? hud_a : 0);
+        }        for (fi = 0; fi < SEASON_FRAME_N; ++fi)
             if (s->hud_frame[fi]) ce_anm_set_color((uint32_t)s->hud_frame[fi], A | 0x00505050u);
         /* ★★ 2026-09-15i：**C 侧那层 `min(脚本 α, 32)` 兜底已撤**（脚本已统一，见下）。
          *   · 2026-09-15g 那一轮这里做过一段「上限钳制」：只对**由脚本管 alpha 的两支**
