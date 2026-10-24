@@ -11072,6 +11072,30 @@ static int on_tick_2(ce_card_t *c)
                                                 *   `_semantic()` 语义 = 「没有 106 时」⇒ 106 在场时线偏高、
                                                 *   道具在同一高度就会被提前吸走（与 108 永点同一个 bug）。*/
                                                ce_poc_height(), &got_pts);
+          /* ★★★ 2026-10-24（owner：**有弹幕在擦弹圈内 ⇒ 全屏道具变黄 + 抖动 + 下落半速**）——
+           *   判据 = 115 写进引擎的那个因子 `itemmgr+0xe6bb14`（`CE_ITEM_SLOWDOWN`）< 1.0
+           *   （115 擦弹中写 `LOLK_SLOW_START/100`、恢复写 1.0）⇒ 与 115 同帧一致；
+           *   没有 115 的局里该因子恒 1.0 ⇒ 本段一个字节都不改（逐位不变）。
+           *   ⚠ 只作用于 `st == 1`（飘落阶段）；飞散/过回收线/被吸引 不动。*/
+          {
+              uint8_t *im4 = CE_ITEM_MANAGER();
+              const int slow4 = im4 && *(const float *)(im4 + CE_ITEM_SLOWDOWN) < 0.999f;
+              int k4;
+              for (k4 = 0; k4 < POFV_POWER_MAX; ++k4) {
+                  pofv_power_t *it = &s_power.s[k4];
+                  if (!it->active || !it->vm) continue;
+                  if (slow4) {
+                      if (it->st == 1) {
+                          it->vy *= 0.5f;
+                          if (it->vy > POFV_POWER_FALL_MAX * 0.5f) it->vy = POFV_POWER_FALL_MAX * 0.5f;
+                          it->x += ((ce_sdk_frame() >> 3) & 1u) ? 0.6f : -0.6f;   /* 抖动 */
+                      }
+                      ce_anm_set_color((uint32_t)it->vm, 0xffffd040u);            /* TH15 的黄 */
+                  } else {
+                      ce_anm_set_color((uint32_t)it->vm, 0xffffffffu);
+                  }
+              }
+          }
         /* ★★★ 2026-10-11 owner 口径（「灵力道具只有一种 = 那个透明小蓝点」✓）：
          *   ★ 灵力只认**卡侧那一类道具（kind == 1）**被拾到的颗数 ✓ ——
          *   core 已经把 `absorbed_rei` 记好了（`pofv_core.c` 的收取支 ✓）⇒ 这里取**增量** ✓。
