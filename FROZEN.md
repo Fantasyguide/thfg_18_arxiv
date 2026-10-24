@@ -35,6 +35,10 @@ make dll                 # → th18_card_expand.dll；需要 i686-w64-mingw32-gc
 make dll CE_DEV_DUMP=0   # 发布档：所有 ce_log 编译为空，不写任何日志
 
 # 2) 提交前完整只读门（主机单测 + 资源 + 站点 + 文档 + DLL ABI）
+#    ⚠ 里面 `anm-verify` / `sht-verify` 要校验 `build/ability.anm`、`build/sht/*.sht`：
+#       这些是**由游戏原生贴图切出来再打包**的构建产物，本仓不收录（版权）
+#       ⇒ 裸克隆时请先放好你自己的游戏资源、跑一次 `make anm sht`，再 `make check`。
+#       只想验证代码能不能编，用上面的 `make dll` 即可（不需要任何游戏文件）。
 make check
 
 # 3) 资源再生成（anm / sht / ecl）
