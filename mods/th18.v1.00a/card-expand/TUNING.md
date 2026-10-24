@@ -23875,5 +23875,8 @@ owner 原话：「★ 它的行为实际上就是 **TH18 早苗原生高速子�
 
 - **一手**：TH08 `ply00as`/`ply01as` 的行 `+0x1e` > 0（霊夢/魔理沙全弹染红）；`ply02as`（咲夜）/`ply03as`（妖夢）**全是 0** ⇒ 原作**不染**。
 - **本仓**：2026-10-24 owner 定案「**还得有早苗和咲夜的染红啊**」⇒ 自机弹在妖逢魔（`gauge ≥ +8000`）时，四机体一律染红。
+- **范围再收一层（同日 owner）**：**只有妖子机（option）发的弹染红，妖本体自己发的不染**。
+  判据 = `CE_PB_OPTION`（`player_bullet+0xe4`，`PlayerBullet__create 0x45e3ae` 第 5 参写入的 `zPlayerOption*`）：
+  本体主炮行 slot 0 不传 ⇒ NULL ⇒ 跳过。
 - 落点：`cards/youkai_core.h` 的 `YK_FENGMA_SET_S0/S4/A0/A4`（= 生成的 `CE_SHT_SET_YOUKAI_S0..S4` / `A0..A4`）+ `yk_fengma_tint_set()`。
 - 兜底组 `0x16`（幽々子）仍不染。
