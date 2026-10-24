@@ -9648,19 +9648,6 @@ static int on_tick_2(ce_card_t *c)
      *   ★ 按下沿三条规则（一手 ✓）：<0 ⇒ 归 0；≥10 ⇒ 回退 10；≥5 ⇒ 回退 5 ✓；
      *   ★ 每帧：若 playhead ≥ 0 ⇒ **本帧把 Z 位按上**（= 内部 Z ✓ ⇒ 原生按 TH09 节奏发 ✓）⇒ ++ ⇒
      *     ★ ≥15 ⇒ 置 −1（停 ✓）。*/
-    s_z_th09_mode = pofv_card_present(POFV_CARD_ID_106);   /* ★ 有 106 ⇒ 走 TH09 ✓（否则恒 0 ✓）*/
-    if (s_z_th09_mode) {
-        const uint32_t pr = *(uint32_t *)CE_ADDR_INPUT_PRESSED;
-        if (pr & 1u) {                                  /* ★ Z 按下沿 ✓ */
-            if (s_z_playhead < 0) s_z_playhead = 0;      /* ★ 停着 ⇒ 归 0 从头播 ✓ */
-            else if (s_z_playhead >= 10) s_z_playhead -= 10;   /* ★ 续命 ✓ */
-            else if (s_z_playhead >= 5)  s_z_playhead -= 5;    /* ★ 续命 ✓ */
-        }
-        if (s_z_playhead >= 0) {
-            *(uint32_t *)CE_ADDR_INPUT_HELD |= 1u;       /* ★ 内部 Z = 按住 ✓（原生照发 ✓）*/
-            if (++s_z_playhead >= 15) s_z_playhead = -1; /* ★ 到 15 ⇒ 停 ✓（一手 ✓）*/
-        }
-    }
 
     /* ★★★★★ 2026-10-11 **owner 定案：搭桥**（比走闸简单 ✓）⇒ ★ 本卡这里**重新启用"清 Z 位"** ✓：
      *   ★ owner：「有没有可能**两边搭桥**？相当于**留一个不会被改的 Z 位置**？」
@@ -9675,6 +9662,49 @@ static int on_tick_2(ce_card_t *c)
          *   然后才清原始位（★ 覆盖一切发弹消费者：原生主炮 + 茫茫多的子机/装备 ✓）。*/
         ce_input_z_frozen = CE_INPUT_HELD() & 1u;
         *(uint32_t *)CE_ADDR_INPUT_HELD &= ~(uint32_t)1u;   /* ★ 断 Z：引擎与所有子机这帧都读到"没按" ✓ */
+    }
+    /* ★★ 2026-10-24 第三轮（owner：按 Z 一直有发弹、根本没阻断，日志无 th09 行）——
+     *   上一版把 TH09 段放进了 `if (pofv_charge_key())` 里 ⇒ **只有按住 C 才跑**。
+     *   ⇒ 现在放在该 if **之后**：既不早于"清 Z"，也不受蓄力键限制。*/
+    /* ★★ 2026-10-24（铁律 5 现场）：TH09 那段必须**放在清 Z 之后** ——
+     *   原来它在清位之前，自己按上的 Z 同一帧就被下面那行抹掉 ⇒ TH09 发弹一次都没生效。*/
+    static uint8_t  s_t09_zprev;    /* ★ TH09 模型：上一帧键盘 Z（自算按下沿用）*/
+    static uint32_t s_t09_press_n;   /* ★ 累计按下沿次数（诊断）*/
+    s_z_th09_mode = pofv_card_present(POFV_CARD_ID_106);   /* ★ 有 106 ⇒ 走 TH09 ✓（否则恒 0 ✓）*/
+    if (s_z_th09_mode) {
+        /* ★★★ 2026-10-24 第四轮（owner：还是没阻断；日志 `playhead` 26 次采样全 −1、`pressed` 恒 0）：
+         *   `CE_ADDR_INPUT_PRESSED` **拿不到 Z 的按下沿**（那个寄存器的语义/相位与本卡假设不同
+         *   —— 也可能是被引擎在本 tick 之前清掉）⇒ 不再依赖它，**自己用键盘 Z 算按下沿**：
+         *   读 `GetKeyboardState` 的 VK_Z（`ce_key_down`，108 修激光用的是同一个来源），
+         *   并用上一帧状态做差分 ⇒ 与引擎的输入块完全解耦。*/
+        const int zk = ce_key_down(0x5Au) ? 1 : 0;      /* VK_Z */
+        const int z_edge = (zk && !s_t09_zprev);
+        s_t09_zprev = (uint8_t)zk;
+        if (z_edge) ++s_t09_press_n;
+        if (z_edge) {                                  /* ★ Z 按下沿（自算 ✓）*/
+            if (s_z_playhead < 0) s_z_playhead = 0;      /* ★ 停着 ⇒ 归 0 从头播 ✓ */
+            else if (s_z_playhead >= 10) s_z_playhead -= 10;   /* ★ 续命 ✓ */
+            else if (s_z_playhead >= 5)  s_z_playhead -= 5;    /* ★ 续命 ✓ */
+        }
+        if (s_z_playhead >= 0) {
+            *(uint32_t *)CE_ADDR_INPUT_HELD |= 1u;       /* ★ 内部 Z = 按住 ✓（原生照发 ✓）*/
+            if (++s_z_playhead >= 15) s_z_playhead = -1; /* ★ 到 15 ⇒ 停 ✓（一手 ✓）*/
+        } else {
+            /* ★★★ 2026-10-24 第五轮（owner：仍然没阻断；日志证明 `playhead` 在 0..14 走、机制在跑）——
+             *   缺的是**"停"的那一半**：TH09 的语义是「一段序列播完就停，要再按 Z 才继续」，
+             *   而原来 `playhead < 0` 时**什么都不做** ⇒ 键盘 Z 还按着，引擎自己就看到 held bit0 = 1
+             *   ⇒ 一直连发、毫无阻断。⇒ 非播放期必须**主动断 Z**（与蓄力断 Z 同一个手段）；
+             *   同时把原始值留给 108 的桥（`ce_input_z_frozen`），免得连它的"按 Z 追踪"一起掐掉。*/
+            ce_input_z_frozen = CE_INPUT_HELD() & 1u;
+            *(uint32_t *)CE_ADDR_INPUT_HELD &= ~(uint32_t)1u;
+        }
+    }
+    {   /* ★ 2026-10-24（owner：TH09 发弹仍没生效）：每 30 帧一行，证明这段到底跑没跑、playhead 动不动 */
+        static unsigned s_t09n;
+        if ((++s_t09n % 30u) == 0u)
+            ce_log_key("th09: on=%d playhead=%d presses=%u held=%08x keyZ=%d",
+                       s_z_th09_mode, (int)s_z_playhead, (unsigned)s_t09_press_n,
+                       (unsigned)CE_INPUT_HELD(), ce_key_down(0x5Au) ? 1 : 0);
     }
     /* ★★ 决策痕迹（owner 前一轮澄清 ✓，**还没搭桥时**的结论 ✓；搭桥后可安全清位 ✓）：
      * ★★★★ 2026-10-11 **owner 澄清** ✓：
