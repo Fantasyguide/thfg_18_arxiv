@@ -10283,6 +10283,13 @@ static void __attribute__((noinline)) yk_beam_tick(yk_card_t *s)
      *   见 `yk_m_laser_beam_bars_resident()`）。`ncore` 从中拆出来，只为让 on 那一行把「残影 / 光斑」分开报。*/
     int want = 0, ncore = 0, nres = 0;
 
+    /* ★ 2026-10-24（owner：妖侧子机激光不见了）：两道门的实际取值，魔理沙每 30 帧一行 */
+    {   static unsigned s_bn;
+        if (character == YK_CHAR_MARISA && (++s_bn % 30u) == 0u) {
+            const int st = yk_youkai_shotset_pick(character, tier);
+            ce_log_key("ykbeam: focused=%d shooting=%d char=%d tier=%d set=%d installed=%d",
+                       yk_focused(), yk_shooting(), character, tier, st, yk_youkai_shotset_installed(st));
+        } }
     if (!s || !CE_PLAYER() || !yk_focused() || character != YK_CHAR_MARISA || !yk_shooting()) {
         yk_beam_kill(1);
         return;
@@ -10663,7 +10670,13 @@ static int on_tick_2(ce_card_t *c)
 {
     /* ★★ 桥 —— 必须**第一件事**：★ 109（id 更大 ⇒ 本卡之后跑）会清输入块的 Z 位 ✓，
      *   ★ 所以本卡要在这里先把**键盘 Z** 抄下来 ✓（见 `yk_shooting` 那段长注 ✓）。*/
-    s_z_bridge = ce_input_z_frozen;   /* ★ 读共享槽 ✓（109 先存后清 ✓）—— 不再自己抄键盘 Z ✗ */
+    /* ★★★ 2026-10-24（owner：**妖侧我们建的子机的激光不见了**，发布版就有）——
+     *   一手：`shooting=0` 恒成立（诊断行 `ykbeam: focused=1 shooting=0 char=1 tier=1 set=90 installed=1`）。
+     *   根因：这行原来**只**读共享槽 `ce_input_z_frozen`，而那个槽是 **109（花映塚）** 在自己 tick 里填的
+     *   ⇒ **只装 108、不装 109 时它恒 0** ⇒ `yk_shooting()` 恒 0 ⇒ `yk_beam_tick` 第一道门直接 kill
+     *   ⇒ 妖侧子机的激光**一次都不画**。
+     *     109 在场时行为不变（槽有值就以槽为准 —— 那是 109 清位之前的真值）。*/
+    s_z_bridge = ce_input_z_frozen | ((ce_key_down(0x5Au) ? 1u : 0u));   /* VK_Z 兜底 */
     if (!YK_ENABLE_CARD || !YK_ENABLE_CB_TICK2) return 0;   /* ★ 总开关 + 回调族 ⑨ */
     yk_card_t *s = ce_state(c, yk_card_t);
     int focused;
