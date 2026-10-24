@@ -1354,6 +1354,18 @@
       "expected": "7409",
       "code": "eb09",
       "title": "★ 招财猫常驻：第3档 pick 后『卡组里有 0x26(MANEKI) 才加抽』改成无条件加抽（je → jmp）⇒ 商店随机位恒为 6（第三档（低价 50-180））"
+    },
+    "disable_xinput_polling": {
+      "addr": "0x401860",
+      "expected": "558bec",
+      "code": "31c0c3",
+      "title": "禁用手柄：XInput 轮询直接 return 0"
+    },
+    "disable_directinput_polling": {
+      "addr": "0x401650",
+      "expected": "558bec81ec20010000",
+      "code": "8b442404c204009090",
+      "title": "禁用手柄：DirectInput 轮询早退"
     }
   },
   "breakpoints": {
