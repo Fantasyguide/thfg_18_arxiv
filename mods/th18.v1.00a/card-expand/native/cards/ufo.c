@@ -811,7 +811,7 @@ static ce_hud_slot_t s_hud_slot;
 #ifdef CE_ANM_ABILITY_SPRITE_SLOT_EMPTY
 #define UFO_HUD_SPR_SLOT_EMPTY   CE_ANM_ABILITY_SPRITE_SLOT_EMPTY   /* 457 */
 #else
-#define UFO_HUD_SPR_SLOT_EMPTY   457    /* `make anm` 后换宏（上面那支优先）*/
+#define UFO_HUD_SPR_SLOT_EMPTY   458    /* ★ 2026-10-24 审计修：生成物是 458（原来手抄成 457，差 1）*/
 #endif
 #define UFO_HUD_SLOT_BLINK_OFFSET 4     /* 一手：亮版那一组 = 基址 + 4（59..62 → 63..66）*/
 #ifdef CE_ANM_ABILITY_SPRITE_SLOT_EMPTY_B

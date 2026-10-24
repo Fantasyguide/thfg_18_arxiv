@@ -112,11 +112,16 @@ typedef void (__attribute__((thiscall)) *gw_fn_player_die_t)(void *player);
 typedef void (__attribute__((thiscall)) *gw_fn_commit_death_t)(void *player);
 
 /* 把这张卡的充能**当帧改成** `frames`（照引擎写充能那一支：zTimer 的 prev/cur/cur_f + 总时长）。*/
+/* ★★ 2026-10-24（owner：**换面不清零**）—— 卡对象重建 / 换面时充能三元组会回到默认。
+ *   ⇒ 文件级记住「当前剩余帧」，每帧同步，换关时写回。*/
+static int32_t s_gw_recharge_left;
+
 static void gw_set_recharge(ce_card_t *c, int32_t frames)
 {
     uint8_t *p = (uint8_t *)c;
     if (!p || frames < 0) return;
     *(int32_t *)(p + CE_CARD_RECHARGE_TIMER)     = frames - 1;      /* +0x34 prev */
+    s_gw_recharge_left = frames;
     *(int32_t *)(p + CE_CARD_RECHARGE_TIMER + 4) = frames;          /* +0x38 cur  */
     *(float   *)(p + CE_CARD_RECHARGE_TIMER + 8) = (float)frames;   /* +0x3c cur_f*/
     *(int32_t *)(p + CE_CARD_RECHARGE_TIME)      = frames;          /* +0x48 总时长 */
@@ -503,6 +508,9 @@ static void gw_fx_kill(ce_card_t *c)
  *      落到别人头上的同号 VM。三条生命周期（换关/局末/删卡）那条路才真删（那时它们一定还在窗口内）。*/
 static int on_tick_2(ce_card_t *c)
 {
+    /* ★ 每帧同步剩余冷却：换面时写回的是「剩下的」，不是整段 */
+    {   const int32_t r = *(const int32_t *)((const uint8_t *)c + CE_CARD_RECHARGE_TIMER + 4);
+        if (r >= 0) s_gw_recharge_left = r; }
     gw_card_t *s = ce_state(c, gw_card_t);
     const float *pp;
     if (!s) return 0;
@@ -521,8 +529,13 @@ static int on_tick_2(ce_card_t *c)
     return 0;
 }
 
-static void on_stage_start(ce_card_t *c) { gw_fx_kill(c); }
-static void on_run_reset(ce_card_t *c)   { gw_fx_kill(c); }
+static void on_stage_start(ce_card_t *c)
+{
+    gw_fx_kill(c);
+    /* ★ 换面不清零：把上一面剩下的冷却写回来 */
+    if (s_gw_recharge_left > 0) gw_set_recharge(c, s_gw_recharge_left);
+}
+static void on_run_reset(ce_card_t *c)   { gw_fx_kill(c); s_gw_recharge_left = 0; }
 static void on_delete(ce_card_t *c)      { gw_fx_kill(c); }
 
 CE_CARD(92, .active_recharge = GW_BASE, .on_activate = on_activate, .on_tick_2 = on_tick_2,

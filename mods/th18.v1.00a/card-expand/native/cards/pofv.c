@@ -2599,7 +2599,7 @@ static void storm_vm_sync(void)
  *   ⇒ 定案登记在 `TUNING.md` 的 C1 节。
  *
  * ❓**观感自定**：一手是 `pl00.anm` script10 的 30×30 弹；本卡**暂用现成脚本占位**
- *   （`CE_ANM_ABILITY_SCRIPT_POFV109_SPIRIT_BODY`），**不新切贴图、不动 `ORDER.txt`** ✗。
+ *   （**早已不是 400**：现用 427/442/444/469；400 = 神灵本体，注释见上一条审计）**不新切贴图、不动 `ORDER.txt`** ✗。
  * ❓**伤害源自定**：`ce_damage_rect` 的 `life/w/h` 一手没给 ⇒ 先用下面的常量（32×32 ≈ 一手 30×30 ✓）。
  */
 typedef struct { float x, y; int dmg; float ang, spd; } pofv_c1_shot_t;
@@ -4545,9 +4545,9 @@ static int pofv_dmg_laser(int ch, int move, int lv)
  *   ★ ⇒ 8 同列表内先画 ✓ 被敌弹盖住 ✓；★ ❓跨列表次序未核 ⇒ 这是**旋钮** ✓）。
  *   ★ 不再用 `POFV_C3_VM_LAYER`(6) + STORM 脚本 ✗（★ 那是 TH19 `ghost.anm` 的**可见圈** ✓，
  *   ★ 圆心 `alpha(1)` 全透 + 边缘黑 ⇒ ★ 就是"**有伤害、零视觉**"的原因 ✓）。*/
-#define POFV109_C3_ORB_SCRIPT     457    /* ★ C3 阴阳玉 ✓（一手 script329/330 的等价 ✓：62×62 大红玉 ✓、
+#define POFV109_C3_ORB_SCRIPT     CE_ANM_ABILITY_SCRIPT_POFV109_C3_ORB    /* ★ C3 阴阳玉 ✓（一手 script329/330 的等价 ✓：62×62 大红玉 ✓、
                                           *   scale 3→1 ✓、t=48 稳定 ✓、中断后 12 帧淡出缩掉 ✓）*/
-#define POFV109_C4_ORB_SCRIPT     458    /* ★ C4 阴阳玉 ✓（一手 script327 的等价 ✓：30×30 淡蓝→实蓝 ✓、
+#define POFV109_C4_ORB_SCRIPT     CE_ANM_ABILITY_SCRIPT_POFV109_C4_ORB    /* ★ C4 阴阳玉 ✓（一手 script327 的等价 ✓：30×30 淡蓝→实蓝 ✓、
                                           *   scale 5→1 ✓、t=63 换实心 ✓、中断后 14 帧加算放大淡出 ✓）
                                           *   ⇒ ★ 这是 **color3**（低档 ✓）*/
 /* ★★★★ 2026-10-17（施工单 §14 ＋ §10 第 6 项 ＋ §12①-6 ✓）：★ **高档的玉 = color2 变体** ✗ ——
@@ -4555,8 +4555,8 @@ static int pofv_dmg_laser(int ch, int move, int lv)
  *   ★ color2 的两张图 = ★ 淡 `sprite325`（`bullet1.png (65,209,30,30)` ✓）＋ ★ 实心 `sprite582`
  *   ★（`bullet6.png (65,1,30,30)` ✓）⇒ ★ 与 color3 **只有配色不同、时序/自转逐字相同** ✓
  *   ⇒ ★ 故只加这一份变体脚本（468 ✓），★ 由发射处按档取 ✓。*/
-#define POFV109_C4_ORB2_SCRIPT    468    /* ★ C4 阴阳玉 · **color2**（高档 ✓，与 458 只差两个 sprite ✓）*/
-#define POFV109_BBALL_SCRIPT      456    /* ★ 8×8 彩弹 ✓ —— ★ C4 **第二发射口**用（一手 `etSprite(1,1,2)` = type1 → script38 ✓）
+#define POFV109_C4_ORB2_SCRIPT    CE_ANM_ABILITY_SCRIPT_POFV109_C4_ORB2    /* ★ C4 阴阳玉 · **color2**（高档 ✓，与 458 只差两个 sprite ✓）*/
+#define POFV109_BBALL_SCRIPT      CE_ANM_ABILITY_SCRIPT_POFV109_BBALL    /* ★ 8×8 彩弹 ✓ —— ★ C4 **第二发射口**用（一手 `etSprite(1,1,2)` = type1 → script38 ✓）
                                           *   ⇒ ★ 待接（owner：「★ **小彩弹也发**」✓）*/
 #define POFV109_BBALL_LAYER         8    /* ★ owner：层在敌弹下面 ✓（两个阴阳玉脚本里也各自写了 `layer(8)` ✓）*/
 #define POFV_C3_VM_SCALE_EVEN     0.25f    /* ❓⑤：偶波（一手 `etSprite(46)`）*/
