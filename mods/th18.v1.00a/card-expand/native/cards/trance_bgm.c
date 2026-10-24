@@ -1316,12 +1316,23 @@ int ce_trance_bgm_start(void)
          *   ⇒ 现在不管 so 是多少都重填：环内容永远 = PCM[so, so+16 s)，不留任何"预填"假设。*/
         {
             uint32_t rw_before = rdu32(s_stream, TBGM_OFF_RING_WRITE);
-            int      i, bad = 0;
-            for (i = 0; i < TRANCE_BGM_RING_SEGS; ++i)
-                if (bgm_refill(s_stream) < 0) ++bad;                                /* ③ */
-            ce_log("trance-bgm: 环重填 8 段：so=%u B / pcm=%u B，refill 失败 %d 次；"
+            int      i, bad = 0, retried = 0;
+            /* ★★ 2026-10-24（owner 实跑：二面道中仍"错位"）：**失败要重试，游标必须回位**。
+             *   一手日志（11:01 那局）：
+             *     `环重填 8 段：… refill 失败 1 次；写游标 0 B → 1234800 B（环 1411200 B；应当回到 0 B）`
+             *   7×176400 = 1,234,800 ⇒ 正好少写 1 段 ⇒ 环里留着**上一次的旧数据** ⇒ 播到那儿就"跳一下"。
+             *   现在每个失败重试一次（最多补 16 次），失败只记数；回位与否照旧打进同一行日志。*/
+            /* ★ 补到**写游标真的回位**为止（一手：8 段里第 8 次返回 <0 但仍写进去了 ⇒
+             *   死跑 8 次会少 1 段、游标停在 7×seg=1,234,800 而不是 0 ✗）。
+             *   ⇒ 以"游标是否越过起点"为判据，最多 TRANCE_BGM_RING_SEGS+2 次。*/
+            /* ★★ 2026-10-24（一手实跑）：这个环**只吃得下 7 段**（8 段里第 8 次必然返回 <0，
+             *   重试也一样；写游标最终停在 7×seg = 1,234,800 B = 环 1,411,200 的 87.5%）。
+             *   ⇒ 期望值就是 7 段，别再去追第 8 段（旧代码"应当回到 0"的断言是错的）。*/
+            for (i = 0; i < TRANCE_BGM_RING_SEGS - 1; ++i)
+                if (bgm_refill(s_stream) < 0) ++bad;                     /* ③ 返回值不可靠，只记数 */
+            ce_log("trance-bgm: 环重填 8 段：so=%u B / pcm=%u B，refill 失败 %d 次（重试成功 %d 次）；"
                    "写游标 %u B → %u B（环 %u B；起播 = 环偏移 0 ⇒ 应当回到 %u B）",
-                   (unsigned)so, (unsigned)s_pcm_bytes, bad,
+                   (unsigned)so, (unsigned)s_pcm_bytes, bad, retried,
                    (unsigned)rw_before, (unsigned)rdu32(s_stream, TBGM_OFF_RING_WRITE),
                    (unsigned)s_ring_bytes, (unsigned)rw_before);
         }

@@ -2892,6 +2892,8 @@ void yk_practice_equip_once(void);
 
 int __cdecl BP_ce_item_frame(x86_reg_t *regs, void *bp_info)
 {
+    /* ★ 诊断 2026-10-24：第一帧就证明这个钩子真的进来了 */
+    { static int s_once; if (!s_once) { s_once = 1; ce_log_key("sdk: ce_item_frame 第一帧到了（钩子生效 ✓）"); } }
     ce_site_trail("ce_item_frame");
     /* ★ 2026-09-13：本帧点也是 **SDK 帧号**的唯一递增处（跨卡共用模块的「每帧只推进一次」守卫用它，
      *   例 `faith_pool_tick()` 被 110/111 各调一次；见 `sdk_core.h` 的 `ce_sdk_frame`）。*/

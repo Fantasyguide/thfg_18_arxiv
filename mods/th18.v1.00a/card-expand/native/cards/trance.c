@@ -3069,6 +3069,16 @@ static void on_item_frame(ce_card_t *c)
                       ? 0                                            /* ★ 灵界中：不声明无敌（靠闸门） */
                       : (s->end_invuln > 0 ? s->end_invuln : 0));    /* ★ 主动结束后的 1 秒 */
 
+    /* ★★ 2026-10-24（owner 实跑：灵界结束后玩家本体闪黄 ✗）：
+     *   引擎的无敌闪色写的是 `color_2`（一手 `senro.c:179`），触发依据是 zTimer 的 **prev** 字段。
+     *   ⇒ 只在「无敌只剩我们自己这一份」时把 **prev 清 0**：闪消失，**无敌本身一点不减**
+     *     （`cur` / `cur_f` 一个字不动 ⇒ 不会截短别的卡声明的长无敌 —— 那正是 2026-09-22 删掉直写的原因）。
+     *   `ce_invuln_frames()` = 各卡声明取 max ⇒ 等于 `s->end_invuln` 就说明这一帧没有别人。*/
+    if (s->end_invuln > 0 && ce_invuln_frames() == s->end_invuln) {
+        ce_timer_t *t = CE_PLAYER() ? CE_PLAYER_INVULN() : 0;
+        if (t) t->prev = 0;                 /* 只清"闪"，不动 cur/cur_f */
+    }
+
     /* ⑤′ 主动结束后的 1 秒无敌倒计时（声明在 ④ 里；这里只递减）*/
     if (s->end_invuln > 0) --s->end_invuln;
 
