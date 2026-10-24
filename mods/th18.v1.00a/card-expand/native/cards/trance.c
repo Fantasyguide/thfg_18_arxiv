@@ -59,8 +59,6 @@
  *      → `trance_game_flags_ok()`，TH18 全局 `0x4cccc8`，站址见该函数注释）⇒ `trance_can_activate()`。
  *   ⑤ **开灵界（两条路）**：
  *      **① 手动**：`on_activate`（D 切到本卡 + 按 C；2026-09-12 用户定案，原「满槽自动进」已删）。
- *        ★ 2026-10-26 owner 口径「113 的空格给灵重新开一下」⇒ **空格**也发动（同门槛，见
- *        `TRANCE_SPACE_TRIGGER` 与 `on_tick_2` 里那段；C 原样保留）。
  *      **② 中弹**：`on_death_after_deathbomb`（**`+0x0c`**）里当场做
  *        「让位检查 → `trance_force_on_death()` → `Player__cancel_impending_death` `0x45d590`
  *        → **`return 1`**」（详见下面「中弹救援」段）。
@@ -200,27 +198,6 @@
 #define TRANCE_NUM  113          /* ⚠ `CE_CARD` 会对 ID 做 ## 拼接 ⇒ 里面必须写字面量 113 */
 #define TRANCE_LOG_EVERY 600
 #define TRANCE_STAGE_INIT_WINDOW 60   /* 进关后多少帧内允许自愈式补写槽初值（衬一次关卡加载的时序差）*/     /* 每 600 游玩帧一条汇总 */
-
-/* ★★ 2026-10-26（owner 口径：「**113 的空格给灵重新开一下，我要测灵界**」）——
- *   **空格 = 灵界的第二个触发键**（与 C **并列**；C 原样保留，见 `on_activate`）。
- *
- * ## 选的是「① 保留 C，同时接受空格」+「③ 一个开关宏，默认开」
- *   · C（`D` 切到本卡再按）**一个字不改** ⇒ 现有手感不受影响 ✓；
- *   · 空格走**原始按键** `ce_key_down(CE_VK_SPACE)`（`GetKeyboardState`，`sdk.h` 现成接口 ✓）
- *     —— TH18 的 6 个动作键是 Z/X/Shift/Esc/C/D（`sdk.h` 的 CE_VK_* 段），**空格不在其中** ✓；
- *   · **不消耗 bomb、不走 `on_bomb_gate`**：TH18 的 bomb 键是 **X**，空格与炸弹管理器毫无关系
- *     （`sdk.h`：空格从来只是调试键）⇒ 这里只读「按键动作」，不碰 `CURRENT_BOMBS`，
- *     也不调 `Bomb__can_bomb_and_deathbomb_check` `0x420420`。所以按空格开灵界**一颗炸弹都不花** ✓。
- *   · 门槛与 C 完全同一条：`trance_fill_cond()` 的 8 条 + `trance_can_activate()`（槽满/有敌/冷却/
- *     没对话/没放 B/不在灵界/GAME_FLAGS）⇒ 槽不满时按空格只打一行 `ready=0`，不会开。
- *   · 边沿触发（`space_key_prev`）：按住不会连发；只在 `on_tick_2`（游玩帧、玩家 tick 之前）读。
- *
- * ⚠ 与调试键的关系：`TRANCE_DEBUG_KEY` 那段「空格撒神灵」在 `on_item_frame`，且被
- *   `CE_DEBUG_SPACE_KEYS`（`sdk.h`，现为 **0**）统一关着 ⇒ 当前**不会**与这条打架。
- *   将来把 `CE_DEBUG_SPACE_KEYS` 开回 1 时：一次空格会同时「撒神灵 + 开灵界」—— 用本宏可单独关掉这边。
- * ⚠ `ce_key_down` 不进 replay 输入流（`GetKeyboardState` 读不到历史按键）⇒ 回放里空格不会触发灵界，
- *   而 C 那条（引擎输入位）在回放里照常 —— 这是本触发键**只用于测试**的已知代价。*/
-#define TRANCE_SPACE_TRIGGER 1
 
 /* ---- ★ 中弹救援用到的两个引擎函数（第二版新增；**地址不是猜的**，逐条给一手证据）----
  *
@@ -654,7 +631,6 @@ typedef struct {
     int32_t last_gauge;       /* 上一帧的槽值（HUD 只在变了的时候重排）*/
     int32_t dlg_prev;         /* 上一帧「在放对话」吗（用户口径 ④ 要求**边沿触发**，不是每帧退）*/
     int32_t dbg_key_prev;     /* 调试键（空格）上一帧按着没有 —— 边沿检测（照 `cards/animal.c` 同款）*/
-    int32_t space_key_prev;   /* ★ 灵界触发键「空格」上一帧的电平（边沿检测；见 `TRANCE_SPACE_TRIGGER` 的注释）*/
     int32_t dmg_decl;         /* 本卡当前往伤害层里声明了多少（边沿判定用；初值 = CE_DMG_UNIT）*/
     int32_t end_invuln;       /* 主动灵界结束后的 1 秒无敌剩余帧数（被动那档不走这里）*/
     int32_t log_frame;
@@ -920,7 +896,6 @@ static void trance_on_spirit_collected(ce_card_t *c, int32_t type, float x, floa
                                         int32_t born_trance);
 static void trance_hud_tick(const trance_card_t *s);   /* 左下角指示槽（定义在 on_draw 前）*/
 static void trance_player_die(void);                     /* 补死（定义在救援段；on_tick_2 要用）*/
-static int  trance_activate_now(ce_card_t *c, const char *src);   /* ★ C / 空格共用（定义在「主动卡发动」段）*/
 
 /* ---- 引擎面读取（薄包装；缺宏就在本文件里补 `static inline` + 一手出处）---- */
 
@@ -2343,32 +2318,6 @@ static int on_tick_2(ce_card_t *c)
         }
     }
 
-    /* ★★ 2026-10-26（owner：「113 的空格给灵重新开一下，我要测灵界」）——
-     *   **空格 = 灵界触发键**（与 C 并列；完整理由见文件头 `TRANCE_SPACE_TRIGGER` 那段）。
-     *   · 原始按键 `ce_key_down(CE_VK_SPACE)`：空格**不在** TH18 的 6 个动作键里
-     *     （Z/X/Shift/Esc/C/D）⇒ 读它**不消耗 bomb**（bomb = X）、也不走 `on_bomb_gate`；
-     *   · 门槛与 C 同一条（`trance_activate_now` ⇒ `trance_can_activate` 的 8 条）；
-     *   · **边沿触发**（`space_key_prev`）：按住不连发；
-     *   · 不管当前选中的是哪张卡都能按（owner 要"随时测灵界"；C 那条仍要求 D 切到本卡）；
-     *   · 每次按下打**一行**：`113: 灵界触发键 = 空格（gauge=%d ready=%d）`
-     *     （`ready` = 8 条门槛过没过；槽不满时按空格就靠这行确认"键读到了、只是不能开"）。*/
-#if TRANCE_SPACE_TRIGGER
-    {
-        const int down = ce_key_down(CE_VK_SPACE) ? 1 : 0;
-        if (down && !s->space_key_prev) {
-            trance_cond_t cond;
-            int ready;
-            trance_fill_cond(s, &cond);
-            ready = trance_can_activate(&s->core, &cond);
-            ce_log_key("113: 灵界触发键 = 空格（gauge=%d ready=%d）",
-                       (int)s->core.gauge.gauge, ready);
-            (void)ready;      /* 0/1 档 `ce_log_key` 是 `((void)0)`（参数一起消失）⇒ 这一句防 -Wunused-but-set */
-            (void)trance_activate_now(c, "空格");
-        }
-        s->space_key_prev = down;
-    }
-#endif
-
     /* ★ 灵梦的判定点（每帧写 —— `Player__reset` 会在关卡开始/复活时覆盖回原生值，写一次留不住）
      *   ⇒ 用**目标值**写，不用"乘一次"：不管现在是原生还是已被缩过，每帧都回到目标值（自愈）。
      *
@@ -2440,33 +2389,26 @@ static int on_tick_2(ce_card_t *c)
 
 /* ============================ 每帧（游玩帧） ============================ */
 
-/* ============================ 主动卡发动（`on_activate` / 用户的 C 键 / **空格**） ============================
+/* ============================ 主动卡发动（`on_activate` / 用户的 C 键） ============================
  * 用户 2026-09-12 定案：**灵界是主动触发的** —— 「用 D 键切换到该卡，然后按 C」，
  * 与 116（天空璋）同一套契约。⇒ 本卡声明 `active_recharge`（= 主动卡），
  * 真正的门槛留在 `on_activate` 里：**灵界槽不满 / 已在灵界 ⇒ `ce_refuse`**
  * （SDK 看到 `CE_ACTIVATE_REFUSED` 会把刚装填的充能退回、**不算发动**，卡侧自己放无效音）。
  *
- * ★★ 2026-10-26（owner：「113 的空格给灵重新开一下，我要测灵界」）：**空格也是触发键**，
- *   与 C **并列**、门槛与副作用完全相同 —— 两条路共用下面的 `trance_activate_now()`（一份实现，
- *   不可能出现"空格能开、C 不能开"或两条路门槛不一样）。C 那条仍由 SDK 主动卡机器调
- *   （要求 `D` 切到本卡）；空格那条在 `on_tick_2` 里读**原始按键**（见文件头 `TRANCE_SPACE_TRIGGER`）。
- *
  * ⚠ `active_recharge = 1`（不是真冷却）：先例 = 117 咆哮（`cards/animal.c` 的 `hyper_begin`），
  *   它的代价是**动物灵槽**而不是时间 ⇒ 充能只做「SDK 主动卡机器的入场券」。
  *   本卡的代价同样是槽（600 = 满）⇒ 同一形状。 */
-static int trance_activate_now(ce_card_t *c, const char *src)
+static int on_activate(ce_card_t *c)
 {
     trance_card_t *s = st(c);
     trance_cond_t cond;
 
-    /* 0/1 档里唯一的读者是 `ce_log`（编译成空）⇒ 显式吃掉参数，免得 -Wunused-parameter */
-    (void)src;
     if (!s) return ce_refuse("TD_SPIRIT", "no state slot");
     if (s->core.phase != TRANCE_PHASE_IDLE) return ce_refuse("TD_SPIRIT", "already in trance");
     trance_fill_cond(s, &cond);
     if (!trance_can_activate(&s->core, &cond)) {
-        ce_log("trance: refuse (%s) - gauge %d/%d, conditions not met (SPEC §9 #1 的 8 条)",
-               src, (int)s->core.gauge.gauge, TRANCE_GAUGE_MAX);
+        ce_log("trance: refuse (C) - gauge %d/%d, conditions not met (SPEC §9 #1 的 8 条)",
+               (int)s->core.gauge.gauge, TRANCE_GAUGE_MAX);
         return ce_refuse("TD_SPIRIT", "gauge not full");
     }
     if (!trance_begin(&s->core, 0, &cond)) return ce_refuse("TD_SPIRIT", "begin refused");
@@ -2478,14 +2420,8 @@ static int trance_activate_now(ce_card_t *c, const char *src)
      * `SoundManager__play_sound_at_position`）。★ 声像 = **自机 x**：一手在 `th13:0x405867`
      * 就是 `fld [PLAYER+0x5b8]` 之后 `fstp [esp]` 当 x 传进去的（旧注释里那个 ❓ 已消）。*/
     ce_play_sound(TRANCE_SE_ENTER, ce_player_x());
-    ce_log("trance: enter (%s, manual), gauge %d, frame %d", src, (int)s->core.gauge.gauge, (int)s->frame);
+    ce_log("trance: enter (C, manual), gauge %d, frame %d", (int)s->core.gauge.gauge, (int)s->frame);
     return 0;                               /* 瞬发：窗口由 `trance_tick` 自己推 */
-}
-
-/* 卡虚表 `+0x08`（`ce_sdk_c_press`）在「D 切到本卡 + 按 C」时调 `on_activate`（2026-09-12 契约）*/
-static int on_activate(ce_card_t *c)
-{
-    return trance_activate_now(c, "C");
 }
 
 /* ============================ ★ 中弹救援（救援层的**最后一家**，2026-09-12 第二版） ============================
@@ -4557,11 +4493,10 @@ static int ctor(ce_card_t *c)
      *   （`sdk.h:357` 的一手记录），而池的生命周期是**关卡**（由 `on_stage_start` / `on_run_reset` /
      *   `on_delete` 收）—— 在 ctor 里清会在换关那一瞬间把上一关残影删掉，也会误删刚撒的实体。
      *   ⇒ 这里只清**卡的私有状态**（上面那行 memset），池交给 trance_clear()。*/
-    ce_log("trance: ctor (id %d) — trance gauge 0/%d, **主动卡**（D 切到本卡 + 按 C 发动灵界；"
-           "★ 2026-10-26 起**空格**也发动，见 TRANCE_SPACE_TRIGGER=%d）"
+    ce_log("trance: ctor (id %d) — trance gauge 0/%d, **主动卡**（D 切到本卡 + 按 C 发动灵界）"
            "+ **中弹救援（救援层最后一家：取消死亡 → 进灵界 → 出灵界再死）**, "
            "spirit pool %d slots (static)",
-           TRANCE_NUM, TRANCE_GAUGE_MAX, TRANCE_SPACE_TRIGGER, TRANCE_SPIRIT_POOL);
+           TRANCE_NUM, TRANCE_GAUGE_MAX, TRANCE_SPIRIT_POOL);
     return 0;
 }
 
