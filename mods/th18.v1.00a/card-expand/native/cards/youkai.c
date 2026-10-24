@@ -3644,6 +3644,14 @@ static void yk_familiars_tick(yk_card_t *s)
         id = *(uint32_t *)(e + CE_ENEMY_ID);
         if (!id) continue;
         epos = ce_enemy_pos(e);
+        /* ★★★★★ 2026-10-24（**修「被拒槽的下一个槽整帧不进循环体」**）：
+         *   本循环的推进**只由 `for` 的增量那一处 `++i` 负责** —— 循环体内任何「这个槽不处理」
+         *   一律写 **`continue;`**，**绝不许**再写 `++i; continue;`（那会与 `for` 的增量叠加 ⇒ 跳两格，
+         *   被拒槽的**下一个槽**这一帧根本不进循环体）。
+         *   为什么是硬 bug 而不是「少跑一次」：下一个槽若正好活跃，这一帧就**完全不进循环体**
+         *   ⇒ 不调 `yk_note_slot()`；而 `yk_frame_begin()` 已把 `seen` 清 0 ⇒ 帧末 `yk_frame_end()`
+         *   把它判成「敌人没了」⇒ 发 `YK_ACT_WITHDRAW` **真删那只使魔** ⇒ 那一格映射使魔**永远建不出来**
+         *   （建出来下一帧又被删）。原来四处写成了 `++i; continue;`，本提交一并改回 `continue;`。*/
         for (i = 0; i < YK_EMIT_SLOTS; ++i) {
             /* ★★★★ 2026-10-01 晚（owner：「**它是对称的两个使魔应当是**」）——**位置来源并列**（前 8 次）：
              *   `live` = `data+0x4e58 + i*0xc`（活相对偏移，字节步长 `0xc`；一手 `[edi+esi*4+0x4e58]`
@@ -3861,7 +3869,7 @@ static void yk_familiars_tick(yk_card_t *s)
                                "'odd shells' observed; temporary blacklist, 0 = off)",
                                id, i, ty, (unsigned)YK_EMIT_SHELL_TYPE_DENY);
                     }
-                    ++i; continue;
+                    continue;
                 }
             }
             /* ⛔ 2026-10-01 晚（**owner 已否掉**）：「大怪/尺寸白名单」那道闸**已撤** ——
@@ -3911,7 +3919,7 @@ static void yk_familiars_tick(yk_card_t *s)
                            "flicker; we wait for the real etOn origin)",
                            id, i, (int)s_cur_have_latch, (double)wxy[0], (double)wxy[1]);
                 }
-                ++i; continue;
+                continue;
             }
             /* ★ 建壳前提：**该槽真的出过弹** —— ⚠ **观测未证实前默认关闭**（owner：`bullets` 恒 0 是
              *   我们读错字段 ⇒ 把壳全拒了）。`YK_EMIT_REQUIRE_BULLETS = 1` 才启用。*/
@@ -3922,7 +3930,7 @@ static void yk_familiars_tick(yk_card_t *s)
                            "bullet count never grew for this slot) => NO familiar (owner: that spot is "
                            "not a fire point at all)", id, i);
                 }
-                ++i; continue;
+                continue;
             }
             /* ★ 2026-10-11（owner）：**距离分布自适应观测** —— 每 60 帧一行，看有没有「真口落在 48–64」
              *   被误拒（有 ⇒ 按那一个场景加白名单条目，或把阈值下调到 gap 内）。按**被检槽**计数。*/
@@ -3979,7 +3987,7 @@ static void yk_familiars_tick(yk_card_t *s)
                  *   它与上面那道 48 px 闸不是一回事（闸更宽）⇒ 单独喂台账那一格（`#37` 口径）。*/
                 if (wxy[0] == epos[0] && wxy[1] == epos[1] && s->emit_body_skipped < 0xffffu)
                     ++s->emit_body_skipped;
-                ++i; continue;
+                continue;
             }
             if (active && !yk_emit_fired_recently(id, i) && !yk_fired_sticky_get(id, i) &&
                 !yk_emit_phantom_seen(id, i)) {

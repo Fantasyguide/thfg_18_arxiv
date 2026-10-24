@@ -206,6 +206,68 @@ static void check_beam_spec_files(void)
     CHECK(n == YK_M_LASER_BEAM_TIERS);                  /* 逐档一支（5 支）*/
 }
 
+/* ★★★★★ 2026-10-24：**卡侧源码闸的公共底座** —— 读一个 .c → 剥掉两种注释（行注释 + 块注释；
+ *   字符串 / 字符字面量原样保留，里面的斜杠斜杠不是注释）→ **去掉全部空白**（这样 `++i ; continue ;`
+ *   这种写法也一并命中）。返回 malloc 串（调用者 free）；失败返回 0。
+ *   为什么卡侧检查要读源码而不是跑运行期：`yk_familiars_tick()` / `on_ctor()` 都要整个
+ *   `CE_ENEMY_FOREACH` + 引擎字段 + `ce_state`，宿主机单测链不起来；而这两条 bug
+ *   （「循环体自推 `i`」「save 定义了没人调」）的形态都是**纯代码结构**的 ⇒ 直接钉源码最可靠。*/
+static char *yk_card_code_nospace(const char *path)
+{
+    char *src = yk_slurp(path);
+    char *code, *nows;
+    size_t r = 0, w = 0, k = 0;
+    int in_line = 0, in_block = 0, in_str = 0, in_chr = 0;
+
+    if (!src) return 0;
+    code = (char *)malloc(strlen(src) + 1u);
+    nows = (char *)malloc(strlen(src) + 1u);
+    if (!code || !nows) { free(code); free(nows); free(src); return 0; }
+    while (src[r]) {
+        char c = src[r], n = src[r + 1u];
+        if (in_line)  { if (c == '\n') in_line = 0; ++r; continue; }
+        if (in_block) { if (c == '*' && n == '/') { in_block = 0; r += 2; } else ++r; continue; }
+        if (in_str)   { code[w++] = c; if (c == '\\' && n) { code[w++] = n; r += 2; continue; }
+                        if (c == '"') in_str = 0;
+                        ++r; continue; }
+        if (in_chr)   { code[w++] = c; if (c == '\\' && n) { code[w++] = n; r += 2; continue; }
+                        if (c == '\'') in_chr = 0;
+                        ++r; continue; }
+        if (c == '/' && n == '/') { in_line = 1; r += 2; continue; }
+        if (c == '/' && n == '*') { in_block = 1; r += 2; continue; }
+        if (c == '"')      in_str = 1;
+        else if (c == '\'') in_chr = 1;
+        code[w++] = c;
+        ++r;
+    }
+    code[w] = 0;
+    for (r = 0; code[r]; ++r)
+        if (code[r] != ' ' && code[r] != '\t' && code[r] != '\n' && code[r] != '\r') nows[k++] = code[r];
+    nows[k] = 0;
+    free(code);
+    free(src);
+    return nows;
+}
+
+/* ★★★★★ 2026-10-24（**修「`++i; continue;` 双增量」的反向闸**）：
+ *   卡侧 `yk_familiars_tick()` 的发射口槽扫是 `for (i = 0; i < YK_EMIT_SLOTS; ++i)`，
+ *   而循环体里原先有**四处**写成 `++i; continue;`（type 黑名单 / 无出点 (0,0) / 没出过弹 / 体上炮口）
+ *   ⇒ 与 `for` 的增量叠加**跳两格**：被拒槽的**下一个槽**这一帧根本不进循环体 ⇒ 不调
+ *   `yk_note_slot()` ⇒ `yk_frame_begin()` 已清 `seen` ⇒ 帧末 `yk_frame_end()` 判「敌人没了」
+ *   ⇒ 发 `YK_ACT_WITHDRAW` **真删使魔** ⇒ 那一格映射使魔永远建不出来（建了下一帧又删）。*/
+static void check_emit_slot_advance(void)
+{
+    char *nows = yk_card_code_nospace("cards/youkai.c");
+    CHECK(nows != 0);
+    if (!nows) return;
+    CHECK(strstr(nows, "++i;continue;") == 0);      /* ← 双增量：一处都不许有 */
+    CHECK(strstr(nows, "++i;") == 0);               /* ← 更强：`i` 只由 `for` 的增量推进，循环体绝不自推 */
+    /* 正面（防「为了过闸把循环删了」）：槽扫循环还在，且每个未被拒的槽仍会走到 `yk_note_slot()` */
+    CHECK(strstr(nows, "for(i=0;i<YK_EMIT_SLOTS;++i){") != 0);
+    CHECK(strstr(nows, "if(yk_note_slot(&s_map,id,i,active,wxy,&act))yk_run_action(s,&act);") != 0);
+    free(nows);
+}
+
 static yk_action_t s_acts[YK_FAM_MAX];
 
 /* ★★★ 2026-09-30（owner 实跑：「一面 3 只大蝴蝶生成了两次两个使魔」）：
@@ -3157,6 +3219,7 @@ int main(void)
     check_beam_member_covers_entry();       /* ★ 第三十三批：束贴图铺满整条 entry 行宽（「一缕一缕」的闸）*/
     check_beam_spec_files();
     check_orbit_gift_ledger();              /* ★ 2026-09-30：绕转使魔「一只敌人只补一次」的判定 */
+    check_emit_slot_advance();              /* ★ 2026-10-24：槽扫不许「`++i; continue;`」双增量（会误删使魔）*/
 
     /* ── leveledit（第三方米斯蒂亚补丁）同开时的使魔归属 ────────────────────────────────
      * 口径见 `HANDOFF-108-LEVELEDIT-FAMILIARS.md` §1 ✓；判据与一手出处见 `youkai_core.h` 那段 ✓。
