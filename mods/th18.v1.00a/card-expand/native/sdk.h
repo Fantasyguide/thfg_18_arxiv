@@ -844,6 +844,44 @@ typedef struct {
     uint32_t shown[CE_HUD_VM_TEXT_MAX];  /* 该 VM 当前挂的 sprite 号（省一次 set_sprite）*/
     int      n;                          /* 上一帧用了几个槽 */
 } ce_hud_vm_text_t;
+/* ==================== ★ HUD 压暗的**唯一写法**（2026-10-24 owner：「统一接 sdk」）====================
+ * 背景：压暗的 alpha 有两个来源（每卡私有 `hud_dim_tick()` 的 `s->hud.alpha` 与 SDK 全局带的
+ *   `ce_hud_band_dim_alpha()`），"把 alpha 写到 VM 上"也有两种写法（只写 color 的 A / 写插值器三格）。
+ *   ⇒ 收敛成两件事：
+ *     ① **alpha 只从 SDK 读**：`ce_hud_dim_alpha()`（= 全局带的 alpha；带矩形 = 所有已认领块 ∪ 原生卡面）
+ *     ② **写 alpha 只用这一个函数**：`ce_hud_dim_apply(id)`（或显式值 `ce_hud_dim_apply_a(id, a)`）
+ *   它同时写 `color_1.A`、并把 **alpha1/alpha2 两组插值器的初始/目标/当前**都写成目标值 ——
+ *   因为引擎在绘制前会用插值器覆盖 A（一手 `th18:0x47c7f2` / `0x47c82f`），只写 color 在
+ *   「脚本的 `alphaTime` 还在跑」的窗口里会失效（106 判定点 / 108 浮字 / 116 的 126·127 都踩过）。
+ *   ⚠ RGB 一律保留（只改 A）—— 调用方先 `ce_anm_set_color` 染色，再调这里即可。*/
+static inline int32_t ce_hud_dim_alpha(void)
+{
+    return ce_hud_band_dim_alpha();
+}
+
+static inline void ce_hud_dim_apply_a(uint32_t id, int32_t a)
+{
+    uint8_t *vm;
+    float af;
+    if (!id) return;
+    vm = (uint8_t *)ce_anm_get_vm(id);
+    if (!vm) return;
+    af = (float)(a & 0xff);
+    *(volatile uint32_t *)(vm + CE_ANM_VM_COLOR1) =
+        (*(const uint32_t *)(vm + CE_ANM_VM_COLOR1) & 0x00ffffffu) | ((uint32_t)(a & 0xff) << 24);
+    *(volatile float *)(vm + CE_ANM_VM_ALPHA1_I + CE_ANM_VM_INTERP_INITIAL) = af;
+    *(volatile float *)(vm + CE_ANM_VM_ALPHA1_I + CE_ANM_VM_INTERP_GOAL)    = af;
+    *(volatile float *)(vm + CE_ANM_VM_ALPHA1_I + CE_ANM_VM_INTERP_CURRENT) = af;
+    *(volatile float *)(vm + CE_ANM_VM_ALPHA2_I + CE_ANM_VM_INTERP_INITIAL) = af;
+    *(volatile float *)(vm + CE_ANM_VM_ALPHA2_I + CE_ANM_VM_INTERP_GOAL)    = af;
+    *(volatile float *)(vm + CE_ANM_VM_ALPHA2_I + CE_ANM_VM_INTERP_CURRENT) = af;
+}
+
+static inline void ce_hud_dim_apply(uint32_t id)
+{
+    ce_hud_dim_apply_a(id, ce_hud_band_dim_alpha());
+}
+
 void ce_hud_vm_text_set(ce_hud_vm_text_t *t, float x, float y, uint32_t bgra,
                         int align_h, float scale, const char *s, const char *tag);
 

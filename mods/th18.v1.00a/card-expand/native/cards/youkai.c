@@ -8309,7 +8309,7 @@ static void yk_gauge_hud_update(yk_card_t *s)
         ids[0] = 0;  /* bar 已在上面按"带 alpha + 染色"写过，别再洗白 */  ids[1] = &s->hud_human;
         ids[2] = &s->hud_youkai; ids[3] = &s->hud_cursor;
         for (q = 0; q < 4; ++q)
-            if (ids[q] && *ids[q] && ce_anm_get_vm(*ids[q])) ce_anm_set_color(*ids[q], (a << 24) | 0x00ffffffu);
+            if (ids[q] && *ids[q]) ce_hud_dim_apply(*ids[q]);   /* ★ 统一接 sdk：A 走带 + 插值器 */
         /* ★ 2026-10-03z11（owner：「**108 人妖槽的数字部分也没有接入**」）——
          *   百分比/夜点的**字形 VM**（`s->hud_digit[]`）与上面四支同款处理。*/
         for (q = 0; q < YK_GAUGE_TEXT_MAX; ++q)

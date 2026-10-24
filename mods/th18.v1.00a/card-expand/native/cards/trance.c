@@ -4051,14 +4051,12 @@ static void trance_hud_tick(const trance_card_t *s)
      *       （只改 A、不动贴图 RGB）⇒ 自机进带时整块**跟着淡**、但不会消失。
      *   ⚠ 与 108/109/112 同款（alpha 斜坡型消费者），这正是「一起淡」的正确接法。*/
     {
-        const uint32_t a = (uint32_t)ce_hud_band_dim_alpha() & 0xffu;
         int q2;
         for (q2 = 0; q2 < TRANCE_HUD_N; ++q2) {
-            uint8_t *vm2 = s_hud_vm[q2] ? ce_anm_get_vm((uint32_t)s_hud_vm[q2]) : 0;
-            uint32_t *cd;
-            if (!vm2) continue;
-            cd = (uint32_t *)(vm2 + CE_ANM_VM_COLOR1);
-            ce_anm_set_color((uint32_t)s_hud_vm[q2], (a << 24) | (*cd & 0x00ffffffu));
+            /* ★ 2026-10-24（owner：「统一接 sdk」）：alpha 的唯一作者 = SDK 的带 alpha，
+             *   写入走 `ce_hud_dim_apply()`（它同时写 color_1.A 与 alpha1/alpha2 两组插值器的三格）
+             *   —— 只写 color 会在脚本 `alphaTime` 还在跑的窗口里被盖掉。*/
+            ce_hud_dim_apply((uint32_t)s_hud_vm[q2]);
         }
     }
 
@@ -4219,8 +4217,10 @@ static void trance_hud_tick(const trance_card_t *s)
      *   机器判据：`native/tools/anm_hud_alpha_check.py`（`make check`）。见 `AUDIT.md` §DD-9-1。*/
     if (hidden != s_hud_hidden) {
         s_hud_hidden = hidden;
-        for (k = 0; k < TRANCE_HUD_N; ++k)
-            if (s_hud_vm[k]) ce_anm_interrupt((uint32_t)s_hud_vm[k], hidden ? 5 : 4);
+        /* ★ 2026-10-24（owner：「统一接 sdk」）：**不再发 interrupt 4/5** ——
+         *   脚本 175-178 的 label 4/5 是 `alphaTime(8,0,64/255)`，它会和上面那句
+         *   `ce_hud_dim_apply()` 抢同一个 color_1：自机离开 hide 门、但仍在带内时会闪亮 8 帧。
+         *   压暗语义已由 SDK 的带 alpha 覆盖（贴上来淡到 64）；latch 只留给日志/配方。*/
     }
 }
 
