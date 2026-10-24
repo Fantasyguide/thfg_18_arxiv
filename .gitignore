@@ -82,7 +82,6 @@ tooling/thdat-nc/.cache/
 #   源在 local/th13.v1.00c/dat/se_astralup.wav，见 assets/voice/derive_retail_se.py）
 # ★ 112 的 UFO 出场音：TH12 原版 se_ufoalert.wav 的构建期现取产物（同上；
 #   源在 local/th12.v1.00b/dat/se_ufoalert.wav）
-mods/th18.v1.00a/card-expand/assets/voice/UFOALERT.wav
 # ★ 108 的 Shift 音（妖→人）：TH08 原版 se_ophide.wav 的构建期现取产物（版权资产不入库；
 #   一手 th08:0x42c529 push 0x27 → wav 32 = se_ophide.wav；源在 local/th08.v1.00d/dat/）
 mods/th18.v1.00a/card-expand/assets/voice/YOUKAI_FAM_SHIFT.wav
