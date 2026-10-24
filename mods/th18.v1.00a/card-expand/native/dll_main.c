@@ -135,7 +135,12 @@ int __stdcall thcrap_plugin_init(void)
 #if CE_DEV_DUMP >= 1
     if (s_log_printf) s_log_printf("[th18_card_expand] loaded; log -> %s\n", s_logpath);
 #else
+    /* ★★ 2026-10-24（owner：「游玩的 log 关了吧」）—— 发布档**一行都不写**：
+     *   连 "loaded; 日志 dump = OFF" 这句也不打（它会在游戏目录建/追加 th18_card_expand.log）。
+     *   ⇒ 只有 CE_DEV_DUMP >= 1 才写。*/
+#if CE_DEV_DUMP >= 1
     if (s_log_printf) s_log_printf("[th18_card_expand] loaded; 日志 dump = OFF (CE_DEV_DUMP=0)\n");
+#endif
 #endif
 
     if (!retail_table_looks_right((const uint8_t *)GetModuleHandleA(NULL))) {
