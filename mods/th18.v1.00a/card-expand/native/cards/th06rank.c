@@ -46,6 +46,11 @@
  * ⚠ **`+0x476b0` 只是"正转"那一颗**；判定点一共有**两颗**（正转 + 反转），见下面
  *   `T06R_VM_CHILD_NEXT` 的三条一手 —— 只压 `+0x476b0` 会留下一颗反转的（owner 2026-10-25 报）。*/
 #define T06R_PLAYER_HITBOX_VM   0x476b0
+/* ★ 2026-10-24（owner：可见的那颗说是自机判定点）：引擎还有第二条同族 VM ——
+ *   `player+0x476b4`，在 `0x45b91d cmpl $0,0x476bc`（倒计时 > 0）时由
+ *   `0x45b98c push $0x1b`（script 27）建；`0x45ba14` 写回句柄。
+ *   ⇒ 和判定点同一套 layer/贴图，一并压掉。*/
+#define T06R_PLAYER_HITBOX_VM2  0x476b4
 
 /* ── ★★ 判定点的**第二颗 VM** = 父 VM 的**子 VM**（`scriptNew` 造的那颗）────────────────
  * owner 2026-10-25 一手口径：「判定点指示应该是 2 个 VM，正转和反转的两个东西；106 只压了其中转的一个」。
@@ -601,6 +606,23 @@ static int t06_hide_hitbox_dot(void)
     if (!id) return 0;                         /* 不聚焦 / 刚离开聚焦：引擎已收掉 VM */
     vm = ce_anm_get_vm(id);
     if (!vm) return 0;                         /* 句柄作废（脚本自删 / 引擎重建）⇒ 下一帧就是新 VM */
+    {   /* ★ 第二条同族 VM（`0x476b4`，script 27）：独立句柄，一起压（含它的子 VM）*/
+        uint32_t id2 = *(volatile uint32_t *)(p + T06R_PLAYER_HITBOX_VM2);
+        if (id2) {
+            uint8_t *vm2 = ce_anm_get_vm(id2);
+            uint8_t *n2;
+            int g2 = 0;
+            if (vm2) {
+                t06_hide_one_vm(vm2);
+                n2 = *(uint8_t **)(vm2 + T06R_VM_CHILD_NEXT);
+                while (n2 && g2++ < T06R_DOT_CHILD_MAX) {
+                    uint8_t *c2 = *(uint8_t **)(n2 + T06R_VM_CHILD_NODE_VM);
+                    n2 = *(uint8_t **)(n2 + T06R_VM_CHILD_NODE_NEXT);
+                    if (c2) t06_hide_one_vm(c2);
+                }
+            }
+        }
+    }
     t06_hide_one_vm(vm);                       /* 正转那颗（`player+0x476b0`）*/
     /* ★★ 反转那颗 = 父 VM 的子 VM（script25）。沿 `list_of_children` 走一层 —— 与引擎自己的
      *   `interrupt_tree`（`0x488c19 mov esi,[esi+0x598]` → `0x488c24 mov edi,[esi]` →
