@@ -375,8 +375,18 @@ static void gw_resolve(ce_card_t *c)
                        *(int32_t *)(pl + CE_PLAYER_STATE));
             }
         } else {
-            ce_log("great_work: 自机在无敌中 ⇒ 豁免这一死（owner 口径）");
-        }
+              /* ★★★ 2026-10-24（owner：**「削弱一下：无敌挡伟大之作，会让无敌帧清零」**）——
+               *   原来豁免这一死之后无敌还剩多少就留多少（恋恋那 4 帧能白嫖一次结算）。
+               *   ⇒ 现在豁免的同时**把自机无敌计时器清零**（prev/cur/cur_f 全写 0）：
+               *     豁免的代价 = 无敌立刻用完，不能既躲掉死亡又继续无敌。*/
+              if (inv) {
+                  const int32_t had = inv->cur;
+                  inv->prev = 0; inv->cur = 0; inv->cur_f = 0.0f;
+                  ce_log("great_work: 自机在无敌中 ⇒ 豁免这一死，并清零剩余无敌帧（原剩 %d 帧）", (int)had);
+              } else {
+                  ce_log("great_work: 自机在无敌中 ⇒ 豁免这一死（无计时器可清）");
+              }
+          }
     }
     ce_log("great_work: (顶点结算) converted %d bullets + %d enemies + %d items + %d faith dots "
            "(%d from faith) (hp %lld) -> %d money items, %d boss phase(s) broken; recharge %d frames (%.1f s)",
