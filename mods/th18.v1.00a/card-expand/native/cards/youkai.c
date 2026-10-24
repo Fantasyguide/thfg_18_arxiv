@@ -6805,9 +6805,15 @@ static void yk_popup_tick(void)
             (void)ce_anm_set_scale(id, p->scale, p->scale);
               {   static unsigned s_pt;
                   if (s_pt < 10u) { ++s_pt;
-                      ce_log_key("popup-tick: kind=%d id=%08x pos=(%.1f,%.1f) alpha=%02x scale=%.2f age=%u",
-                                 (int)p->kind, (unsigned)id, (double)gx, (double)p->y,
-                                 (unsigned)a, (double)p->scale, (unsigned)p->age); } }
+                      {   const uint8_t *v = (const uint8_t *)ce_anm_get_vm(id);
+                          ce_log_key("popup-tick: kind=%d id=%08x pos=(%.1f,%.1f) alpha=%02x scale=%.2f age=%u "
+                                     "c1=%08x a1i=%08x layer=%d spr=%d",
+                                     (int)p->kind, (unsigned)id, (double)gx, (double)p->y,
+                                     (unsigned)a, (double)p->scale, (unsigned)p->age,
+                                     v ? (unsigned)*(const uint32_t *)(v + CE_ANM_VM_COLOR1) : 0u,
+                                     v ? (unsigned)*(const uint32_t *)(v + CE_ANM_VM_ALPHA1_I + CE_ANM_VM_INTERP_CURRENT) : 0u,
+                                     v ? (int)*(const int32_t *)(v + 0x18) : -1,
+                                     v ? (int)*(const int32_t *)(v + CE_ANM_VM_SPRITE_ID) : -1); } } }
         }
     }
 }
