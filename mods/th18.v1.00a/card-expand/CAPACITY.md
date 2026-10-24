@@ -291,6 +291,15 @@ cards: 35 registered from cards.js; shop pool 700/8192 slots, guaranteed offers 
   `scale(0.1171875, 0.875)` ⇒ 场上 30×14，见 `TUNING.md`）。
   ⚠ **登记动因**：`make check` 的 `capcheck` 硬门报「新的图集 entry 宏没登记进 `CAPACITY.md`」
   （这条图集是 10-20/21 卡侧那批提交带进来的，宏与 sprite id 都在 `native/anm_ids.h`）。
+- **★ 2026-10-24 换掉并登记 `ATLAS_POFV109_ASC`（`CE_ANM_ABILITY_ATLAS_ATLAS_POFV109_ASC`，
+  `ability.anm` 的 entry **227**，画布 **512×48**、**96 个 sprite**）**：卡 109 蓄力条的 **HUD 文字字形**
+  —— 一手素材 = TH19 `data/ANM/ascii/ascii_1280.png` 的**三行细体**（`y=176/192/208`，格 16×16、32 格/行）；
+  `data/ascii1280.anm` 里原生就有这 96 格（`sprite98..193`，`thanm -l 8` 一手）⇒ 逐像素照切。
+  成员 = `POFV109_ASC_C00..C95`（格号 = 行*32+列，sprite **904..999**）；空墨迹的 3 格（C00/C64/C95）保留占位。
+  使用方 = 脚本 `473_pofv109_hud_char`（一台 VM 画一个字形，卡侧每字 `ce_anm_set_sprite` 换格号）。
+  ⚠ 这一段是**整段替换**：旧段 = 27 个 28×28、切在**错误的行带**（顶部衬线体）上，作废 ✗；
+  替换后 **entry 数不变（仍是 1 个 entry）**、sprite 27→96，且该段在 `ORDER.txt` **末尾**
+  ⇒ **其它卡的 entry/sprite 号一个都没动**（`ORDER.frozen` 前 186 行构建期已核）。
 - **★ 2026-09-24 新增 `ATLAS_FONT2B`（`CE_ANM_ABILITY_ATLAS_ATLAS_FONT2B`，`ability.anm` 的 entry **69**；
   ⚠ 补宏名与现值的是 110/111 这条线，只为让 `capcheck` 的硬门认得出 —— 正文与口径都是 112 那位写的，
   见 `AUDIT.md` §BE 详录 #85）**：卡 112 的 HUD 文字字形
@@ -1343,3 +1352,12 @@ CE_ANM_ABILITY_SPRITE 宏 1385 个，号 109..829
 - 尾插 ⇒ 既有 entry/sprite/script 号**零位移**（`build_ability.py` 重排检测通过）。
 
 
+
+- **★ 2026-10-25 新增卡 109 早苗 C4 的三型弹**（各 **1 个单图 entry**，不是图集段）：
+  `POFV109_C4S_OFUDA`（entry **229**，16×16，sprite **1001**）＝一手 `bullet1.png (128,112)` **札弹**；
+  `POFV109_C4S_SMALL`（entry **230**，**8×8**，sprite **1002**）＝`bullet1.png **(56,240)**` **小彩弹**；
+  `POFV109_C4S_BIG`（entry **231**，**32×32**，sprite **1003**）＝`bullet2.png **(32,32)**` **中玉**。
+  依据 = `engine/ecl/th19/02-bullet-types.md` §2（`ins_602(num, type, color)` 的 type 11/1/18）＋
+  owner 2026-10-25 逐格指认（**16px 格**；`bullet2.png` 是 **8×8 格**）。
+  ⇒ `ability.anm` **entry 229 → 232**（原生 7 + 追加 225），**余 24**；
+  使用方 = `pofv.c` 的 `pofv_c4s_emit(..., lane)`（路 0/1/2）✓。

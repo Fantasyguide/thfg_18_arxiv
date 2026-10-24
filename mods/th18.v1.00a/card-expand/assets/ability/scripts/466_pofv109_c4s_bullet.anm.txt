@@ -16,7 +16,7 @@ script script466 {
     sprite(@POFV109_C4S_BULLET);
     type(1);
     alpha(255);
-    blendMode(1);
+    blendMode(0);   /* ★ 2026-10-25 owner 定稿：**C4 = 覆盖** ✓ */
     scale(1.0f, 1.0f);
     stop();
 }

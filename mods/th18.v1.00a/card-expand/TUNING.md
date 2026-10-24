@@ -250,7 +250,7 @@ shooterset ⇒ 另开一单 ✓）。
 | **素材上限 / 上限满了怎么办** | `TRANCE_BGM_MAX_PCM` = **24 MiB**（=  | `native/cards/trance_bgm_core.h` +  | 见文末「长行详录 #17」 |
 | **素材放哪** | **三处都要**：`<modkit>/thcrap/bin/bgm`（**真正被 | `bash local/sync_modkit_dll.sh`（一次同步三处并校 | 见文末「长行详录 #18」 |
 | **电平一致性** | 14 首里 13 首整轨电平在 ±1.7 dB；**例外 = 2 面关底  | 同上 | 见文末「长行详录 #19」 |
-| **素材只留循环段** | 丢掉 intro（`[intro_size, track_size)`）（❓自定）| 同上 | 想要"从 intro 起播"就得把 intro 也写进文件并把 `intro_size` 填回 fmt（第二路从字节 0 起播 ⇒ 会在文件头听到 intro）|
+| **素材带 intro**（★ 2026-10-24 方案 A，替代旧的"只留循环段"）| 成品 = `P = intro_game − start` 秒**静音** + 从 MIDI 0 截到 `intro_game + 循环体`；**循环点 = `intro_game`**（= 原曲 fmt 的 `intro_size`，一手值）⇒ DLL 把我们 fmt 的 `intro_size` 填成该值（TH13 的 `NNb` 轨口径）| `tools/make_trance_rearr.py` + `native/cards/trance_bgm.c` / `trance_bgm_core.c` | 旧口径（只装循环体 + `intro_size = 0`）的代价：主曲还在 intro 段时被 clamp 到循环起点，一手日志实测两路差 **17.1 s**。回老口径 = 生成器不给 intro + `trance_bgm_fmt_init(..., intro_bytes=0, ...)`（代码两条路都还在）|
 | `TRANCE_BGM_XFADE_FRAMES` | **20 帧 ≈ 0.33 s**（❓自定）| `native/cards/trance_bgm_core.h` | 嫌切换突兀就加大、嫌两首叠太久就改小（**原版 TH13 是硬切，这是加料**）|
 | **同时间点 seek（第十二轮落地）** | **做**：进灵界时对齐到主曲此刻的音乐位置（TH13  | `cards/trance_bgm.c` +  | 见文末「长行详录 #20」 |
 | **素材起点对齐** | 生成器 `fine_align`：小节线估计 **±0.8 s** 内取 **c | `tools/make_trance_rearr.py` | 见文末「长行详录 #21」 |
@@ -553,6 +553,58 @@ AUDIT.md#cn-91-一手真身4032d0-是一套目的地-alpha-遮罩)。它靠本�
 2. **13 的 2k–8k 只兑现 −1.5 dB，>8k 才是 −3.35 dB**（架式斜率）。同口径更狠两档：
    `-3@3000` → 2k–8k **−2.07**；`-4@2500` → **−3.10**（>8k −4.30）。**建议先听 −3@4k**
    —— 要压的「刺」通常在 4–8k 以上；再狠会把它压到比原曲暗 9–11 dB（同响度下本来就已低 7.2 dB）。
+
+
+### 2.0h-4 ★★ **唯一例外：leveledit 的 `th18_06b`（2026-10-24）**
+
+> **`th18_06b` 例外：与 leveledit 的 `th18_06`（105.2904 s）等长，不是零售的 112.0537 s。**
+> leveledit 包把二面 boss 的主曲换成了 `th18_06.ogg`（intro）+ `th18_06.loop.ogg`（循环体）；
+> thcrap bgmmod 的 `track_pcm_t`（`thcrap_bgmmod/src/bgmmod.hpp`）把 `intro_size` 取成
+> **第一个文件的解码字节** ⇒ 主曲时间轴 = **30.9678 s intro + 74.3226 s loop = 105.2904 s**
+> （= 4,643,306 采样 @44100 = **2,321,653 帧 @22050**）。灵界版必须**同长、同 intro
+> （682,839 帧）**，否则 `engine_intro_bytes()` 算出的循环点与主曲错位。其余 17 首仍按零售
+> `thbgm.fmt`（`th18_06` 零售 = intro 6.5074 + loop 105.5463 = 112.0537 s）。
+
+**素材**：owner 给的 `th08_05_tr.mid`（TH08 二面 boss 曲的 trance 版；SMF **format 0 / 1 轨 /
+11 通道 / 480 ppq / 155.000 BPM / 113.308 s**，无 bank select、无 sysex；md5 `e2a25a30…`）
+⇒ `local/th18.v1.00a/midi/th08_05_tr.mid`（`MANIFEST.tsv` 已登记「leveledit 二面 boss 灵界版专用」）。
+
+**出盘命令**（THfont + 现行全部调音；`--midi-map` / `--ref-*` 是本次新增的**外部入口**，
+默认不给时 17 首行为不变）：
+
+```bash
+python3 tools/make_trance_rearr.py --stem th18_06 \
+  --midi-map th18_06=th08_05_tr.mid \
+  --ref-intro  <leveledit>/th18/th18_06.ogg \
+  --ref-loop   <leveledit>/th18/th18_06.loop.ogg \
+  --eq master --loudness-match original --intro-loudness-match ref \
+  --out local/th18.v1.00a/trance_bgm
+```
+
+* **调音**：鼓 kit **25**（ch9：118→25）、ZUN 号本来已是 **56**（ch4 Trumpet，无需 remap）、
+  鼓 **+2.5 dB**、倍斯 **+4.1 dB**、母带低架 **+4 dB @100 Hz**；`th18_06` 无 `PER_TRACK` /
+  `PER_TRACK_EQ` 例外。format 0 单轨 ⇒ 主旋律按**通道**判（本次新增；否则整条轨被当旋律），
+  命中 **ch3**（prog 75 Pan Flute，占音符能量仅 2% ⇒ 压 −9.1 dB 对整体影响很小，灵界版的
+  听感差异主要来自这份 MIDI 本身的编曲）。
+* **对齐**：`fine_align` 起点 **+31.02 s**，chroma **r = 0.948**（相对 leveledit loop）；
+  成品循环体对主曲 loop 的 lag = **0.000 s**（r = 0.939）⇒ 同时间点 seek 对得上。
+* **长度**：intro **682,839 帧** + 循环体 **1,638,814 帧** = **2,321,653 帧 / 105.290385 s**；
+  文件 **22050 Hz / 2ch / 16 bit**，峰值 **−0.30 dBFS**。
+* **响度**（`--intro-loudness-match ref`：intro 段单独匹配主曲 intro；主曲 intro/loop 本身差 1.85 LU）：
+  整首 **−13.415 vs 主曲 −13.407（Δ−0.008）**；intro **Δ−0.001**；loop **Δ−0.002**（全部 ≤0.5）。
+* **落盘（★★ 2026-10-24 第二轮订正：两份文件、按主曲口径选）**
+  - `th18_06b_rearr.wav` = **零售口径 112.0537 s**（intro 6.5074 s，md5 **`339597e4…`**）
+  - `th18_06b_rearr.le.wav` = **leveledit 口径 105.2904 s**（intro 30.968 s，md5 **`6cea0dd4…`**）
+  - 两处都要：`<modkit>/thcrap/bin/bgm/` + `local/th18.v1.00a/trance_bgm/`（各自同 md5）
+  - 为什么不是"一份文件服务两个口径"：`ce_trance_bgm_start()` 现在拿**主曲 fmt** 的
+    `track/intro`（44100 口径）按 avg 比例换算出"这份素材该有多长"，与**文件真实 PCM 全长**
+    比，容差 1 帧；不符再试 `.le.wav`；两条都不符 ⇒ **不接管**（主曲继续放）。两条口径的总长
+    差 **596,524 B（6.76 s）** ⇒ 放错必被拒（这就是"每圈往回跳 24.46 s"的正面防线）。
+    日志（`ce_log_key`）：`trance-bgm: 素材 %s 与主曲口径不符（素材 %u B / intro %u B vs 主曲 %u B / %u B）⇒ 本次灵界不改 BGM`。
+* **备份**：零售 112.05 s 的另一份 = `th18_06b_rearr.retail-112s.bak`；
+  `mods/bgm` / `game/bgm` 的旧件（2,327,296 帧的循环体口径）备份为 `.bak-20261024`。
+* **⚠ 下一轮别再按零售口径重渲 `th18_06b`**：`da5d8ef9` 那条「17 首统一带 intro」是**零售**口径，
+  对 `th18_06b` **不适用**（主曲已被 leveledit 换掉）；leveledit 口径的成品要落到 **`.le.wav`**。
 
 
 ### 2.0b ★ 113 的**灵界主炮组**（TH13 灵界 set10 复刻，2026-09-13）
@@ -23771,3 +23823,50 @@ owner 原话：「★ 它的行为实际上就是 **TH18 早苗原生高速子�
 - ★ **`%B` 是哨兵**：`ExAttackFunc2` 开头 `%B = [-9888.0f]`，之后**再没被赋值** ⇒
   段 5 的 `0.05 + %B×0.05` **不能**读成 "0.05 + 0.05×rank" ✗；卡侧只取 **0.05**（`%B` 项按 0 处理 ❓）。
 - ★ **若实跑不符**：太快/太慢 ⇒ 整体缩放 `r`；转向角不是 90° ⇒ `s` 的量纲读错，回来重核。
+
+### ★ 2026-10-24 蓄力条 HUD 文字：三处「一手」的偏差（❓ 自定，owner 可一票改回）
+
+一手出处 = TH19 `FUN_004e8a20`（全文与量法见 `engine/ascii/th19/02-hud-text-gauge-labels.md`），
+本卡实现 = `pofv.c` 的 `pofv_hud_txt_frame()` + 脚本 `473_pofv109_hud_char`。**照抄的部分**：
+五条格式串（`Skill` / `Ex.Attack Lv%d` / `Boss Lv%d` / `Lv%d`×2）、四个颜色、分档判据、`+1` 的等级显示。
+
+| ❓ | 一手 | 本卡 | 为什么 |
+| --- | --- | --- | --- |
+| ① ~~**常驻 `Lv d` 的显隐**~~ | 只在「还没越到该档」时画 | **已改成照一手**（`fc < 该档阈值` 才画） | ★ 2026-10-24 owner：「哦，确实是**没越过才画**」⇒ 这条**不再是差异** ✓ |
+| ② **到点提示的水平锚点** | 串**左对齐**在标位 x（上下文 `0x197a4=0`）| **条心居中** | `"Ex.Attack Lv1"` = 13 字 × 16 = 208 px，从 0.68 标位（304 px）起**溢出条右端 64 px** |
+| ③ **上下位置** | 到点提示 y=448、常驻 y=460（640×480，差 12）| 条上沿再上一条字（`-30`）/ 条下沿下 2 px（`+14`）| 一手**气槽本体在屏幕上的 y 没测到** ⇒ 拿不到相对偏移；`-30/+14` 是本条的**表面 px**（≈ 一手 15/7）|
+
+另：一手「`Skill` 的 x 跟着**当前充能值**滑动」（另两条用固定标位）—— 本卡因为改成居中，
+这条**滑动手感**没有复刻；要的话把 `pofv_hud_txt_frame()` 里 `Skill` 的 `bx + fw*0.5f`
+换成 `bx + fw*fc` 即可（一行）。
+
+### ★ 2026-10-24 日志总闸 `CE_DEV_DUMP`（发布默认 **0** = 全部编译成空）
+
+- **一句话**：`ce_log` 从**函数**改成**宏**（定义在 `native/sdk/public.h`），开关 `CE_DEV_DUMP`
+  **0 = 全关（发布默认）** / **1 = 只留关键行（机师/实跑诊断）** / **2 = 全部（= 改造前的行为）**。
+  0 档时**全仓 1112 个调用点**全部编译成 `((void)0)` ⇒ **参数不求值、格式化串不进二进制、一次文件 I/O 都没有**。
+- **为什么**：热路径 `ce_log` 每行都 `open/append/close`（必 flush）；owner 实跑一局 **11–23 MB**。
+  函数版只能在运行时"少写"，参数字符串仍占 `.rdata`；**宏版是编译期删干净**（这才是零开销）。
+- **怎么开**：`make dll CE_DEV_DUMP=2`（`1` = 关键行）。改值后 `build/.dev_dump` 戳会让**所有 `.o` 重编**
+  —— make 不跟踪命令行变量，没有这个戳就会「刚编过 0 档，再 `CE_DEV_DUMP=2` 静默什么都不做」。
+- **关键行（1 档只有这些，每局 ≤ 20 行）**：
+
+  | # | 行 | 位置 |
+  | --- | --- | --- |
+  | 1 | `youkai: build <编译戳> …`（现场报告先看这条）| `cards/youkai.c` `on_load` |
+  | 2–4 | `youkai: practice auto-equip 108 …`（发 / 已有跳过 / retry 后 gone）| `cards/youkai.c` `yk_practice_equip_once` |
+  | 5 | `youkai/leveledit: xfam gone … feed=` | `cards/youkai.c` `yk_transfer_tick` |
+  | 6 | `FAIL:` / `WARN:` / `★` 一族（站点守卫、链守卫、retail 签名…）| `sdk.c`（13 条）+ `ce_verdict` 全部 |
+  | 7 | `thcrap exports:` / `guard: retail table signature ok` | `dll_main.c` |
+
+  ⇒ 其余 **~1090 条**都在 2 档。`trance-bgm: seek` 那两条**暂未**收进 1 档：`cards/trance_bgm.c` 正被
+  BGM 那条线重写（冲突）—— 它落地后把 `同时间点 seek` / `起播对齐` 两行的 `ce_log` 改成 `ce_log_key` 即可。
+- **0 档的硬失败通道**：`ce_verdict` 的**文件行**编译掉，但结论**仍镜像进 thcrap 的日志**（`log_printf`）
+  ⇒「本 DLL 被卸掉 / 没装上」永远看得到，且不写我们自己的日志文件。
+- **发布态一局写多少行**：**0 行 / 0 字节**（连启动横幅和日志文件创建都在 0 档编译掉）。
+  要看现场就用 `CE_DEV_DUMP=1` 的构建（1 行横幅 + ≤20 关键行）或 `2`。
+- **⚠ 依赖日志的旧工具**：`native/tools/verify.py` / `autoplay.py` / `autoplay_win.py` 读
+  `th18_card_expand.log` 做判据 ⇒ 它们必须配 **2 档**构建跑（`make dev` / devbuild 不读日志，不受影响）。
+- **代价**：0 档构建多出约 **470 条 `-Wunused-*` 警告**（那些变量/函数原本只被日志用过；行为不变，
+  只是不再被读）。2 档构建的警告数不变。想静音只能在 0 档构建加 `-Wno-unused-*`，但那会连带盖住真问题
+  ⇒ 本仓**默认不静音**。

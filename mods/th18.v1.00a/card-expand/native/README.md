@@ -32,7 +32,7 @@ python3 tools/devbuild.py --modkit "/mnt/d/项目/幻想指南/18/th18_modkit"
 | 阶段 | 闸 | 拦的是什么 |
 | --- | --- | --- |
 | A 源码前置 | `make cards-check` | 109 desc 超 6 行 ⇒ 整批新卡停用（owner 看到「所有 mod 卡消失」） |
-| A 源码前置 | 调试/测试卡不可见 | `DEBUG_DEL` / `DEBUG_*` / `TEST_*` 必须 `initial_unlocked=0`、`deck_visible=0`、`weight=0`；否则 201 又会进商店/图鉴/指南 |
+| A 源码前置 | 调试/测试卡不可见 | `DEBUG_DEL` / `DEBUG_*` / `TEST_*` 必须 `initial_unlocked=0`、`deck_visible=0`、`weight=6`（6 = 不进随机池；`weight=0` 反而是「必上架」哨兵 ✗）；否则 201 又会进商店/图鉴/指南 |
 | A 源码前置 | `sites.py check` | 站点不变式、声明↔def 对账、跳板池预算 |
 | A 源码前置 | `gen_def.py --check` | patch 声明了但 DLL 没导出 ⇒ 游戏里静默不生效 |
 | A 源码前置 | `gen_drift.py` | 手改生成物 ⇒ 二分/发布拿到假状态 |
@@ -46,7 +46,7 @@ python3 tools/devbuild.py --modkit "/mnt/d/项目/幻想指南/18/th18_modkit"
 | B 构建 | `make dll`（除非 `--skip-build`） | 先删旧 DLL 强制重链，避免 sites_gen.h / .def 变了而 DLL 没重编 |
 | B 发布 | `deploy.py --skip-build --force` | 唯一被认可的发布路径（内部还会跑来源校验、发布锁、cards-check、资产同步） |
 | B 回读 | 部署件 md5 | 部署件 `cards.js` / `files.js` / DLL 三处都必须与源同 md5 |
-| B 回读 | 部署件关键项 | **从部署件读**：109 desc = 6 行、201 三项全 0、所有调试卡不可见 |
+| B 回读 | 部署件关键项 | **从部署件读**：109 desc = 6 行、201 `init=0 / deck=0 / weight=6`、所有调试卡不可见 |
 | B 回读 | 部署件 `files.js` crc | 每个条目的 crc 与该文件现算一致（crc 不对 ⇒ thcrap 认为没变） |
 | C 可选 | 发布 zip 同批 | `--full`：抽 3 个 wav + `cards.js` + DLL，比 zip 内 md5 vs modkit；不一致只报，不自动重打 |
 

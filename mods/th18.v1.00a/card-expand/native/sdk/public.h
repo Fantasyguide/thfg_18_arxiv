@@ -273,7 +273,44 @@ void ce_set_bullet_damage_permille(ce_card_t *c, int permille);
 int ce_give_card(uint32_t id, uint32_t mode, uint32_t notify);
 int ce_destroy_card(ce_card_t *victim);
 ce_card_t *ce_pick_random_card(ce_card_t *exclude);
-void ce_log(const char *fmt, ...);
+
+/* ══════════════════════════════════════════════════════════════════════════════
+ * ★★★ 日志总闸 `CE_DEV_DUMP` —— owner 2026-10-24「所有 log 行，统一收敛到开发态开关是否 dump」。
+ *
+ *   CE_DEV_DUMP = 0  **发布默认**：`ce_log` / `ce_log_key` 全部编译成 `((void)0)`
+ *                     ⇒ 调用点**参数不求值、格式化串不进二进制、一个字节都不写盘**。
+ *                     改造前热路径每行一次 open/append/close：一局 11–23 MB + 成堆文件 I/O，
+ *                     这里**全部消失**（不是"少写"，是编译器把整条调用删掉）。
+ *   CE_DEV_DUMP = 1  **关键行**（机师/实跑诊断用；每局 ≤ 20 行）：`ce_log_key` 生效，`ce_log` 仍为空。
+ *                     关键行 = build 戳 / 错误·FAIL / 一次性状态（清单见 `TUNING.md` §「日志总闸」）。
+ *   CE_DEV_DUMP = 2  **全部**（= 改造前的行为；排查用）。
+ *
+ *   ★ 为什么把 `ce_log` 从**函数**改成**宏**：全仓 1112 个调用点**一行都不用改**，且闸关时编译器
+ *     把整条调用（含参数求值与格式化串）删干净 —— 这是**真正的零开销**。函数版关掉只能省写盘，
+ *     参数字符串仍占 .rdata、va_list 仍要建、调用照跳。
+ *   ★ 日志**代码一条不删**（硬约束）：只是编译期决定进不进二进制 —— `make dll CE_DEV_DUMP=2` 随时开回来。
+ *   ⚠ 实现名 `ce_log_impl` = 旧的 `ce_log`（dll_main.c）。它**不**参与闸门，只被下面的宏引用。
+ *     全仓 grep 过：**没有任何地方对 `ce_log` 取地址 / 当函数指针用**（只有调用）⇒ 改成宏是安全的。
+ * ══════════════════════════════════════════════════════════════════════════════ */
+#ifndef CE_DEV_DUMP
+#define CE_DEV_DUMP 0
+#endif
+
+/* 写盘层（dll_main.c 的旧 ce_log 本体）。`ce_verdict` 也走它 —— 那是「硬失败」通道：
+ *   闸关时**我们的日志文件一个字都不写**，但结论仍镜像进 thcrap 的日志（见 dll_main.c 的 ce_verdict）。*/
+void ce_log_impl(const char *fmt, ...);
+
+#if CE_DEV_DUMP >= 2
+#define ce_log(...)      ce_log_impl(__VA_ARGS__)
+#else
+#define ce_log(...)      ((void)0)      /* 0/1 档：整条调用连参数一起消失 */
+#endif
+
+#if CE_DEV_DUMP >= 1
+#define ce_log_key(...)  ce_log_impl(__VA_ARGS__)   /* 关键行（0 档也编译成空）*/
+#else
+#define ce_log_key(...)  ((void)0)
+#endif
 
 /* ★★★ 2026-10-19（腐化 70 × 原生 23 死秽回避之药 = 简单无敌）：**卡侧「死亡消耗了 B」的上报通道**。
  *

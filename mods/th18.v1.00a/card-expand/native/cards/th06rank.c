@@ -42,8 +42,40 @@
  * 一手 `Player::sub_45b170` `0x45b433`：聚焦且 `+0x476b0 == 0` 时
  * `AnmManager__instantiate_vm_to_world_list_back`（script `0x1a`、layer `0xe`）并把句柄写回
  * `+0x476b0`（`0x45b457`）；`0x45b45d` 每帧对它写 scale、`OR [vm+0x534], 8`。
- * **本卡先从 alpha 入手**（用户 2026-09-11 定：判定点先用 alpha = 0，不动 scale、不打断点）。 */
+ * **本卡先从 alpha 入手**（用户 2026-09-11 定：判定点先用 alpha = 0，不动 scale、不打断点）。
+ * ⚠ **`+0x476b0` 只是"正转"那一颗**；判定点一共有**两颗**（正转 + 反转），见下面
+ *   `T06R_VM_CHILD_NEXT` 的三条一手 —— 只压 `+0x476b0` 会留下一颗反转的（owner 2026-10-25 报）。*/
 #define T06R_PLAYER_HITBOX_VM   0x476b0
+
+/* ── ★★ 判定点的**第二颗 VM** = 父 VM 的**子 VM**（`scriptNew` 造的那颗）────────────────
+ * owner 2026-10-25 一手口径：「判定点指示应该是 2 个 VM，正转和反转的两个东西；106 只压了其中转的一个」。
+ * 一、两颗 VM 是谁（anm 脚本，一手 `local/th18.v1.00a/anm/effect/effect.anm.txt`）：
+ *   · 父 = effect.anm **script26**（= 脚本号 `0x1a`，`0x45b44a push 0x1a`）：
+ *     `sprite(sprite23)`（= `eff_sloweffect.png` 那张判定点环）+ `angleVel(+0.05235988)` = **正转 3°/帧**；
+ *     第 0 帧 **`scriptNew(script25)`**（`effect.anm.txt:580`）；
+ *   · 子 = **script25**（= `0x19`）：**同一个 `sprite23`** + `angleVel(-0.10471976)` = **反转 6°/帧**
+ *     （`effect.anm.txt:550-568`）⇒ 正是"正转 + 反转"那两颗。子脚本只有这一处 spawn 点（全 anm 目录
+ *     `grep scriptNew(script25)` 在 effect.anm 里只有 script26 一行；`0x19/0x1a` 的其它命中都在别的 anm 自己的编号里）。
+ * 二、为什么从父 VM 拿得到子 VM（一手反汇编，th18 v1.00a）：
+ *   · `scriptNew` = anm opcode **500**（ExpHP `th-re-data` labels：th18 `0x479a96 = 500__scriptNew`，
+ *     th14 同号；**`scriptNewRoot` 是 504** → `0x488a40`，那条才是"孤儿、不挂父"）⇒ handler `0x479a96`
+ *     → `AnmLoaded__instantiate_child_vm` **`0x4888f0`**；
+ *   · `0x488971 mov [esi+0x5c0],ebx` = **`child+0x5c0`（`zAnmVmSuffix.parent_vm`）= 父 VM**；
+ *     `0x48897d`–`0x488988` = `child.root_vm`（`+0x5bc`）= 父的 root（没有则父自己）；
+ *     `0x4889e7`–`0x488a11` = 把子结点**头插**进 `父+0x594`（`zAnmVmSuffix.list_of_children`）表头；
+ *   · 表结构（ExpHP `type-structs-own.json` 的 `zAnmVmSuffix`：`+0x40 __node_as_child`、`+0x50 list_of_children`
+ *     —— 都在 `0x544` 基址上 ⇒ **0x584 / 0x594**）与引擎自己的读法逐条对上（`AnmManager__interrupt_tree`
+ *     `0x488c19 mov esi,[esi+0x598]` → `0x488c24 mov edi,[esi]` → `0x488c43 mov esi,[esi+4]`；
+ *     父 VM 的 `0x598` = 表头 next = **第一个子结点**，结点 `[0]` = 子 VM 指针（VM init `0x4074b4 mov [edx+0x584],edx`），
+ *     结点 `[+4]` = next）。
+ *   ⇒ **沿父 VM 的子链表走一层**就能精确拿到那两颗 VM——不用扫 world 链表、不用猜 script 号
+ *     （扫链表按脚本号过滤也做得到，但别的 anm 里也有 25/26 号脚本，按父→子关系过滤才是零误伤）。
+ * 三、为什么子 VM 不用自己找 spawn 点：它是父 VM 的脚本**第 0 帧**造的，而父 VM 由引擎在**玩家 tick
+ *   （0x17）**建（`0x45b450`）⇒ 我们 0x1e 那一笔永远晚于它（同 `on_item_frame` 的相位注）。*/
+#define T06R_VM_CHILD_NEXT      0x598   /* 父 VM：`list_of_children.next` = 第一个子结点 */
+#define T06R_VM_CHILD_NODE_VM   0x0     /* 子结点：`[0]` = 子 VM 指针（结点 = child+0x584）*/
+#define T06R_VM_CHILD_NODE_NEXT 0x4     /* 子结点：`[+4]` = next */
+#define T06R_DOT_CHILD_MAX      8u      /* 一趟最多走 8 个（实际恒 1；链表写坏也不许无界）*/
 
 /* 擦弹计数（本 run / 本关累计，上限 99999999）：`0x4ccd0c`。
  * 一手：`0x42497f` 的擦弹路径 `call 0x45e160` → `0x45e179` 读它、`0x45e184 inc`、
@@ -113,6 +145,11 @@ typedef struct {
 typedef char t06r_state_fits[(sizeof(t06r_state_t) <= 496) ? 1 : -1];
 
 static t06r_state_t *st(ce_card_t *c) { return ce_state(c, t06r_state_t); }
+
+/* ① 判定点隐藏（定义在文件下半部的 `on_draw` 之前；`on_item_frame`（0x1e）要先调它 ⇒ 前置声明）。
+ * 语义与相位理由见 `t06_hide_hitbox_dot()` 上面那段长注。 */
+static int  t06_hide_hitbox_dot(void);
+static void t06_dot_probe(int wrote);
 
 /* 引擎库存读数（差分源）。用 volatile 读，防编译器把两次读合并。 */
 static inline int32_t lives_now(void)  { return *(volatile int32_t *)CE_ADDR_CURRENT_LIVES; }
@@ -247,6 +284,14 @@ static void on_item_frame(ce_card_t *c)
             if (hits) { note(s, "item offscreen"); s->off_counted += (uint32_t)hits; }
         }
     }
+
+    /* ★★★ 2026-10-24（owner：「106 的判定点隐藏被 108 覆盖」）—— **相位 = 本帧最后一笔**。
+     * 本函数挂在 ItemManager tick（UpdateFunc 优先级 **0x1e**）：晚于**所有卡的更新回调**
+     * （`on_tick_2` = 0x16，108 的刻符浮字 / 残影束 / 人妖槽每帧写都在这里）与玩家 tick（0x17，
+     * 判定点 VM 就是在那儿建/更新的），早于**全部**绘制阶段（玩家 0x1d、层 14 = 0x1f … 层 18 = 0x28）。
+     * ⇒ 这一笔落地后，本帧再没有任何卡回调能改那一格 ⇒ 判定点**本帧就**是透明的。
+     * ⚠ 与 `on_draw`（0x33）那一笔**都保留**：那边是兜底（绘制相位里若以后有人写），两边共用探针节拍。*/
+    t06_dot_probe(t06_hide_hitbox_dot());
 }
 
 /* ── 逐颗道具（spec §4.1：**碎片逐颗走这里**，整命 / 整炸走库存增量） ────────────
@@ -464,37 +509,207 @@ static void on_stage_start(ce_card_t *c)
 }
 
 /* ── ① 低速不显示判定点 ──────────────────────────────────────────────────────
- * 判定点指示 = `player+0x476b0` 的 VM（script `0x1a` / layer `0xe`，只在**聚焦**时存在）。
- * 隐藏手段（用户 2026-09-11 定案）：把它的 `color_1`（`vm+0x524`）**alpha 写 0**
- *   ⇒ `ce_anm_set_color(id, 0x00FFFFFF)`。
- * ⚠ 时机：SDK 文档写明 AbilityManager（`on_tick_2`，优先级 0x16）**先于** Player（0x17），
- *   `on_tick` 也在 Player 复位前 ⇒ **只有 `on_draw` 晚于 Player tick**，隐藏必须放这里
- *   （spec §2.1 的时序注）。而且只在**聚焦时**写：不聚焦时引擎自己 `interrupt_tree` 收掉 VM、
- *   句柄清 0，我们碰不到也不该碰。
- * ⚠ 每帧重写：脚本若自己每帧设颜色也会被按掉 —— 这正是我们要的效果
- *   （season.c 有同款注记：写死 alpha 会把脚本的 `alphaTime` 按掉）。 */
-static int on_draw(ce_card_t *c)
+ * 判定点指示 = **两颗** VM（owner 2026-10-25 一手：「正转和反转的两个东西」）：
+ *   · **正转**那颗 = `player+0x476b0` 的句柄（script `0x1a` / layer `0xe`，只在**聚焦**时存在）；
+ *   · **反转**那颗 = 上面那只 VM 的**子 VM**（script26 第 0 帧 `scriptNew(script25)`；表结构、
+ *     地址、为什么从父 VM 走得通 —— 全在文件头 `T06R_VM_CHILD_NEXT` 那段一手注里）。
+ *   ⇒ 两颗都要压；只压 `+0x476b0` 时反转那颗照样转（owner 实跑）。
+ * 隐藏手段（用户 2026-09-11 定案）：把每颗的 `color_1`（`vm+0x524`）**alpha 写 0**
+ *   ⇒ `ce_anm_set_color(id, 0x00FFFFFF)`；外加 `color_2`（`vm+0x528`）的 alpha 字节同时清 0
+ *   —— 绘制早退判据是 `color_1.A == 0 && color_2.A == 0`（`th18:0x4812e8`），两路都清才与
+ *   `colorMode` 无关（`engine/anm/th18/07-blendmode-...md` §2；某颗脚本哪天写了 `colorMode` 也不怕）。
+ * 而且只在**聚焦时**写：不聚焦时引擎自己 `interrupt_tree` 收掉 VM（`0x45b570`，它**会顺着
+ *   `list_of_children` 收到子 VM**，`0x488c19`–`0x488c48`）、父句柄清 0，我们碰不到也不该碰。
+ *
+ * ★★★ 2026-10-24（owner 报「**106 的判定点不显示这个效果，被 108 覆盖了**」）—— **相位错了，不是值错了**：
+ *   一手三件（都是别人核过的，这次只用来定位帧内顺序）：
+ *     ① 判定点 VM 由**引擎**在**玩家 tick**（UpdateFunc 优先级 **0x17**）里建/更新：
+ *        `th18:0x45b433` `cmp [player+0x476b0],0` → 建 VM（`0x45b450` call `0x405bf0`）→ `0x45b457` 写回句柄；
+ *     ② 那支 VM 的层 = **脚本自己的 `layer(18)`**（`effect.anm` script `0x1a`；`[0x4cf2c8]+0xc` = EffectManager
+ *        的 effect.anm，见 `engine/anm/th18/04-anm-slot-selection.md:101`）⇒ **绘制优先级 0x28**
+ *        （`engine/anm/th18/02-render-stages.md` §1：层 18 = 0x28）；
+ *     ③ 本卡原来**只在 `on_draw`**（`AbilityManager__on_draw`，优先级 **0x33**）里写 alpha
+ *        ⇒ 那一笔**晚于本帧那张图**（0x28 < 0x33）⇒ 只对**下一帧**有效。
+ *   ⇒ 只要**任何一帧**在**更新相位**有人把那一格写回非 0（108 的每帧 VM 写：刻符浮字 / 残影束 /
+ *     人妖槽数字 —— 它们的句柄是**缓存 id**，而引擎会**回收 VM id**：`ufo.c:2081` 记着同一课，
+ *     `ce_anm_get_vm(旧 id)` 在 id 被复用之后**照样返回非 NULL**），那一帧就会把判定点**画出来**，
+ *     0x33 再压回 0 ⇒ 实跑表现 = 「装上 108 之后判定点又出现了」。
+ *   ⇒ 修法（两条，都是幂等的）：
+ *     ★ **在 `on_item_frame`（ItemManager tick，优先级 0x1e）也写一次**。0x1e 晚于**所有卡的更新回调**
+ *       （`on_tick_2` = 0x16）与玩家 tick（0x17），早于**全部**绘制阶段（玩家 0x1d、层 14 = 0x1f …
+ *       层 18 = 0x28）⇒ 这一笔是**本帧最后一笔**，谁都盖不掉（卡回调里再没有比 0x1e 更晚的更新相位）。
+ *     ★ **同时写 alpha 插值器**（`vm+0x140` = `zInterpInt{initial,goal,current}`，`engine.h` 的一手注）：
+ *       引擎每帧用 `current` **覆盖** `color_1` 的 A（`th18:0x47c7f2`，`flag = vm+0x168`）⇒
+ *       只写 `color_1` 会被它顶掉（`engine.h` 的原话：「只写 color 会被它顶掉」）。三格同写 0 ⇒
+ *       即使插值器被启动，收敛值也只有 0。
+ *   `on_draw` 那一笔**保留**（幂等、零成本）：它兜住「绘制阶段里才出现的写者」（目前没有）。
+ *   ⚠ 每帧重写：脚本若自己每帧设颜色也会被按掉 —— 这正是我们要的效果
+ *     （season.c 有同款注记：写死 alpha 会把脚本的 `alphaTime` 按掉）。
+ *   ⚠ 删卡 / 换关：这两笔停在那一帧，**不需要还原**（VM 是引擎的，引擎自己维护）；
+ *     卡侧只留探针计数，`on_delete`/`on_run_reset` 里归零（见那两个函数）。*/
+
+/* ① 判定点隐藏的**探针记账**（`t06_dot_probe` 用）。放在文件作用域而不是函数内 static：
+ * 换关 / 删卡时要能一起归零（否则上一局的行数上限会吃掉这一局的证据）。*/
+static uint32_t s_dot_frame, s_dot_c1, s_dot_a1i, s_dot_id, s_dot_fl;
+static int      s_dot_wrote;
+static unsigned s_dot_lines;
+static unsigned s_dot2_lines;          /* ★ 子 VM（反转那颗）那几行单独记数，别被父行吃掉额度 */
+static uint32_t s_dot_c_id, s_dot_c_c1, s_dot_c_a1i, s_dot_c_fl;
+static unsigned s_dot_c_n;
+static void t06_dot_probe_reset(void)
 {
-    (void)c;
-    uint8_t *p;
+    s_dot_frame = 0; s_dot_c1 = 0; s_dot_a1i = 0; s_dot_id = 0; s_dot_fl = 0;
+    s_dot_wrote = 0; s_dot_lines = 0; s_dot2_lines = 0;
+    s_dot_c_n = 0; s_dot_c_id = 0; s_dot_c_c1 = 0; s_dot_c_a1i = 0; s_dot_c_fl = 0;
+}
+
+/* 把**一台** VM 压成全透明（判定点两颗共用同一套写法）：
+ *   · `color_1 = 0x00FFFFFF`（alpha 0）、`color_2` 的 A 字节 = 0 —— 绘制早退 `0x4812e8` 要求两路 A 都 0；
+ *   · alpha 插值器（`vm+0x140`）三格同写 0 —— 引擎每帧用 `current` 覆盖 `color_1.A`（`th18:0x47c7f2`），
+ *     只写 `color_1` 会被顶掉。
+ * 幂等；每帧重写是设计的一部分。 */
+static void t06_hide_one_vm(uint8_t *vm)
+{
+    *(uint32_t *)(vm + CE_ANM_VM_COLOR1) = 0x00FFFFFFu;              /* D3DCOLOR 0xAARRGGBB：A = 0 */
+    *(uint8_t  *)(vm + CE_ANM_VM_COLOR2 + 3) = 0u;                   /* color_2 只清 A，RGB 原样留着 */
+    *(uint32_t *)(vm + CE_ANM_VM_ALPHA1_I + CE_ANM_VM_INTERP_INITIAL) = 0u;
+    *(uint32_t *)(vm + CE_ANM_VM_ALPHA1_I + CE_ANM_VM_INTERP_GOAL)    = 0u;
+    *(uint32_t *)(vm + CE_ANM_VM_ALPHA1_I + CE_ANM_VM_INTERP_CURRENT) = 0u;
+}
+
+/* 写一笔「隐藏判定点」。返回 1 = 这一帧**真的写到了 VM 上**；0 = 有一道门没过
+ * （不在游戏线程 / 没有自机 / 不聚焦 / 句柄是 0 / 句柄指向的 VM 已经被引擎回收）。
+ * ★ 两颗都写：父 VM（正转）+ 沿父的 `list_of_children` 走到的每一颗子 VM（反转）。
+ * 幂等；一帧调两次（0x1e + 0x33）是设计的一部分。 */
+static int t06_hide_hitbox_dot(void)
+{
+    uint8_t *p, *vm;
     uint32_t id;
 
-    /* ★ on_draw（虚表 +0x48）**在菜单 / 标题里也会被调**（animal.c 117 实跑踩过同一个坑），
-     * 而那时 `0x4cf410`（= `CE_ADDR_PLAYER_PTR`）可能是上一次 run 留下的**野指针 / 空指针**
-     * —— 先问游戏线程在不在（这道门与 lolk.c（115）/ season.c（116）`on_draw` 开头那一行同款、同理由）。
-     * ★★ 2026-09-12 审计订正：原先这道门**不够** —— 紧接着的 `CE_PLAYER_FOCUSED()` 展开成
-     *   `(CE_PLAYER() != 0) && *(int32_t*)(CE_PLAYER()+0x476cc)`，`&&` 的两侧**各求一次**
-     *   `*(uint8_t**)0x4cf410`，于是「读指针得 0」之后会**再读一次 0 并加偏移** ⇒ 空指针解引用
-     *   （实测 `cc -I. … -o /tmp/ck` 跑那一行 = SIGSEGV）。契约上「游戏线程在 ⇒ `0x4cf410` 非空」
-     *   未必成立（标题 → 首次进入关卡之间存在窗口、on_load 时它也可能还是空）
-     *   ⇒ 必须**自己先把指针取回来判空**，再走下面全部读。 */
+    /* ★ 门序与理由（都是实跑踩过的坑，别删）：
+     *   · `on_draw`（虚表 +0x48）**在菜单 / 标题里也会被调**（animal.c 117 踩过同一个坑），
+     *     而那时 `0x4cf410`（= `CE_ADDR_PLAYER_PTR`）可能是上一次 run 留下的**野指针 / 空指针**
+     *     ⇒ 先问游戏线程在不在（与 lolk.c（115）/ season.c（116）`on_draw` 开头那一行同款）。
+     *   · `CE_PLAYER_FOCUSED()` 展开成 `(CE_PLAYER() != 0) && *(int32_t*)(CE_PLAYER()+0x476cc)`，
+     *     `&&` 两侧**各求一次** `*(uint8_t**)0x4cf410` ⇒ 读指针得 0 之后会**再读一次 0 并加偏移**
+     *     （实测 SIGSEGV，2026-09-12 审计）⇒ 必须**自己先取指针判空**再走下面的读。*/
     if (!*(volatile uint32_t *)CE_ADDR_GAME_THREAD_PTR) return 0;
     p = CE_PLAYER();
     if (!p) return 0;
-    if (!CE_PLAYER_FOCUSED()) return 0;      /* p 已非空 ⇒ 访问器内部那两次读都安全 */
+    if (!CE_PLAYER_FOCUSED()) return 0;        /* p 已非空 ⇒ 访问器内部那两次读都安全 */
     id = *(volatile uint32_t *)(p + T06R_PLAYER_HITBOX_VM);
-    if (!id) return 0;
-    ce_anm_set_color(id, 0x00FFFFFFu);       /* D3DCOLOR 0xAARRGGBB：alpha 0 = 全透明 */
+    if (!id) return 0;                         /* 不聚焦 / 刚离开聚焦：引擎已收掉 VM */
+    vm = ce_anm_get_vm(id);
+    if (!vm) return 0;                         /* 句柄作废（脚本自删 / 引擎重建）⇒ 下一帧就是新 VM */
+    t06_hide_one_vm(vm);                       /* 正转那颗（`player+0x476b0`）*/
+    /* ★★ 反转那颗 = 父 VM 的子 VM（script25）。沿 `list_of_children` 走一层 —— 与引擎自己的
+     *   `interrupt_tree`（`0x488c19 mov esi,[esi+0x598]` → `0x488c24 mov edi,[esi]` →
+     *   `0x488c43 mov esi,[esi+4]`）逐条同形：`父+0x598` = 第一个子结点，`node[0]` = 子 VM，
+     *   `node[+4]` = next。实际恒 1 颗；有界（`T06R_DOT_CHILD_MAX`）只是为了链表被写坏时也不无界。*/
+    {
+        uint8_t *node = *(uint8_t **)(vm + T06R_VM_CHILD_NEXT);
+        unsigned guard = 0;
+        while (node && guard++ < T06R_DOT_CHILD_MAX) {
+            uint8_t *child = *(uint8_t **)(node + T06R_VM_CHILD_NODE_VM);
+            uint8_t *next  = *(uint8_t **)(node + T06R_VM_CHILD_NODE_NEXT);   /* 先取 next 再动手 */
+            if (child) t06_hide_one_vm(child);
+            node = next;
+        }
+    }
+    return 1;
+}
+
+/* ── 实跑判据（`CE_DEV_DUMP>=1` 才进二进制；发布档这一整段连参数一起消失）────────────
+ * owner 要的证据 =「106 判定点 VM 的 alpha / 可见位，每帧值是多少」。打什么、怎么读：
+ *   `id`   = `player+0x476b0`（引擎的句柄；0 = 这一帧没有判定点，例如没聚焦 / 刚重建）
+ *   `c1`   = `vm+0x524` 的 `color_1`（我们写 `0x00ffffff` ⇒ 打印出来必须是 `a=00`）
+ *   `a1i`  = `vm+0x140+0x10` = alpha 插值器的 `current`（引擎每帧用它覆盖 `color_1.A` ⇒ 必须 0）
+ *   `fl`   = `vm+0x534` 的 `flags_lo`（bit1 = 可见位，`engine/anm/th18` 一手；bit3 = 引擎每帧 OR 的 0x8）
+ *   `w`    = 本帧这一笔**写进去了没有**（1 = 句柄有效且写到；0 = 门没过）
+ * ★ 子 VM（**反转那颗**）另起一行 `T06R-DOT2:`：沿父 VM 的 `list_of_children` 走到的每一颗各一行
+ *   （`id` / `script` / `c1` / `a1i` / `fl` 与父同格式，`script` 应为 **25**（0x19）= 反转那颗；
+ *    一颗都没有 = 子链表没挂上（那就回到"两颗 VM 到底怎么来的"重查）。
+ * 打法：**首帧 / 值有变化 / 每 300 帧心跳**各一行（一帧最多一行，`on_item_frame` 与 `on_draw` 共用计数）。
+ * ⚠ 判据：只要 `c1` 的 alpha 恒 00 且 `a1i` 恒 0 ⇒ 隐藏生效；若某帧 `c1` 变成 `ff…` 或 `a1i≠0`
+ *   ⇒ **那一帧有别人在写这一格**（把行号附近的信息贴回来即可定位）。*/
+static void t06_dot_probe(int wrote)
+{
+#if CE_DEV_DUMP >= 1
+    uint8_t *p = CE_PLAYER();
+    uint8_t *vm, *node;
+    uint32_t fr, id = 0, c1 = 0, a1i = 0, fl = 0;
+    uint32_t c_id = 0, c_c1 = 0, c_a1i = 0, c_fl = 0;
+    unsigned c_n = 0;
+    int changed;
+
+    if (!p) return;
+    fr = ce_sdk_frame();
+    if (s_dot_frame == fr) return;                     /* 一帧只判一次 */
+    s_dot_frame = fr;
+    id = *(volatile uint32_t *)(p + T06R_PLAYER_HITBOX_VM);
+    vm = id ? ce_anm_get_vm(id) : 0;
+    if (vm) {
+        c1  = *(const uint32_t *)(vm + CE_ANM_VM_COLOR1);
+        a1i = *(const uint32_t *)(vm + CE_ANM_VM_ALPHA1_I + CE_ANM_VM_INTERP_CURRENT);
+        fl  = *(const uint32_t *)(vm + CE_ANM_VM_FLAGS_LO);
+        /* 第一颗子 VM 的快照（只用来判"值变了没有"，写日志时再逐颗走一遍）*/
+        node = *(uint8_t **)(vm + T06R_VM_CHILD_NEXT);
+        if (node) {
+            uint8_t *cv = *(uint8_t **)(node + T06R_VM_CHILD_NODE_VM);
+            if (cv) {
+                c_n   = 1u;
+                c_id  = *(const uint32_t *)(cv + CE_ANM_VM_SUFFIX_ID);
+                c_c1  = *(const uint32_t *)(cv + CE_ANM_VM_COLOR1);
+                c_a1i = *(const uint32_t *)(cv + CE_ANM_VM_ALPHA1_I + CE_ANM_VM_INTERP_CURRENT);
+                c_fl  = *(const uint32_t *)(cv + CE_ANM_VM_FLAGS_LO);
+            }
+        }
+    }
+    changed = (s_dot_lines == 0u) || (s_dot_wrote != wrote) || (s_dot_c1 != c1) || (s_dot_a1i != a1i) ||
+              (s_dot_id != id) || (s_dot_fl != fl) ||
+              (s_dot_c_n != c_n) || (s_dot_c_id != c_id) || (s_dot_c_c1 != c_c1) ||
+              (s_dot_c_a1i != c_a1i) || (s_dot_c_fl != c_fl);
+    if (!changed && (fr % 300u) != 0u) return;
+    if (s_dot_lines >= 200u) return;                   /* 收口：一局最多 200 行（父）*/
+    ++s_dot_lines;
+    s_dot_wrote = wrote; s_dot_c1 = c1; s_dot_a1i = a1i; s_dot_id = id; s_dot_fl = fl;
+    s_dot_c_n = c_n; s_dot_c_id = c_id; s_dot_c_c1 = c_c1; s_dot_c_a1i = c_a1i; s_dot_c_fl = c_fl;
+    ce_log_key("T06R-DOT: frame %u id=%08x w=%d c1=%08x (alpha %02x) a1i=%08x fl=%08x (visible %d) children=%u",
+               (unsigned)fr, (unsigned)id, wrote, (unsigned)c1, (unsigned)((c1 >> 24) & 0xffu),
+               (unsigned)a1i, (unsigned)fl, (int)((fl >> 1) & 1u), c_n);
+    /* ★ 第二颗（反转）：逐个子 VM 各一行 —— owner 要看的就是"两个都压了吗" */
+    if (vm && s_dot2_lines < 200u) {
+        unsigned guard = 0, ci = 0;
+        for (node = *(uint8_t **)(vm + T06R_VM_CHILD_NEXT); node && guard++ < T06R_DOT_CHILD_MAX; ) {
+            uint8_t *cv = *(uint8_t **)(node + T06R_VM_CHILD_NODE_VM);
+            uint8_t *next = *(uint8_t **)(node + T06R_VM_CHILD_NODE_NEXT);
+            if (cv) {
+                const uint32_t cc1 = *(const uint32_t *)(cv + CE_ANM_VM_COLOR1);
+                const uint32_t ca1i = *(const uint32_t *)(cv + CE_ANM_VM_ALPHA1_I + CE_ANM_VM_INTERP_CURRENT);
+                const uint32_t cfl = *(const uint32_t *)(cv + CE_ANM_VM_FLAGS_LO);
+                const uint32_t cid = *(const uint32_t *)(cv + CE_ANM_VM_SUFFIX_ID);
+                const int      csc = *(const int32_t *)(cv + CE_ANM_VM_SCRIPT_ID);
+                ++s_dot2_lines;
+                ++ci;
+                ce_log_key("T06R-DOT2: frame %u #%u id=%08x script=%d(0x%x) c1=%08x (alpha %02x) a1i=%08x fl=%08x (visible %d)",
+                           (unsigned)fr, ci, (unsigned)cid, csc, (unsigned)csc,
+                           (unsigned)cc1, (unsigned)((cc1 >> 24) & 0xffu),
+                           (unsigned)ca1i, (unsigned)cfl, (int)((cfl >> 1) & 1u));
+            }
+            node = next;
+        }
+    }
+#else
+    (void)wrote;
+#endif
+}
+
+static int on_draw(ce_card_t *c)
+{
+    (void)c;
+    /* 见上：这一笔晚于本帧的绘制（0x33 > 0x28），只对**下一帧**有效 ⇒ 它只是兜底，
+     * 真正保证「本帧就看不见」的是 `on_item_frame`（0x1e）那一笔。 */
+    t06_dot_probe(t06_hide_hitbox_dot());
     return 0;
 }
 
@@ -503,6 +718,7 @@ static int on_load(ce_card_t *c)
 {
     init_all(c, "load");
     seed(c);
+    t06_dot_probe_reset();                   /* ★ 新局：判定点探针的节流 / 行数上限重新开始 */
     declare_line_hide(c);                    /* ★ 「106 在场整局不画那条线」（§7-A4 (ii)；幂等）*/
     return 0;
 }
@@ -519,6 +735,7 @@ static void on_delete(ce_card_t *c)
     ce_full_p_gate_declare((uint32_t)ce_card_id(c), 0);   /* ★ 撤「未满 P」声明（别把闸留在场上）*/
     ce_poc_declare_mask(c, 0);                            /* ★ 撤「遮」（收点线立刻回到基准）*/
     ce_poc_line_hide(c, 0);                               /* ★ 撤「不画线」（并按基准把那一位写回）*/
+    t06_dot_probe_reset();                                /* ★ 删卡：判定点探针归零（我们不再写那一格）*/
     if (s) __builtin_memset(s, 0, sizeof *s);
 }
 
@@ -528,6 +745,7 @@ static void on_run_reset(ce_card_t *c)
     ce_full_p_gate_declare((uint32_t)ce_card_id(c), 0);   /* ★ 撤「未满 P」声明（局末）*/
     ce_poc_declare_mask(c, 0);                            /* ★ 撤「遮」（换关/局末：字段回到基准）*/
     ce_poc_line_hide(c, 0);                               /* ★ 撤「不画线」（下一关的 on_load 会重新声明）*/
+    t06_dot_probe_reset();                                /* ★ 局末：判定点探针归零 */
     if (s) __builtin_memset(s, 0, sizeof *s);   /* 局末：差分基准 / 位图 / 帧计数全清 */
 }
 

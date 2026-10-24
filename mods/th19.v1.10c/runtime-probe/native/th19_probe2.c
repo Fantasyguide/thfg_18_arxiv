@@ -39,6 +39,18 @@ static DWORD g_hook_field  = 0;
 static DWORD g_hook_r      = 0;
 static DWORD g_hook_s      = 0;
 static DWORD g_w0 = 0, g_w4 = 0, g_w8 = 0, g_wc = 0;
+static DWORD g_ctx = 0;
+static DWORD g_rec = 0, g_num = 0;
+/* ★ 在 hook 内部当场抄出来的副本（数据只在 711 调用瞬间有效，不能存指针） */
+static DWORD g_buf[16];    /* ← ctx+0x5ac+0x28（段表候选） */
+static DWORD g_buf2[8];    /* ← ctx+0x5ac+0x458（701 写的 a 等） */
+static DWORD g_buf3[8];    /* ← ctx+0x5ac（元素头） */
+static volatile LONG g_buf_ready = 0;   /* hook711 时现场捕获：[edi+0x5ac] 与 esi(=num) */
+static DWORD g_cnt609 = 0, g_cnt711 = 0;
+static DWORD g_cnt_et[15];
+static DWORD g_cnt_grp[64];       /* ★ 每组（group）被调用次数：全 opcode 直方图 */
+static int   g_grp_of[64];        /* g_cnt_grp[i] 对应的组号 */        /* opcode 700..714 各自的调用次数 */
+static int   g_grp_done[64];      /* 已接管过的组号，防重复补丁 */   /* 派发表计数：609-612 组 / 711 组各被调多少次 */      /* 711 handler 里捕获的 edi = ECL 上下文 */
 
 static void probe_log(const char *fmt, ...);   /* 前置声明（restore_all_patches 会用到） */
 
@@ -199,6 +211,106 @@ static void scan_for_pattern(void)
 static void poll_once(void)
 {
     DWORD anchor, v;
+    if (g_hook_on && g_hook_sel == 11) {
+        int k; char buf[600]; int n = 0;
+        for (k = 0; k < 64; k++) {
+            if (g_cnt_grp[k]) { n += snprintf(buf + n, sizeof(buf) - n, " g%d:%u", g_grp_of[k], g_cnt_grp[k]); }
+            if (n > 480) break;
+        }
+        if (n) probe_log("[hist]%s", buf);
+        return;
+    }
+    if (g_hook_on && g_hook_sel == 10) {
+        int k; DWORD sum = 0;
+        char buf[512]; int n = 0;
+        for (k = 0; k < 15; k++) {
+            if (g_cnt_et[k]) { n += snprintf(buf + n, sizeof(buf) - n, " %d:%u", 700 + k, g_cnt_et[k]); sum += g_cnt_et[k]; }
+            if (n > 400) break;
+        }
+        if (sum) probe_log("[et ]%s", buf);
+        return;
+    }
+    if (g_hook_on && (g_cnt609 || g_cnt711)) {
+        probe_log("[cnt] 609-612 = %u   711 = %u", g_cnt609, g_cnt711);
+        return;
+    }
+    if (g_hook_on && g_hook_sel == 14 && g_ctx) {
+        probe_log("[buf1] %08x %08x %08x %08x %08x %08x %08x %08x",
+                  g_buf[0], g_buf[1], g_buf[2], g_buf[3],
+                  g_buf[4], g_buf[5], g_buf[6], g_buf[7]);
+        probe_log("[buf2] %08x %08x %08x %08x %08x %08x %08x %08x",
+                  g_buf[8], g_buf[9], g_buf[10], g_buf[11],
+                  g_buf[12], g_buf[13], g_buf[14], g_buf[15]);
+        probe_log("[buf3] %08x %08x %08x %08x %08x %08x %08x %08x",
+                  g_buf2[0], g_buf2[1], g_buf2[2], g_buf2[3],
+                  g_buf2[4], g_buf2[5], g_buf2[6], g_buf2[7]);
+        probe_log("[buf4] %08x %08x %08x %08x %08x %08x %08x %08x",
+                  g_buf3[0], g_buf3[1], g_buf3[2], g_buf3[3],
+                  g_buf3[4], g_buf3[5], g_buf3[6], g_buf3[7]);
+        return;
+    }
+    if (g_hook_on && g_hook_sel == 15) {
+        probe_log("[711] ctx=%08x rec=%08x num=%u", g_ctx, g_rec, g_num);
+        if (g_rec) {
+            DWORD elem = g_rec + g_num * 0x2c;
+            probe_log("[711] elem=%08x  +0x28=%08x", elem, elem + 0x28);
+            dump_n("elem+0x28", elem + 0x28, 16);
+            dump_n("elem+0x40", elem + 0x40, 16);
+            dump_n("elem+0x458", elem + 0x458, 8);
+        } else {
+            probe_log("[711] rec 仍为 0 —— 现场捕获也拿不到，说明 0x5ac 当时就是空");
+        }
+        return;
+    }
+    if (g_hook_on && g_hook_sel == 13 && g_ctx) {
+        /* ★ 一次把两种解释都打出来：
+         *   A) ctx+0x5ac 是**指针** ⇒ base = *(ctx+0x5ac)，元素 = base + i*0x2c，看 +0x28
+         *   B) ctx+0x5ac 是**内联数组** ⇒ 元素 = ctx+0x5ac + i*0x2c，看 +0x28
+         * 哪个解释里出现"不是 0 也不是 -9999994"的值，哪个就是对的。 */
+        DWORD p = 0, base, v; char b1[400], b2[400]; int n1 = 0, n2 = 0, i;
+        if (readable((const void *)(uintptr_t)(g_ctx + 0x5ac), 4))
+            p = *(const DWORD *)(uintptr_t)(g_ctx + 0x5ac);
+        probe_log("[probe] ctx=%08x  *(ctx+0x5ac)=%08x", g_ctx, p);
+        if (p && readable((const void *)(uintptr_t)p, 0x40)) {
+            for (i = 0, base = p; i < 16; i++) {
+                DWORD a = base + i * 0x2c + 0x28;
+                v = readable((const void *)(uintptr_t)a, 4) ? *(const DWORD *)(uintptr_t)a : 0;
+                n1 += snprintf(b1 + n1, sizeof(b1) - n1, " %x=%08x", i, v);
+                if (n1 > 330) break;
+            }
+            probe_log("[A 指针] +28:%s", b1);
+            for (i = 0; i < 3; i++) {
+                char tag[32]; snprintf(tag, sizeof(tag), "A[%d]+0x28", i);
+                dump_n(tag, p + i * 0x2c + 0x28, 16);
+            }
+        }
+        for (i = 0, base = g_ctx + 0x5ac; i < 16; i++) {
+            DWORD a = base + i * 0x2c + 0x28;
+            v = readable((const void *)(uintptr_t)a, 4) ? *(const DWORD *)(uintptr_t)a : 0;
+            n2 += snprintf(b2 + n2, sizeof(b2) - n2, " %x=%08x", i, v);
+            if (n2 > 330) break;
+        }
+        probe_log("[B 内联] +28:%s", b2);
+        return;
+    }
+    if (g_hook_on && g_hook_sel == 12 && g_ctx) {
+        /* ★ 遍历元素 i=0..15：elem = ctx+0x5ac + i*0x2c，看哪条 elem+0x28 不是 -9999994 */
+        char buf[600]; int n = 0, i;
+        for (i = 0; i < 16; i++) {
+            DWORD p = g_ctx + 0x5ac + i * 0x2c + 0x28;
+            DWORD v = 0;
+            if (readable((const void *)(uintptr_t)p, 4)) v = *(const DWORD *)(uintptr_t)p;
+            n += snprintf(buf + n, sizeof(buf) - n, " %x=%08x", i, v);
+            if (n > 500) break;
+        }
+        probe_log("[elem+28]%s", buf);
+        return;
+    }
+    if (g_hook_on && g_ctx) {
+        probe_log("[ctx] %08x  | [w4] %08x  [w8] %08x", g_ctx, g_w4, g_w8);
+        dump_n("ctx+0x5ac", g_ctx + 0x5ac, 24);
+        return;
+    }
     if (g_hook_on) {
         probe_log("[arg1] %08x  [arg2] %08x  | [w4] %08x  [w8] %08x  [wc] %08x",
                   g_hook_r, g_hook_s, g_w4, g_w8, g_wc);
@@ -421,6 +533,105 @@ static BOOL hook_store5(DWORD rva, const BYTE exp[5], DWORD *slot, const char *t
     return TRUE;
 }
 
+
+/* ★ hook711：711 handler（th19:0x50388c）里的
+ *     th19:0x5038b5  8d 8f ac 05 00 00   lea ecx,[edi+0x5ac]
+ * 这条 6 字节整指令不涉及 rel32 ⇒ 可以安全搬进 trampoline 重放。
+ * 顺手把 edi（= ECL 上下文）记下来：段表 = [edi+0x5ac] → 元素（0x2c 步长）→ +0x28。 */
+#define HOOK711_RVA 0x1038b5u
+static const BYTE HOOK711_EXPECT[6] = { 0x8d,0x8f,0xac,0x05,0x00,0x00 };
+
+static BOOL install_hook711(void)
+{
+    BYTE *at = g_base + HOOK711_RVA;
+    BYTE *stub, *p;
+    DWORD old;
+    int i;
+
+    if (!readable(at, 6) || memcmp(at, HOOK711_EXPECT, 6) != 0) {
+        probe_log("[hook711] 0x%x 原字节不匹配，跳过。", HOOK711_RVA);
+        return FALSE;
+    }
+    stub = (BYTE *)VirtualAlloc(NULL, 4096, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    if (!stub) return FALSE;
+    p = stub;
+    *p++ = 0x9C; *p++ = 0x60;                       /* pushfd / pushad */
+    *p++ = 0x89; *p++ = 0x3D;                       /* mov [imm32], edi */
+    *(DWORD *)p = (DWORD)(uintptr_t)&g_ctx; p += 4;
+    *p++ = 0x8B; *p++ = 0x87;                       /* mov eax,[edi+0x5ac] */
+    *(DWORD *)p = 0x5acu; p += 4;
+    *p++ = 0xA3;                                    /* mov [imm32], eax → g_rec */
+    *(DWORD *)p = (DWORD)(uintptr_t)&g_rec; p += 4;
+    *p++ = 0x89; *p++ = 0x35;                       /* mov [imm32], esi → g_num */
+    *(DWORD *)p = (DWORD)(uintptr_t)&g_num; p += 4;
+    /* ★ 当场抄三段（此时 edi=ctx；eax/esi/edi/ecx 都由 pushad 保护） */
+    *p++ = 0x89; *p++ = 0xF8;                       /* mov eax,edi */
+    *p++ = 0x8D; *p++ = 0xB0; *(DWORD *)p = 0x5d4u; p += 4;      /* lea esi,[eax+0x5d4] */
+    *p++ = 0xBF; *(DWORD *)p = (DWORD)(uintptr_t)g_buf; p += 4;   /* mov edi,&g_buf */
+    *p++ = 0xB9; *(DWORD *)p = 16u; p += 4;                       /* mov ecx,16 */
+    *p++ = 0xF3; *p++ = 0xA5;                                     /* rep movsd */
+    *p++ = 0xBF; *(DWORD *)p = (DWORD)(uintptr_t)g_buf2; p += 4;
+    *p++ = 0xB9; *(DWORD *)p = 8u; p += 4;
+    *p++ = 0x8D; *p++ = 0xB0; *(DWORD *)p = 0xa04u; p += 4;       /* lea esi,[eax+0xa04] */
+    *p++ = 0xF3; *p++ = 0xA5;
+    *p++ = 0xBF; *(DWORD *)p = (DWORD)(uintptr_t)g_buf3; p += 4;
+    *p++ = 0xB9; *(DWORD *)p = 8u; p += 4;
+    *p++ = 0x8D; *p++ = 0xB0; *(DWORD *)p = 0x5acu; p += 4;       /* lea esi,[eax+0x5ac] */
+    *p++ = 0xF3; *p++ = 0xA5;
+    *p++ = 0xC7; *p++ = 0x05; *p++ = 0x01; *p++ = 0x00; *p++ = 0x00; *p++ = 0x00;
+    /* ↑ 简化：先不写 ready 标志（poll 用非零判断） */
+    *p++ = 0x61; *p++ = 0x9D;                       /* popad / popfd */
+    for (i = 0; i < 6; i++) *p++ = HOOK711_EXPECT[i];
+    *p++ = 0xE9;
+    *(DWORD *)p = (DWORD)((SIZE_T)(at + 6) - (SIZE_T)(p + 4));
+
+    remember_patch(HOOK711_RVA, HOOK711_EXPECT, 6);
+    if (!VirtualProtect(at, 6, PAGE_EXECUTE_READWRITE, &old)) { VirtualFree(stub, 0, MEM_RELEASE); return FALSE; }
+    at[0] = 0xE9;
+    *(DWORD *)(at + 1) = (DWORD)((SIZE_T)stub - ((SIZE_T)at + 5));
+    at[5] = 0x90;
+    VirtualProtect(at, 6, old, &old);
+    FlushInstructionCache(GetCurrentProcess(), at, 6);
+    probe_log("[hook711] 已安装 @ base+0x%x → %p（记录 edi=ctx）", HOOK711_RVA, (void *)stub);
+    return TRUE;
+}
+
+
+/* ★★★ 计更安全的一招：**改派发表**而不是改代码。
+ * 派发 = jmp [group*4 + 0x50524c]；把某个 handler 地址换成"自增计数 + jmp 回原 handler" 的桩，
+ * 既能数调用次数，又完全不碰被挂钩的代码（不需要重放任何指令）。
+ *   stub 字节：FF 05 <&cnt>   inc dword [cnt]
+ *              E9 rel32        jmp 原 handler
+ * 不碰任何寄存器/xmm ⇒ 语义完全不变。 */
+#define DISPATCH_TBL 0x10524cu    /* th19:0x50524c */
+static BOOL hook_dispatch_group(int group, DWORD *cnt, DWORD orig_handler, const char *tag)
+{
+    BYTE *slot = g_base + DISPATCH_TBL + 4 * group;
+    BYTE *stub, *p;
+    DWORD old, cur;
+
+    if (!readable(slot, 4)) { probe_log("[tbl:%s] 表项不可读，跳过。", tag); return FALSE; }
+    if (group < 64 && g_grp_done[group]) return TRUE;
+    cur = *(DWORD *)slot;
+    if (cur != orig_handler) { probe_log("[tbl:%s] 表项=%08x≠%08x，跳过。", tag, cur, orig_handler); return FALSE; }
+
+    stub = (BYTE *)VirtualAlloc(NULL, 4096, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    if (!stub) return FALSE;
+    p = stub;
+    *p++ = 0xFF; *p++ = 0x05;                       /* inc dword [imm32] */
+    *(DWORD *)p = (DWORD)(uintptr_t)cnt; p += 4;
+    *p++ = 0xE9;
+    *(DWORD *)p = (DWORD)((SIZE_T)(uintptr_t)orig_handler - (SIZE_T)(p + 4));
+
+    remember_patch(DISPATCH_TBL + 4 * group, (const BYTE *)&cur, 4);
+    if (!VirtualProtect(slot, 4, PAGE_EXECUTE_READWRITE, &old)) { VirtualFree(stub, 0, MEM_RELEASE); return FALSE; }
+    *(DWORD *)slot = (DWORD)(uintptr_t)stub;
+    VirtualProtect(slot, 4, old, &old);
+    if (group < 64) g_grp_done[group] = 1;
+    probe_log("[tbl:%s] 组 %d 已接管 → %p（原 %08x）", tag, group, (void *)stub, orig_handler);
+    return TRUE;
+}
+
 static DWORD WINAPI poll_thread(LPVOID unused)
 {
     DWORD t0 = GetTickCount();
@@ -491,7 +702,7 @@ int __stdcall thcrap_plugin_init(void)
 
     GetLocalTime(&st);
     probe_log("");
-    probe_log("=== th19_probe2 起 %04d-%02d-%02d %02d:%02d:%02d ===",
+    probe_log("=== th19_probe2 v4 === %04d-%02d-%02d %02d:%02d:%02d ===",
               st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
     probe_log("exe  = %s", exe);
     probe_log("base = %p", (void *)g_base);
@@ -521,6 +732,60 @@ int __stdcall thcrap_plugin_init(void)
         if (g_hook_sel == 0 || g_hook_sel == 2) hook_store5(0x102a24u, E8, &g_w8, "+08");
         if (g_hook_sel == 0 || g_hook_sel == 3) hook_store5(0x102a60u, EC, &g_wc, "+0c");
         if (g_hook_sel == 0 || g_hook_sel == 4) install_hook();
+        if (g_hook_sel == 0 || g_hook_sel == 8) install_hook711();
+        if (g_hook_sel == 12) install_hook711();   /* 抓 ctx，然后遍历元素 dump */
+        if (g_hook_sel == 13) install_hook711();   /* 抓 ctx，指针/内联两种解释都打 */
+        if (g_hook_sel == 14) install_hook711();   /* 现场抓 [edi+0x5ac] 与 num，再 dump 段表 */
+        if (g_hook_sel == 0 || g_hook_sel == 11) {
+            /* ★ 全 opcode 直方图：把 300..1042 里出现的**每个不同组**都装上计数器，
+             * 一次运行就能看出这台机器到底跑了哪些 handler（不预设任何 opcode）。 */
+            BYTE *l1 = g_base + 0x105560;
+            int op, n = 0;
+            for (op = 300; op <= 1042 && n < 64; op++) {
+                BYTE grp; DWORD orig;
+                if (!readable(l1 + (op - 300), 1)) continue;
+                grp = l1[op - 300];
+                if (grp >= 64 || g_grp_done[grp]) continue;
+                if (!readable(g_base + 0x10524c + 4 * grp, 4)) continue;
+                orig = *(DWORD *)(g_base + 0x10524c + 4 * grp);
+                if (hook_dispatch_group(grp, &g_cnt_grp[n], orig, "all")) { g_grp_of[n] = grp; n++; }
+            }
+            probe_log("[hist] 共接管 %d 个组", n);
+        }
+        if (g_hook_sel == 0 || g_hook_sel == 10) {
+            /* ★ 给 opcode 700..714 的每个 handler 组各装一个计数器：
+             * 一次跑就能看出 C3 到底用了哪几个 et 族 op（不预设、不猜）。 */
+            int op, k;
+            BYTE *l1 = g_base + 0x105560;
+            for (op = 700, k = 0; op <= 714; op++, k++) {
+                BYTE grp;
+                DWORD orig;
+                if (!readable(l1 + (op - 300), 1)) continue;
+                grp = l1[op - 300];
+                if (!readable(g_base + 0x10524c + 4 * grp, 4)) continue;
+                orig = *(DWORD *)(g_base + 0x10524c + 4 * grp);
+                hook_dispatch_group(grp, &g_cnt_et[k], orig, "et");
+            }
+        }
+        if (g_hook_sel == 0 || g_hook_sel == 9) {
+            hook_dispatch_group(121, &g_cnt609, 0x5027a3u, "609-612");
+            hook_dispatch_group(152, &g_cnt711, 0x50388cu, "711");
+        }
+        /* ★★ 真正的 609 handler（th19:0x502432）里的两个 float store：
+         *   0x502493  f3 0f 10 44 24 28   movss xmm0,[esp+0x28]   ← r（5 字节整）
+         *   0x5024af  f3 0f 11 40 04      movss [eax+0x4],xmm0    ← s（5 字节整）
+         * 段表容器在 ctx+0x4e6c（不是 +0x5ac）。 */
+        {
+            static const BYTE ER[5] = {0xf3,0x0f,0x10,0x44,0x24};   /* 0x502493..0x502497 前 5 字节 */
+            static const BYTE ES[5] = {0xf3,0x0f,0x11,0x40,0x04};
+            if (g_hook_sel == 0 || g_hook_sel == 5) hook_store5(0x102493u, ER, &g_w0, "r@493");
+            if (g_hook_sel == 0 || g_hook_sel == 6) hook_store5(0x1024afu, ES, &g_w4, "s@4af");
+            /* ★ 610 handler(0x5024ca) 的 store：0x5024f6 movss [eax+0x24],xmm0（5 字节整） */
+            {
+                static const BYTE E24[5] = {0xf3,0x0f,0x11,0x40,0x24};
+                if (g_hook_sel == 0 || g_hook_sel == 7) hook_store5(0x1024f6u, E24, &g_w8, "610@4f6");
+            }
+        }
     }
 
     InterlockedExchange(&g_running, 1);

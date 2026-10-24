@@ -176,9 +176,16 @@ CC      := $(TOOLCHAIN)/bin/i686-w64-mingw32-gcc
 OBJDUMP := $(TOOLCHAIN)/bin/i686-w64-mingw32-objdump
 endif
 DLL       := th18_card_expand.dll
+# ★★★ 日志总闸（定义在 `sdk/public.h`）：0 = 全关（**发布默认**，`ce_log` 编译成 `((void)0)`）
+#   1 = 只留关键行（build 戳 / 错误·FAIL / 一次性状态）　　2 = 全部（= 改造前的行为，排查用）
+#   用法：`make dll CE_DEV_DUMP=2`。★ make 不跟踪命令行变量 ⇒ 用 `build/.dev_dump` 记下当前值，
+#   值一变就写新戳 ⇒ 所有 .o 重编（否则「刚编过 0 档，再 CE_DEV_DUMP=2」会静默什么都不做）。
+CE_DEV_DUMP ?= 0
+DUMP_STAMP  := build/.dev_dump
+$(shell mkdir -p build; [ "`cat $(DUMP_STAMP) 2>/dev/null`" = "$(CE_DEV_DUMP)" ] || echo $(CE_DEV_DUMP) > $(DUMP_STAMP))
 # -fno-math-errno：让 sqrtf 编成一条 sqrtss。不加的话它会带一条「负数就调 libm 设 errno」的退路，
 # 而 libm 的 float 返回值走 st0，我们这边接它就得用 fstp —— 直接顶掉下面 dllx87 的「零 x87」不变式。
-CFLAGS    := -O2 -Wall -Wextra -mfpmath=sse -msse2 -fno-math-errno -I.
+CFLAGS    := -O2 -Wall -Wextra -mfpmath=sse -msse2 -fno-math-errno -I. -DCE_DEV_DUMP=$(CE_DEV_DUMP)
 LDFLAGS   := -shared -static-libgcc -s -lkernel32 -luser32 -Wl,--no-insert-timestamp
 
 ## dll    —— 编 DLL（依赖 gen 出的 sites_gen.h）
@@ -189,7 +196,7 @@ OBJS      := $(SRCS:.c=.o)
 ##   （2026-09-12 实际踩到：`sdk/public.h` 里的 `ce_hooks_t` 尾部加了新槽，而它不在表里
 ##    ⇒ 别的卡的 .o 不会重编，新的 `sdk.c` 会去读它们那截短的旧结构 = 越界读）。
 ##   `anm_ids.h` 同理（`sdk.h` include 它，`make anm` 会重写它）。`sdk/*.h` 用通配兜住。
-%.o: %.c card_expand.h sites_gen.h thcrap_bp.h cards_def.h sdk.h sdk_core.h engine.h shop_core.h sound.h voice_ids.h sht_ids.h anm_ids.h $(wildcard sdk/*.h) $(wildcard cards/*.h)
+%.o: %.c card_expand.h sites_gen.h thcrap_bp.h cards_def.h sdk.h sdk_core.h engine.h shop_core.h sound.h voice_ids.h sht_ids.h anm_ids.h $(DUMP_STAMP) $(wildcard sdk/*.h) $(wildcard cards/*.h)
 	$(CC) $(CFLAGS) -c -o $@ $<
 $(DLL): $(OBJS) th18_card_expand.def
 	$(CC) $(CFLAGS) -o $@ $(OBJS) th18_card_expand.def $(LDFLAGS)

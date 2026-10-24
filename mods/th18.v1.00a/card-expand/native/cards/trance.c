@@ -3069,6 +3069,16 @@ static void on_item_frame(ce_card_t *c)
                       ? 0                                            /* ★ 灵界中：不声明无敌（靠闸门） */
                       : (s->end_invuln > 0 ? s->end_invuln : 0));    /* ★ 主动结束后的 1 秒 */
 
+    /* ★★ 2026-10-24（owner 实跑：灵界结束后玩家本体闪黄 ✗）：
+     *   引擎的无敌闪色写的是 `color_2`（一手 `senro.c:179`），触发依据是 zTimer 的 **prev** 字段。
+     *   ⇒ 只在「无敌只剩我们自己这一份」时把 **prev 清 0**：闪消失，**无敌本身一点不减**
+     *     （`cur` / `cur_f` 一个字不动 ⇒ 不会截短别的卡声明的长无敌 —— 那正是 2026-09-22 删掉直写的原因）。
+     *   `ce_invuln_frames()` = 各卡声明取 max ⇒ 等于 `s->end_invuln` 就说明这一帧没有别人。*/
+    if (s->end_invuln > 0 && ce_invuln_frames() == s->end_invuln) {
+        ce_timer_t *t = CE_PLAYER() ? CE_PLAYER_INVULN() : 0;
+        if (t) t->prev = 0;                 /* 只清"闪"，不动 cur/cur_f */
+    }
+
     /* ⑤′ 主动结束后的 1 秒无敌倒计时（声明在 ④ 里；这里只递减）*/
     if (s->end_invuln > 0) --s->end_invuln;
 
@@ -3668,7 +3678,11 @@ static void on_item_frame(ce_card_t *c)
      *   边沿触发（`dbg_key_prev`），只在游玩帧跑 ⇒ 不会在菜单/商店里误触发。*/
 #if TRANCE_DEBUG_KEY
     {
-        const int down = (CE_DEBUG_SPACE_KEYS && ce_key_down(CE_VK_SPACE)) ? 1 : 0;
+        /* ★ 2026-10-24 owner：「113 的空格给灵重新开一下，我要测灵界」
+         *   ⇒ 只认**本卡自己的** `TRANCE_DEBUG_KEY`（=1），**不再受**全仓 `CE_DEBUG_SPACE_KEYS`
+         *   （那个是 P27 `e73c2997`「全仓调试空格键统一摘除」关掉的 ✗，109/117 共用）。
+         *   ⇒ 影响面**只有 113** ✓ 其它卡的调试空格仍然关着 ✓ */
+        const int down = (TRANCE_DEBUG_KEY && ce_key_down(CE_VK_SPACE)) ? 1 : 0;
         if (down && !s->dbg_key_prev) {
             if (ce_key_down(CE_VK_SHIFT)) {
                 /* Shift+空格：灌一格（200）。走 core 的加法 ⇒ 跨格判定与一手同一条路。*/

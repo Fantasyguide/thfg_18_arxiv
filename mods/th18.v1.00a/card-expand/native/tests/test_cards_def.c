@@ -240,6 +240,91 @@ static void test_weight_override_fit(void)
     #undef W
 }
 
+/* ★ 发版卡池：原生卡退场（`cards_def.h` 的 `ce_native_retire`）。
+ * 表用的是 **th18.exe 0x4c53c0 的物理顺序实读值**（58 行：行 8 是 id 38、行 13 是 id 16 …）——
+ * 顺带钉住「必须按 +0x04 的 id 扫，不能 table+id*0x34」这个实现细节。
+ * 每行 = (id, weight, +0x18 dmode, +0x20 deck_visible, +0x24 initial_unlocked)。 */
+static const uint8_t s_retail[58][5] = {
+    {  0,0,11,0,0}, {  1,0,0,0,1}, {  2,0,0,0,1}, {  3,6,0,0,1}, {  4,6,0,0,1}, {  5,0,0,0,1}, {  6,0,0,0,1},
+    {  7,4, 0,0,0}, { 38,2, 1,1,0}, { 39,2, 2,1,0}, { 40,2, 3,1,0}, { 36,4, 0,1,0}, { 37,4, 0,1,0}, { 16,3, 0,1,1},
+    {  8,3, 0,1,0}, { 17,3, 0,1,0}, { 18,3, 0,1,0}, {  9,1,12,1,0}, { 10,3, 0,1,0}, { 11,1,12,1,0}, { 12,3, 0,1,0},
+    { 13,1,12,1,0}, { 14,3, 0,1,0}, { 15,1,12,1,0}, { 19,1, 0,1,0}, { 20,2, 0,1,0}, { 24,3, 0,1,1}, { 23,2, 0,1,0},
+    { 21,3, 0,1,0}, { 25,3, 0,1,0}, { 27,2, 0,1,0}, { 22,2, 0,1,0}, { 26,3, 0,1,0}, { 28,3, 0,1,0}, { 29,3, 0,1,0},
+    { 30,1, 0,1,0}, { 31,2, 0,1,0}, { 32,3, 0,1,0}, { 33,1, 0,1,0}, { 34,2, 0,1,0}, { 35,2, 0,1,0}, { 42,4, 0,1,1},
+    { 41,2, 0,1,0}, { 43,2, 0,1,0}, { 44,2, 0,1,0}, { 49,2, 0,1,0}, { 45,4, 0,1,0}, { 46,2, 0,1,0}, { 47,4, 0,1,0},
+    { 48,2, 0,1,0}, { 50,2, 0,1,0}, { 51,4, 4,1,0}, { 52,4, 5,1,0}, { 53,4, 5,1,0}, { 54,3,12,1,0}, { 55,6, 0,0,0},
+    { 56,0, 0,1,1}, { 57,0, 0,0,1},
+};
+
+/* 物理行 != id ⇒ 只能线性找。 */
+static uint8_t *row_by_id(uint8_t *t, unsigned n, uint32_t id)
+{
+    for (unsigned r = 0; r < n; ++r) {
+        uint8_t *p = t + r * CE_ROW_BYTES;
+        if (rd32(p + 0x04) == id) return p;
+    }
+    return NULL;
+}
+
+static void test_native_retire(void)
+{
+    static uint8_t t[255 * CE_ROW_BYTES];
+    char err[160];
+    unsigned pool = 0, guaranteed = 0;
+    memset(t, 0, sizeof t);
+    for (unsigned r = 0; r < 58; ++r) {
+        uint8_t *p = t + r * CE_ROW_BYTES;
+        wr32(p + 0x04, s_retail[r][0]);
+        wr32(p + 0x14, s_retail[r][1]);
+        wr32(p + 0x18, s_retail[r][2]);
+        wr32(p + 0x20, s_retail[r][3]);
+        wr32(p + 0x24, s_retail[r][4]);
+    }
+    for (unsigned r = 58; r < 255; ++r)                  /* fill_table：多出的行 = NULL 行(56) 的副本 */
+        memcpy(t + r * CE_ROW_BYTES, t + 56 * CE_ROW_BYTES, CE_ROW_BYTES);
+    wr32(t + 56 * CE_ROW_BYTES + 0x14, CE_SHOP_NEVER_WEIGHT);
+    wr32(t + 57 * CE_ROW_BYTES + 0x14, CE_SHOP_NEVER_WEIGHT);
+
+    /* 保留名单：0 BLANK + 1/2/5/6 商店固定资源卡 + 56/57 哨兵 */
+    CHECK(ce_native_keep(0) && ce_native_keep(1) && ce_native_keep(2) && ce_native_keep(5)
+          && ce_native_keep(6) && ce_native_keep(56) && ce_native_keep(57));
+    CHECK(!ce_native_keep(3) && !ce_native_keep(7) && !ce_native_keep(9) && !ce_native_keep(38) && !ce_native_keep(55));
+
+    CHECK(ce_native_retire(t, 255) == 50);               /* 51 张里 55 号已经是目标态 ⇒ 改 50 行 */
+
+    /* 保留的行逐字段原样（含 weight 0 ⇒ 每次进店必上架） */
+    uint8_t *p;
+    p = row_by_id(t, 255, 0);  CHECK(p && rd32(p + 0x14) == 0 && rd32(p + 0x18) == 11 && rd32(p + 0x20) == 0 && rd32(p + 0x24) == 0);
+    p = row_by_id(t, 255, 1);  CHECK(p && rd32(p + 0x14) == 0 && rd32(p + 0x20) == 0 && rd32(p + 0x24) == 1);
+    p = row_by_id(t, 255, 6);  CHECK(p && rd32(p + 0x14) == 0 && rd32(p + 0x24) == 1);
+    p = row_by_id(t, 255, 56); CHECK(p && rd32(p + 0x14) == CE_SHOP_NEVER_WEIGHT && rd32(p + 0x20) == 1 && rd32(p + 0x24) == 1);
+    p = row_by_id(t, 255, 57); CHECK(p && rd32(p + 0x24) == 1);
+
+    /* 退场的行：随机池 6（≠0 ⇒ loop1 不进）、编成菜单 0、新档解禁 0；本关专属（dmode 1..5）清零 */
+    p = row_by_id(t, 255, 3);  CHECK(p && rd32(p + 0x14) == CE_SHOP_NEVER_WEIGHT && rd32(p + 0x24) == 0);
+    p = row_by_id(t, 255, 38); CHECK(p && rd32(p + 0x14) == CE_SHOP_NEVER_WEIGHT && rd32(p + 0x18) == 0 && rd32(p + 0x20) == 0 && rd32(p + 0x24) == 0);
+    p = row_by_id(t, 255, 51); CHECK(p && rd32(p + 0x18) == 0);
+    p = row_by_id(t, 255, 53); CHECK(p && rd32(p + 0x18) == 0);
+    p = row_by_id(t, 255, 9);  CHECK(p && rd32(p + 0x14) == CE_SHOP_NEVER_WEIGHT && rd32(p + 0x18) == 12);  /* dmode 12 不在 1..5，不动 */
+    p = row_by_id(t, 255, 55); CHECK(p && rd32(p + 0x14) == CE_SHOP_NEVER_WEIGHT && rd32(p + 0x20) == 0);
+    for (unsigned r = 0; r < 58; ++r) {                  /* 每张原生卡都落到「不在随机池」 */
+        uint32_t id = s_retail[r][0];
+        if (ce_native_keep(id)) continue;
+        p = row_by_id(t, 255, id);
+        CHECK(p && rd32(p + 0x14) == CE_SHOP_NEVER_WEIGHT && rd32(p + 0x20) == 0 && rd32(p + 0x24) == 0);
+        uint32_t dm = rd32(p + 0x18);
+        CHECK(!(dm >= 1 && dm <= 5));
+    }
+
+    /* 幂等；新卡（id ≥ 58）与幻影行一行不碰 */
+    CHECK(ce_native_retire(t, 255) == 0);
+
+    /* 退场后：随机池 0 份（贪欲之壶抽的是同一个池 ⇒ 壶也抽不到）；保证位 = 5 张 weight 0 + 6 随机 */
+    CHECK(ce_shop_capacity_check(t, 255, &pool, &guaranteed, err, sizeof err));
+    CHECK(pool == 0);
+    CHECK(guaranteed == 5 + CE_SHOP_RANDOM_MAX);
+}
+
 static void test_build_order(void)
 {
     /* 原生缩影（含两张掉队的 c2：块首 BLANK、块尾 MAGATAMA2）：新卡 100(被动) 101(子机) 102(主动) 103(类别 9 不存在) 104(子机) */
@@ -274,6 +359,7 @@ int main(void)
     test_batch();
     test_encode_row();
     test_capacity();
+    test_native_retire();
     printf("test_cards_def: %d passed, %d failed\n", s_pass, s_fail);
     return s_fail ? 1 : 0;
 }

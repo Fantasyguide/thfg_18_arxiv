@@ -679,6 +679,37 @@ static uint32_t yk_vm_spawn(void *anm, int script, int layer)
     return id;
 }
 
+/* ★★★ 2026-10-24（owner 报「**106 的『判定点不显示』被 108 覆盖了**」）—— **只写自己起的那支 VM**。
+ *
+ * 一手背景（三段：前两段在本文件之外，最后一段是本仓的既有教训）：
+ *   ① **判定点指示是引擎的东西**：`th18:0x45b433` 在**玩家 tick**（优先级 0x17）里
+ *      `cmp [player+0x476b0],0` ⇒ `0x45b450 call 0x405bf0`（`AnmLoaded__instantiate_vm_to_world_list_back`，
+ *      从 **EffectManager 的 effect.anm** = `[0x4cf2c8]+0xc` 起 **script 0x1a / layer 0xe**）⇒
+ *      `0x45b457` 把句柄写回 `player+0x476b0`；离开聚焦时 `interrupt_tree` + 句柄清 0。
+ *      ⇒ 它**不属于任何卡**；106（红魔乡）每帧把它的 alpha 写 0 来「不显示」（见 `th06rank.c` 的 ①）。
+ *   ② **引擎回收 VM id**：一支 VM 自删之后，同一个 id 会被**下一支** VM 重新用上；
+ *      而 `ce_anm_get_vm(旧 id)` 在复用之后**照样返回非 NULL**（`ufo.c:2081` 记着同一课：
+ *      「两道『上一批还在飞就不叠』的门原来靠句柄活性判定，而 VM id 会被引擎复用 ⇒ 门永久关上」）。
+ *   ③ 本文件有一批「**缓存 id** + 每帧写颜色 / 位置」的循环（刻符浮字、残影束、束根光斑……）。
+ *      它们原来只判 `ce_anm_get_vm(id)` 就算「还活着」⇒ 一旦那个 id 被引擎分给了**判定点指示**，
+ *      我们就会**每帧把 alpha / 位置写到判定点头上**（106 那一笔落在本帧绘制之后，见 `th06rank.c`
+ *      的相位注）⇒ 实跑表现 = 「装上 108 之后，106 隐藏的判定点又出现了」。
+ *
+ * ⇒ 判据升级成**身份**而不是**活性**：VM 现在跑的脚本号（`vm+0x28` = `CE_ANM_VM_SCRIPT_ID`）
+ *   必须还是**我们起它时那一支**。对不上 ⇒ 当作已死（调用方照原样重建，代价 = 少一支 VM 一帧）。
+ *   ⚠ 只判脚本号就够：判定点那支是 **effect.anm script 0x1a**，本卡起的全是 ability.anm /
+ *     自机 anm 的脚本（生成号段见 `pl_anm_ids.h` 与 `assets/build_*.py`），两支号段不重叠。
+ *   ⚠ 使用范围 = **脚本号在生到死之间不变**的池子（浮字 / 残影束 / 束根光斑）。
+ *     使魔跟随 VM 的脚本号会随**变体（kind / 侧）**变 ⇒ 那条路仍由它自己的 `yk_fam_vm_spawn` 判定。*/
+static int yk_vm_ours(uint32_t id, int script)
+{
+    uint8_t *vm;
+    if (!id) return 0;
+    vm = (uint8_t *)ce_anm_get_vm(id);
+    if (!vm) return 0;
+    return *(const int32_t *)(vm + CE_ANM_VM_SCRIPT_ID) == (int32_t)script;
+}
+
 /* ============================== 小工具 ============================== */
 static int yk_base_damage_cap(void)                       /* 照 76 guding.c：sht 头的每敌每帧上限基值 */
 {
@@ -3613,6 +3644,14 @@ static void yk_familiars_tick(yk_card_t *s)
         id = *(uint32_t *)(e + CE_ENEMY_ID);
         if (!id) continue;
         epos = ce_enemy_pos(e);
+        /* ★★★★★ 2026-10-24（**修「被拒槽的下一个槽整帧不进循环体」**）：
+         *   本循环的推进**只由 `for` 的增量那一处 `++i` 负责** —— 循环体内任何「这个槽不处理」
+         *   一律写 **`continue;`**，**绝不许**再写 `++i; continue;`（那会与 `for` 的增量叠加 ⇒ 跳两格，
+         *   被拒槽的**下一个槽**这一帧根本不进循环体）。
+         *   为什么是硬 bug 而不是「少跑一次」：下一个槽若正好活跃，这一帧就**完全不进循环体**
+         *   ⇒ 不调 `yk_note_slot()`；而 `yk_frame_begin()` 已把 `seen` 清 0 ⇒ 帧末 `yk_frame_end()`
+         *   把它判成「敌人没了」⇒ 发 `YK_ACT_WITHDRAW` **真删那只使魔** ⇒ 那一格映射使魔**永远建不出来**
+         *   （建出来下一帧又被删）。原来四处写成了 `++i; continue;`，本提交一并改回 `continue;`。*/
         for (i = 0; i < YK_EMIT_SLOTS; ++i) {
             /* ★★★★ 2026-10-01 晚（owner：「**它是对称的两个使魔应当是**」）——**位置来源并列**（前 8 次）：
              *   `live` = `data+0x4e58 + i*0xc`（活相对偏移，字节步长 `0xc`；一手 `[edi+esi*4+0x4e58]`
@@ -3830,7 +3869,7 @@ static void yk_familiars_tick(yk_card_t *s)
                                "'odd shells' observed; temporary blacklist, 0 = off)",
                                id, i, ty, (unsigned)YK_EMIT_SHELL_TYPE_DENY);
                     }
-                    ++i; continue;
+                    continue;
                 }
             }
             /* ⛔ 2026-10-01 晚（**owner 已否掉**）：「大怪/尺寸白名单」那道闸**已撤** ——
@@ -3880,7 +3919,7 @@ static void yk_familiars_tick(yk_card_t *s)
                            "flicker; we wait for the real etOn origin)",
                            id, i, (int)s_cur_have_latch, (double)wxy[0], (double)wxy[1]);
                 }
-                ++i; continue;
+                continue;
             }
             /* ★ 建壳前提：**该槽真的出过弹** —— ⚠ **观测未证实前默认关闭**（owner：`bullets` 恒 0 是
              *   我们读错字段 ⇒ 把壳全拒了）。`YK_EMIT_REQUIRE_BULLETS = 1` 才启用。*/
@@ -3891,7 +3930,7 @@ static void yk_familiars_tick(yk_card_t *s)
                            "bullet count never grew for this slot) => NO familiar (owner: that spot is "
                            "not a fire point at all)", id, i);
                 }
-                ++i; continue;
+                continue;
             }
             /* ★ 2026-10-11（owner）：**距离分布自适应观测** —— 每 60 帧一行，看有没有「真口落在 48–64」
              *   被误拒（有 ⇒ 按那一个场景加白名单条目，或把阈值下调到 gap 内）。按**被检槽**计数。*/
@@ -3948,7 +3987,7 @@ static void yk_familiars_tick(yk_card_t *s)
                  *   它与上面那道 48 px 闸不是一回事（闸更宽）⇒ 单独喂台账那一格（`#37` 口径）。*/
                 if (wxy[0] == epos[0] && wxy[1] == epos[1] && s->emit_body_skipped < 0xffffu)
                     ++s->emit_body_skipped;
-                ++i; continue;
+                continue;
             }
             if (active && !yk_emit_fired_recently(id, i) && !yk_fired_sticky_get(id, i) &&
                 !yk_emit_phantom_seen(id, i)) {
@@ -5127,7 +5166,21 @@ static void __attribute__((noinline)) yk_transfer_tick(yk_card_t *s)
                 if (le_fam) parent = *(const uint32_t *)(le_boss + CE_ENEMY_ID);
                 if (!parent) continue;                             /* 只看子敌人 / 接管的使魔 */
                 if (yk_map_has_id(&s_map, id)) continue;            /* 已在映射层 ⇒ 那边已喂，别重复 */
-                if (yk_orbit_find_id(id)) continue;                 /* 绕转使魔走下面那条支 */
+                if (yk_orbit_find_id(id)) {
+                    /* ★★★★★ 2026-10-24（**修「绕转使魔转伤恒 0」**）：
+                     *   交表顺序 = ① 这里（`seen = 0` 在本帧开头）→ ② 本扫描 → ③ 清表
+                     *   （查不到就 `memset`）→ ④ 绕转采样（在**清表之后**）。
+                     *   绕转使魔**在这里被显式跳过**（它们的差分在 ④ 算），原来就**不置 `seen`**
+                     *   ⇒ ③ 把它们当「查不到」`memset` ⇒ ④ 的 `yk_xfam_find()` 必 NULL ⇒
+                     *   重建条目 `life = lc` ⇒ **差分恒 0** ⇒ `yk_transfer_feed(...)` 一次都跑不到 ✗。
+                     *   ⇒ 这里给已存在的条目补 `seen = 1`（条目由 ④ 首次创建；本帧首次创建的那一只
+                     *   本来也不该有差分 ✓），让 ③ 放过它 ⇒ ④ 拿得到上帧 `life` ⇒ 差分成立 ✓。
+                     *   （没选「把 ④ 移到 ③ 之前」：那要动更大一段的顺序；也没选「绕转单开一张表」：
+                     *     改动最大。补一格 `seen` 是三条路里最小且语义最直的一条。）*/
+                    yk_xfam_t *xo = yk_xfam_find(id);
+                    if (xo) xo->seen = 1;
+                    continue;                                       /* 绕转使魔走下面那条支 */
+                }
                 pe = ce_enemy_by_id(em, (int32_t)parent);
                 if (!pe) continue;
                 /* 判据：母机是 boss 系（`CE_EM_BOSS_IDS[4]` **或** 母机自己的 `own_boss_id != 0`）。
@@ -5224,7 +5277,7 @@ static void __attribute__((noinline)) yk_transfer_tick(yk_card_t *s)
                         }
                         if (s_xfam[i].le && s_xfam_gone_logged < 12u) {
                             ++s_xfam_gone_logged;
-                            ce_log("youkai/leveledit: xfam gone id=%u last_life=%d hits=%u frame=%u "
+                            ce_log_key("youkai/leveledit: xfam gone id=%u last_life=%d hits=%u frame=%u "
                                    "death_seen=%d kind=%d feed=%s (feed only when a %s death event was "
                                    "seen within 4 frames: KILLED/BOMB_KILL = killed by damage; "
                                    "no event = off-screen removal / manager sweep, ECL_DIE / KILL_ALL = "
@@ -6552,6 +6605,9 @@ typedef struct {
     float    x, y;
     uint32_t vm[YK_POPUP_GLYPHS];
     uint8_t  g[YK_POPUP_GLYPHS];
+    int16_t  script;     /* ★ 2026-10-24：起这批字形时用的脚本号（= `YK_GAUGE_SCRIPT_FONT[ch]`）。
+                          *   每帧写颜色/位置前用它做**身份**判据（`yk_vm_ours`）—— 引擎会回收 VM id，
+                          *   只判 `ce_anm_get_vm()` 会把**判定点指示**当成我们的浮字（owner 报的那条）。*/
 } yk_popup_t;
 static yk_popup_t s_popup[YK_POPUP_MAX];
 static unsigned s_popup_dropped;
@@ -6567,6 +6623,7 @@ static void yk_popup_kill(yk_popup_t *p)
         if (p->vm[i]) { ce_anm_delete(p->vm[i]); p->vm[i] = 0; }
     }
     p->used = 0; p->n = 0; p->age = 0;
+    p->script = 0;                      /* ★ 2026-10-24：句柄全清了 ⇒ 身份判据也清（防串到下一条浮字）*/
 }
 
 static void yk_popup_kill_all(void)
@@ -6650,6 +6707,7 @@ static void yk_popup_spawn(float x, float y, int32_t value, int kind, uint32_t c
     p->scale = scale;
     p->age = 0;
     p->x = x; p->y = y;
+    p->script = (int16_t)YK_GAUGE_SCRIPT_FONT[ch];   /* ★ 身份判据（见 `yk_popup_t.script` / `yk_vm_ours`）*/
     p->used = 1;
 }
 
@@ -6671,7 +6729,10 @@ static void yk_popup_tick(void)
             uint32_t id = p->vm[i];
             float gx = base_x + (float)i * step;
             int a, dx0, dy0;
-            if (!id || !ce_anm_get_vm(id)) { p->vm[i] = 0; continue; }
+            /* ★ 2026-10-24：**身份**判据（不是活性）—— 见 `yk_vm_ours` 的长注：
+             *   id 被引擎回收给别的 VM（典型 = 判定点指示 effect.anm script 0x1a）时，
+             *   `ce_anm_get_vm(id)` 仍非 NULL ⇒ 我们每帧把 alpha/位置写到它头上。*/
+            if (!yk_vm_ours(id, (int)p->script)) { p->vm[i] = 0; continue; }
             if (!ce_anm_set_pos(id, gx, p->y, 0.0f)) { p->vm[i] = 0; continue; }
             /* ★★★ 2026-09-30（**P0：浮字 UI「十分偏移」**，见 `AUDIT.md` §BE #162）：
              *   浮字 VM 用的 `YK_GAUGE_SCRIPT_FONT[]` 是**HUD 字形脚本**，它正文自带
@@ -8134,14 +8195,17 @@ static void yk_run_save108(const yk_card_t *s)
     s_run_keep108.orb_taken = s->orb_taken;   s_run_keep108.orb_full = s->orb_full;
 }
 
-static void yk_run_restore108(yk_card_t *s)
+/* ★ 2026-10-24：restore 改成**从快照读**（`k` 由 `on_ctor` 在初始化前从保存点拷一份）。
+ *   为什么不让它直接读 `s_run_keep108`：ctor 中途会在同一个块里跑几十行清零，把「从哪读」钉在
+ *   一个**局部**快照上，语义是「进来那一瞬的值」，不会被这段代码将来的改动碰到 ✓。*/
+static void yk_run_restore108(yk_card_t *s, const yk_run_keep_t *k)
 {
-    s->piv = s_run_keep108.piv;               s->piv_base = s_run_keep108.piv_base;
-    s->orbs = s_run_keep108.orbs;             s->gauge = s_run_keep108.gauge;
-    s->gauge_focus_run = s_run_keep108.gauge_focus_run; s->gauge_hold = s_run_keep108.gauge_hold;
-    s->orb_peak = s_run_keep108.orb_peak;     s->gauge_ram = s_run_keep108.gauge_ram;
-    s->gauge_idle = s_run_keep108.gauge_idle; s->orb_silence = s_run_keep108.orb_silence;
-    s->orb_taken = s_run_keep108.orb_taken;   s->orb_full = s_run_keep108.orb_full;
+    s->piv = k->piv;               s->piv_base = k->piv_base;
+    s->orbs = k->orbs;             s->gauge = k->gauge;
+    s->gauge_focus_run = k->gauge_focus_run; s->gauge_hold = k->gauge_hold;
+    s->orb_peak = k->orb_peak;     s->gauge_ram = k->gauge_ram;
+    s->gauge_idle = k->gauge_idle; s->orb_silence = k->orb_silence;
+    s->orb_taken = k->orb_taken;   s->orb_full = k->orb_full;
 }
 
 static int on_ctor(ce_card_t *c)
@@ -8150,9 +8214,30 @@ static int on_ctor(ce_card_t *c)
     yk_card_t *s = ce_state(c, yk_card_t);
     {   /* ★ P31a：换面 ⇒ 出来时把 run 级字段写回上一关的值 ✓ */
         yk_run_keep_t keep108;
+        int have108 = 0;                        /* 1 = 手上这份 `keep108` 真是「上一关的旧状态」*/
         const int was_fresh108 = s_run_fresh;
         s_run_fresh = 0;
-        if (!was_fresh108) keep108 = s_run_keep108;
+        __builtin_memset(&keep108, 0, sizeof keep108);
+        /* ★★★★★ 2026-10-24（**修「`yk_run_save108()` 定义了但没人调」**）——
+         *   顺序必须 = **save（旧状态）→ 初始化/清零 → restore（新状态）**：
+         *   原来这里只 `keep108 = s_run_keep108`（= 一个**从没被写过**的文件级静态，恒全 0），
+         *   末尾 `yk_run_restore108(s)` 把那份 0 写回卡状态 ⇒ 换面时
+         *   `piv` / `piv_base` / `orbs` / `gauge` / `orb_taken` / `orb_peak` /
+         *   `gauge_ram` / `gauge_idle` / `orb_silence` **全被抹成 0** ✗：
+         *     · 刚在下面按难度写好的 `piv = yk_night_point_init(difficulty)`（NORMAL 100000）也被抹 ✗；
+         *     · `ce_score_declare_delta(108, piv − piv_base)` 每关从 0 重算 ⇒ **上一关攒的「额外
+         *       最大得点」丢掉** ✗；HUD 夜点每关回 `000000` ✗；人妖槽被清 ✗。
+         *   ⇒ 这正是 P31a（2026-10-14 owner 逐字：「总夜点计数和刻符**没有理由清空**」）的**反向执行**。
+         *   修法 = 在**任何初始化之前**保存旧状态（`s` 此刻还是上一关的值 ✓），并把这个局部快照
+         *   真正用起来（末尾 restore 从它读）✓。
+         *   ★ 判据「旧状态存在」= `s->piv > 0`：夜点在各难度下初值是 60000/100000/200000/300000/300000
+         *     （`yk_night_point_init` 一手表）⇒ 0 只可能来自「刚 `ce_state` 出来的新槽」= 局中买卡那一刻
+         *     ⇒ 那一路**不保存也不恢复** ⇒ 下面的难度初值照常生效 ✓。`was_fresh108`（新局）同理 ✓。*/
+        if (!was_fresh108 && s && s->piv > 0) {
+            yk_run_save108(s);              /* ① 保存旧状态（换面这一路）*/
+            keep108 = s_run_keep108;        /* ② 快照留在栈上，restore 从它读 */
+            have108 = 1;
+        }
     if (!s) return 0;
     /* ★ 先收跟随 VM 再复位静态表：本函数**在局中被重建时也会跑**（每关开始引擎对卡组每张卡
      * 再调一次 ctor）—— 那时 `yk_map_reset` 会把使魔一并忘掉，它们身上的 VM 若不复位就永久留下
@@ -8300,7 +8385,8 @@ static int on_ctor(ce_card_t *c)
         blk.side = CE_HUD_SIDE_PINNED;
         yk_hud_claim(c, s);
     }
-        if (!was_fresh108) yk_run_restore108(s);
+        /* ③ 换面这一路：把①保存的 run 级字段写回（= 上一关的值）；新局/局中买卡 ⇒ 跳过 ✓ */
+        if (have108) yk_run_restore108(s, &keep108);
     }
     if (s->hud_ready) yk_gauge_hud_spawn(c, s);
     return 0;
@@ -8734,13 +8820,13 @@ void yk_practice_equip_once(void)
     if (dec == YK_PRACTICE_GRANT_SEND) {
         s_practice_given = 1;           /* 先立标志 ⇒ 失败也不重试（owner 口径）*/
         r = ce_give_card(108u, CE_MODE_SHOP, 0);
-        ce_log("youkai: practice auto-equip 108 (ce_owned=%d, r=%d, spell=%d)",
+        ce_log_key("youkai: practice auto-equip 108 (ce_owned=%d, r=%d, spell=%d)",
                (int)ce_owned(108u), r, (int)sid);
         return;
     }
     if (dec == YK_PRACTICE_GRANT_SKIP_OWNED) {
         s_practice_given = 1;
-        ce_log("youkai: practice auto-equip 108 skipped (already owned, spell=%d)", (int)sid);
+        ce_log_key("youkai: practice auto-equip 108 skipped (already owned, spell=%d)", (int)sid);
         return;
     }
     /* dec == NONE：本帧不发。两种情形都要能一眼分辨（下一局日志即证据）：
@@ -8749,7 +8835,7 @@ void yk_practice_equip_once(void)
      *   ② 已经发过且手上仍有 ⇒ 静默（无日志）。*/
     if (s_practice_given && !ce_owned(108u) && !s_practice_gone_logged) {
         s_practice_gone_logged = 1;
-        ce_log("youkai: practice auto-equip 108 gone (reset_cards after retry) - NOT re-granted "
+        ce_log_key("youkai: practice auto-equip 108 gone (reset_cards after retry) - NOT re-granted "
                "(intended: 有/没 108 的对照, owner 2026-10-20; spell=%d)", (int)sid);
     }
 }
@@ -8760,7 +8846,7 @@ static int on_load(ce_card_t *c)
     static int s_stamp_logged;
     if (!s_stamp_logged) {
         s_stamp_logged = 1;
-        ce_log("youkai: build " YK_BUILD_STAMP " (card 108; compile-time stamp - check this line "
+        ce_log_key("youkai: build " YK_BUILD_STAMP " (card 108; compile-time stamp - check this line "
                "FIRST in any field report)");
     }
     return on_ctor(c);
@@ -8769,6 +8855,9 @@ static int on_load(ce_card_t *c)
 static void on_run_reset(ce_card_t *c)
 {
     s_run_fresh = 1;   /* ★ P31a：新局 ✓ */
+    /* ★ 2026-10-24：**新局不复用上局的 run 级快照** ⇒ 把保存点也清干净（P31a 的两半要成对：
+     *   `s_run_fresh` 决定「保不保存/恢不恢复」，这份快照决定「恢复什么」）。*/
+    __builtin_memset(&s_run_keep108, 0, sizeof s_run_keep108);
     if (!YK_ENABLE_CARD || !YK_ENABLE_CB_LIFECYCLE) return;   /* ★ 总开关 + 回调族 ⑨ */
     yk_card_t *s = ce_state(c, yk_card_t);
     /* ★ 2026-10-01（owner：这次发版就为拿这个数）—— **emitkey 收尾汇总**：
@@ -8816,6 +8905,7 @@ static void on_run_reset(ce_card_t *c)
 static void on_delete(ce_card_t *c)
 {
     s_run_fresh = 1;   /* ★ P31a：删卡 ⇒ 下次拿到是新局 ✓ */
+    __builtin_memset(&s_run_keep108, 0, sizeof s_run_keep108);   /* ★ 2026-10-24：同上，快照一起清 */
     if (!YK_ENABLE_CARD || !YK_ENABLE_CB_LIFECYCLE) return;   /* ★ 总开关 + 回调族 ⑨ */
     yk_card_t *s = ce_state(c, yk_card_t);
     s_side_lock = -1;                     /* ★ owner ④：删卡 ⇒ 解锁（形态不再钉住）*/
@@ -10281,7 +10371,10 @@ static void __attribute__((noinline)) yk_beam_tick(yk_card_t *s)
             const float x = trail[k * 2 + 0];
             const float y = trail[k * 2 + 1];
             const int vis = (k < bars);
-            if (!s_beam_vm[u][k] || !ce_anm_get_vm(s_beam_vm[u][k])) {
+            /* ★ 2026-10-24：**身份判据**（`yk_vm_ours`）而不是活性 —— 引擎会回收 VM id，
+             *   只判 `ce_anm_get_vm()` 会把**判定点指示**（effect.anm script 0x1a）当成我们的束
+             *   ⇒ 每帧把它挪到膛口、染上束的 alpha（= owner 报的「106 的隐藏被 108 覆盖」）。*/
+            if (!yk_vm_ours(s_beam_vm[u][k], YK_BEAM_SCRIPT[tier])) {
                 s_beam_vm[u][k] = yk_vm_spawn(yk_player_anm(), YK_BEAM_SCRIPT[tier], YK_BEAM_ANM_LAYER);
                 if (!s_beam_vm[u][k]) {               /* 池满 ⇒ 这一帧到此为止 */
                     ++s_beam_dropped;                 /* ★ 记账：**只少一条观感**，见下面伤害那一段 */
@@ -10305,7 +10398,7 @@ static void __attribute__((noinline)) yk_beam_tick(yk_card_t *s)
          * 旋转 / scale 一律不碰（一写就把积分器与插值器打掉，光斑就不转了）。*/
         if (bars > 0) {
             ++want;                                   /* 光斑也是本帧想要的常驻 VM 之一 */
-            if (!s_beam_core[u] || !ce_anm_get_vm(s_beam_core[u])) {
+            if (!yk_vm_ours(s_beam_core[u], YK_BEAM_CORE_SCRIPT)) {   /* ★ 同上：身份判据 */
                 s_beam_core[u] = yk_vm_spawn(CE_ABILITY_ANM(), YK_BEAM_CORE_SCRIPT,
                                              YK_BEAM_CORE_ANM_LAYER);
                 if (!s_beam_core[u]) ++s_beam_dropped;    /* 池满 ⇒ 少一颗光斑（观感）*/

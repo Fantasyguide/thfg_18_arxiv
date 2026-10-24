@@ -6,7 +6,7 @@
     python3 make_guide.py <cards.js> <PLAYER-GUIDE.md> <out.tex> [<cards 图片目录>=cards]
 
 产出 guide.tex：
-  · **统一模板，一卡一页**（owner 2026-10-20）：本 mod 所有卡（58–92、106–118）按 id 升序，
+  · **统一模板，一卡一页**（owner 2026-10-20）：本 mod 所有卡（58–92、106–117）按 id 升序，
     每张卡另起一页：卡面 PNG + **卡面文字**（cards.js 的 name/desc ✓）+ 玩家手册正文 ✓
     （没有正文的卡只留卡面，不补空话 ✗）；旧版的「第一部分系统卡 / 第二部分双栏其它卡」已取消。
 编译（任何装了 XeLaTeX + 中文字体的机器）：
@@ -297,8 +297,8 @@ def main():
     imgdir = sys.argv[4] if len(sys.argv) > 4 else 'cards'
     cards = parse_cards(js)
     guide = parse_guide(md)
-    skip = {200, 201}                            # ★ 不进图册：200/201 都是测试·调试卡，不进玩家图册
-    # ★ owner 2026-10-20：所有卡统一模板、按 id 升序 —— 58…92、106…118 一条线排下去 ✓
+    skip = {118, 200, 201}                       # ★ 不进图册：118 已摘掉（挑战卡退场），200/201 是测试·调试卡
+    # ★ owner 2026-10-20：所有卡统一模板、按 id 升序 —— 58…92、106…117 一条线排下去 ✓
     ids = sorted(i for i in cards if i not in skip)
 
     L = [PRE, card_macros(cards)]
@@ -310,7 +310,7 @@ def main():
     L.append(r'\vspace{6pt}')
     L.append(r'本册\textbf{一卡一页}：每张卡先给卡图与卡面文字，下面接玩家手册里的展开说明'
              r'（定位 / 数值 / 用法 / 注意事项）；正文长时自然续页，没有正文的卡只留卡面。'
-             r'58--92 是其它卡，106--117 是系统卡，118 是挑战卡。')
+             r'58--92 是其它卡，106--117 是系统卡。')
     L.append(r'\tableofcontents')
     L.append(r'\clearpage')
 

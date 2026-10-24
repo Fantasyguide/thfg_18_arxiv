@@ -189,8 +189,14 @@ static int32_t            s_power_got;      /* 本次段累计收取的灵力道
 static int                s_power_logged;   /* 「灵力道具池满丢弃」只记一行（防刷屏）*/
 static int32_t            s_aura_bullets;   /* 结界累计碰到的敌弹颗数（诊断）*/
 /* ★ 结界的**逐弹闩锁**：每颗弹只算一次（一手 TH19 `FUN_004ee770` 之后弹就没了 ⇒ 天然一次；
- *   我们只「碰」不消 ⇒ 必须自己闩锁，否则同一颗弹每帧都会掉道具 ✗）。*/
-static uint8_t            s_aura_bullet_done[CE_BM_BULLET_COUNT];
+ *   我们只「碰」不消 ⇒ 必须自己闩锁，否则同一颗弹每帧都会掉道具 ✗）。
+ *   ★ 2026-10-25（性能 C2）：容量 `+1` —— `CE_BULLET_POOL_FOR_EACH_IDX` 的下标是 **1..2000**
+ *     （池共 2001 块，最后一格是"引擎自己那两条平扫漏掉的"真弹位，见 `sdk.h:1362`）⇒
+ *     原来的 `[2000]` 只盖 0..1999 ⇒ **`s_aura_bullet_done[2000]` 是 1 字节越界**（读到/写到相邻
+ *     .bss）。本仓所有用户都过 `state`/`flags` 判据 ⇒ 实跑没暴雷，但它是真的越界，顺手补正
+ *     （**行为零变化**：新格恒 0 = 今天"读到邻居字节"的值不可预期，但 2000 号槽是池尾哨兵
+ *     `state = 5`，永远过不了 `COLLIDE`/半径判据 ⇒ 这一格的值谁都读不到）。*/
+static uint8_t            s_aura_bullet_done[CE_BM_BULLET_COUNT + 1];
 /* ★★ A 路（owner 2026-10-05 选）：灵 = **引擎真敌机**（`ce_spawn_enemy`，108 使魔/112 令牌同款原语）。
  *   ⚠ SDK 明令：**禁止在敌人死亡栈里调** `ce_spawn_enemy`（DEATH §2.4 重入）⇒
  *     死亡回调里**只入队**（`s_spirit_q`），真正的生成放在 `on_tick_2`。 */
@@ -602,7 +608,9 @@ static int   s_boss_prev;   /* ★ owner 2026-10-05：boss 表 0→1 的**边沿
  *   ★ 块尺寸取**一手值 ×2**（owner：「先按一手宽度做」✓ + `HUD-LAYOUT.md` §1.1）⇒ 满宽 224→**448**、
  *     高 4→**8** 表面 px；底槽每边再放 `POFV_HUD_CHG_BORDER` ⇒ **条**的外表 **452×12 表面 px** ✓。
  *   ★★ 2026-10-11 第二轮：认领块高 = **24**（条 12 + 刻度出头 `TICK_UP` 12）—— 为一手 **4×24** 的标让位
- *     ⇒ `POFV_HUD_BLOCK_H_TOTAL_SURF` = 24（上抬影响见 `POFV_HUD_CHG_TICK_UP` 与 `TUNING.md` §④）。 */
+ *     ⇒ `POFV_HUD_BLOCK_H_TOTAL_SURF` = 24（上抬影响见 `POFV_HUD_CHG_TICK_UP` 与 `TUNING.md` §④）。
+ *   ★★ 2026-10-24：块高 **24 → 42** = 再加**上侧**到点提示的 16 + 缝 2（**下侧 `Lv d` 故意画在块外** ✓，
+ *     owner：「lvN 可以画在声明矩形外侧，一手如此，略微超出了游玩区下部」）⇒ **条的位置不变** ✓。 */
 #define POFV_HUD_CHG_BLOCK_W    224.0f   /* ★ 一手 `aura.anm` script1..4 的矩形宽（**640×480 空间** ✓）*/
 #define POFV_HUD_CHG_BLOCK_H      4.0f   /* ★ 一手：同一对指令的高（**640×480 空间** ✓）*/
 /* ★★★★ 2026-10-10 owner：「**灵力条似乎也是没有 ×2？**」✓ —— 一手那几条是 **TH19 `aura.anm` 的 640×480 空间**
@@ -743,8 +751,15 @@ static const int POFV_HUD_CHG_GLOW_SPR[POFV_HUD_CHG_TICKS] = {
 #define POFV_HUD_CHG_FILL_COL    0xFF8080FFu
 /* ★ 白段 = **蓄力比例**（owner 规格 ② ✓）—— 一手附图里左端那段白；纯白 ✓。*/
 #define POFV_HUD_CHG_WHITE_COL   0xFFFFFFFFu
-/* 认领给 HUD 管理器的**外表**尺寸：条 12 + 刻度出头 12 = **24** ✓。 */
-#define POFV_HUD_BLOCK_H_TOTAL_SURF (POFV_HUD_CHG_BLOCK_H_SURF + POFV_HUD_CHG_TICK_UP)   /* 24 ✓ */
+/* 认领给 HUD 管理器的**外表**尺寸。
+ * ★★ 2026-10-24（HUD 文字落地）：从 **24 → 42** —— **只有上侧**的到点提示要占位：
+ *   42 = 上文字 16 ＋ 缝 2 ＋ 刻度出头 12 ＋ 条 12 ✓
+ *   ★ owner 2026-10-24 明令：**下侧 `Lv d` 不进声明矩形**（「lvN 可以画在声明矩形外侧，**一手如此**，
+ *     略微超出了游玩区下部」）⇒ 下方那 16 px **不申报**，`fy + 14` 直接画到块外 ✓（y ≈ 926..942 < 960 ✓）。
+ *   ⇒ 布局：块顶 = `fy − 30`（= 16 + 2 + 12）、条顶 `fy`（= 块底 − 12，**与加文字之前一模一样** ✓）、
+ *     块底 = `fy + 12`，下侧 `Lv d` 落在外侧 `fy + 14 .. fy + 30` ✓ */
+#define POFV_HUD_BLOCK_H_TOTAL_SURF \
+    (POFV_HUD_CHG_BLOCK_H_SURF + POFV_HUD_CHG_TICK_UP + 2.0f + 16.0f)   /* 42 ✓ */
 static int32_t s_sp;               /* 本侧 SP（0..999990 ✓）*/
 /* ★★★ 2026-10-08（交接 HANDOFF-109-HUD-STATE §3 的唯一 P0）：**HUD 的 VM 必须起在「UI 列表」** ✓
  *   —— 世界列表版（`ce_anm_spawn`）是给**场上效果**的 ✗；我原先用错了 ⇒ 整组 HUD 落在**屏幕中间** ✗
@@ -857,7 +872,16 @@ static int32_t s_hud_lv_left;       /* ★ 弹出剩余帧（>0 = 正在弹；�
  *   ⇒ ★ 正确 = **取 1/2**：★ `640 − 96 = **544**` ✓（= 448 + 96 ✓，正好是两候选的中点 ✓）。
  *   ⚠ 对照：★ 640 空间里这 96 表面 px = **48** ✓ ⇒ ★ 同一条偏移在卡内那些"直接写 640 空间字面量"
  *   的地方（如 C4 计时器的 x ✓）也要 **+48** ✓（计时器从 224 → **272** ✓）。*/
-#define POFV_HUD_SURF_X(x)   (544.0f + (x) * 2.0f)   /* 自机世界 x → 表面 px（★ 基点 = 屏幕中心 − 偏移/2 ✓）*/
+/* ★★★★★ 2026-10-25 owner：「蓄力和**指示灵力进度**的那个**跟着自机动**的 UI，**整体比自机偏右**」
+ *   ⇒ 这是那个"修了 114514 次"的老 bug ✓ —— 本次用**几何**算，不再试：
+ *     · 游玩区在 640 空间是 `(32,16,384,448)`（`HUD-LAYOUT.md` / 相机 0 视口 ✓）
+ *       ⇒ 世界 x=0 的**表面 x** = `(32 + 384/2) × 2 = 448` ✓（表面 = 640×2 = 1280 宽 ✓）
+ *     · 原来的 `POFV_HUD_SURF_X` 基点是 **544** ⇒ 每条跟着自机的元素都**偏右 96 表面 px** ✗
+ *       （= 640 空间的 48 px，观感就是"整体偏右" ✓）
+ *     · 后面还有 `POFV_HUD_TH09_DX = −32` 这个"相对子机"的校准 ✓
+ *   ⇒ 令 `基 + DX = 448` ⇒ **基点 = 480** ✓ ⇒ 跟自机的那簇（`gx`）**正好落在自机身上** ✓。
+ *   ⚠ 只改这一个数；`POFV_HUD_TH09_DX` 不动 ✓（它的语义是"相对子机的差"✓）。*/
+#define POFV_HUD_SURF_X(x)   (480.0f + (x) * 2.0f)   /* 自机世界 x → 表面 px（基 480 + DX(−32) = 游玩区中心 448 ✓）*/
 #define POFV_HUD_SURF_Y(y)   ( 32.0f + (y) * 2.0f)   /* 自机世界 y → 表面 px（117 `animal.c:3220` 同式 ✓）*/
 
 /* ★★★★ 2026-10-10 owner：「A/B 两组**比子机偏右**，有一个**恒定的 x 差**，y 方面应当没问题」✓
@@ -975,7 +999,7 @@ static void pofv_hud_chg_claim(void)
     if (blk.w < POFV_HUD_CHG_BLOCK_W_SURF) blk.w = POFV_HUD_CHG_BLOCK_W_SURF;   /* 兜底：不小于条本身 */
     /* ★ 2026-10-11 第二轮：块高 = 条 **12** + 刻度出头 `TICK_UP`(**12**) = **24** ✓
      *   （一手常显态是 4×24 的菱形 ⇒ 要整个落在块里；推法/上抬影响见该宏处注释 ✓）*/
-    blk.h = POFV_HUD_BLOCK_H_TOTAL_SURF;     /*  24 = 12 + 12 ✓ */
+    blk.h = POFV_HUD_BLOCK_H_TOTAL_SURF;     /*  42 = 上文字 16 + 缝 2 + 刻度 12 + 条 12（**下侧 Lv d 不算在内** ✓）*/
     blk.side = CE_HUD_SIDE_LEFT;       /* 走底部货架（owner：「冲突是已知问题，就这么做」⇒ 不为避让改位置 ✓）*/
     /* ★★★ 2026-10-03k（owner：「109 的槽位是**水平几乎占满整个宽度**的，他的**优先级最高摆在最下面**」）
      *   ＋ 2026-10-03p 修正（owner 实跑：「**左下角占不满，应当往上面走**」）：
@@ -1003,6 +1027,204 @@ static void pofv_hud_chg_claim(void)
  *     · `ratio_chg` = **蓄力比例** ⇒ **左端白段**（叠在蓝上 ✓，规格 ②）。
  *   内部自带「**部分死 ⇒ 整组重建**（保生成序：底槽 → 蓝填充 → 白段 → 4 标 ✓）」；
  *   句柄全 0（首次 / 全被收走）⇒ 直接按同一顺序新建 ✓。 */
+/* ★★★★ 2026-10-24（owner goal「HUD 文字」）：蓄力条上的**文字**—— 画法**照 TH19 一手**。
+ *
+ * 一手 = TH19 v1.10c `FUN_004e8a20`（气槽 HUD 的 `on_draw`，2971 B；Ghidra 反编译全文与推法见
+ *   `engine/ascii/th19/02-hud-text-gauge-labels.md`）。五条格式串、四个颜色、分档判据**全是读出来的**：
+ *   `0x5987e8 "Boss Lv%d"` / `0x5987f4 "Ex.Attack Lv%d"` / `0x598804 "Skill"`
+ *   / `0x59880c "Lv%d"` / `0x598814 "Lv%d"`；
+ *   颜色写进绘制上下文 `DAT_005d1a34 + 0x1977c`（`0xAARRGGBB`）：
+ *     Skill `0xff80d0ff`（浅蓝）| Ex.Attack `0xffffff80`（**A=0x80** 半透明白）| Boss `0xffff8080`（浅红）
+ *     | 常驻 lv `0xffc0c0c0`（浅灰）| 画完一律重置回 `0xffffffff` ✓
+ *   分档（`g` = 槽值 0..2500，`t2/t3/t4` = 第 2/3/4 档阈值）：
+ *     `t2 ≤ g < t3` ⇒ `"Skill"`；`t3 ≤ g < t4` ⇒ `"Ex.Attack Lv d"`；`g ≥ t4` ⇒ `"Boss Lv d"`
+ *   ⇒ 与 owner 口径**逐字一致**：「C2 蓄到 C3（= 放手会放 C3）的时候，C2 的 skill 就消失」✓
+ *   常驻：`"Lv d"`（浅灰）画在**第 3 / 第 4 档标的下方**（一手 y=448 到点提示 / 460 常驻 ⇒ 差 12【640×480】）。
+ *   ★ 一手那两条**只在 `g < 该档阈值` 时才画**（越过就交给上面那行）—— owner 2026-10-24 确认：
+ *     「哦，确实是**没越过才画**」⇒ 本卡**照一手**（越过就不画）✓
+ *   ⚠ **位置锚点**是 ❓自定：一手把到点提示的**左边**对齐标位 x（左对齐，上下文 `0x197a4 = 0`）——
+ *     在本卡 448 px 宽的条上 `"Ex.Attack Lv1"`（13 字 × 16 = 208 px）从 0.68 标位（304 px）起会
+ *     **溢出条右端 64 px** ⇒ 本卡改成**居中**（到点提示 / 常驻 lv 都以**对应的那枚标**为心 ✓
+ *     —— owner 2026-10-24：「上面位置应当是对应的 **CN 标**的上面」+「`Lv d` 在标下面」）✓
+ *   字号 = **1:1 不缩放**（一手就是这 16 px 一档；`resolutionMode(2)` 下 1 texel = 1 表面 px）✓
+ *   ⚠ 这些 VM 都**接 HUD 透明度**（`tdim` ＝ 共享带的 alpha，和底槽/填充/标同款）✓ */
+#define POFV_HUD_TXT_VMS     24      /* 字形 VM 池（到点提示最多 13 字 + 常驻 2×4 字 + 余量）*/
+#define POFV_HUD_TXT_W       16.0f   /* 字形贴图宽（一手 16×16 格 ✓）*/
+#define POFV_HUD_TXT_H       16.0f   /* 字形贴图高 */
+/* ★★★★ 2026-10-24（owner 实跑：「**字间距宽了**」）—— 一手的**字距**不是格宽 ✗：
+ *   逐字画那一支（`FUN_004e5850`）对**字体档 1** 的推进量 = `scale.x * 6.0`，
+ *   落笔处再 `× DAT_0062eeb0`（分辨率倍率 = **2** @1280×960）⇒ **12 表面 px / 字** ✓
+ *   （`_DAT_005aa2e8 = 6.0f` 一手读 `.rdata`；同一分支的行高 = `scale.y * 9.0` ⇒ 18）。
+ *   ⇒ 本卡原来按**整格 16** 推进（比一手宽 1/3）✗，改成 **12** ✓。
+ *   ⚠ 字形本身仍是 16 px 宽（贴图原尺寸，不改大小 ✓）；宽字（`M`/`W`/`%` 满格）会与邻字
+ *     **略有重叠** —— 一手就是这么排的（它的字形墨迹平均 12.7 px、字距 12）✓。*/
+#define POFV_HUD_TXT_ADV     12.0f   /* ★ 字距（一手 `6.0 × 2` ✓）*/
+#define POFV_HUD_TXT_UP      30.0f   /* 到点提示的**上边**：条上沿（含 -12 刻度出头）再往上一条字 */
+#define POFV_HUD_TXT_DOWN    14.0f   /* 常驻 lv 的**上边**：条下沿（fy+12）再往下 2 px */
+#define POFV_HUD_TXT_SKILL_COL 0xFF80D0FFu   /* 一手 `[+0x1977c] = 0xff80d0ff` ✓ */
+#define POFV_HUD_TXT_EX_COL    0xFFFFFF80u   /* 一手 `0xffffff80`（半透明白 ✓）*/
+#define POFV_HUD_TXT_BOSS_COL  0xFFFF8080u   /* 一手 `0xffff8080` ✓ */
+#define POFV_HUD_TXT_LV_COL    0xFFC0C0C0u   /* 一手 `0xffc0c0c0` ✓ */
+static int32_t s_hud_txt_vm[POFV_HUD_TXT_VMS];
+static int s_c3_lv_n, s_c4_lv_n;   /* ★ C3 / C4 的**等级**（0..7）；定义在下面 `:2717`，这里前置声明供本段取用 ✓ */
+
+/* 字符 → 图集格号（`C00..C95`）；空格 / 不认识 ⇒ -1（**只推进、不收 VM**）✓
+ * 三行的排法**不是** `0x20 + 格号`（第 0、2 行的第 0 格是空的）⇒ 逐段查表，见 `make_pofv109_asc_art.py`。*/
+static int pofv_hud_txt_glyph(int ch)
+{
+    if (ch >= '!' && ch <= '/') return 1 + (ch - '!');    /* C01..C15 = ! " # … / */
+    if (ch >= '0' && ch <= '9') return 16 + (ch - '0');   /* C16..C25 = 0..9 */
+    if (ch >= ':' && ch <= '?') return 26 + (ch - ':');   /* C26..C31 = : ; < = > ? */
+    if (ch >= '@' && ch <= '_') return 32 + (ch - '@');   /* C32..C63 = @ A-Z [ \ ] ^ _ */
+    if (ch >= 'a' && ch <= 'z') return 65 + (ch - 'a');   /* C65..C90 = a..z */
+    if (ch >= '{' && ch <= '~') return 91 + (ch - '{');   /* C91..C94 = { | } ~ */
+    return -1;
+}
+
+static int pofv_hud_txt_len(const char *s)
+{
+    int n = 0;
+    while (s[n]) ++n;
+    return n;
+}
+
+/* 画一串字：`(x, y)` = **左上角**；返回画完后的 x（= 右边界）✓
+ * 每个字一台 VM：**先认池、再写 pos/sprite/color**；池满了就只推进不画（防御）✓ */
+static float pofv_hud_txt_put(float x, float y, const char *s, uint32_t col,
+                              uint32_t tdim, int *used)
+{
+    for (; *s; ++s) {
+        const int g = pofv_hud_txt_glyph((unsigned char)*s);
+        if (g >= 0 && *used < POFV_HUD_TXT_VMS) {
+            const uint32_t vm = (uint32_t)s_hud_txt_vm[*used];
+            if (vm) {
+                /* ★★ 2026-10-24（owner 实跑：「大写字母、小写字母和数字的 **baseline 有点错位**」）——
+                 *   量过**源图**（不是我们切图错 ✗）：三行墨迹底边（相对格顶，阈值 `alpha>8 && max>=96`）
+                 *     · 第 0 行（数字/标点）y=176 格：**11**
+                 *     · 第 1 行（`@A-Z[\]^_`）y=192 格：**11**
+                 *     · 第 2 行（小写 `a-z{|}~`）y=208 格：**12**  ← **一手自己的表里低 1 px**
+                 *   ⇒ 一手逐字画只推进 x、不改 y，所以**原版也是这个错位**；owner 要它对齐 ✓
+                 *   ⇒ 本卡在**画的时候**把第 2 行（格号 ≥ 64）整体上提 **1 px** 补偿 ✓
+                 *     （贴图**不动** —— 仍是逐像素照切，owner「先按照切图画」✓）。*/
+                const float dy = (g >= 64) ? -1.0f : 0.0f;
+                /* 精灵默认锚 = 锚心 ⇒ 给格子中心（左上角 + 半格）✓ */
+                ce_anm_set_pos(vm, x + POFV_HUD_TXT_W * 0.5f, y + dy + POFV_HUD_TXT_H * 0.5f, 0.0f);
+                ce_anm_set_scale(vm, 1.0f, 1.0f);
+                ce_anm_set_sprite(CE_ABILITY_ANM(), vm,
+                                  (uint32_t)(CE_ANM_ABILITY_SPRITE_POFV109_ASC_C00 + g));
+                /* 字形贴图是**白字** ⇒ 顶点色直接就是 TH19 的一手色；A 接 HUD 透明度 ✓ */
+                ce_anm_set_color(vm, (tdim & 0xff000000u) | (col & 0xffffffu));
+                ce_anm_set_color2(vm, (tdim & 0xff000000u) | (col & 0xffffffu));
+                ++(*used);
+            }
+        }
+        x += POFV_HUD_TXT_ADV;   /* ★ 字距（一手 12 ✓），不是贴图宽 16 ✗ */
+    }
+    return x;
+}
+
+/* 十进制（0..99，无前导零）—— 本仓没有 `snprintf` 可用 ⇒ 自己拆两位 ✓ */
+static float pofv_hud_txt_put_int(float x, float y, int v, uint32_t col,
+                                  uint32_t tdim, int *used)
+{
+    char b[3];
+    if (v < 0) v = 0;
+    if (v > 99) v = 99;
+    if (v >= 10) {
+        b[0] = (char)('0' + v / 10);
+        b[1] = (char)('0' + v % 10);
+        b[2] = 0;
+    } else {
+        b[0] = (char)('0' + v);
+        b[1] = 0;
+    }
+    return pofv_hud_txt_put(x, y, b, col, tdim, used);
+}
+
+/* `"前缀" + 数字`：以 `cx` 为**中心**摆（到点提示用条心、常驻 lv 用标位）✓
+ * ★ `v < 0` ⇒ **不画数字**（"Skill" 那一档没有等级！）—— 2026-10-24 自审抓到的 bug：
+ *   原来无条件调 `put_int(v)` ⇒ `"Skill"` 会被画成 **`"Skill0"`** ✗。*/
+static void pofv_hud_txt_center_lv(float cx, float y, const char *pre, int v,
+                                   uint32_t col, uint32_t tdim, int *used)
+{
+    const int nd = (v < 0) ? 0 : ((v >= 10) ? 2 : 1);
+    const float wd = POFV_HUD_TXT_ADV * (float)(pofv_hud_txt_len(pre) + nd);   /* ★ 字距 12（一手）✓ */
+    const float x0 = cx - wd * 0.5f;
+    const float x1 = pofv_hud_txt_put(x0, y, pre, col, tdim, used);
+    if (v >= 0) pofv_hud_txt_put_int(x1, y, v, col, tdim, used);
+}
+
+/* ① 到点提示（条上方、**条心居中**）+ ② 常驻 lv（**C3 / C4 标的正下方、以标为中心**）✓
+ * 每帧调用：先把池用满（`used`），**剩下的全部 alpha=0** 隐掉 ✓ */
+static void pofv_hud_txt_frame(float bx, float fy, float fc, int kind, uint32_t tdim)
+{
+    int used = 0, i, tier = 0;
+    const float fw = POFV_HUD_CHG_FILL_W;
+
+    /* 分档：`tier` = 已越过的标数（0..4）；一手「越过第 2/3/4 档」⇒ 到点提示换名 ✓ */
+    for (i = 0; i < POFV_HUD_CHG_TICKS; ++i)
+        if (fc >= POFV_HUD_CHG_TICK_AT(kind, i)) tier = i + 1;
+
+    /* 池：**按台补**（首次 / 被引擎收走都重新起；生成序 = 池序 ⇒ 画序稳定 ✓）*/
+    for (i = 0; i < POFV_HUD_TXT_VMS; ++i)
+        if (!s_hud_txt_vm[i])
+            s_hud_txt_vm[i] = (int32_t)hud_vm_spawn(CE_ANM_ABILITY_SCRIPT_POFV109_HUD_CHAR,
+                                                    bx, fy + POFV_HUD_TXT_DOWN);
+
+    /* ① 到点提示：只有**越到第 2 档及以后**才有名字（第 1 档一手也不画 ✓）。
+     *   ★ 第 2 档 = 放手放 C2 ⇒ `"Skill"`；第 3 档 = C3 ⇒ `"Ex.Attack Lv d"`；
+     *     第 4 档 = C4 ⇒ `"Boss Lv d"`（一手三条格式串逐字 ✓）。
+     *   ★ 等级：**内部 0..7，显示 `+1`**（= 一手 `(int)piVar7 + 1` ✓）—— owner 2026-10-24：
+     *     「一手的内部等级应当是 0-7，显示等级是 1-8，内部等级最好是按照 0-7，照一手搞」✓
+     *     ⇒ 本卡的 `s_c3_lv_n` / `s_c4_lv_n` 也改成**0 基内部等级**（初值 C3 = 0 ⇒ `Lv1`、C4 = 2 ⇒ `Lv3`；
+     *       Lunatic = 4 / 4 ⇒ 显示 `Lv5` / `Lv5`）✓
+     *   ★★ owner 2026-10-24：「**上面位置应当是对应的 CN 标的上面**」✓
+     *     ⇒ 水平位置 = **该档自己的标位 x**（C2/C3/C4 三枚菱形之一），**字符串以它为心** ✓
+     *     —— 所以换个档时这句话会**跟着标跳过去**（不是恒在条心 ✗）；
+     *     ⚠ `Boss Lv d`（8 字 = 128 px）以 1.00 的 C4 标为心 ⇒ 右侧溢出条 64 px（一手同样溢出 ✓）。*/
+    if (tier == 2) {
+        pofv_hud_txt_center_lv(bx + fw * POFV_HUD_CHG_TICK_AT(kind, 1), fy - POFV_HUD_TXT_UP,
+                               "Skill", -1, POFV_HUD_TXT_SKILL_COL, tdim, &used);
+    } else if (tier == 3) {
+        /* ★★★ owner 2026-10-24 定稿：「一手的**内部**等级应当是 **0-7**，**显示**等级是 **1-8**，
+         *   内部等级最好是按照 0-7，照一手搞」✓ ⇒ 本卡改成 **内部 0 基 + 显示 `+1`** ✓
+         *   （此前是内部 1 基、显示原值 ✗ —— 与一手的基准差一档）。*/
+        const int lv3 = (s_c3_lv_n < 0 ? 0 : (s_c3_lv_n > 7 ? 7 : s_c3_lv_n)) + 1;
+        pofv_hud_txt_center_lv(bx + fw * POFV_HUD_CHG_TICK_AT(kind, 2), fy - POFV_HUD_TXT_UP,
+                               "Ex.Attack Lv", lv3, POFV_HUD_TXT_EX_COL, tdim, &used);
+    } else if (tier >= POFV_HUD_CHG_TICKS) {
+        const int lv4 = (s_c4_lv_n < 0 ? 0 : (s_c4_lv_n > 7 ? 7 : s_c4_lv_n)) + 1;
+        pofv_hud_txt_center_lv(bx + fw * POFV_HUD_CHG_TICK_AT(kind, 3), fy - POFV_HUD_TXT_UP,
+                               "Boss Lv", lv4, POFV_HUD_TXT_BOSS_COL, tdim, &used);
+    }
+
+    /* ② **等级** `Lv d`：**C3 标下**与 **C4 标下**各一条，**只在还没越过该标时**才画 ✓
+     *   ★ owner 2026-10-24 定稿：「哦，确实是**没越过才画**」✓ —— 与一手逐字一致：
+     *     一手 `if (g < t3) queue(x(t3), 460, "Lv%d", lvl_ex+1);` / `if (g < t4) queue(x(t4), 460, "Lv%d", lvl_boss+1);`
+     *   ⇒ 越过之后该行**消失**，信息由上面那行（`Ex.Attack Lv d` / `Boss Lv d`）承担 ✓
+     *     （所以两条不会同时给同一档报两次等级 ✓）。*/
+    /* ★ 同 ①：内部 0 基 + 显示 `+1`（一手 ✓ owner 2026-10-24「内部 0-7、显示 1-8」）*/
+    {   const int lv3 = (s_c3_lv_n < 0 ? 0 : (s_c3_lv_n > 7 ? 7 : s_c3_lv_n)) + 1;
+        const int lv4 = (s_c4_lv_n < 0 ? 0 : (s_c4_lv_n > 7 ? 7 : s_c4_lv_n)) + 1;
+        const float t3 = POFV_HUD_CHG_TICK_AT(kind, 2);
+        const float t4 = POFV_HUD_CHG_TICK_AT(kind, 3);
+        if (fc < t3)                                          /* ★ 一手 `g < t3` ✓ */
+            pofv_hud_txt_center_lv(bx + fw * t3, fy + POFV_HUD_TXT_DOWN,
+                                   "Lv", lv3, POFV_HUD_TXT_LV_COL, tdim, &used);
+        if (fc < t4)                                          /* ★ 一手 `g < t4` ✓ */
+            pofv_hud_txt_center_lv(bx + fw * t4, fy + POFV_HUD_TXT_DOWN,
+                                   "Lv", lv4, POFV_HUD_TXT_LV_COL, tdim, &used);
+    }
+
+    /* 池里剩下的全部隐掉（A=0；两路同写 —— 引擎的早退判据看两路 ✓）*/
+    for (i = used; i < POFV_HUD_TXT_VMS; ++i) {
+        const uint32_t vm = (uint32_t)s_hud_txt_vm[i];
+        if (!vm) continue;
+        ce_anm_set_color(vm, 0x00000000u);
+        ce_anm_set_color2(vm, 0x00000000u);
+    }
+}
+
 static int pofv_barrier_have(void);   /* ★ 罩子「有没有」= 那个标识 VM `s_barrier_vm_disc` ✓；定义在后 ✓ */
 static void pofv_hud_charge_bar(float fx, float fy, float ratio_rei, float ratio_chg)
 {
@@ -1060,14 +1282,8 @@ static void pofv_hud_charge_bar(float fx, float fy, float ratio_rei, float ratio
         ce_anm_set_color((uint32_t)s_hud_chg_track_vm, tdim | (POFV_HUD_CHG_TRACK_COL1 & 0xffffffu));
         ce_anm_set_color2((uint32_t)s_hud_chg_track_vm, tdim | (POFV_HUD_CHG_TRACK_COL2 & 0xffffffu));
     }
-    /* 2026-10-23 owner: '总之没有看见 txt' + 日志 0 条 => 原处那段没跑。
-     *   挪到这里（pofv_hud_charge_bar 每帧必走）再试 ce_hud_text_ex。
-     *   ⚠ senro.c:191 提过它"只能在 +0x48 on_draw 里调" —— 若这里仍不显示，就说明本函数不在 on_draw。*/
-    if ((s_card_frames % 120u) == 0u) {
-        ce_log("pofv: [TXTEX2] charge_bar reached");
-        ce_hud_text_ex(fx, fy - 40.0f, 0xFFFFFFFFu, 0u, 2, 2, 0, 1.0f, "Ex Attack lv%d", 3);
-        ce_hud_text_ex(fx, fy - 56.0f, 0xFFFFFFFFu, 0u, 2, 2, 0, 1.0f, "skill");
-    }
+    /* 2026-10-24：`ce_hud_text_ex` 那条路**放弃**（日志 21 条、像素 0 ⇒ 卡侧调不到引擎文字层，
+     *   见 `AUDIT.md` §BE-109-20261023x）。文字改走 **TH19 字形 + VM**（脚本 473 / 下面 ⑥）。*/
     /* (1) frame: 4 white 1px bars. anchor=top-left => pos = start of each bar. */
     {
         const float FW = POFV_HUD_CHG_BLOCK_W_SURF;
@@ -1193,6 +1409,13 @@ static void pofv_hud_charge_bar(float fx, float fy, float ratio_rei, float ratio
             s_hud_chg_halo_vm[i] = 0;
         }
     }
+    /* ⑥ **文字**（TH19 一手画法；owner 2026-10-24 goal）
+     *    · 到点提示（`Skill` / `Ex.Attack Lv d` / `Boss Lv d`）= **只在蓄力停在那一档时**画在条上方
+     *      （「C2 蓄到 C3 ⇒ C2 的 skill 消失」✓）；
+     *    · 常驻 `Lv d` = 画在 **C3 / C4 标的正下方**（`s_c3_lv_n` / `s_c4_lv_n`）✓；
+     *    · 颜色 = TH19 一手的四个值（见上面宏）；A 通道接 `tdim`（HUD 统一透明度 ✓）。
+     *    ⚠ 放在**最后**：文字要压在底槽/填充/标之上（生成序 = 画序 ✓）。*/
+    pofv_hud_txt_frame(bx, fy, fc, kind, tdim);
 }
 
 /* ★★★ 2026-10-05 owner：**调试 UI** —— ① 镜像事件列表（镜像暴风**延迟**显示；镜像击破/固灵**停 3 s**再消失）
@@ -1320,6 +1543,22 @@ static int32_t  s_spirit_ex[POFV_SPIRIT_MAX];
 static int pofv_charge_key(void)
 {
     return ce_key_down(CE_VK_C) ? 1 : 0;      /* ★ 蓄力：**只认 C**（Shift 不算蓄力 ✓）*/
+}
+
+/* ★★★★ 2026-10-25（owner 实跑，两条 bug）：
+ *   ① 「C 的蓄力得在**主动卡是 109** 的时候才行，现在是**只要有 109**、主动卡是其他的也能蓄力」✗
+ *   ② 「蓄力途中按 **D**，如果主动卡切换走了，**认为放开蓄力**」✓
+ *   ⇒ 两道都用**同一道闸**：`ABILITY_MGR->+0x38`（= **当前选中的主动卡对象**，`engine.h:444`）
+ *     **就是本卡自己**（对象指针比较，`elytra_mace.c:244` 同款先例 ✓）——
+ *     ⚠ 别用卡号比：同一张卡可能同时在多个槽里，只有**对象指针**能表达"当前这一张" ✓。
+ *   ⇒ 闸一加，② 自然成立：切走的那一帧 `chg_held` 变 0 ⇒ 走"松手沿"
+ *     （`s_chg_prev && !chg_held`）⇒ **按放开蓄力处理**（照常定档/发招/扣灵力）✓。
+ *   ★ 一手依据：一手的蓄力是**主动卡的动作**（`AbilityManager` 只给"选中的主动卡"跑 C 分派）✓。*/
+static int pofv_charge_owned(ce_card_t *c)
+{
+    uint8_t *mgr = CE_ABILITY_MGR();
+    void *sel = mgr ? *(void **)(mgr + CE_MGR_SELECTED_ACTIVE) : 0;
+    return (sel && c && sel == (void *)c) ? 1 : 0;
 }
 
 static int pofv_aura_key(void)
@@ -1520,6 +1759,35 @@ static int pofv_power_has_room(void)
     return 0;
 }
 
+/* ★★★★ 2026-10-25（性能 C2，owner 诊断「二面被放大 / **全程固定付**」）：
+ *   `pofv_graze_scan_drop()` 原来**每帧**无条件整池平扫（2000 槽 × 4 KB 步长 = 8 MB 地址空间），
+ *   而它要的语义只是「**这颗弹进过擦弹圈 R1 ⇒ 掉一颗灵力道具（每颗一次）**」—— 一个**事件**，
+ *   不是一个**每帧的量**。⇒ **每 2 帧扫一次**（`POFV_GRAZE_SCAN_PERIOD`）。
+ *
+ * ## 为什么"每 2 帧"不会漏（逐条）
+ *   ① **不丢事件**：掉道具的判据是「弹在 R1 内」= 位置量。`POFV_GRAZE_R1 = 40 px`（一手口径，
+ *      见 `:1508`），圈的**直径 80 px**；本作实跑最快速的弹也 < 20 px/帧（`0x458` 速度量纲 +
+ *      同屏弹速的手感上限）⇒ 一颗弹**穿过整圈至少要 4 帧**、擦过圈边 1 px 也至少要
+ *      `2·sqrt(2·40·1) ≈ 18 px` ≈ 1 帧 —— 而跳过窗口只有 **1 帧**（周期 2 = 扫/跳交替）
+ *      ⇒ 任何"在圈里出现过"的弹，在它停留期间的**某一个被扫的帧**必然还在圈里 ✓。
+ *   ② **只差时机**：最坏情况掉道具的时刻晚 **1 帧 = 16.7 ms**（人的反应阈值 ~100 ms）✓。
+ *   ③ **闩锁不脏**：`s_aura_bullet_done[]`（每颗弹只掉一次）的"空槽清闩锁"跟着扫描走，
+ *      最坏晚 1 帧清；那 1 帧里若正好**同一槽**被新弹复用，新弹会被当成"已掉过" ⇒ 少掉 1 颗。
+ *      这是**改前就有**的同一类边界（改前窗口 = 1 帧：槽在扫描之后死于帧内、新弹同帧入驻），
+ *      改后窗口从 1 帧变 2 帧 ⇒ 概率翻倍但仍受"弹死在扫描点之后 + 同槽立刻复用"约束；
+ *      影响 = **一颗灵力道具**（且道具本体是自建池、随时可再掉）。
+ *   ④ **与结界那一路不互斥**：`aura_scan_bullets()` / 染色的帧率**一点没动**（它们各有自己的判据），
+ *      只有这条"擦弹掉落"降频 ⇒ 结界行为零变化 ✓。
+ *   ⑤ **池满的语义不变**：`pofv_power_has_room()` 仍是"这一帧有位置才置闩锁"（改前注释那段）——
+ *      周期化只是让"有位置"这个判断每 2 帧做一次 ✓。
+ *
+ * ⚠ 想回到每帧：把 `POFV_GRAZE_SCAN_PERIOD` 改成 1（一行）。*/
+#define POFV_GRAZE_SCAN_PERIOD  2
+static unsigned s_graze_scan_phase;      /* 0 = 本帧整池扫；>0 = 本帧跳过（还差几帧）*/
+static uint32_t s_graze_scan_frames;     /* 累计**真扫**过多少帧（诊断）*/
+static uint32_t s_graze_scan_slots;      /* 累计摸过的槽数（诊断；改前 = 每帧 2000）*/
+static uint32_t s_graze_scan_skipped;    /* 累计跳过多少帧（诊断）*/
+
 static void pofv_graze_scan_drop(void)
 {
     int g_live = 0, g_br_pos = 0, g_in_r1 = 0, g_done = 0;   /* ★ 自证计数 ✓ */
@@ -1527,6 +1795,12 @@ static void pofv_graze_scan_drop(void)
     const float *pp = ce_player_pos();
     uint32_t i;
     if (!bm || !pp) return;
+    /* ★ 2026-10-25（性能 C2）：**整池平扫降频**（见上面那段"为什么不会漏"）——
+     *   本帧跳过 ⇒ 一次内存访问都不做（连 `CE_BULLET_MGR()` 都已经取完了，代价 = 一次自减）✓。*/
+    if (s_graze_scan_phase) { --s_graze_scan_phase; ++s_graze_scan_skipped; return; }
+    s_graze_scan_phase = POFV_GRAZE_SCAN_PERIOD - 1;
+    ++s_graze_scan_frames;
+    s_graze_scan_slots += (uint32_t)CE_BM_BULLET_COUNT;      /* 诊断：这一扫摸过的槽数 ✓ */
     CE_BULLET_POOL_FOR_EACH_IDX(b, i) {   /* ★ z65（goal ③ 收口）：本处要 `s_aura_bullet_done[i]`（按下标清闩锁）✓ ⇒ 保池扫 ✓。 */
         uint16_t state = *(const uint16_t *)(b + CE_BULLET_STATE);
         float br, bx, by, dx, dy;
@@ -1565,9 +1839,17 @@ static void pofv_graze_scan_drop(void)
     }
     /* ★★★ 2026-10-12 goal ① 的"证据不足"项自证 ✓（审计 `89c60c46` 指出：★ 三条路都 `br <= 0` 跳过 ✗，
      *   而一手文档说「`+0x658` 对 type1/2 普通弹为 0」✗ ⇒ ★ 若真是这样，**普通弹会被全漏** ✓）。
-     *   ★ 每 300 帧打一行分布 ⇒ ★ 一局就能判：★ `br>0` 是否为 0 ✓、`round`(在 R1 内) 是否恒 0 ✓。*/
-    if ((s_card_frames % 300) == 0)
+     *   ★ 每 300 帧打一行分布 ⇒ ★ 一局就能判：★ `br>0` 是否为 0 ✓、`round`(在 R1 内) 是否恒 0 ✓。
+     * ★ 2026-10-25：扫描已周期化 ⇒ 判据改成"**每 150 次真扫** = 每 300 帧"（日志节奏不变 ✓）。*/
+    if ((s_graze_scan_frames % (300u / POFV_GRAZE_SCAN_PERIOD)) == 0u)
         ce_log("pofv: [GRAZE] live=%d br>0=%d inR1=%d done=%d", g_live, g_br_pos, g_in_r1, g_done);
+    /* ★ 2026-10-25（性能 C2）**一次性计数器**（`ce_log` ⇒ `CE_DEV_DUMP ≥ 2` 才进二进制）：
+     * 每 600 帧一行 = 改前/改后"整池扫的频率与槽数"的机器判据。
+     * 改前：`frames == 墙上帧数`、`slots == frames × 2000`；改后：`slots ≈ frames × 2000 ÷ 2` ✓。*/
+    if ((s_graze_scan_frames % (600u / POFV_GRAZE_SCAN_PERIOD)) == 0u)
+        ce_log("pofv: [PERF] graze_scan frames=%u skipped=%u slots=%u period=%d",
+               (unsigned)s_graze_scan_frames, (unsigned)s_graze_scan_skipped,
+               (unsigned)s_graze_scan_slots, POFV_GRAZE_SCAN_PERIOD);
 }
 
 static int pofv_aura_hit_here(float dx, float dy, float pad)
@@ -1819,7 +2101,12 @@ static void pofv_spark_tick(void)
     }
 }
 
-static int cancel_white_in_circle(const float *pos, float r, int max_count, int mode)
+/* ★★★★ 2026-10-25 owner（定稿）：「**C1-C4 的那个消弹得是无条件消弹**，不是暴风的那个有条件消弹」✓
+ *   ⇒ 本函数加一个 `white_only` 门：
+ *     · `white_only = 0` ⇒ **无条件**（不看弹种，圈内全消）→ **C1–C4 的消弹环** 用它 ✓
+ *     · `white_only = 1` ⇒ **有条件**（只消"可消弹"，`pofv_is_white_bullet`）→ **暴风** 用它 ✓
+ *   （此前两处都走有条件版 ⇒ C1–C4 的环其实一直在按暴风的规则消 ✗ —— 这正是 owner 说的那句。）*/
+static int cancel_white_in_circle(const float *pos, float r, int max_count, int mode, int white_only)
 {
     uint8_t *bm = CE_BULLET_MGR();
     uint32_t i;
@@ -1831,7 +2118,7 @@ static int cancel_white_in_circle(const float *pos, float r, int max_count, int 
         float br, dx, dy, rr;
         if (state != 1 && state != 2) continue;        /* 0 = 空槽；3 / 4 = 别的状态 */
         br = *(const float *)(b + POFV_BULLET_RADIUS_OFF);
-        if (!pofv_is_white_bullet(br)) continue;       /* ★ 可消弹判据（哨兵弹种在这里被跳掉）*/
+        if (white_only && !pofv_is_white_bullet(br)) continue;   /* ★ 仅暴风走这条（条件消弹）✓ */
         dx = *(const float *)(b + CE_BULLET_POS) - pos[0];
         dy = *(const float *)(b + CE_BULLET_POS + 4) - pos[1];
         rr = br * 0.5f + r;                            /* 照 0x429370 的判定式 */
@@ -1977,6 +2264,44 @@ typedef struct {
 static pofv_aura_tint_t s_aura_tint[POFV_AURA_TINT_MAX];
 static int s_aura_tint_n;
 
+/* ★★★★ 2026-10-25（性能 C2，owner 诊断「二面被放大 / 全程固定付」）：
+ *   **染色去重的 O(n_tint × n_live) → O(n_live)**。
+ *
+ *   改前（本函数 ② 段的老写法）：本帧**每颗**活弹都要对已登记表做一次线性查
+ *     `for (j = 0; j < s_aura_tint_n; ++j) if (s_aura_tint[j].b == b) …`
+ *   ⇒ 开销 = `n_live × n_tint`（二面 62 sub / 同屏上千发时 = 十万量级的指针比较/帧 ✗）。
+ *
+ *   改后：**按"弹池槽号"登记**（槽号 = `(b − (mgr+CE_BM_BULLETS)) / CE_BULLET_STRIDE`，
+ *     与 `CE_BULLET_POOL_FOR_EACH_IDX` 的 `idx` **同一口径**）；进表时置位、离表时清位
+ *   ⇒ 判断"这颗弹在不在表里"= **一次数组读** ⇒ 每颗弹 O(1)，全帧 O(n_live) ✓。
+ *
+ *   为什么这样登记是**安全的**（与"按指针登记"完全等价）：
+ *     · 弹的生命周期 = 槽的生命周期（引擎只在池槽上就地构造/析构）⇒ 槽号 ⇒ 至多一颗弹 ✓；
+ *     · 表本身仍然存**指针**（`s_aura_tint[i].b`）⇒ ① 段的"还原 + 重写"逻辑一字不动 ✓；
+ *     · 定长 `CE_BM_BULLET_COUNT + 1` 字节（2001 B，.bss）—— **不 malloc、不引 libm、
+ *       不碰 x87** ✓（`make dllx87` 仍 0）；下标越界（结构上不该有：链表里的 `b` 都来自池）
+ *       时**退回老的线性查**（`oob` 分支），所以"查不到表"绝不会导致重复登记 ✓。
+ *   ⚠ 与 `s_aura_bullet_done[]`（掉道具闩锁）是**两张独立表**，语义分层不变（见函数头）。*/
+static uint8_t s_aura_tint_here[CE_BM_BULLET_COUNT + 1];
+
+/* 诊断（`ce_log` ⇒ 只在 `CE_DEV_DUMP ≥ 2` 进二进制，发布 0 字节、零开销）：
+ * 记"每帧在去重上花了多少次查表"—— 下一轮实跑可直接对比改前/改后。*/
+static uint32_t s_tint_perf_frames, s_tint_perf_lookups, s_tint_perf_fallback;
+
+/* 弹指针 → 弹池槽号（与 `CE_BULLET_POOL_FOR_EACH_IDX` 的 `idx` 同口径：槽 1 = 数组第 1 张）。
+ * 返回 0 = **不在池里**（调用方退回线性查）。除法是**常量除**（`CE_BULLET_STRIDE` = 0xfa0
+ * 编译期常量 ⇒ 编译器出 magic multiply，没有 `idiv`、更没有 x87）✓。*/
+static int pofv_pool_slot_idx(const uint8_t *b)
+{
+    const uint8_t *base = CE_BULLET_MGR();
+    long off;
+    if (!b || !base) return -1;
+    off = (long)(b - (base + CE_BM_BULLETS));
+    if (off < 0 || off > (long)CE_BM_BULLET_COUNT * (long)CE_BULLET_STRIDE) return -1;
+    if (off % (long)CE_BULLET_STRIDE) return -1;
+    return (int)(off / (long)CE_BULLET_STRIDE);
+}
+
 /* ★★★★ 2026-10-15（owner 一手口径）：「固灵结界碰弹的一手行为 = ①运动速度×1/2 ②抖动 ③染色
  *   （**瞬间染色不变化**）」——★ 其中 ① 在本作会**打乱符卡节奏** ⇒ **主动去掉** ✓；② 抖动
  *   **因视觉问题** ⇒ 也**主动去掉** ✓（`POFV_AURA_BULLET_SHAKE` 保持 0 ✓）；⇒ ★ 只剩 ③ 要修 ✗。
@@ -1998,6 +2323,10 @@ static uint32_t pofv_aura_tint_color(uint16_t n)
 static void pofv_aura_tint_restore_all(void)
 {
     int i;
+    /* ★ 2026-10-25（性能 C2）：槽位登记表一起清（否则删卡后残留「这颗弹已在表里」的位
+     *   ⇒ 下一关同一槽里出生的弹**永远不被染色** ✗ = 铁律「长持续效果要收干净」）。
+     *   ⚠ 不引 `<string.h>`：与 `clear_card()` 里别的清池循环同一写法。*/
+    { int k; for (k = 0; k <= CE_BM_BULLET_COUNT; ++k) s_aura_tint_here[k] = 0; }
     if (!CE_BULLET_MGR()) { s_aura_tint_n = 0; return; }
     for (i = 0; i < s_aura_tint_n; ++i) {
         volatile uint32_t *col =
@@ -2083,6 +2412,12 @@ static void pofv_aura_tint_tick(void)
          *   `*p = (*p & 0xff000000u) | (orig & 0x00ffffffu);` ✓ = **只改 RGB、alpha 用当前的** ✓）。
          *   ⇒ ★ 改成同样写法 ✓（染/还原**都不碰 alpha** ✓ —— 与 115/111「只改 RGB、保 alpha」一致 ✓）。*/
         *col = (*col & 0xff000000u) | (s_aura_tint[i].orig & 0x00ffffffu);         /* 无条件还原（lolk.c 的教训）*/
+            /* ★ 2026-10-25（性能 C2）：离表 ⇒ **清槽位登记位**（下一颗进这个槽的弹才登记得进去 ✓）。
+             *   ⚠ 这一位只跟"在不在表里"有关、与颜色/还原无关 ⇒ 清早了/清晚了最多多一次 O(1) 查表。*/
+            {
+                const int drop = pofv_pool_slot_idx(b);
+                if (drop >= 0 && drop <= CE_BM_BULLET_COUNT) s_aura_tint_here[drop] = 0;
+            }
         }
     }
     s_aura_tint_n = w;
@@ -2093,14 +2428,25 @@ static void pofv_aura_tint_tick(void)
     CE_BULLET_LIVE_FOR_EACH(b) {   /* ★ z65（goal ③ 收口）：老判据只跳 `st == 0` ⇒ **`state = 5`（池尾哨兵）会被当成弹参与染色** ✗（进 owner 清单，已修 ✓）。 */
         uint16_t st = *(const uint16_t *)(b + CE_BULLET_STATE);
         float br, dx, dy;
-        int j, dup = 0;
+        int j, dup = 0, slot = -1;
         if (st == 0) continue;
         br = *(const float *)(b + POFV_BULLET_RADIUS_OFF);
         if (!(br > 0.0f)) continue;
         dx = *(const float *)(b + CE_BULLET_POS) - pp[0];
         dy = *(const float *)(b + CE_BULLET_POS + 4) - pp[1];
         if (!pofv_aura_hit_here(dx, dy, br)) continue;
-        for (j = 0; j < s_aura_tint_n; ++j) if (s_aura_tint[j].b == b) { dup = 1; break; }
+        /* —— 去重（本帧唯一的"每颗弹"分支；改前这里是对整张已登记表线性查）——
+         * 槽号查得到 ⇒ **O(1)**（"进结界时登记一次、`n` 自增时本来就在表里" ✓）；
+         * 槽号查不到（`b` 不在池里 —— 结构上不该发生）⇒ 退回**老的线性查**，
+         * 保证"绝不会因为查不到位置而重复登记" ✓（那一路性能退化成改前，正确性不降 ✓）。*/
+        ++s_tint_perf_lookups;
+        slot = pofv_pool_slot_idx(b);
+        if (slot >= 0 && slot <= CE_BM_BULLET_COUNT) {
+            dup = s_aura_tint_here[slot];
+        } else {
+            for (j = 0, ++s_tint_perf_fallback; j < s_aura_tint_n; ++j)
+                if (s_aura_tint[j].b == b) { dup = 1; break; }
+        }
         if (dup) continue;                       /* 已在①里处理（n 已自增）⇒ **每颗弹只记一份** ✓ */
         if (s_aura_tint_n >= POFV_AURA_TINT_MAX) continue;   /* 保底（结构上到不了）*/
         {
@@ -2120,8 +2466,17 @@ static void pofv_aura_tint_tick(void)
             pofv_aura_shake_apply(b);
 #endif
         }
+        if (slot >= 0 && slot <= CE_BM_BULLET_COUNT) s_aura_tint_here[slot] = 1;   /* 登记（O(1)）✓ */
         ++s_aura_tint_n;
     }
+
+    /* 诊断（`ce_log` = 只在 `CE_DEV_DUMP ≥ 2` 进二进制；0 档连参数都不求值）：
+     * 每 600 帧一行 —— 累计"去重查表次数 / 退回线性查次数 / 表多大"。
+     * 下一轮实跑拿它跟改前的 `n_live × n_tint`（那时没有这一行，用 tint_n × live 估）对比 ✓。*/
+    if ((++s_tint_perf_frames % 600u) == 0u)
+        ce_log("pofv: [PERF] tint frames=%u lookups=%u fallback_lin=%u tint_n=%d",
+               (unsigned)s_tint_perf_frames, (unsigned)s_tint_perf_lookups,
+               (unsigned)s_tint_perf_fallback, s_aura_tint_n);
 }
 
 /* ============================ 伤害（一手：每帧每台一次半径 64 的命中、参数 = 1） ============================
@@ -3047,7 +3402,7 @@ static void pofv_ca_ring_tick(void)
          *     · ★ **暴风 = 击破敌人那一下的触发效果** ✓（不属于 C 系列 ✓）★ ⇒ `do_storm_frame()` 的消弹
          *       也是**对的** ✓，不要给它加"条件门" ✗。*/
         if (R->r > 0.0f) {
-            n = cancel_white_in_circle(pos, R->r, POFV_CANCEL_MAX, POFV_BULLET_CANCEL_MODE);
+            n = cancel_white_in_circle(pos, R->r, POFV_CANCEL_MAX, POFV_BULLET_CANCEL_MODE, 0);   /* ★ C1–C4：**无条件** ✓ */
             if (n > 0)
                 ce_log("pofv: [CA_RING] slot=%d kind=%d r=%.1f 消掉 %d 颗（一手：逐帧点测试 ✓）",
                        i, R->kind, (double)R->r, n);
@@ -3224,7 +3579,7 @@ static void do_storm_frame(const pofv_storm_t *bl)
     if (r <= 0.0f) return;
     pos[0] = bl->x; pos[1] = bl->y; pos[2] = 0.0f;
 
-    n = cancel_white_in_circle(pos, r, POFV_CANCEL_MAX, POFV_BULLET_CANCEL_MODE);
+    n = cancel_white_in_circle(pos, r, POFV_CANCEL_MAX, POFV_BULLET_CANCEL_MODE, 1);   /* ★ 暴风：**有条件** ✓ */
     /* ★★★★ 2026-10-10 TH19 連撃：暴风**每消掉一颗小弹 ⇒ combo +1**（一手 `0x51cb91`：
      *   `FUN_0051c8c0`（暴风 tick）的消弹循环里调 `FUN_00549780(实参 0)` ✓ —— 实参 0 ⇒ **窗口不加** ✓）。
      *   这是 combo 的**第二个**（也是唯一另一个）来源 ✓；一手对「除霊オーラ（结界）消弹」**不加** ✗
@@ -3831,10 +4186,16 @@ static void pofv_emit_group(int set, int from)
            (unsigned)set, from, from + 12, n);
 }
 
-/* ★ 2026-10-18（owner 定案）：C2 的青蛙改走**引擎原生子机**（set 0x0e = SANAE_OP）*/
-static ce_option_t s_c2s_opt;
-static ce_card_t  *s_c2s_card;
-#define POFV109_SHT_SET_SANAE_OP  0x0e   /* 一手 engine/sht/th18/01-...-index.md §4：SANAE_OP，组内 2 条 */
+/* ★★★★ 2026-10-25（owner 实跑：「早苗 C2 和一手不符 —— 现在是用引擎侧弹幕，但**发弹的数量和角度**
+ *   和一手不一致；C1 应该已经是引擎侧弹幕了，并且**接管了初始发弹的角度和数量**」✓）
+ *   ⇒ **C2（青蛙）也走 C1（蛇）那条路** ✓ = `pofv_emit_group(set, half)` 直接调引擎按
+ *     **一手 `pl02.sht` 逐字节抄来的 set11（`0x69`）** 发弹 ⇒ **数量/角度由引擎的弹表决定** ✓，
+ *     卡侧不再自己决定任何一发 ✓。
+ *   ✗ 作废（2026-10-18 那版）：青蛙改走**原生子机**（`set 0x0e = SANAE_OP`，组内只有 **2 行**）
+ *     —— 那正是 owner 现在说的"数量和角度不对" ✗（一手 set11 是 **26 行**，每半圈 13 行）
+ *   ⇒ 这里把子机那套（`s_c2s_opt` / `ce_option_get` / `ce_tick_shooters_for_card`）**整段删掉** ✓。
+ *   剩下的窗口节奏与蛇完全同构：**每 8 帧一个半圈**、13 行/半圈 ⇒
+ *     青蛙 60 帧 = 8 个半圈 = **4 圈**（一手 ✓）；蛇 30 帧 = 4 个半圈 = **2 圈**（一手 ✓）。*/
 
 static void pofv_c1_window_tick(void)
 {
@@ -3850,12 +4211,6 @@ static void pofv_c1_window_tick(void)
     if (s_c2s_win > 0) {                       /* ★ 早苗 C2 的 60 帧窗口 ✓（一手 ✓）*/
         if (--s_c2s_win == 0) {                /* ★ 窗口尽 ⇒ 切回 set10 ✓ */
             s_c1_set_sel = 0;
-            /* ★ 2026-10-18 重验修：★ 这里**必须收子机** ✗ —— 否则那只原生子机会**常驻**自机中心 ✓、
-             *   永久占 12 槽之一 ✓，★ 直到换关/删卡才回收 ✗（重验第 4 条 ✓）。
-             *   ★ 用 `o->ptr` 判空 ✓，不依赖 `s_c2s_card` 是否陈旧 ✓（`sdk.c:668` 自己不判 c ✓）。*/
-            { int had = s_c2s_opt.ptr ? 1 : 0;
-              if (s_c2s_opt.ptr) ce_option_drop(s_c2s_card, &s_c2s_opt);
-              ce_log("pofv: [C2N] window end -> drop (had_opt=%d)", had); }
             ce_log("pofv: C2 窗口尽 ⇒ 切回 set10（下一次问认领会回 none）");
         }
     }
@@ -3874,26 +4229,10 @@ static void pofv_c1_window_tick(void)
          *   （★ 蛇 30 帧同理：1/9/17/25 = 4 个半圈 = **2 圈** ✓，与上面注释一致 ✓）。*/
         if (s_c1_win_age % 8 == 1 && s_c1_win_age < win_n) {
             s_c1_sanae_half ^= 1;
-            if (s_c1_set_sel) {
-                /* set 0x0e 的两行 fire_rate2 = 40（反汇编 0x40aa40/0x40aa56）=> 引擎只看 long % 40
-                 * => 必须传 long = 0（peashooter.c:532 / season.c:1626 / signal.c:2698 同款）；short 用不到。
-                 * ❓ 113/117 的 option 闸（sdk.c:2132）只在它们自己激活时否决 0x0a..0x15 => 同卡组才可能吞。*/
-                uint8_t *opt = ce_option_get(s_c2s_card, &s_c2s_opt, 0,
-                                             CE_ANM_ABILITY_SCRIPT_POFV109_C2S_FROG, 30, "pofv109");
-                if (opt) {
-                    ce_tick_shooters_for_card(opt, 0, 0, POFV109_SHT_SET_SANAE_OP);
-                    /* ★ debug：只在状态变化时打一行 ✓（每 8 帧一行会刷屏 ✗）*/
-                    if (s_c1_win_age == 1)   /* ★ 每个窗口的第一圈打一次 ✓（不用静态 ✗）*/
-                        ce_log("pofv: [C2N] native tick ok set=0x%02x opt=%p age=%d win=%d",
-                               (unsigned)POFV109_SHT_SET_SANAE_OP, (void*)opt, s_c1_win_age, s_c2s_win);
-                } else {
-                    if (s_c1_win_age == 1)
-                        ce_log("pofv: [C2N] option NULL (card=%p slot 满或未就绪) age=%d win=%d",
-                               (void*)s_c2s_card, s_c1_win_age, s_c2s_win);
-                }
-            } else {
-                pofv_emit_group(CE_SHT_SET_POFV109_SNAKE, s_c1_sanae_half ? 13 : 0);
-            }
+            /* ★ 蛇 ⇒ set10（`0x68`）、青蛙 ⇒ set11（`0x69`）—— **两条都走 `pofv_emit_group`** ✓
+             *   （= 引擎按一手弹表发，**数量/角度归引擎** ✓；owner 2026-10-25 的口径 ✓）。*/
+            pofv_emit_group(s_c1_set_sel ? CE_SHT_SET_POFV109_FROG : CE_SHT_SET_POFV109_SNAKE,
+                            s_c1_sanae_half ? 13 : 0);
         }
     }
 }
@@ -4079,13 +4418,19 @@ static void pofv_c1_tick(void)
  * ★ 清理（铁律「长持续效果删卡要交代」✓）：跨帧遗留物 = **每颗弹一台 VM** ⇒ `pofv_c3_clear()` 全真删 ✓
  *   （`on_ctor` / `on_run_reset` / `on_delete` 三路共用 `clear_card()` ✓；伤害源 life=2 自灭、无残留 ✓）。
  */
-#define POFV_C3_LEVEL_DEFAULT       1      /* ❓①：档索引 0..7（一手 = 每局按难度取常数）*/
+/* ★★★★ 2026-10-24（owner）：「一手的**内部**等级应当是 **0-7**，**显示**等级是 **1-8**，
+ *   内部等级最好是按照 0-7，照一手搞」✓ ⇒ 本卡这两个量**改成一手那套 0 基内部等级** ✗
+ *   （此前是 1 基、显示原值；现在：内部 0..7、**显示时 +1** ✓）。
+ *   ⇒ 开局显示 `Lv1` / `Lv3` ⇒ **内部 0 / 2** ✓；Lunatic 开局显示 `Lv5` / `Lv5` ⇒ **内部 4 / 4** ✓。
+ *   ⚠ 这两个量同时是**能力自己的 `level`**（弹幕档位 / 伤害表 / 图案逐次升级都按它取）
+ *     ⇒ 内部整体减 1 等于**复位到一手的基准**（此前等于比一手高了一档 ✗）。*/
+#define POFV_C3_LEVEL_DEFAULT       0      /* ★ 内部等级 0..7（一手 ✓）⇒ 显示 +1 = Lv1 */
 /* ★★★★★ 2026-10-13（★ owner 口径 ✓）：
  *   ★「★ **C4 的初始等级是 `max(3, 难度初始等级)`** ✓，★ **因为只有 Lv3 及以上的 C4 才会有符卡**」✓
- *   ⇒ ★ 难度初值就是上面那个 `POFV_C3_LEVEL_DEFAULT`（★ 一手每局按难度取常数 ✓，★ 实测 `∈{1,3}` ✓）
+ *   ⇒ ★ 难度初值就是上面那个 `POFV_C3_LEVEL_DEFAULT`（★ 一手每局按难度取常数 ✓）
  *   ⇒ ★ `max(3, 它)` ✓。★ 于是 **N/E 等难度下 C4 也从 Lv3 起** ✓（★ 才有符卡段 ✓）。
- *   ★ 若将来难度表细化（★ 一手的档位表 ★ 见 §10.2 ✓），★ 这个宏跟着它走 ✓。*/
-#define POFV_C4_LEVEL_DEFAULT       ((POFV_C3_LEVEL_DEFAULT) > 3 ? (POFV_C3_LEVEL_DEFAULT) : 3)
+ *   ★ 2026-10-24：整体改成**0 基内部等级** ⇒ 那个 `3` 也跟着变 **`2`**（= 显示 Lv3 ✓）。*/
+#define POFV_C4_LEVEL_DEFAULT       ((POFV_C3_LEVEL_DEFAULT) > 2 ? (POFV_C3_LEVEL_DEFAULT) : 2)
 #define POFV_C3_MAX_BULLETS        48      /* ❓自定：同屏弹池上限（一手无上限：最多 $D×$C = 4×8 = 32）*/
 #define POFV_C3_CARRIER_DY     (-128.0f)   /* ★ 一手 ✓ `ins_400(0.0f, 128.0f)`：环心 = 自机上方 128 */
 /* ★★★★ 2026-10-13（★ 独立审计 `a39d612c` §B ✓ 一手定死）：★ `120` = ★ **EX_ANGLE_ACCEL 的持续帧数 `a`** ✓
@@ -4601,6 +4946,7 @@ static ce_hud_vm_text_t s_c4_timer_txt;
 #define POFV_C4_FOG_FALLBACK_C 0x00F00F80u   /* ★ 关底颜色 `0xF00F80` ✓（R240 G15 B128 ✓）*/
 #define POFV_C4_THRESH         2500.0f
 #define POFV_BARRIER_R          40.0f
+#define POFV_BARRIER_BREAK_SE   0x1bu   /* ★ 一手破罩 SE 0x1b = TH18 `se_tan00.wav` ✓ */
 /* ★★ 2026-10-10 owner 实跑订正：「半径上感觉**大了 1.5 倍**」✗ —— 真因 = 外层曾写
  *   `scale = k × (128/96)` ✗（把"贴图是 128 px"错当成"要画得更大"），它的**外缘**于是落在
  *   `64 × 0.833 × 1.333 = 71` 单位 = **判定半径的 1.78 倍** ✗。
@@ -5221,28 +5567,61 @@ static float pofv_c4s_cosf(float a) { return pofv_c4s_sinf(a + 1.5707963f); }
  *    · `ins_618` 的偏移**方向**是逐颗随机还是别的量 —— 反编译只定到"偏移向量"，卡侧按"逐颗随机"实现 ✓；
  *    · `ins_605` 的速度上下限与 8 档表的关系（卡侧用 8 档 + `rand×0.5` ✓）。
  */
-static void pofv_c4s_emit(float ang, float spd, uint32_t color)
+/* ★★★ 2026-10-25 owner（goal）：C4 改成**一手三型弹** ✗（原来三路都用同一张 8×8 圆点换顶点色 ✗）：
+ *   一手 `ins_602($A, type, color)` 的三路 = **type 11 札弹 / 1 高光点弹 / 18 中玉**（见
+ *   `engine/ecl/th19/02-bullet-types.md` §2 ✓）⇒ 本卡用 owner 指认切出来的三张：
+ *     `POFV109_C4S_OFUDA`(16×16) / `POFV109_C4S_SMALL`(8×8) / `POFV109_C4S_BIG`(32×32) ✓
+ *   贴图**本身带色** ⇒ 顶点色只给白 + A=0x80（本仓"我方弹幕"的统一透明度 ✓），不再染色 ✓ */
+static void pofv_c4s_emit(float ang, float spd, int lane)
 {
     int k;
     for (k = 0; k < POFV_C4_MAX_BULLETS; ++k) if (!s_c4_b[k].live) break;
     if (k >= POFV_C4_MAX_BULLETS) return;
 
-    /* ① 出生点：下半场一条水平带（y 固定），x 均匀铺满 ±192 ✓ */
-    s_c4_b[k].x = 192.0f * (((float)(ce_rand() % 10000u) / 5000.0f) - 1.0f);
-    s_c4_b[k].y = POFV_FIELD_H - 96.0f;
+    /* ① 出生点：**画面外**（顶边之上）一条水平带，x 均匀铺满 ±192 ✓
+     *   ★★★ 2026-10-25 owner：「**出生位置绝对不是画面内部，一定是画面外**」✓
+     *   ⇒ 原来 `y = POFV_FIELD_H − 96`（= **画面内**、还是下半场 ✗）**作废** ✗；
+     *   一手 `ins_620($A, 0, +96)` 是"**发射器原点 + 96**"，而一手那台 boss 本身就在**顶边之外**
+     *   （TH19 里 C4 是 boss 从画面上方下雨 ✓）⇒ 落点是**画外** ✓。
+     *   本卡没有 boss 对象 ⇒ 用**顶边之上 16 px** 当出生线（出画外 ⇒ 先不可见、随后落入画面 ✓），
+     *   x 仍铺满 ±192（❓ 一手三台发射器的 x 差这层未建模，见本函数上面 ✓）。*/
+    /* ★★★ 2026-10-25 owner：「发弹是**持续的**……现在**按波次刷、一个浪打过来**」✗
+     *   ⇒ 根因 = 出生 x 是**随机铺满全宽** ⇒ 每轮所有弹**同一条横线**同时出现 = 一道"浪" ✗
+     *   ⇒ 改成一手的语义：**三个发射点各自持续发射**（＝三条弹流）✓
+     *     x = 自机 x + 该路固定偏移（路 0/1/2 ⇒ −32 / 0 / +32），再给一点随机抖动 ✓
+     *     （❓ 一手是三台独立发射器的世界坐标；卡侧没有发射器对象 ⇒ 用自机 x 当基准 ✓）*/
+    /* ★★★ 2026-10-25 owner：「**发射的 x 怎么只跟着自机？**」✗ —— 一手那三台发射器是
+     *   **boss 的固定位置**（`ins_620($A, 0, 96)` 三路**同一个偏移** ⇒ 三路 x 相同 ✓），
+     *   与自机无关 ✗ ⇒ 卡侧 x 也**不跟自机**：固定在**场地中心 x = 0**（boss 语义），
+     *   三路只在贴图/颜色上不同（会重叠，一手也如此 —— 见上面三路注释 ✓）。*/
+    /* ★★★ 2026-10-25 owner：「**它是全 x 发射！**」✓ —— 弹从**整条宽度**上散布出现
+     *   （不是从自机的某一点、也不是三个点）⇒ x = **±192 全宽随机** ✓；
+     *   y 仍按 0..23 错开，避免所有弹在同一条横线上"成浪" ✓。*/
+    /* ★★★ 2026-10-25 owner 定稿：「**不管了，就用 random x 吧，x 换成咱们目前场地的宽度**」✓
+     *   ⇒ `x = ±POFV_FIELD_HALF_W(=192)` 的**全宽随机** ✓（一手那套 `etBasePos + etOffsetPolar`
+     *     的极坐标推法**作废** ✗ —— 它是 boss 语义，本卡没有 boss 实体 ✓）。*/
+    s_c4_b[k].x = POFV_FIELD_HALF_W * (((float)(ce_rand() % 10000u) / 5000.0f) - 1.0f);
+    s_c4_b[k].y = POFV_FIELD_H + 16.0f + (float)(ce_rand() % 24u);   /* ★ 画面外 + 0..23 错开 */
 
     /* ② 状态：不反弹 ✓（一手这支没有 `ins_611` ✓） */
     s_c4_b[k].live = 1; s_c4_b[k].age = 0; s_c4_b[k].bounced = 0;
     s_c4_b[k].nobounce = 1;
     s_c4_b[k].ang = ang; s_c4_b[k].spd = spd;
 
-    /* ③ 外观：脚本 466（8×8）× 染色 */
+    /* ③ 外观：**按路选贴图**（符札 / 小彩弹 / 中玉）✓，顶点色只给白 + A=0x80 ✓ */
     s_c4_b[k].vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
                                          CE_ANM_ABILITY_SCRIPT_POFV109_C4S_BULLET,
                                          POFV_C4_VM_LAYER);
     if (s_c4_b[k].vm) {
-        ce_anm_set_color((uint32_t)s_c4_b[k].vm, color);
-        ce_anm_set_scale((uint32_t)s_c4_b[k].vm, 0.5f, 0.5f);
+        const int spr = (lane == 2) ? CE_ANM_ABILITY_SPRITE_POFV109_C4S_BIG
+                      : (lane == 1) ? CE_ANM_ABILITY_SPRITE_POFV109_C4S_SMALL
+                                    : CE_ANM_ABILITY_SPRITE_POFV109_C4S_OFUDA;
+        const float sc = (lane == 2) ? 0.5f      /* 中玉 32 → 16 px */
+                       : (lane == 1) ? 1.0f      /* 小彩弹 8  → 8 px  */
+                                     : 1.0f;     /* 符札 16  → 16 px  */
+        ce_anm_set_sprite(CE_ABILITY_ANM(), (uint32_t)s_c4_b[k].vm, (uint32_t)spr);
+        ce_anm_set_color((uint32_t)s_c4_b[k].vm, 0x80FFFFFFu);
+        ce_anm_set_scale((uint32_t)s_c4_b[k].vm, sc, sc);
     }
 }
 
@@ -5262,11 +5641,18 @@ static void pofv_c4s_fire(void)
      *     ② ★ **编码** ✗ —— ★ 本行按 §89 用**源文件字面量**（UTF-8 ✓）写；★ 而引擎/其它卡读它时
      *        ★ 按什么编码比 ✗ 未坐实 ✓（★ `youkai.c` 是交 `yk_spell_name_is_time(…, 64)` 判的 ✓）
      *        ⇒ ★ 若实跑显示乱码，★ 改写成 Shift-JIS 字节串即可 ✓。*/
-    if (pofv_c4_rank() >= 6) {
+    /* ★★★ 2026-10-25（一手 `pl02.txt:145-148` ✓）：**符卡名有两档** ✗ ——
+     *   `!012345`（rank ≤ 5）⇒ `風符「ウィンドライダー」` ✓；
+     *   `!67`（rank ≥ 6）⇒ `風符「ウィンドマスター」` ✓。
+     *   ⇒ 卡里原来**只写了高档**那一句 ✗ ⇒ 低档现在是**空名字** ✓（补上 ✓）。*/
+    {
+        const int rank_hi = (pofv_c4_rank() >= 6);
         uint8_t *sc = CE_SPELLCARD();
         if (sc) {
-            static const char c4s_name[] = "風符「ウィンドマスター」";
-            size_t ln = sizeof(c4s_name);        /* ★ 含结尾 NUL ✓ */
+            static const char c4s_name_lo[] = "風符「ウィンドライダー」";
+            static const char c4s_name_hi[] = "風符「ウィンドマスター」";
+            const char *c4s_name = rank_hi ? c4s_name_hi : c4s_name_lo;
+            size_t ln = rank_hi ? sizeof(c4s_name_hi) : sizeof(c4s_name_lo);   /* ★ 含结尾 NUL ✓ */
             if (ln > 64u) ln = 64u;              /* ★ 字段宽 64 ✓ ⇒ 截断保护 ✓ */
             /* ★ 不用 `memcpy` ✗ —— ★ 本文件没引 `<string.h>` ✓（★ 编译报错 `undeclared memcpy` ✓）
              *   ⇒ ★ 逐字节拷贝 ✓（★ 更小改动、★ 不新增依赖 ✓）。*/
@@ -5290,26 +5676,17 @@ static void pofv_c4s_fire(void)
      *   （`ins_601($A)` 发 + `ins_23([-1])` ✓）⇒ ★ 间隔 = **1** ✓，★ 不是 2 ✗。
      *   ❓ ★ 每帧**发几颗**按档 = `8/8/8/6/5/4/5/4` ✓ —— ★ ⚠ **2026-10-18 重验更正** ✗：
      *     ★ 颗数表**已经接了** ✓（`c4s_cnt_tab` ＋ `for (m < cnt)` ✗）—— ★ 原来写「还没接」✗ **已过期** ✓。*/
-    s_c4s.theta = POFV_FLIP_ANG(1.5707963f);           /* ★ 2026-10-18 订正（对抗性复核 I4 抓出 ✓）：★ 镜像后的**朝上** ✗
-                                                        *   ★ 一手是 −π/2（朝下）＋ 出生距顶 96 ✓；★ 卡侧把出生点镜像到下半场 ✓
-                                                        *   （`FIELD_H − (96+…)` ✓）⇒ ★ **方向也必须镜像** ✗ —— ★ 原来这里是
-                                                        *   `FLIP(−π/2)` = **+π/2 朝下** ✗ ⇒ ★ 弹一出生就掉出底边 ✗ ✓。
-                                                        *   ★ 全局单一朝向 ✗
-                                                        *   ⚠ 重验更正 ✗：旧句「起 π/2 系（镜像后 = `FLIP(-π/2)`）」自相矛盾 ——
-                                                        *   代码是 `POFV_FLIP_ANG(1.5707963f)` = **−π/2** ✓；而 `FLIP(−π/2)` = **+π/2** ✗。
-                                                        *   ★ 实际起始角 = **−π/2(朝上)** ✓（正是下面 5183 说的"+π/2 会掉出底边"的反面 ✓）。
-                                                        *   旧句、当帧所有弹共用 ✓ */
+    s_c4s.theta = POFV_FLIP_ANG(1.5707963f);          /* ★ 镜像后 = **−π/2 朝上** ✓（一手 +π/2 朝下 ⇒ FLIP ✓）*/                          /* ★★★ 2026-10-25（一手复核 ✓）：**+π/2 = 朝下** ✓
+                                                        *   一手 `ins_604($A, 1.5707964f, 0.034906585f)` ✓（`pl02.txt:186`）——
+                                                        *   与 C3 同一个坐标约定（`s_c2_dir36[9] = (0,+1)` = +y = 下 ✓）。
+                                                        *   ✗ 作废：原来写 `POFV_FLIP_ANG(1.5707963f)` = **−π/2（朝上）** ——
+                                                        *   那是"出生在下半场"那版的口径 ✗（owner 2026-10-25：
+                                                        *   「出生位置一定是**画面外**」⇒ 从上方往下落 ✓）。*/
     { const float *pp0 = ce_player_pos(); s_c4s.px = pp0 ? pp0[0] : 0.0f; }   /* 上一帧自机 x ✓ */
     s_c4s.wait  = 1;                                  /* ★ 一手 ✓ `ins_23([-1])` = 等 1 帧 ✓ */
-    /* ★ 2026-10-18 订正（对抗性复核 G4 ✓）：★ 目标角 = **−π/2 = 朝上** ✗ ——
-     *   ★ 因为**出生点已镜像**到下半场（`FIELD_H − 96` ✓ = 352 ✓）⇒ ★ 飞行方向也必须镜像 ✓；
-     *   ★ 这里原来写「目标角 = +π/2 = 朝下」✗ 是"出生点在顶部"那版的口径 ✓ ⇒ ★ 与出生成对不起来 ✗。*/
-    s_c4s.tgt   = POFV_FLIP_ANG(1.5707963f);    /* ★ 2026-10-18 订正（见本函数上面 theta 那几行 ✓）：★ 镜像后朝上 ✗
-                                                 *   ★ 回中的目标也必须是它 ✗（原来是 `FLIP(−π/2)`=+π/2 朝下 ✗）
-                                                 * ★ 一手 ✓ 一手的 `ins_604` 是 −π/2 系（朝下 ✓）
-                                                 *   ⇒ ★ 走翻转宏 ✓ —— ⚠ 重验更正 ✗：★ `POFV_FLIP_ANG(1.5707963f)`
-                                                 *   = **−1.5707963f**（`FLIP_ANG(a) = -a` ✓），★ **不等于** +1.5707963f ✗；
-                                                 *   ★ 但**这正是要的**：★ 回中目标是 **−π/2 朝上** ✓（★ 旧句写"等价"✗ 是措辞错 ✓）。*/
+    /* ★ 2026-10-25：回中目标 = **+π/2（朝下）** ✓ —— 与 `theta` 同一个朝向（一手 `%D` 初始就是 π/2 ✓，`pl02:190`）。
+     *   ✗ 作废：2026-10-18 那版写 `POFV_FLIP_ANG(1.5707963f)` = −π/2（朝上）—— 那是"出生在下半场"的口径 ✗。*/
+    s_c4s.tgt   = POFV_FLIP_ANG(1.5707963f);          /* ★ 回中目标同上（一手 `%D` 初值 π/2 的镜像）✓ */
     /* ⚠ **2026-10-18 重验**：★ 这里原来是 `s_c4s.aim = …rand…`（★ "初始角 = 向下半圈内的随机" ✗），
      *   ★ 但 `aim` **全文件只写不读** ✗ —— ★ 每颗弹实际用的是 `s_c4s.theta`（`s_c4s_tick` 里 ✓）
      *   ⇒ ★ 按重验"每颗各自掷初始角"**无一手依据** ✗ ⇒ ★ **删除该字段** ✓（不再写、不再存）。*/
@@ -5342,22 +5719,35 @@ static void pofv_c4s_tick(void)
             const float dx  = pxn - s_c4s.px;
             const float one = 3.14159265f / 180.0f;      /* 1° ✓ */
             s_c4s.px = pxn;
-            /* ⚠ 2026-10-18 重验修 bug：**左右两支原来是接反的** ✗ ——
-             *   一手：`dx > +0.01` ⇒ 朝 `π/2 − 10°`（镜像后 = **−80°**）✓ ⇒ 从 −90° 出发应 **增大** ✓；
-             *   ★ 原码 `dx > 0 ⇒ theta -= one` 会走到 −100°（= 往**反**侧偏）✗。
-             *   ⇒ 两个分支的符号对调 ✓。*/
-            if (dx > 0.01f)       s_c4s.theta += one;
-            else if (dx < -0.01f) s_c4s.theta -= one;
-            else {
-                const float d0 = s_c4s.theta - s_c4s.tgt;
-                const float s0 = 2.0f * one;
-                if (d0 >  s0) s_c4s.theta -= s0;
-                else if (d0 < -s0) s_c4s.theta += s0;
-                else s_c4s.theta = s_c4s.tgt;
+            /* ★★★ 2026-10-25（一手 `pl02.txt:196-217` 逐条照抄 ✓）：三分支**都带 ±10° 软限** ✓ ——
+             *   一手原文（`%D` = 发射角，初值 π/2）：
+             *     · `[-9977] > +0.01` ⇒ `unless (%D > π/2 − 10°)` 才 `%D -= 1°` ✓
+             *     · `[-9977] < −0.01` ⇒ `unless (%D < π/2 + 10°)` 才 `%D += 1°` ✓
+             *     · 死区 ⇒ `%D < π/2 − 2°` ⇒ `+= 2°`／`%D > π/2 + 2°` ⇒ `-= 2°` ✓
+             *   ⇒ 卡里原来**两支都没夹限**（会一直偏到 360° ✗）、而且**符号是给"朝上"那版写的** ✗
+             *     （`dx>0 ⇒ +=`）⇒ 现在按一手改回：`dx>0 ⇒ −1°`（朝 π/2−10° 那侧）✓。
+             *   ★ 角度基准统一用 `tgt`（= π/2，朝下）⇒ 软限 = `tgt ∓ 10°` ✓。*/
+            {
+                const float win = 10.0f * one;          /* ★ 一手 ±10°（`0.17453292f` rad）✓ */
+                /* ★ 镜像后的方向：一手 `dx>0 ⇒ %D -= 1°`（朝 π/2−10°）⇒ FLIP 后 = **朝 tgt+10° 走** ✓ */
+                if (dx > 0.01f)       { if (s_c4s.theta < s_c4s.tgt + win) s_c4s.theta += one; }
+                else if (dx < -0.01f) { if (s_c4s.theta > s_c4s.tgt - win) s_c4s.theta -= one; }
+                else {
+                    const float d0 = s_c4s.theta - s_c4s.tgt;
+                    const float s0 = 2.0f * one;
+                    if (d0 >  s0) s_c4s.theta -= s0;
+                    else if (d0 < -s0) s_c4s.theta += s0;
+                    else s_c4s.theta = s_c4s.tgt;
+                }
             }
         }
     }
-    if (s_c4s.timer % s_c4s.wait == 0) {             /* ⚠ 2026-10-18 重验更正 ✗：不是"每 wait 帧发一颗"✗ ——
+    /* ★★★★ 2026-10-25 owner（一手复核）：`8/8/8/6/5/4/5/4` **是 `ins_23` 的等待帧数**（发完一次等 N 帧），
+     *   **不是"每帧发几颗"** ✗ —— 我先前理解错，密度因此大了几十倍 ✗。
+     *   ⇒ 节奏 = **每次发 1 条，然后等 `{8,8,8,6,5,4,5,4}[rank]` 帧** ✓；`POFV_C4S_PERIOD` 撤销 ✓。*/
+    static const int c4s_gap_tab[8] = { 8, 8, 8, 6, 5, 4, 5, 4 };   /* ★ 一手 ✓ ins_23 的参数 */
+    const int c4s_gap = c4s_gap_tab[pofv_c4_rank() & 7];
+    if (s_c4s.timer % c4s_gap == 0) {             /* ⚠ 2026-10-18 重验更正 ✗：不是"每 wait 帧发一颗"✗ ——
                                                       * 每 wait 帧发 **lanes × cnt** 颗（`lanes` = rank>=6?3:2 ✓、
                                                       * `cnt` = `c4s_cnt_tab` 4-8 ✓）✓。*/
         /* ★★★★ 2026-10-17（施工单 §8 ＋ §25 ＋ §12②-1 ＋ §65 ✓）：★ **路数按档** ✗ ——
@@ -5383,15 +5773,14 @@ static void pofv_c4s_tick(void)
              *   （★ `Boss00BossCard1_at()` 里 `!0..!7` 那段 ✓）⇒ ★ 原来每台每帧 **1 颗** ✗
              *   ★ 现在按档发 `cnt` 颗 ✓；⚠ 重验更正 ✗：★ 只有**速度**逐颗随机 ✓（`+ (rand%100)*0.005f` ✓），
              *   ★ **角度不随机** ✗（★ 一律 `s_c4s.theta` ✓，`aim` 字段已删 ✓）。*/
-            static const int c4s_cnt_tab[8] = { 8, 8, 8, 6, 5, 4, 5, 4 };
             int m;
-            const int cnt = c4s_cnt_tab[pofv_c4_rank() & 7];
+            const int cnt = 1;   /* ★ 2026-10-25：一手是 `ins_601` **发一次 = 1 条** ✓（原来按 8 颗 ✗）*/
             /* ★ 2026-10-18（IMPL §4 #2 ✓）：★ 当帧的 `theta` 已于函数开头按自机横移量更新 ✓
              *   ⇒ ★ **所有弹共用同一个 `theta`** ✗（★ 不再逐颗掷 `jit2` ✗ —— 一手 `604($A,%D,0)` 的 `dif=0` ✓）*/
             for (m = 0; m < cnt; ++m) {
                 pofv_c4s_emit(s_c4s.theta,
                               s_c4s_spd_tab[pofv_c4_rank()] + (float)(ce_rand() % 100u) * 0.005f,
-                              (li == 2) ? 0xFFD95D5Du : ((li == 1) ? 0xFFEFADADu : 0xFFD5EFAEu));
+                              li);   /* ★ 2026-10-25：**按路**选贴图（0 符札 / 1 小彩弹 / 2 中玉）✓ */
             }
             /* ★ 2026-10-17（施工单 §12②-2 ＋ §56 ＋ §8 ✓）：★ **每路各自的配色** ✓ ——
              *   ★ 一手的 `_at(0, **11**, 8)`／`_at(1, **1**, 8)`／`_at(2, **18**, 1)` ✓ ⇒ ★ 观感差别**只在配色** ✓
@@ -5402,11 +5791,8 @@ static void pofv_c4s_tick(void)
              *   ★ ⚠ ⚠ 格式**不是** `0xRRGGBBAA` ✗ —— 是 `0xAARRGGBB` ✓（`:1044` ✓） —— ★ 依卡里既有口径（`:1206`：★ "`0xFFFFFF80` 写 α=128" ✓）
              *     ★ 原注释「α 放低字节」**是错的** ✗（它把 A 变成了 D5/EF/D9 ⇒ 蓝紫色）⇒ ★ 已改成 `0xFFD5EFAE` 等（A=FF、RGB 不变）✓。
              *   ★ ⚠ ★ 低档（2 路）★ 只用**前两色** ✓（★ 绿 ＋ 粉 ✓）；★ 红那色**只在高档**出现 ✓。*/
-            static const uint32_t c4s_lane_col[3] = {
-                0xFFD5EFAEu,   /* ★ 路 1 = sprite11 = 淡绿 (213,239,174) ✓ */
-                0xFFEFADADu,   /* ★ 路 2 = sprite1  = 粉红 (239,173,173) ✓ */
-                0xFFD95D5Du,   /* ★ 路 3 = sprite18 = 红   (217,93,93) ✓（仅高档 ✓）*/
-            };
+            /* ★ 2026-10-25：`c4s_lane_col[]` **删掉** ✗ —— 颜色现在由**贴图本身**给
+             *   （符札/小彩弹/中玉各一张，都是 owner 指认的一手切图 ✓），不再靠顶点色换色 ✓。*/
             /* ★ 2026-10-17：★ 单发那段已并入上面的 `cnt` 循环 ✓（★ C 组 ③ ✓）——
              *   ⚠ 重验更正 ✗：★ 只有**速度**的 `+ rand×0.5` 逐颗掷 ✓；★ **`±2°` 抖动不逐颗** ✗
              *   —— ★ 每颗用的都是**全局同一个** `s_c4s.theta` ✓（见上面的 5264–5267 ✓）。*/
@@ -5683,17 +6069,32 @@ static void pofv_c4_fog_tick(void)
                    (double)s_fog_r_last, (unsigned)(s_fog_c_last & 0xFFFFFFu));
         }
     }
-    if (!s_c4_fog_vm)
-        s_c4_fog_vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
-                          CE_ANM_ABILITY_SCRIPT_POFV109_FOG_CIRCLE, 6);
-    {
+    /* ★★★★ 2026-10-25 owner：「**462 和 461 是同一个东西，不该有两个实现**」✓
+     *   ⇒ 312/462 那台**不再单独起** ✗，颜色层就用 **`s_c4_aura_vm`（脚本 461 = 一手 `script33` 的等价：
+     *     `sprite(-1)` + `drawPoly(1,50)` 程序画圆 + `blendMode(4)` + `layer(21)`）✓
+     *     —— 半径/颜色照样每帧从 boss 的 fog 字段写进去 ✓。*/
+    if (s_c4_aura_vm) {
         const float *pp6 = ce_player_pos();
-        if (s_c4_fog_vm && pp6) vm_set_world_pos((uint32_t)s_c4_fog_vm, pp6[0], pp6[1]);
-    }
-    if (s_c4_fog_vm) {
+        /* ★★★ 2026-10-25「完全没有画出来 fog」的根因 ✓：
+         *   一手 `script33` 里 `drawPoly(1.0f, 50)` 的半径是 **1 px**，尺寸全靠
+         *   `ins_412(50,2,600.0f,600.0f)` 把它**放大到 600** ✓；
+         *   而我沿用了旧贴图那套 `k = r / 128 ≈ 1.25` ⇒ 画出来只有 **1.25 px** ⇒ 等于没画 ✗。
+         *   ⇒ 改为按**直径**放大：`scale = r × 2`（r=160 ⇒ 320 ⇒ 直径 320 = 半径 160 ✓）。*/
+        /* ★ 2026-10-25 owner：「**你直接拆掉换 layer5 的那个**」⇒ 461 已换成一手 `script18` 那套
+         *   （普通贴图 + layer(5) + 每帧自转、默认混合 ✓）⇒ 缩放回到**按半径**映射：
+         *   贴图是 256×256 的羽化圆（半径 128）⇒ `scale = r / 128`（r=160 ⇒ 1.25 ⇒ 半径 160 ✓）。*/
         const float k6 = s_fog_r_last / POFV_C4_FOG_REF_R;
-        ce_anm_set_scale((uint32_t)s_c4_fog_vm, k6, k6);
-        ce_anm_set_color((uint32_t)s_c4_fog_vm, 0xFF000000u | (s_fog_c_last & 0x00FFFFFFu));
+        if (pp6) vm_set_world_pos((uint32_t)s_c4_aura_vm, pp6[0], pp6[1]);
+        ce_anm_set_scale((uint32_t)s_c4_aura_vm, k6, k6);
+        /* ★ 2026-10-25：这就是"颜色完全消失"的原因 —— 一手 `script33` 的顶点色是
+         *   **`ins_404(255,255,255)` 纯白** ✓，而我上一笔把 boss 的 fog 颜色（深红 0xF00F80）
+         *   写成了顶点色 ⇒ 在 `blendMode(4)`（`INVDESTCOLOR × INVSRCCOLOR + ADD`）下
+         *   深红几乎乘没了 ⇒ 什么都看不见 ✗。
+         *   ⇒ 顶点色固定 **白**（与一手一致 ✓），颜色由**混合模式与底色**决定 ✓。*/
+        /* ★ 2026-10-25 owner：「**怎么是白色的**」⇒ 上一笔为 `blendMode(4)` 把顶点色写成纯白 ✗，
+         *   现在回到**普通混合（layer 5 那套）** ⇒ 顶点色就该是 **boss 的 fog 颜色** ✓
+         *   （日志实测 `last_c=0xF00F80` 深红 ⇒ 画出来就是暗红雾 ✓）。*/
+        ce_anm_set_color((uint32_t)s_c4_aura_vm, 0xFF000000u | (s_fog_c_last & 0x00FFFFFFu));
     }
 }
 
@@ -6984,10 +7385,7 @@ static void pofv_c2s_clear(void)
         s_c2s[k].live = 0; s_c2s[k].age = 0;
     }
     s_c2s_st.active = 0; s_c2s_st.ring = 0; s_c2s_st.timer = 0;
-    /* 2026-10-18：收起那只原生子机（ce_option_drop 删 VM + 清 flags）并置 0 防陈旧指针 */
-    /* ★ 2026-10-18 重验：判空用 `o->ptr` ✓（与窗口尽那处一致 ✓）—— `s_c2s_card` 可能是陈旧指针 ✗ */
-    if (s_c2s_opt.ptr) ce_option_drop(s_c2s_card, &s_c2s_opt);
-    s_c2s_card = 0;
+    /* 2026-10-25：原生子机那套已删（青蛙改走 `pofv_emit_group(FROG, …)` ✓）⇒ 这里没有要收的子机 ✓ */
 }
 
 static void pofv_c2s_fire(void)
@@ -7084,10 +7482,41 @@ static void pofv_c2s_tick(void)
                                      * 曾短暂改成 100 帧（当时用 4 px/帧 的错模型），已回一手值。*/
 #define POFV_C3S_Y2     0.0f       /* ★ 一手 y 基准 = 0 ✓（y = `[-9987] × 32` ∈ [−32,32] ✓，`pl02:419`）
                                     *   ★ 卡侧镜像 ⇒ 出生 `y = POFV_FIELD_H − (基准 + ry)` ✓ */
+/* ★★★ 2026-10-25 一手 `ExAttackFunc()` 的两个系数（`pl02.txt:324`）：
+ *   · `%A`：一手 `[-9888]` 是全局（疑似难度/rank），**值没 dump 到** ⇒ 卡侧先取 **0.5**
+ *     ⇒ `a = 24 + 32×0.5 = 40`（带子最长 40 px，v=1 时）；`r5 = (0.03 + %A×0.03)` ⇒ 0.045
+ *   · `k`：把一手 `r`（`%B = 0.1`）换成 **px/帧²** 的比例。一手实测 ≈**1 px/帧**（`HANDOFF §9`）：
+ *     段1 40 帧 × (0.1×k) = 1 ⇒ **`k = 0.25`** ✓（`HANDOFF §10.3` 同值）
+ *   ⇒ 这两个数**只影响手感/长度**，换掉不改变结构（都标 ❓，可一行改）。*/
+#define POFV_C3S_APARAM  0.5f
+/* ★★★ 2026-10-25 owner（口径，逐字）：「一手行为是**从上面往下走过约 2/3 屏幕转向**，
+ *   **你镜像是从下往上走过约 2/3 屏幕转向**」✓ ⇒ 转向点必须落在 **≈448 × 2/3 ≈ 299 px** 处。
+ *   由一手表达式反解 `k`：段1（40 帧）`v = 40×(0.1k)`、段2（`C−40` 帧）匀速
+ *   ⇒ 到转向帧 `C=130` 的行程 = `800×0.1k + (130−40)×40×0.1k = 440k`
+ *   ⇒ **`k = 299/440 = 0.68`** ✓（这样段 3 的 `−0.4k×10` 也正好把 v 刹到 0 ✓，与一手自洽）。
+ *   ⚠ 早前 `k=0.25` 是按「运行时探针 ≈1 px/帧」推的 ⇒ 转向高度只有 ≈110 px（≈1/4 屏）✗，
+ *     与 owner 看到的「2/3 屏」不符 ⇒ **以 owner 为准** ✓（探针那个比例另有问题，另案）。*/
+/* ★ 2026-10-25 owner：「**8 帧不够、太短**；但转向是 8 帧，转向的时候还得多考虑一下」✓
+ *   ⇒ 尾迹帧数拉长到 **24**（= 速度 3 时约 72 px 长，接近一手那种"长条"观感）；
+ *   ★ 转向为什么不受影响：段 3 那 10 帧是**刹停**（v→0）、段 4 的 8 帧**原地转**（v=0）
+ *     ⇒ `len = N × v` 在那 18 帧里**自然收到 0** ⇒ 头不动、尾巴一路追上来，
+ *     **收拢的过程正好铺满整个转向**（不是瞬间变球），转完段 5 加速再自然拉长 ✓
+ *   ★ 也就是说"尾迹帧数"和"转向收拢"是**两个独立旋钮**：前者定平时多长，后者由刹停曲线给定 ✓ */
+#define POFV_C3S_TRAIL_FRAMES 24.0f
+#define POFV_C3S_K       0.95f
 /* ★ 2026-10-18（收尾 ✓）：★ 删掉 `POFV_C3S_Y = 96.0f` ✗ —— ★ 它是"❓③ y = RANDF2×32 未定位"那个旧口径的遗留 ✓，
  *   ★ 自 `f04bb503` 起**已无任何引用** ✗（★ 现在 y 走 `POFV_C3S_Y2` ＋ `ry` ✓）。*/
 
 static const unsigned char s_c3s_cnt[8]  = { 4, 5, 6, 7, 5, 7, 8, 9 };    /* $C ✓ */
+/* ★★★ 2026-10-25（owner 给出的算式，一手 `pl02.txt:400-426`）：
+ *   `ins_570($E, 20,18,16,14,10,9,8,7)` = **每轮递减量**；`ExtraAttack_720:` 每轮 `[-9985] = 130`，
+ *   **每发一轮 `[-9985] -= $E`**；传给 `ExAttackFunc2` 的 `$A = [-9985]` 就是**转向帧**
+ *   ⇒ ★ **转向帧 = `130 − n·$E`**（n = 第几轮；**阶梯，不是随机** ✗ —— 我上一版误用了另一个函数
+ *     `ExAttackFunc()` 里的 `$C = 60 + rand%100` ✗）。
+ *   ⇒ 转向高度 ≈ `(转向帧 − 20) × v`（前 20 帧 0→v 平均半速），`v≈1 px/帧`、`n=0、$E=20`
+ *     ⇒ **≈110 px ≈ 0.25 屏** ✓。`$E` 越小（高难度档）⇒ 越**高**处转向 ✓。*/
+static const unsigned char s_c3s_e[8]    = { 20,18,16,14,10, 9, 8, 7 };   /* $E ✓ */
+#define POFV_C3S_TURN0  130.0f                                            /* ★ 一手 ✓ `[-9985] = 130` */
 static const unsigned char s_c3s_waves[8]= { 1, 1, 1, 1, 2, 2, 2, 2 };    /* $D ✓ */
 /* ★ 2026-10-18（收尾 ✓）：★ 删掉 `s_c3s_e`（`$E` = 20,18,16,14,10,9,8,7）✗ ——
  *   ★ 自 `f04bb503` 起 x 步长改用 `s_c3s_f`（`%F`）✓，`$E` 是**段起始时间**的递减量 ✓（`pl02:421`）
@@ -7115,7 +7544,14 @@ static const unsigned char s_c3s_wait[8] = { 15,15,13,13,12,11,10,10 };   /* $G 
  *       ★ 速度 **0.1 / 0 / (−40×0.1)/10 / 0 / 0.05** ✓、★ **±11.25° 左右镜像** ✓）」✓
  *   ⇒ ★ 所以本卡要能表达：★ **下落**（朝下 ✓）＋ ★ **分段加速/偏转**（★ 每段带自己的时长与加速度 ✓）
  *     ⇒ ★ 加 `spd`（当前速度 ✓）、`ang`（当前朝向 ✓）、`yaw`（段 4 那种一次性偏转的累计 ✓）。*/
-typedef struct { int live, age, life, side; float x, y; float rx, ry, rot; float spd, ang, yaw; int32_t vm; } pofv_c3s_t;
+typedef struct { int live, age, life, side; float x, y; float rx, ry, rot; float spd, ang, yaw;
+                 float C;    /* ★ 2026-10-25：**本条的转向帧**（一手 `$C = 60 + ([-10000]%100)` ✓，每条各自抽）*/
+                 float a;    /* ★ 长度系数（一手 `ins_701(0, 24 + 32×%A, …)` ✓）*/
+                 float len;  /* ★ 每帧现算：`len = a × spd` ✓（一手口径，见 HANDOFF §10.2）*/
+                 float len_draw;  /* ★ 绘制用的长度（对 `len` 做缓动，避免起步突兀 ✓）*/
+                 float tx, ty;    /* ★ 2026-10-25 owner：**尾巴 = 8 帧前的自己** ⇒ 这里放"8 帧前的弹头" */
+                 float th_ang;    /* ★ 头→尾 的方向（绘制/判定共用）*/
+                 int32_t vm; } pofv_c3s_t;
 static pofv_c3s_t s_c3s[POFV_C3S_MAX];
 static struct { int active, wave, step, timer, level, side; float f0; } s_c3s_st;
 
@@ -7156,8 +7592,32 @@ static void pofv_c3s_spawn(float x, float y)
     /* ★ 2026-10-17（对抗性验证 C5a ✗）：★ 一手是 `ins_604(0, **+1.5707964f**, +1.5707964f)` ✓
      *   ⇒ ★ 本行**直接给镜像后的 −π/2** ✓、★ **不再调 `POFV_FLIP_ANG`** ✗ ——
      *   ★ 原来写 `POFV_FLIP_ANG(-1.5707963f)` ✗ ⇒ ★ 负负相消 = **净零翻转** ✗（★ 朝向根本没镜像 ✗）。*/
-    s_c3s[k].ang  = -1.5707963f;                                  /* ★ 一手 +π/2，镜像后 = −π/2（本行不再翻）*/
+    s_c3s[k].ang  = POFV_FLIP_ANG(1.5707963f);                    /* ★ 镜像 ⇒ **−π/2 朝上** ✓ */                                   /* ★ 一手 +π/2 = **朝下** ✓
+                                                                   *   （`s_c2_dir36[9] = (0,+1)` ⇒ +90° = +y = 下 ✓；
+                                                                   *    2026-10-25 owner 纠正：上一版写 −π/2 = 朝上 ✗）*/
     s_c3s[k].spd  = 0.0f;                                         /* ★ 一手 ✓ 初速 0 */
+    /* ★★★ 2026-10-25 一手 `ExAttackFunc()`（`pl02.txt:324`）：
+     *   · **`$C = 60 + ([-10000] % 100)`** ⇒ 每条激光**自己抽**一个转向帧（60..159）✓
+     *     —— 这就是 owner 说的「**每条不一样**」✓（不是按档、也不是按丛的固定值）；
+     *   · **`a = 24 + 32 × %A`**（`ins_701`）⇒ `%A` 是一手的全局（`[-9888]`，疑似难度/rank，值没 dump 到）
+     *     ⇒ 卡侧先取 **%A = 0.5 ⇒ a = 40**（❓自定，登记 TUNING），它只影响"带子多长"。*/
+    /* ★★★ 2026-10-25（owner 给的算式，一手 `pl02.txt:400-426` ✓）：
+     *   **转向帧 = `130 − n·$E`**（n = 第几轮；`$E` 见 `s_c3s_e[]`）—— **不是随机** ✗
+     *   （我上一版把 `ExAttackFunc()` 的 `$C = 60+rand%100` 用到了 C3 上，那是**另一个函数** ✗）。
+     *   `n` 取**本轮的步号** `s_c3s_st.step` ⇒ 第 0 轮 130、第 1 轮 130−$E、… ⇒ **一批比一批更早转向** ✓
+     *   （= owner 在 `pl02.txt:421` 看到的那条阶梯 ✓）。下限夹到 60，避免 `$E` 大时算出负数。*/
+    {   const int ei = (s_c3_lv_n < 0) ? 0 : ((s_c3_lv_n > 7) ? 7 : s_c3_lv_n);
+        const int n  = (s_c3s_st.step > 0) ? s_c3s_st.step : 0;
+        float C = POFV_C3S_TURN0 - (float)(n * (int)s_c3s_e[ei]);
+        if (C < 60.0f) C = 60.0f;
+        s_c3s[k].C = C;
+    }
+    s_c3s[k].a = 24.0f + 32.0f * POFV_C3S_APARAM;                 /* ★ 一手 ✓（%A 取 ❓0.5 ⇒ 40）*/
+    s_c3s[k].len = 0.0f; s_c3s[k].len_draw = 2.0f;
+    s_c3s[k].tx = x; s_c3s[k].ty = y; s_c3s[k].th_ang = s_c3s[k].ang;
+    /* ★ 寿命要**跟这条的转向帧走** ✗ —— 五段总长 = `40 + (C−40) + 10 + 8 + 120 = C + 138`
+     *   ⇒ 原来固定 220 在 `C > 82` 时会把段 5 砍掉 ✗ ⇒ 改成 `C + 150`（留 12 帧余量 ✓）。*/
+    s_c3s[k].life = (int)s_c3s[k].C + 150;
     s_c3s[k].yaw  = 0.0f;
     s_c3s[k].side = (s_c3s_st.side >= 0) ? 1 : -1;
     s_c3s[k].rx = (float)(ce_rand() % 13u);                        /* ★ 一手 ✓ [0,12] */
@@ -7191,10 +7651,12 @@ static void pofv_c3s_spawn(float x, float y)
                          CE_ANM_ABILITY_SCRIPT_POFV109_C3S_ORB,
                          POFV_C4_VM_LAYER);
     if (s_c3s[k].vm) {
-        ce_anm_set_color((uint32_t)s_c3s[k].vm, 0xffffffffu);
+        /* ★ 2026-10-25 owner：C3 的 color 全摘 ⇒ spawn 这里也不写顶点色 ✓ */
         ce_anm_set_pos((uint32_t)s_c3s[k].vm, x, y, 0.0f);
         /* 2026-10-18（对抗性验证 D4 ✓）：贴图从 8x8 的点换成 **256x16 的横条** =>
          * X 必须按 30/256 缩（原来 0.5 会把 256 画成 128px 宽）。Y 留 0.5 => 16x0.5 = 8px。*/
+        ce_anm_set_sprite(CE_ABILITY_ANM(), (uint32_t)s_c3s[k].vm,
+                          (uint32_t)CE_ANM_ABILITY_SPRITE_POFV109_C3S_STRIP);   /* ★ 只在这里设一次 ✓ */
         ce_anm_set_scale((uint32_t)s_c3s[k].vm, 0.5f * (30.0f / 256.0f), 0.5f);
     }
 }
@@ -7246,12 +7708,18 @@ static void pofv_c3s_tick(void)
                                         *    ⚠ ★ **横向 x 那半还没改** ✗：★ 现在仍是"★ 自机 x + 侧向偏移"✗
                                         *    —— ★ 你说"★ 不涉及任何 boss 位置"✓ ⇒ ★ x 也该脱离自机 ✓，
                                         *    ★ 下一轮单独一笔（★ 一次一样 ✓，★ 账里已写 ✓）。*/
-                                       /* ★ 2026-10-18 订正（IMPL §3 #3 ✓）：★ 一手 y = `[-9987] × 32` ∈ [−32,32]
-                                        *   （★ 基准 **0** ✓、★ 贴**顶边** ✓，`pl02:419`）。
-                                        *   ⚠ 2026-10-17 我在此写"每波 y 起点 **140**"✗ —— ★ **140 是 x** ✗
-                                        *   （`[-9981] = 140` ✓）；★ y 从头到尾都没有 140 这一项 ✗。
-                                        *   ★ 卡侧是**镜像** ✓ ⇒ 出生 `y = FIELD_H − (0 + ry)` ✓（贴底边、向上走 ✓）。*/
-                                       POFV_FIELD_H - (POFV_C3S_Y2 + (float)ry));
+                                       /* ★★★★★ 2026-10-25 owner 实跑：「C3 **在下 1/3 转向**，
+                                        *   并且**转向后没有走完整个剩余 x**」✗
+                                        *   ⇒ 上一版把方向读反了 ✗：出生在**版底**、往上走 ⇒ 走 149 px 后
+                                        *   停在 `y ≈ 317` = **下 1/3** ✗；一手是「**从正上方落下、到 1/3 高
+                                        *   转为横向**」✓ ⇒ **出生在顶上（y ≈ −12..−24，贴顶边之外）+ 向下走** ✓
+                                        *   ⇒ 走完 149 px 时正好在 `y ≈ 149` = **上 1/3** ✓（= 一手口径 ✓）。
+                                        *   一手 y 基准 = `[-9987] × 32 ∈ [−32, 32]` ✓（`pl02:419`，贴顶边）✓ */
+                                       /* ★★★ 2026-10-25 owner：「怎么是从上面下来……」✗ + 「镜像模型」——
+                                        *   本卡是**镜像后的自机侧**（`POFV_FLIP_Y(y) = 448 − y` ✓ 见宏处注释）：
+                                        *   一手"从顶边之上落下" ⇔ 本卡"**从底边之下升起**" ✓
+                                        *   ⇒ 出生 y = **`FIELD_H` 之下**（画面外 ✓），方向 = **`FLIP_ANG(+π/2)` = −π/2 朝上** ✓ */
+                                       POFV_FIELD_H + 16.0f + (float)ry);   /* ★ 底边之下 = 画面外 ✓ */
                     }
                 }
                 s_c3s_st.side = -s_c3s_st.side;
@@ -7309,42 +7777,51 @@ static void pofv_c3s_tick(void)
              *   ★ `ins_605(0,0,0)` = **速度 0**✗ ⇒ ★ **它不该"飞"**✗ ✓；
              *   ★ 观感上的"走半个版面"= ★ **它真的在走**✗ ✓（owner 2026-10-22：「先搞运动学」✓）。
              *   ⇒ ★ 本笔**恢复位移**✗ ✓，并按一手改成**加速度积分**（★ 见上表的六段 ✓）。*/
-            {   const float tt = POFV_C3S_SEG0;                 /* ★ $D = [-9985] = 130 ✓ */
-                /* ★★★ 2026-10-22 owner 定标：★「从上往下的话，转向大概在 **1/3 屏高**」✗
-                 *   ⇒ 体长 = 448/3 ≈ **149 px** ✗ ／ 130 帧 ⇒ **平均 1.15 px/帧** ✗
-                 *   ⇒ 一手那组 `r`（0.1/−0.4/0.05）当 px/帧² 会走 **440 px**（≈一屏）⇒ **偏大 2.95 倍** ✗
-                 *   ⇒ 统一乘 **0.34**（帧数 40/90/10/8/120 **不动** ⇒ 节奏不变 ✓）
-                 *   ★ 独立佐证：另一个 agent 的 §17.5 也标定出 **1.15 px/帧 / 体长 149 px** ✓
-                 *   ★ ❓ 这是**按观感标定的系数**，不是一手原值（`r` 的量纲仍未定）。*/
-                /* ★★★ 2026-10-22 一手实测（`engine/bullet/th19/01-curve-laser-kinematics.md` §9 ✓）：
-                 *   ★ TH19 运行时探针扫堆找到 Curve 对象（vtable RVA `0x1a87cc`），
-                 *   ★ `obj+0x2c` / `obj+0x54` 从 **67 → 285**（★ 218 单位 / 222 帧 ✓）
-                 *   ⇒ ★ **真实平均 ≈ 0.98 px/帧 ≈ 1 px/帧** ✗（**不是** `r` 直接当 px/帧² 的 4 px/帧）
-                 *   ⇒ ★ 「4 px/帧 / 440 px」快了约 **4 倍**；`r` 的**数值**是一手 ✓，
-                 *     ★ 但**纵向尺度**卡侧与一手不同 ⇒ 按 **屏高比例 `0.34`** 换算 ❓（比例本身有实测支撑 ✓）。
-                 *   ★ 换算后：段1 到 1.36 px/帧、段2 走 122 px、合计 ≈ **149 px ≈ 448 的 1/3** ✓
-                 *     ⇒ ★ 与 owner 实测「转向点在 1/3 屏」**吻合** ✓。*/
-                const float sr = POFV_C3S_SCREEN_FRAC;
+            {   const float tt = b->C;                          /* ★★★ 2026-10-25：**每条的转向帧** ✓
+                                                                 *   （一手 `$C = 60 + rand%100` ⇒ 60..159，
+                                                                 *     不是全局常数 ✗ —— 见 spawn 处注释）*/
+                const float kk = POFV_C3S_K;                    /* ★ 一手 `r` → px/帧² 的标定（0.25）*/
                 float a = 0.0f;
-                if (ag <= 40.0f)            a =  0.10f * sr;    /* 段1: 加速到 ≈1.36 px/帧 */
-                else if (ag <= tt)          a =  0.00f;         /* 段2: 匀速（90 帧 ≈ 122 px）*/
-                else if (ag <= tt + 10.0f)  a = -0.40f * sr;    /* 段3: 刹到 0（不是转向）*/
-                else if (ag <= tt + 18.0f)  a =  0.00f;         /* 段4: 只转向（s = ±11.25°/帧）*/
-                else                        a =  0.05f * sr;    /* 段5: 横向慢加速（一手 %B = [-9888.0f] 是哨兵(设了再没赋值) ⇒ 0.05+%B*0.05 不能读成 0.05+0.05*rank，%B 项按 0 处理，已登记 TUNING）*/
+                /* 五段（一手 `ExAttackFunc()` 逐字 ✓）：40 / $C−40 / 10 / 8 / 120 */
+                if (ag <= 40.0f)            a =  0.10f * kk;                                  /* 段1 加速 */
+                else if (ag <= tt)          a =  0.00f;                                       /* 段2 匀速 */
+                else if (ag <= tt + 10.0f)  a = -0.40f * kk;                                  /* 段3 刹停 */
+                else if (ag <= tt + 18.0f)  a =  0.00f;                                       /* 段4 只转 */
+                else                        a = 0.05f;                                    /* 段5 横向
+                                                                                             * ★ 2026-10-25 owner：「转了之后**还没走完**」✗
+                                                                                             *   ⇒ 一手那个 `(0.03 + %A×0.03)` 经 `k` 换算只有 ≈0.011 px/帧²
+                                                                                             *     ⇒ 120 帧才走 ≈80 px ✗（远远不够）
+                                                                                             *   ⇒ 取 **0.05 px/帧²**：120 帧走 ≈360 px ✓
+                                                                                             *     = 从 x=±140 到对侧边界的"剩余 x" ✓（❓ 标定值，非一手）*/
                 b->spd += a;
                 if (b->spd < 0.0f) b->spd = 0.0f;
-                if (ag > tt + 10.0f && ag <= tt + 18.0f)        /* 段4: 8 帧 × ±11.25° = ±90° */
-                    /* 2026-10-22 owner「后续运动反了，应该向内」⇒ 符号对调（左列 +、右列 −）。*/
-                    b->ang += (b->side >= 0 ? -1.0f : 1.0f) * 0.19634955f;
+                /* ★★★ 2026-10-25 owner：「**在收（短）到最小之前不应该转**」✓
+                 *   ⇒ 段 4 的转向加一道门：**绘制长度先收到最小（≤30 px）才允许开始转** ✓
+                 *   （缓动让 `len_draw` 比 `v` 晚几帧到 0 —— 那几帧里 v 已经是 0，条还在收，
+                 *     所以"等收完再转"只是把转向整体往后推 2~3 帧，不会改变转向总量 ✓）*/
+                if (ag > tt + 10.0f && ag <= tt + 18.0f && b->len_draw <= 30.0f)   /* 段4: ±11.25°/帧 */
+                    /* ★ 2026-10-25：方向改回"从下往下"的坐标后，**向内**的符号也翻过来 ✓
+                     *   （`s_c2_dir36` 里 **+90° = 向下** ⇒ 出生在右侧(x=+140) 要往 −x 走 ⇒ 角度要 **+90°** ✓）；
+                     *   原来那版是给"朝上"的角度写的 ✗（owner 上一轮「后续运动反了，应该向内」）。*/
+                    b->ang += (b->side >= 0 ? -1.0f : 1.0f) * 0.19634955f;   /* ★ 镜像后：右侧内转 = −90° ✓ */
                 {   const int di = (int)(b->ang * (36.0f / 6.2831853f)) % 36;
                     const int dj = (di < 0) ? di + 36 : di;
                     b->x += s_c2_dir36[dj][0] * b->spd;
                     b->y += s_c2_dir36[dj][1] * b->spd; }
-                /* 2026-10-22 调试：owner 说"弹幕中心没在动" ⇒ 先把积分结果打出来定位 */
-                if ((b->age % 10) == 0)
-                    ce_log("pofv: [C3S] age=%d a=%.2f spd=%.2f ang=%.3f x=%.1f y=%.1f",
-                           (int)b->age, (double)a, (double)b->spd, (double)b->ang,
-                           (double)b->x, (double)b->y);
+                /* ★★ 一手 `HANDOFF §10.2`：**长度逐帧现算** `length = a × v` ✓ ——
+                 *   v≈0 时长度≈0（几乎看不见）、加速后拉长、段3 刹停时缩成方块、段5 再拉长 ✓ */
+                /* ★★★ 2026-10-25 owner：「做那种**尾部 = 8 帧前的自己**那样的长度控制」✓
+                 *   ⇒ 长度不再用 `a×v`（一手那个系数），而是 **头到"8 帧前的头"的距离**：
+                 *     `len = |pos(t) − pos(t−8)| ≈ 8 × v`（匀速时）✓
+                 *   ⇒ 速度慢 / 转向刹停时**尾巴自动追上来**（头不动、条自然收短 ✓），
+                 *     速度起来后自然拉长 ✓ —— 正是曲线激光的手感 ✓ */
+                b->len = POFV_C3S_TRAIL_FRAMES * b->spd;
+                /* ★ `[C3L]` 日志（owner 要对：拉长 → 缩成方块 → 转 90° → 再拉长）：头 3 帧 + 转向前后 + 每 30 帧 */
+                if (b->age <= 3 || b->age == (int)tt || b->age == (int)tt + 9 ||
+                    b->age == (int)tt + 18 || (b->age % 30) == 0)
+                    ce_log("pofv: [C3L] i=%d age=%d C=%.0f a=%.0f v=%.3f th=%.3f len=%.1f pos=(%.1f,%.1f)",
+                           (int)k, (int)b->age, (double)b->C, (double)b->a, (double)b->spd,
+                           (double)b->ang, (double)b->len, (double)b->x, (double)b->y);
             }
         }
             /* ★★★ 2026-10-21：★ 一手是"★ 束**一头长出来**✗"，不是整张图缩放 ✗ ⇒
@@ -7358,9 +7835,14 @@ static void pofv_c3s_tick(void)
              *   段5 再长回来）⇒ ★ 与"运动学"无关，是**长度动画**在干扰观察 ✗。
              *   ⇒ ★ 本笔**停掉长度动画**✗：贴图固定 8×8 占位（`465` 里的 scale 已经压好了），
              *   这里**不再调 `clip_x`** ⇒ 只留运动 ✓。外观定稿时再单独做长度 ✓。*/
-            /* ★ 一手 `alpha(128)` ⇒ 第 8 帧起 `alpha(20)` ✓（写 ARGB 的 AA 位 ✓）*/
-            ce_anm_set_color((uint32_t)b->vm,
-                             (b->age < 8) ? 0xffffff80u : 0xffffff14u);
+            /* ★ 一手 `alpha(128)` ⇒ 第 8 帧起 `alpha(20)` ✓（写 ARGB 的 AA 位 ✓）
+             * ★★★ 2026-10-25 owner：「细长条，但颜色是**红橙**」✗ —— 素材是品红 (242,106,254)，
+             *   红橙 = **蓝通道被乘成 0**（品红×黄 = 242,106,0 ✓）⇒ 是**第二色**在染色。
+             *   ⇒ `color` / `color2` **两路都写白**（本仓 HUD 的老规矩：引擎按两路判/用 ✓），
+             *     并且脚本 465 已把 `type(1)` 改成 `type(0)`（不再走第二色通道 ✓）。*/
+            /* ★★★ 2026-10-25 owner：「**你把 C3 的 color 都摘掉**」✓ ——
+             *   ⇒ 这里**不再写顶点色**（`color`/`color2` 都不动）⇒ 让纹理按它自己的颜色（品红）画 ✓
+             *   （此前两路都写白仍显示红橙 ⇒ 说明染色来自别处/或写色本身触发了乘法 ⇒ 先全摘 ✗）。*/
         }
         if (b->vm) {
             /* ★ 2026-10-16 **一手 `posTime(28, 0, %F0, %F1, 0)` 的线性飘动** ✓：
@@ -7374,11 +7856,116 @@ static void pofv_c3s_tick(void)
              *   `b->rot` 那个"随机整圈"是给一手的**圆球**（script35 `rotate(0,0,%RANDRAD)`）用的，
              *   现在换成横条 ⇒ **不能随机转**。只留 `b->yaw`（段 4 的 ±11.25°）做拐弯。*/
             /* 2026-10-22 owner「图像没有旋转」⇒ 旋转量改用 b->ang 本身（yaw 已不再更新）。*/
-            ce_anm_set_rotation((uint32_t)b->vm, 0.0f, 0.0f, b->ang);
+            /* ★★★ 2026-10-25（`HANDOFF-109-SANAE-C3-KINEMATICS.md` §4.1/§10.2 ✓）——
+             *   · 贴图 = **`POFV109_C3S_STRIP`（256×16 横条）** ✓；
+             *   · **长度逐帧现算** `len = a × v` ⇒ `scale.x = len / 256` ✓
+             *     （一手 §10.2：v≈0 时长度≈0、加速后拉长、刹停缩成方块、转后再拉长 ✓）；
+             *   · 宽 = **24 px**（一手 `ins_700(0,-1,-1,-1,24)`）⇒ `scale.y = 24 / 16` ✓；
+             *   · 图里的条是**横的** ⇒ `rotation = 段角 + 90°` ✓（一手 §4.1）；
+             *   · `len < 2` 时给个下限（= 刹停时的"方块"），免得 scale 归零后整台不可见 ✓。*/
+            {
+                const float len = (b->len > 2.0f) ? b->len : 2.0f;
+                /* ★★★ 2026-10-25 owner：「贴图基准是横着的，转向本身没问题，但**它是横着转过去的**」✗
+                 *   ⇒ 根因 = **锚心**：整条以弹头为中心对称铺开 ⇒ 转弯时看着像"绕中心横着翻" ✗。
+                 *   ⇒ 改成 **从弹头往后拖**：把绘制点沿 **−θ 方向退半个长度** ✓
+                 *     （贴图长轴本来就沿 +x ⇒ 旋转 θ 后正好指向运动方向 ✓，尾巴在身后 ✓）。*/
+                const int di = (int)(b->ang * (36.0f / 6.2831853f)) % 36;
+                const int dj = (di < 0) ? di + 36 : di;
+                /* ★★★ 2026-10-25 owner：「激光条转向前**转向后全都是水平的**」✗
+                 *   ⇒ 结论 = **`ce_anm_set_rotation` 在这台 VM 上根本不生效** ✗（换过 θ / θ−90° 都一样）
+                 *   ⇒ 换方案：**不靠运行时旋转**，用**两张贴图**表示那 90°：
+                 *     · 竖条 `POFV109_C3S_STRIP_V`(16×256) = 转向**前**（上升段）✓
+                 *     · 横条 `POFV109_C3S_STRIP`  (256×16) = 转向**后**（横移段）✓
+                 *     切换点 = 段 4 结束（`ag > tt + 18`）✓ —— 一手那里正好转了 90° ✓。*/
+                {
+                    /* ★★★ 2026-10-25 owner：「**依旧全部水平**」✗ ⇒ 运行时旋转在本卡这台 VM 上**确实不生效** ✗
+                     *   （脚本基准 `anchor+rotate(-90°)` 也试过了 ✗）⇒ 回到**两张贴图**方案：
+                     *   · 上升段 = **竖条** `POFV109_C3S_STRIP_V`(16×256) ✓
+                     *   · 转向后 = **横条** `POFV109_C3S_STRIP`(256×16) ✓
+                     *   · **转向那 8 帧 + 2 帧缓冲**：长度压到 **24 px** ⇒ **24×24 圆球** ✓（owner 要的"压缩成圆球转向"）
+                     *   · 位置 = **弹头本体**（不做偏移 ✓ —— 上次"错位"就是偏移造成的 ✗）。*/
+                    /* ★ 2026-10-25 owner：「**绝对不能加两个贴图**」✗ ⇒ 回到**单张横条**；
+                     *   朝向靠 `angleVel`（脚本已加零速那一条 ⇒ `rz` 活了 ✓）。*/
+                    const float ag2 = (float)b->age;
+                    const int turning = (ag2 > b->C + 10.0f) && (ag2 <= b->C + 20.0f);
+                    const float elen  = turning ? 24.0f : len;          /* ★ 转向时压成圆球 ✓ */
+                    /* ★★★ 2026-10-25：**不再每帧 set_sprite** ✗ ——
+                     *   对照能转的那支（`animal.c:2703` 的鹰光束）：它每帧只写 **pos / scale / rotation**，
+                     *   从**不**每帧换 sprite ⇒ 怀疑 `ce_anm_set_sprite` 会把 VM 的朝向状态一起重置 ✗
+                     *   （这正是"怎么设 rotation 都是水平"的最后一条嫌疑）。
+                     *   ⇒ sprite 改在 **spawn 时设一次**（见 `pofv_c3s_spawn` ✓）。*/
+                    /* ★ 2026-10-25 owner：「上升段的动态有点**突兀**」⇒ 长度改成**缓动逼近**目标
+                     *   （原来 `len` 逐帧硬写 `a×v`，起步那几帧从 2 px 跳到 a×v 会"啪"一下）✓ */
+                    s_c3s[k].len_draw += (elen - s_c3s[k].len_draw) * 0.35f;
+                    /* ★★★ 2026-10-25 owner：「一手是**曲线激光**：要转向时**头不动、后面缩短**；
+                     *   你现在搞成了**质心不动、整体缩短**」✗
+                     *   ⇒ 精灵是**锚心** ⇒ 把绘制点沿 **−方向** 退 `len_draw/2` ✓：
+                     *     `len_draw → 0` 时绘制点 → 弹头本身 ⇒ **头固定、尾巴收回** ✓ */
+                    ce_anm_set_pos((uint32_t)b->vm,
+                                   b->x - s_c2_dir36[dj][0] * (s_c3s[k].len_draw * 0.5f),
+                                   b->y - s_c2_dir36[dj][1] * (s_c3s[k].len_draw * 0.5f), 0.0f);
+                    ce_anm_set_scale((uint32_t)b->vm, s_c3s[k].len_draw / 256.0f, 24.0f / 16.0f);
+                }
+                /* ★★★ 2026-10-25 owner：「全jb错位了：上升段是**横着上升**，转向后没问题，
+                 *   但是**上升和转向看着不挨着**」✗
+                 *   ⇒ 两处实验一起撤掉，回到最朴素的一组：
+                 *     · **位置 = 弹头本身**（不做"往前铺/往后拖"的偏移 ✗ —— 那个偏移正是
+                 *       "上升段和转向不挨着"的来源：段3 减速时 len 缩到 0、段5 再长回来，头尾会跳 ✗）；
+                 *     · **旋转 = θ**（引擎噪声最小的一组，一手纹理长轴 = +x ✓）。*/
+                /* ★ 2026-10-25 owner：「基准好像没有动」⇒ `rz` 是**绝对值**，脚本的 `rotate()` 每帧被覆盖 ✗
+                 *   ⇒ 180° 必须加在**卡侧**：`rz = θ + π` ✓ */
+                ce_anm_set_rotation((uint32_t)b->vm, 0.0f, 0.0f, b->ang + 3.14159265f);
+                /* ★★★ 2026-10-25 owner：「**你该加 log 了**」✓ —— 把"我们写进去的角度"与
+                 *   "VM 里实际留着的 rz（`vm+0x3c`，见 `AUDIT.md:10721`）"对照着打出来：
+                 *   · 若 `rz_read` ≠ `th_write` ⇒ 引擎没接这个写入（或者下一秒被覆盖）✗
+                 *   · 若 `rz_read` == 写入值但画面仍水平 ⇒ 旋转不参与这个脚本的绘制 ✗（要换路子）
+                 *   · `spr` 一起打，确认画的确实是 768（C3S_STRIP）而不是别的 ✓ */
+                if (k == 0 && (b->age <= 3 || (b->age % 20) == 0 ||
+                               (b->age >= (int)b->C + 9 && b->age <= (int)b->C + 20))) {
+                    uint8_t *vmp = (uint8_t *)ce_anm_get_vm((uint32_t)b->vm);
+                    const float rz = vmp ? *(float *)(vmp + 0x44) : -9.9f;   /* ★ rz 在 +0x44（+0x3c 是 rx）*/
+                    ce_log("pofv: [C3ROT] age=%d th_w=%.3f rz_vm=%.3f spin=%.3f pos=(%.1f,%.1f) spr=%d",
+                           (int)b->age, (double)b->ang, (double)rz, (double)b->spd,
+                           (double)b->x, (double)b->y,
+                           (int)CE_ANM_ABILITY_SPRITE_POFV109_C3S_STRIP);
+                }
+            }
         }
-        pos[0] = b->x; pos[1] = b->y; pos[2] = 0.0f;
-        (void)ce_damage_rect(pos, 0.0f, 2, 14.0f, 24.0f, 24.0f);   /* ❓④ */
+        /* ★★★ 2026-10-25 owner：「**你如何确认伤害和视觉匹配？**」✓ —— 之前**不匹配** ✗：
+         *   视觉是"长 `len_draw`、宽 24、沿 θ 的条"，而伤害是**固定 24×24、角度 0、只在弹头上** ✗。
+         *   `ce_damage_rect(center, angle, life, dmg, w, h)` 是**OBB（可带角度）**（`sdk.h:171` ✓）
+         *   ⇒ 现在伤害盒**与绘制同源**：同一个中心（沿 −方向退 `len_draw/2`）、同一个角 `θ+π`、
+         *     `w = len_draw`、`h = 24` ⇒ 视觉与判定**逐帧同参数**，不可能再错位 ✓ */
+        {
+            const int dj2 = (int)(b->ang * (36.0f / 6.2831853f)) % 36;
+            const int dk2 = (dj2 < 0) ? dj2 + 36 : dj2;
+            float cx[3];
+            cx[0] = b->x - s_c2_dir36[dk2][0] * (b->len_draw * 0.5f);
+            cx[1] = b->y - s_c2_dir36[dk2][1] * (b->len_draw * 0.5f);
+            cx[2] = 0.0f;
+            (void)ce_damage_rect(cx, b->ang + 3.14159265f, 2, 14.0f,
+                                 (b->len_draw > 8.0f) ? b->len_draw : 8.0f, 24.0f);
+        }
     }
+}
+
+/* ★★★★ 2026-10-24（owner）：「对于 **lunatic** 难度，应该是开局 **C3 lv5**，**C4 开局 lv5**」✓
+ *   一手那张「每局按难度取常数」的表，本卡此前只落了 `POFV_C3_LEVEL_DEFAULT` /
+ *   `POFV_C4_LEVEL_DEFAULT` 两个**难度无关**的常量（一手实测过 `∈{1,3}`，那时是 **1 基** ✗）。
+ *   ★ 2026-10-24 改成**一手那套 0 基内部等级**（显示 = 内部 + 1）⇒ Lunatic 显示 lv5 ⇒ **内部 4** ✓。
+ *   ⇒ 这里按难度分两支：**Lunatic（含 EX，❓ 待 owner 定音）⇒ 4 / 4（显示 5 / 5）**；其它难度走常量 ✓。
+ *   ⚠ `clear_card()` 与 `on_load()` **两个初始化点都走这两个函数**（一手：换面 = 新一关要重置 ✓）。*/
+static int pofv_c3_lv_init(void)
+{
+    const int d = ce_difficulty();      /* 0=E 1=N 2=H 3=L 4=EX（`engine.h:14` ✓）*/
+    if (d >= 3) return 4;               /* ★ Lunatic / EX ⇒ **内部 4 = 显示 Lv5** ✓（owner 2026-10-24）*/
+    return POFV_C3_LEVEL_DEFAULT;       /* 内部 0 = 显示 Lv1 ✓ */
+}
+static int pofv_c4_lv_init(void)
+{
+    const int d = ce_difficulty();
+    if (d >= 3) return 4;               /* ★ Lunatic / EX ⇒ **内部 4 = 显示 Lv5** ✓ */
+    return POFV_C4_LEVEL_DEFAULT;       /* 内部 2 = 显示 Lv3 ✓ */
 }
 
 static void clear_card(ce_card_t *c)
@@ -7390,10 +7977,11 @@ static void clear_card(ce_card_t *c)
     /* ★ 2026-10-12：C1/C2 的窗口状态一并归零 ✓（跨局不带脏值；★ 上面那个"窗口门被误删 ⇒
      *   `s_c1_win_age` 冻在 0 ⇒ 恒真 ⇒ 一进关就发弹"的 bug 正是这一类状态复用的问题 ✓）。*/
     s_c1_win_left = 0; s_c1_win_age = 0; s_c1_sanae_half = 0; s_c1_set_sel = 0; s_c2s_win = 0;
-    s_c3_lv_n = POFV_C3_LEVEL_DEFAULT;
+    s_c3_lv_n = pofv_c3_lv_init();
     /* ★★★★★ 2026-10-13（★ owner 口径 ✓）：★ C4 的初值 = ★ **`max(3, 难度初值)`** ✓
-     *   （★ 只有 **Lv3+** 的 C4 才有**符卡段** ✓ —— ★ 一手那边正是如此 ✓）。原来写死 `0` ✗。*/
-    s_c4_lv_n = POFV_C4_LEVEL_DEFAULT;
+     *   （★ 只有 **Lv3+** 的 C4 才有**符卡段** ✓ —— ★ 一手那边正是如此 ✓）。原来写死 `0` ✗。
+     *   ★ 2026-10-24：难度初值改走 `pofv_c4_lv_init()`（Lunatic ⇒ 5 ✓）。*/
+    s_c4_lv_n = pofv_c4_lv_init();
     int i, k;
     (void)c;
     for (i = 0; i < POFV_STORM_MAX; ++i)
@@ -8031,9 +8619,31 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
     }
 }
 
+/* ★★★ 2026-10-25（owner：「**空格换成 C4**」✓）：调试键 = **直接放 C4**（不是只把蓄力顶到阈值）。
+ *   一手口径里 C4 的派发就是这四支（与释放支 `tier_rel >= 4` 那一段**同一组调用** ✓）；
+ *   抽成一个函数，**释放支照旧**、调试键复用它 ⇒ 不会出现"两套 C4" ✗。*/
+/* ★★★★ 2026-10-25 goal「侦测被弹音是哪个 SE」—— **零风险轮询**，不 hook 任何东西 ✓：
+ *   一手 `engine/_shared/th18-sound-table.md` §1：`SoundManager` 全局 `0x56ad7c`，
+ *   **本帧播放队列 = `0x56ad9c`（12 槽 × 4 字节，存音效 id）**、每槽计数 `0x56adcc`。
+ *   `play_sound`(`0x476c70`) 就是把 id 填进这个队列 ⇒ **每帧读队列、只在变化时打一行日志**，
+ *   就能看到"破罩那一帧前后到底播了哪些 SE" ✓（不屏蔽、不改行为 ✓）。*/
+static void pofv_c3_dispatch(void)
+{
+    if (s_aura_kind == 1)      pofv_c3m_fire();
+    else if (s_aura_kind == 3) pofv_c3s_fire();
+    else                       pofv_c3_fire();
+}
+
+static void pofv_c4_dispatch(void)
+{
+    if (s_aura_kind == 1)      pofv_c4m_fire();
+    else if (s_aura_kind == 3) pofv_c4s_fire();
+    else if (s_aura_kind == 2) pofv_c4k_fire();
+    else                       pofv_c4_fire();
+}
+
 static int on_tick_2(ce_card_t *c)
 {
-    s_c2s_card = c;      /* 2026-10-18：C2 的原生子机要用卡指针 */
     int i;
     /* ★★★★★ 2026-10-13 owner 要求：★ **按空格 = 放 C3**（**调试用** ✓）——
      *   ★ 接口 = `ce_key_down(CE_VK_SPACE)` ✓（`native/sdk.h:838` ✓）；★ 那个头文件里连
@@ -8052,21 +8662,10 @@ static int on_tick_2(ce_card_t *c)
          *   ★ 结论：★ **引擎内部对象不要从卡侧直接 new**✗ ✓（至少现在的证据是这样 ✓）。*/
         static int s_dbg_sp_prev = 0;                       /* ★ 只在按下的那一帧触发 ✓ */
         const int sp = ce_key_down(CE_VK_SPACE) ? 1 : 0;
-        if (sp && !s_dbg_sp_prev) {
-            /* ⚠ 2026-10-18 修：★ 原来这里写死 `pofv_c3_fire()` ✗ = **灵梦的 C3** ✓，
-             *   ★ 所以按空格**永远不会**放到当前角色的 C3 ✗（★ owner 正是用这个键测魔理沙 C3 ✓
-             *   ⇒ ★ 难怪"★ 什么都看不见"✗ —— ★ 他放的是灵梦那套 ✓）。
-             *   ⇒ ★ 改成按 `s_aura_kind` 走**角色自己的** C3 ✓。*/
-            /* 2026-10-21 owner：空格改回**当前角色的 C3**（前一阵为了调 C4 临时指到 C4）。*/
-            if (s_aura_kind == 1)      pofv_c3m_fire();   /* 魔理沙 C3 */
-            else if (s_aura_kind == 3) pofv_c3s_fire();   /* 早苗 C3 */
-            else                       pofv_c3_fire();    /* 灵梦/咲夜 C3 */
-            /* ★ 2026-10-18：把**原始角色号**也打出来（`kind` 是映射后的：1 魔理沙/2 咲夜/3 早苗/0 灵梦）*/
-            ce_log("pofv: [DBG] 空格 ⇒ 放 **C3** ✓（f=%d kind=%d raw_char=%d charge=%.0f）",
-                   (int)s_card_frames, (int)s_aura_kind,
-                   (int)(*(const int32_t *)POFV_ADDR_PLAYER_CHAR), (double)s_aura_charge);
-        }
-        s_dbg_sp_prev = sp;
+        /* ★★★ 2026-10-25 owner：「**空格换 C4**」✓ ⇒ 这里那个"放当前角色 C3"的旧处理器**撤掉** ✗
+         *   （它和 `on_tick_2` 里那个"空格 ⇒ C4"的处理器**同时挂在空格上** ⇒ 一按就同时放 C3+C4 ✗）。
+         *   空格现在**只在 `on_tick_2` 里**处理，且只放 C4 ✓。*/
+        (void)sp; (void)s_dbg_sp_prev;
     }
     (void)c;
     /* ★★ A 路：出队**生成真敌机灵**（安全上下文 = 这里；死亡栈里只入过队）。
@@ -8512,6 +9111,23 @@ static int on_tick_2(ce_card_t *c)
      *   松开 ⇒ 按一手脚本的 `scaleTime(20,4,0,0)` 收束 20 帧再删 ✓（`sdk.h` 无 interrupt 口 ✗ ⇒ 卡侧复现缩放 ✓）。*/
     s_aura_is_marisa = pofv_aura_marisa();                     /* 0 = 灵梦 / 1 = 魔理沙 ✓（一手字段 `0x4cccf4` ✓）*/
     s_aura_kind = pofv_aura_kind();
+    /* ★★★★ 2026-10-25 owner 更正：「**不是角色变化，是一面进二面等等**」✓
+     *   ⇒ 触发条件是**关卡（stage）变化**，不是角色切换 ✗（上一版判 `s_aura_kind` 是错的）。
+     *   一手 `CE_CURRENT_STAGE()` = `*(int32_t *)0x4cccdc`（`engine.h:134`，`CURRENT_STAGE` ✓）。
+     *   ⇒ 一面 → 二面那一帧：C3/C4 等级回该难度初值、灵力回起步 `POFV_REI_C1`、蓄力/结界清零 ✓。*/
+    {   static int stage_prev = -1;
+        const int st_now = CE_CURRENT_STAGE();
+        if (stage_prev >= 0 && st_now != stage_prev) {
+            s_c3_lv_n = pofv_c3_lv_init();
+            s_c4_lv_n = pofv_c4_lv_init();
+            s_reiryoku = POFV_REI_C1;
+            s_aura_charge = 0.0f;
+            s_aura_r = 0.0f;
+            ce_log("pofv: 进新的一面（stage %d → %d）⇒ 重置：C3 内部 Lv%d / C4 内部 Lv%d / 灵力 %.0f",
+                   stage_prev, st_now, (int)s_c3_lv_n, (int)s_c4_lv_n, (double)s_reiryoku);
+        }
+        stage_prev = st_now;
+    }
     s_aura_k = (s_aura_kind == 1) ? POFV_AURA_K_MARISA
              : (s_aura_kind == 3) ? POFV_AURA_K_SANAE
              : (s_aura_kind == 2) ? POFV_AURA_K_SAKUYA
@@ -8548,11 +9164,42 @@ static int on_tick_2(ce_card_t *c)
      *     Shift 单独按住且从未用 C 蓄力（`s_aura_charge == 0`）时 ⇒ 半径走**满蓄力**兜底
      *     （= 旧版 Shift 的观感，**不回退** ✓；该兜底标 **❓自定**，已登记 `TUNING.md` ✓）。*/
     {
-    const int chg_held  = pofv_charge_key();   /* ★ 蓄力 = C only ✓ */
-    const int aura_held = pofv_aura_key();     /* ★ 结界 = C ∨ Shift ✓ */
+    const int chg_held  = pofv_charge_owned(c) && pofv_charge_key();
+                                              /* ★ 蓄力 = C only **且 109 是选中的主动卡** ✓
+                                               *   （2026-10-25 owner：切走 ⇒ 当帧变 0 ⇒ 按"放开"处理 ✓）*/
+    /* ★★★ 2026-10-25 owner：「**按 Shift 张开结界的能力本身在任何时候都能做**！
+     *   只有**蓄力**要求 109 是选中的主动卡」✓（C 键 = 一个键挂两个用途：结界 + 蓄力）
+     *   ⇒ `aura_held` **不接** `owned` ✓（结界随时可用）；
+     *     "保持结界"那一支才接 `owned`（见下面 `else if (aura_held && owned)`）——
+     *     这样"按着 C 直接按 D 切走"时：`chg_held=0`、保持支不成立 ⇒ 落到释放支 ⇒ 按放开蓄力处理 ✓，
+     *     而结界块仍按 `aura_held` 继续维持 ✓。*/
+    /* ★★★ 2026-10-25 owner（定稿）：「**按 Shift 永远都可以**，但是 **C 键有 109 的效果当且仅当
+     *   主动卡是这张**」✓ ⇒ 结界键拆成两半：
+     *     · **Shift 恒可用** ✓（与卡是否被选中无关）；
+     *     · **C 只有在 109 被选中时**才算"张结界" ✓（它同时是蓄力键，两个用途都归 109 ✓）。*/
+    const int aura_held = ce_key_down(CE_VK_SHIFT)
+                        || (pofv_charge_owned(c) && ce_key_down(CE_VK_C));
+                                              /* ★ 结界 = C ∨ Shift **且 109 是选中的主动卡** ✓
+                                               *   ⚠ 这一道**也必须加**：否则"按着 C 直接按 D 切走"时
+                                               *   `chg_held=0 ∧ aura_held=1` ⇒ 落进"保持"那一支 ⇒
+                                               *   松开沿**永远不触发**、蓄力值也一直不归零 ✗
+                                               *   （owner 2026-10-25 ②：「切走 ⇒ 认为放开蓄力」）*/
     /* ★ 蓄力音（一手 ✓）：★ 按下 C 的**上升沿**起一次 `0x2c` ✓（卡侧无循环接口 ✗ ⇒ 不循环 ✓）*/
     if (chg_held && !s_chg_se_prev) ce_play_sound(POFV_SE_CHARGE, ce_player_x());
     s_chg_se_prev = chg_held;
+    /* ★★★ 2026-10-25 owner：「**空格没有放 C4**」✗
+     *   ⇒ 根因：处理器写在 `if (chg_held)` 里面 ⇒ **必须先按住 C 再按空格**才生效 ✗
+     *   ⇒ 挪到按键计算之后、分支之前 ⇒ **任何时候按空格都放 C4** ✓ */
+    {
+        static int sp2_prev;
+        const int sp2_now = ce_key_down(CE_VK_SPACE) ? 1 : 0;
+        if (sp2_now && !sp2_prev) {
+            s_aura_charge = POFV_C4_THRESH;
+            pofv_c4_dispatch();
+            ce_log("pofv: [DBG] 空格 ⇒ 放 C4（kind=%d rank=%d）", (int)s_aura_kind, pofv_c4_rank());
+        }
+        sp2_prev = sp2_now;
+    }
     if (chg_held) { s_c1_rel_latch = 0;   /* ★ 重新按住 ⇒ 下一次释放还要放一份 C1 ✓ */
         /* ★★★★ 2026-10-11 **回归修复**（owner：「灵梦的 C1 完全发不出去，啥也没有」✗）：
          *   ★ 根因 = `s_chg_prev = chg_held;` 原来只写在**释放支内部**（旧行 5287 ✓）
@@ -8615,8 +9262,11 @@ static int on_tick_2(ce_card_t *c)
                 /* ★ 2026-10-16 owner 订正：「★ **空格应当是直接放 C4，你去掉 C3 就行**」✓
                  *   ⇒ ★ **去掉 C3 档那道门** ✗ ⇒ ★ 只要按空格，蓄力**一律顶到 C4 阈值** ✓
                  *   （不再要求"已到 C3 且未到 C4" ✓）⇒ 之后由卡自己的释放逻辑放 C4 ✓。*/
-                if (ce_key_down(CE_VK_SPACE))
-                    s_aura_charge = POFV_C4_THRESH;
+                /* ★★★ 2026-10-25（owner：「**空格换成 C4**」✓）——
+                 *   原来只是把蓄力**顶到 C4 阈值**（还要松手才发）；现在按一下空格就**直接放 C4** ✓
+                 *   （走 `pofv_c4_dispatch()` = 与释放支同一组派发 ✓，按**上升沿**触发一次 ✓）。*/
+                /* ★ 2026-10-25：这段原来在 `if (chg_held)` 里 ⇒ **不按 C 时按空格什么都不发** ✗ */
+                /* ★ 2026-10-25：空格处理器已挪到上面（不再受 `chg_held` 限制）✓ 这里留空 */
                 /* ★★★★★ 2026-10-16 **调试键（owner：「★ **那这样的话，I 键安排一下无敌（参考 108），
                  *   我没有 L 的底力**」✓）**：★ 按住 **I** ⇒ 每帧向 SDK **声明无敌** ✓ —— 走的是
                  *   一手那条路 ✓（`sdk.h:1055-1063` ✓：★ 各卡每帧**声明**自己想要的帧数 ✓，
@@ -8630,7 +9280,11 @@ static int on_tick_2(ce_card_t *c)
             }
             if (s_aura_charge > cap) s_aura_charge = cap;
         }
-    } else if (aura_held) {
+    } else if (aura_held && (pofv_charge_owned(c) || ce_key_down(CE_VK_SHIFT))) {
+        /* ★★★ 2026-10-25 owner：「**shift 没有张开结界**」✗
+         *   ⇒ 上一版把"保持结界"那一支也接了 `owned` ⇒ **只有 109 被选中时 Shift 才管用** ✗
+         *   ⇒ 改成：**按住 Shift 永远进这一支**（张/维持结界 ✓）；按 C 时才要求 owned ✓
+         *     （这样"按着 C 切卡"仍然落到释放支 ⇒ 按放开蓄力处理 ✓）。*/
         /* ★★ 2026-10-10：门**去掉 `&& s_aura_charge > 0.0f`** ✗ —— 否则「按 Shift 但没蓄过力」
          *   （`s_aura_charge == 0`）会**掉进第三支** ⇒ 按住期间**每帧拆自己的领域** ✗✗。
          *   ⇒ 现在「**只要结界键还按着 ⇒ 一律不收束**」✓（= owner「按 shift 只管张开结界」✓）。
@@ -9801,8 +10455,11 @@ static int on_tick_2(ce_card_t *c)
          *   （owner 要求：「把这台也加进去」✓；本块只**清 0**，重建在下面那节里 ✓ ⇒ 撞弹/复活后自愈 ✓）。
          *   ⚠ 顺带修一处**既有越界写**：本数组原声明为 `hs[16]`，而上面已经 push 了 19 个指针
          *   （3 + 4 + 3 + 6 + 3 = 19 ⇒ `hs[16..18]` 越界 ✗，写坏栈上相邻变量）⇒ 这里 16 → **32**。
-         *   19 + （底槽 1 + 蓝填充 1 + 白段 1 + 菱形标 4 + 越过光晕 4）= **30** ✓（≤ 32 ⇒ 仍有余量 ✓）。 */
-        int32_t *hs[32]; int nh = 0, ih;
+         *   19 + （底槽 1 + 蓝填充 1 + 白段 1 + 菱形标 4 + 越过光晕 4）= **30** ✓。
+         *   ★ 2026-10-24：再加 **HUD 文字池 24 台**（脚本 473 的字形 VM）⇒ 30 + 24 = **54**
+         *     ⇒ 数组 32 → **56**（撞弹/复活把文字 VM 收走时也能自愈 ✓ —— 不然句柄一直非 0、
+         *     池里那 24 台就再也不重建 ✗，正是 2026-10-08「连击条再也不出现」那个坑 ✓）。*/
+        int32_t *hs[56]; int nh = 0, ih;
         hs[nh++] = &s_hud_c2_vm; hs[nh++] = &s_hud_sp_frame_vm; hs[nh++] = &s_hud_sp_hit_vm;
         hs[nh++] = &s_hud_chg_label_vm; hs[nh++] = &s_hud_chg_cur_vm;
         hs[nh++] = &s_hud_chg_slash_vm; hs[nh++] = &s_hud_chg_max_vm;
@@ -9814,6 +10471,7 @@ static int on_tick_2(ce_card_t *c)
         hs[nh++] = &s_hud_chg_white_vm;                                                  /* ★ 蓄力槽：白段（= 蓄力比例）*/
         for (ih = 0; ih < POFV_HUD_CHG_TICKS; ++ih) hs[nh++] = &s_hud_chg_tick_vm[ih];   /* ★ 蓄力槽：C1..C4 四枚菱形 */
         for (ih = 0; ih < POFV_HUD_CHG_TICKS; ++ih) hs[nh++] = &s_hud_chg_halo_vm[ih];   /* ★ 光晕（电平起、电平删 ⇒ 被收走就清 0 ✓）*/
+        for (ih = 0; ih < POFV_HUD_TXT_VMS; ++ih) hs[nh++] = &s_hud_txt_vm[ih];          /* ★ HUD 文字：24 台字形 VM（脚本 473）*/
         for (ih = 0; ih < nh; ++ih)
             if (*hs[ih] && !ce_anm_get_vm((uint32_t)*hs[ih])) *hs[ih] = 0;
     }
@@ -9861,7 +10519,13 @@ static int on_tick_2(ce_card_t *c)
              *   先前用 1280/申领槽算 ⇒ 位置落在 640 空间里偏到 ~828 ⇒ ★ 就是你看到的"**画出去了**" ✓。
              *   ⇒ ★ `fx = 游玩区中心(640 空间 = 320) − 半宽(452 ÷ 2 ÷ 2 = 113)` = **207** ✓。*/
             const float fx = POFV_HUD_PLAY_CX - POFV_HUD_CHG_BLOCK_W_SURF * 0.25f;
-            const float fy = s_hud_chg_slot.y - POFV_HUD_CHG_BLOCK_H_SURF;   /* 块底对齐 ✓ */
+            /* ★ 2026-10-24（owner 第三次口径）：块 **24 → 42**，但**只**给**上侧**的到点提示留位
+             *   （块顶 = 上文字 16 + 缝 2 + 刻度出头 12 = `fy − 30`）；
+             *   ★ 条顶**仍是「块底 − 12」** ⇒ 条在屏幕上的位置**与加文字之前一模一样** ✓
+             *     （不像上一版那样把条往上挪 18 px ✗）。
+             *   ★ 下侧 `Lv d` **故意画到块外**（`fy + 14`）—— owner：「lvN 可以画在声明矩形外侧，一手如此，
+             *     略微超出了游玩区下部」✓ */
+            const float fy = s_hud_chg_slot.y - POFV_HUD_CHG_BLOCK_H_SURF;   /* 块底 − 12 ✓ */
             pofv_hud_charge_bar(fx, fy, ratio_rei, ratio_chg);
         }
     }
@@ -10464,8 +11128,8 @@ static int on_load(ce_card_t *c)
      *   ★ 初值 = ★ **难度初值** ✓（★ C3 = `POFV_C3_LEVEL_DEFAULT` ✓；
      *   ★ **C4 = `max(3, 难度初值)`** ✓ —— ★ 只有 Lv3+ 的 C4 才有符卡 ✓，见那两处常量注释 ✓）。
      *   ★ 局末/删卡那条路仍走 `clear_card` ✓（★ 两边同值 ✓，★ 不会打架 ✓）。*/
-    s_c3_lv_n = POFV_C3_LEVEL_DEFAULT;
-    s_c4_lv_n = POFV_C4_LEVEL_DEFAULT;
+    s_c3_lv_n = pofv_c3_lv_init();
+    s_c4_lv_n = pofv_c4_lv_init();
     pofv_hud_chg_claim();
     return 0;
 }
@@ -10598,8 +11262,52 @@ static int on_draw(ce_card_t *c)
                  *      放进小数块 ✗，而小数块是**半尺寸**且用**居中对齐** ✗ ⇒ 点被"吃"掉了 ✓）；
                  *   ② ★ 小数块改成**左对齐**（`align_h = 0` ✓）＋ 起点取**主块右沿**（`224 + 24 = 248` ✓）
                  *      ★ ⇒ 不会再跑到"整数全尺寸矩形"的右上角 ✗（那是半尺寸 + 居中对齐导致的 ✓）。*/
-                ce_hud_text_ex(248.0f, 448.0f, 0xFFFFFFFFu, 0u, 4, 2, 2, 0.0f, "%02d.", (int)sec);
-                ce_hud_text_ex(272.0f, 452.0f, 0xFFFFFFFFu, 0u, 4, 2, 0, 0.5f, "%02d", (int)frm);
+                /* ★★★ 2026-10-25 owner 实跑三条：
+                 *   ① 「小数部分的**错位很严重**，在比较偏右侧」✗ ⇒ 根因 = **分两次画 + 第二次半尺寸**
+                 *      且 x 是手填的 `272`（没有按主块实际宽度量）⇒ 必然错位 ✗
+                 *      ⇒ 改成**一次画完** `"%02d.%02d"`（同一档字体、同一基线、居中 x = 224）✓
+                 *        —— 字距/位置由引擎自己排，**不可能再错位** ✓（代价：小数不再半尺寸，
+                 *        若要"小数小一号"，得先量出主块实际右沿再分两次画 —— 下一轮再做）；
+                 *   ② 「**没有在版底**」✗ ⇒ y 取 **458**（场地底 464 之内 6 px，坐在版底沿上）✓；
+                 *   ③ 「C4 计时器**至少在透明度层面也得接入 hud 槽位**，不能挡视野」✓
+                 *      ⇒ 颜色 A 通道接 **`ce_hud_band_dim_alpha()`**（与蓄力条那套同一个 `tdim` ✓）。*/
+                const uint32_t tdim4 = ((uint32_t)ce_hud_band_dim_alpha() & 0xffu) << 24;
+                /* ★★★ 2026-10-25 owner：「**错误的，小数半尺寸**」✓ —— 小数块必须**半尺寸**。
+                 *   为了既不"偏右"也不重叠，两块用**对接**排法（不靠手填绝对 x ✓）：
+                 *     · 主块 `"%02d."` **右对齐到 x = 222**（`align_h = 2`）✓
+                 *     · 小数块 `"%02d"` **左对齐从 x = 224 起**（`align_h = 0`）、`scale = 0.5` ✓
+                 *       ⇒ 主块右端恒在 222、小数左端恒在 224 ⇒ **永远只差 2 px、不重叠、不偏右** ✓
+                 *     · y：主块 458 ✓；小数块半尺寸 ⇒ **下沿对齐**取 **461**（半尺寸高约 6 px ⇒ 458+3）✓ */
+                /* ★★★ 2026-10-25 owner 实跑两条：
+                 *   ① 「它现在在**外侧**，被版外盖住了」✗ ⇒ y 从 458 **上移到 446/449**
+                 *      （458 已经压到版框上/被边框盖住 ✓；446 是场地底 464 之上 18 px ✓）；
+                 *   ② 「整体**偏左**，得和 boss 的那个计时器是**同一个 x**」✓ ⇒ 原生主块 **x = 224**
+                 *      （`HUD-LAYOUT.md:56` / `AUDIT.md` §AI ✓）⇒ 主块**右端 226**、小数**左端 228**
+                 *      （各 +4，让"秒＋点＋半尺寸小数"这整体的**视觉中心**回到 224 ✓）。*/
+                /* ★ 2026-10-25 owner 与 boss 逐项比对三条 ✓：
+                 *   ① 「和 boss 比对了**偏左**」⇒ 两块 x 再 **+3**（主块右端 226→**229**、小数左端 228→**231**）✓
+                 *   ② 「小数部分比 boss 一手的**小**」⇒ 小数 scale **0.5 → 0.62** ✓（❓ 手感值，可再微调）
+                 *   ③ 「小数部分**没有和版底贴合**」⇒ 小数 y **449 → 451**（下沿再落 2 px，与主块底线齐）✓ */
+                /* ★★★★ 2026-10-25 **一手核到位**（`zGui__on_draw` `0x43cd00`，本地 exe 反汇编 ✓）：
+                 *   `0x43cf0b  mov [esi+0x19248], 2`   ⇒ **group = 2** ✓
+                 *   `0x43cf15  mov [esi+0x19244], 4`   ⇒ **font  = 4** ✓
+                 *   第一块：格式串 `0x4b65c0 = "%3d."`（★ **小数点在主块里** ✓），坐标 `0x43860000`=**272**? 见下
+                 *   `0x43cf60  mov [ebp-0x18], 0x43860000` = **272.0f**（x）、
+                 *   `0x43cf67  mov [ebp-0x14], 0x43160000` = **150.0f**（y）、
+                 *   `0x43cf6e  mov [esi+0x19230], 0x3f19999a` = **0.6f**（scale x）
+                 *   `0x43cf78  mov [esi+0x19234], 0x3f19999a` = **0.6f**（scale y）⇒ ★ **小数块 = (272,150) scale 0.6** ✓
+                 *   第二块：格式串 `0x4b65c8`（两位 + 后缀）、`0x43cfbd mov [ebp-4],0x3e8`、
+                 *   `0x43cfc4 mov [ebp-0x18], 0x43600000` = **224.0f**（x）、
+                 *   `0x43d000 mov [ebp-0x14], 0x43200000` = **144.0f**（y）、
+                 *   `0x43cfe7 mov [ecx+0x19230], 0x3f800000` = **1.0f** ⇒ ★ **主块 = (224,144) scale 1.0** ✓
+                 *   ⇒ ★ 版底镜像：y += 304（144→448、150→454），x **照一手原值 224 / 272** ✓
+                 *   ⇒ ★ **小数块是 0.6（不是 0.5/0.62）、x 是 272（不是紧贴主块）** ✓ —— 这两条此前都是错的 ✗。*/
+                ce_hud_text_ex(216.0f, 448.0f, tdim4 | 0xFFFFFFu, 0u, 4, 2, 0, 1.0f, "%02d.", (int)sec);   /* ★ 2026-10-25 owner：**整数恒为 2 位**（补 0）⇒ %02d. ✓*/   /* ★ 2026-10-25 owner：整数部分**左移 12 px**（232→220）*/
+                /* ★ 2026-10-25 owner 实跑：「小数额向右偏了**大概两个整数部分宽度**」✗
+                 *   ⇒ 一手那两个字面量 (272,150) 应当配的是**另一种对齐**（我更可能把 `+0x19250`
+                 *     的语义用反了）⇒ 先按观感把 x 从 **272 收到 248**（−24 ≈ 两个整数宽度 ✓），
+                 *     align 仍居中、scale 0.6（这两个是反汇编实读 ✓）。*/
+                ce_hud_text_ex(238.0f, 454.0f, tdim4 | 0xFFFFFFu, 0u, 4, 2, 0, 0.6f, "%02d", (int)frm);
                 /* 2026-10-23 卡 109 调试（owner：先试 ce_hud_text_ex 是不是那套字体）：
                  *   在同上下文画一行 `Ex Attack lv3` / 一行 `skill` / 一行 `BOSS lv2`。
                  *   font_id 试 2（一手 TH18 ascii 的 2/3 号字体）。*/
@@ -10777,6 +11485,15 @@ static int pofv_on_death_before_deathbomb(ce_card_t *c)
         s_barrier_vm_glow = 0;
     }
     pofv_barrier_break_fx();                  /* ★ 三层爆发 ✓（见该函数头注释 ✓）*/
+    /* ★★★ 2026-10-25 owner：破罩音效「好像是这三个之一 se_tan00/01/02」✓
+     *   ⇒ 一手破罩 SE = `0x1b`；TH18 的 SE 表（`engine/_shared/th18-sound-table.md:187`）里
+     *     **`0x1b = se_tan00.wav`** ✓（同一族，正是你给的第一支）⇒ 直接播 **0x1b** ✓。
+     *   ⚠ 引擎自己那一下**被弹音**在命中时已经播过（我们是在死亡流程里撤销的）⇒
+     *     现在会"被弹音 + 破罩音"两声；要压掉被弹音得 hook SE 播放（共享件，另案 ✓）。*/
+    {   const float *bp = ce_player_pos();
+        ce_play_sound(POFV_BARRIER_BREAK_SE, bp ? bp[0] : 0.0f);
+    }
+    ce_log("pofv: [BARRIER] 破罩音 SE=0x%02x（se_tan00）", POFV_BARRIER_BREAK_SE);
     s_barrier_brk = POFV_BARRIER_BREAK_N;     /* ★ 破罩演出：40 帧禁主动移动 + 位移 ✓（一手常数 ✓）*/
     {
         float hx = 0.0f, hy = 0.0f;

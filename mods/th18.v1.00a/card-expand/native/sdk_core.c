@@ -1256,10 +1256,27 @@ static int s_rescue_note_owner = -1;
 
 void ce_rescue_note_reset(void) { s_rescue_note_owner = -1; }
 
+/* ★★★ 2026-10-25 owner 定序：「**111 → 107 → 117 → 109 → 决死B → 113**」（111 最前）✓
+ *   引擎按**卡列表顺序**逐张回调 `+0x10`，顺序由卡槽决定、卡侧改不了 ✗
+ *   ⇒ 闩锁改成**按优先级抢占**：优先级高的后到也能覆盖，低的先到也不算数 ✓
+ *     （109 = 本卡的罩子，排在 107/117 之后、决死B 之前 ✓）*/
+static int rescue_prio(int id)
+{
+    switch (id) {
+    case 111: return 0;      /* 最前 ✓ */
+    case 107: return 1;
+    case 117: return 2;
+    case 109: return 3;
+    case 113: return 4;      /* 最后（只在没人救时才动手，见 sdk_core.h ✓）*/
+    default:  return 5;
+    }
+}
+
 int ce_rescue_note_claim(uint32_t id)
 {
     if (id > (uint32_t)CE_SDK_CARD_ID_MAX) return 0;
-    if (s_rescue_note_owner >= 0) return 0;
+    if (s_rescue_note_owner >= 0 &&
+        rescue_prio((int)id) >= rescue_prio(s_rescue_note_owner)) return 0;   /* 不够高 ⇒ 不算 ✓ */
     s_rescue_note_owner = (int)id;
     return 1;
 }
