@@ -2490,10 +2490,10 @@ int main(void)
             CHECK(yk_fengma_tint_set(0x58) == 1);
             CHECK(yk_fengma_tint_set(0x59) == 1);            /* 魔理沙 M0..M4 */
             CHECK(yk_fengma_tint_set(0x5d) == 1);
-            CHECK(yk_fengma_tint_set(0x5e) == 0);            /* 咲夜：一手全是 0 ⇒ 不染 */
-            CHECK(yk_fengma_tint_set(0x62) == 0);
-            CHECK(yk_fengma_tint_set(0x63) == 0);            /* 早苗（TH16 数据）⇒ 一手口径下不染 */
-            CHECK(yk_fengma_tint_set(0x67) == 0);
+            CHECK(yk_fengma_tint_set(0x5e) == 1);   /* ★ 2026-10-24 owner：咲夜也染 */            /* 咲夜：一手全是 0 ⇒ 不染 */
+            CHECK(yk_fengma_tint_set(0x62) == 1);
+            CHECK(yk_fengma_tint_set(0x63) == 1);   /* ★ owner：早苗也染 */            /* 早苗（TH16 数据）⇒ 一手口径下不染 */
+            CHECK(yk_fengma_tint_set(0x67) == 1);
             CHECK(yk_fengma_tint_set(0x16) == 0);            /* 兜底组（幽々子）⇒ 不染 */
             /* 染色 dword：只换低 24 位（BGR），**alpha 必须原样**（一手只写 `+0x1f0/1/2` 三个字节）*/
             CHECK(yk_fengma_tint_dword(0x80000000u) == 0x80ff4040u);
