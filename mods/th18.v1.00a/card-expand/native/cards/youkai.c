@@ -8264,7 +8264,11 @@ static void yk_gauge_hud_update(yk_card_t *s)
     if (s->hud_bar) {
         ce_anm_set_pos(s->hud_bar, h.bar_x, h.bar_y, 0.0f);
         ce_anm_set_scale(s->hud_bar, h.px, h.px);
-        ce_anm_set_color(s->hud_bar, 0xff000000u | col);   /* 一手：槽条用**同一个**颜色（AsciiManager.cpp:1060）*/
+        /* ★ 2026-10-24（审计 P1）：这里原来写 `0xff000000|col`，随后下面「共享带 alpha」那段又用
+         *   `(a<<24)|0x00ffffff` 覆盖一次 ⇒ **RGB 被洗成白**（条永远白、数字有色）。
+         *   ⇒ 只在这里写一次（带 alpha + 染色），并把 bar 从下面那个"只改 A"的循环里摘掉。*/
+        ce_anm_set_color(s->hud_bar,
+                         (((uint32_t)ce_hud_band_dim_alpha() & 0xffu) << 24) | (col & 0x00ffffffu));
     }
     if (s->hud_human) {
         ce_anm_set_pos(s->hud_human, h.human_x, h.human_y, 0.0f);
@@ -8302,10 +8306,10 @@ static void yk_gauge_hud_update(yk_card_t *s)
         const uint32_t a = (uint32_t)ce_hud_band_dim_alpha() & 0xffu;
         uint32_t *ids[4];
         int q;
-        ids[0] = &s->hud_bar;  ids[1] = &s->hud_human;
+        ids[0] = 0;  /* bar 已在上面按"带 alpha + 染色"写过，别再洗白 */  ids[1] = &s->hud_human;
         ids[2] = &s->hud_youkai; ids[3] = &s->hud_cursor;
         for (q = 0; q < 4; ++q)
-            if (*ids[q] && ce_anm_get_vm(*ids[q])) ce_anm_set_color(*ids[q], (a << 24) | 0x00ffffffu);
+            if (ids[q] && *ids[q] && ce_anm_get_vm(*ids[q])) ce_anm_set_color(*ids[q], (a << 24) | 0x00ffffffu);
         /* ★ 2026-10-03z11（owner：「**108 人妖槽的数字部分也没有接入**」）——
          *   百分比/夜点的**字形 VM**（`s->hud_digit[]`）与上面四支同款处理。*/
         for (q = 0; q < YK_GAUGE_TEXT_MAX; ++q)

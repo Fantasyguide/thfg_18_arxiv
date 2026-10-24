@@ -2198,7 +2198,9 @@ static void hud_sync(animal_card_t *s)
             }
             if (s->hud_soul[i]) {
                 ce_anm_set_pos((uint32_t)s->hud_soul[i], x, y, 0.0f);   /* 每帧写 */
-                if (faded || s->hud_fade_touched) ce_anm_set_color((uint32_t)s->hud_soul[i], A | 0x00ffffffu);
+                /* ★ 2026-10-24（审计 P2）：不能在「回到 255」那一帧跳过 —— `hud_fade_touched` 已在
+                 *   `hud_fade_tick()` 里先清掉，跳过就停在本该淡回的斜坡倒数第二格（231）。*/
+                ce_anm_set_color((uint32_t)s->hud_soul[i], A | 0x00ffffffu);
             }
         }
     }
