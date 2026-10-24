@@ -59,24 +59,6 @@
     }
   },
   "binhacks": {
-    "maneki_always_pick1": {
-      "addr": "0x417336",
-      "expected": "7409",
-      "code": "eb09",
-      "title": "★ 招财猫（原生卡 38 MANEKI）**常驻**：商店第一档 pick 后那段『卡组里有 0x26 才加抽』改成无条件加抽（je → jmp）"
-    },
-    "maneki_always_pick2": {
-      "addr": "0x4173a6",
-      "expected": "7409",
-      "code": "eb09",
-      "title": "★ 同上（中价档）"
-    },
-    "maneki_always_pick3": {
-      "addr": "0x417416",
-      "expected": "7409",
-      "code": "eb09",
-      "title": "★ 同上（低价档）⇒ 常态 6 张随机；这张原生卡拿了也不再有额外效果"
-    },
     "cardtable_start_407d72": {
       "addr": "0x407d72",
       "code": "b8<codecave:th18_card_table+4>",
@@ -1354,6 +1336,24 @@
       "code": "83fa74",
       "expected": "83fa54",
       "title": "音效表扩容：init 循环1 槽数界"
+    },
+    "maneki_always_pick1": {
+      "addr": "0x417336",
+      "expected": "7409",
+      "code": "eb09",
+      "title": "★ 招财猫常驻：第1档 pick 后『卡组里有 0x26(MANEKI) 才加抽』改成无条件加抽（je → jmp）⇒ 商店随机位恒为 6（第一档（高价 300-500））"
+    },
+    "maneki_always_pick2": {
+      "addr": "0x4173a6",
+      "expected": "7409",
+      "code": "eb09",
+      "title": "★ 招财猫常驻：第2档 pick 后『卡组里有 0x26(MANEKI) 才加抽』改成无条件加抽（je → jmp）⇒ 商店随机位恒为 6（第二档（中价 200-280））"
+    },
+    "maneki_always_pick3": {
+      "addr": "0x417416",
+      "expected": "7409",
+      "code": "eb09",
+      "title": "★ 招财猫常驻：第3档 pick 后『卡组里有 0x26(MANEKI) 才加抽』改成无条件加抽（je → jmp）⇒ 商店随机位恒为 6（第三档（低价 50-180））"
     }
   },
   "breakpoints": {
