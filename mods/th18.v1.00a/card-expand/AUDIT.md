@@ -34194,3 +34194,15 @@ layer 6、`0x45b98c push 0x1b`，只在 `player+0x476bc > 0` 时建），**不�
 - 实跑判据（owner）：装 106，按住 Shift ⇒ **两颗都不显示**；`CE_DEV_DUMP=1` 的日志里应看到
   `T06R-DOT: … (alpha 00) a1i=00000000 … children=1` **加一行** `T06R-DOT2: … script=25(0x19) c1=00ffffff (alpha 00) a1i=00000000`
   ⇒ 两行都恒 00 才算压住；若 `children=0` ⇒ 子链表没挂上（回到 §6.1 重查），若某帧 `alpha ff` ⇒ 那一帧有人在写。
+
+
+## §BE-RELEASE-20261024：发布卡池与金盏花周期调整
+
+- 版本：TH18 v1.00a。修改者：Codex；依据：owner 2026-10-24 明确要求。
+- `native/cards/marigold.c`：金盏花产出周期从 300 帧改为 1200 帧（20 秒）；每轮仍为 25 个金钱道具。同步 `patch/th18/cards.js` 与 `PLAYER-GUIDE.md`。
+- `patch/th18/cards.js`：黑莲花改为 2 档（80 金钱）；109、118、201 统一设置 `initial_unlocked=0`、`deck_visible=0`、`weight=6`，从编成与商店入口排除，保留源码、行为登记及卡牌 ID。沿用远端已有的 118/201 停用方式；不清除旧存档中的已携带卡。
+- 保留 owner 本轮文案修改，移除说明数组尾逗号；破损核心、星莲船的超长说明仅重新分行，不改变含义。
+- 影响面：金盏花自身产出节拍、黑莲花购入价格及三张停用卡的正常获取入口；共用植物逻辑与其他卡价格不变。
+- 验证：`make quick cards-check` 所含主机 C 测试与 8 个 Python 用例通过，JSON 及文本约束通过；`python3 tools/contract_check.py`、`git diff --check`、`python3 tooling/check-docs.py` 通过。临时主机程序调用真实 `plant_sow` / `plant_step`，确认 1200、2400 帧分别产出，其他帧不产出。
+- DLL 验证：依据本分支 `ORDER.txt` 生成编译用 `voice_ids.h` 并核对 `voice.js`，使用已登记的 `sht_ids.h` 执行 `make -o sht_ids.h -o voice_ids.h dll dllx87 dllverify`，PE32/i386、23 个导出与零 x87 检查通过。完整 `make voice` 受本机缺少原作音频样本限制；未完成资源发布包验证或游戏实跑。
+- 远端同步：以 `901fcf42`（PR #132）为基础，保留合作者 `a27ff3eb` 对黑桃 J 的步长加速修复，未从其他分支导入代码。
