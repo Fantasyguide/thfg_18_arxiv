@@ -18,7 +18,7 @@
     ],
     "internal_name": "SPADE_J",
     "initial_unlocked": 1,
-    "price_tier": 6,
+    "price_tier": 5,
     "weight": 2,
     "sprite_large": 120,
     "sprite_small": 121
@@ -30,7 +30,7 @@
     ],
     "internal_name": "SPADE_Q",
     "initial_unlocked": 1,
-    "price_tier": 7,
+    "price_tier": 5,
     "weight": 2,
     "sprite_large": 122,
     "sprite_small": 123
@@ -54,7 +54,7 @@
     ],
     "internal_name": "SPADE_A",
     "initial_unlocked": 1,
-    "price_tier": 9,
+    "price_tier": 6,
     "weight": 2,
     "sprite_large": 126,
     "sprite_small": 127
@@ -114,7 +114,7 @@
     "internal_name": "JUDGMENT",
     "initial_unlocked": 1,
     "category": 0,
-    "price_tier": 14,
+    "price_tier": 10,
     "weight": 2,
     "sprite_large": 134,
     "sprite_small": 135
@@ -556,7 +556,7 @@
     ],
     "internal_name": "SOL_RING",
     "initial_unlocked": 1,
-    "price_tier": 9,
+    "price_tier": 5,
     "weight": 2,
     "sprite_large": 190,
     "sprite_small": 191
@@ -597,7 +597,7 @@
     "internal_name": "MARIGOLD",
     "category": 0,
     "initial_unlocked": 1,
-    "price_tier": 10,
+    "price_tier": 7,
     "weight": 2,
     "sprite_large": 196,
     "sprite_small": 197
@@ -611,7 +611,7 @@
     "internal_name": "TONY_GRIEF",
     "category": 2,
     "initial_unlocked": 1,
-    "price_tier": 9,
+    "price_tier": 10,
     "weight": 2,
     "sprite_large": 198,
     "sprite_small": 199
@@ -695,7 +695,7 @@
     "internal_name": "GREAT_WORK",
     "category": 0,
     "initial_unlocked": 1,
-    "price_tier": 10,
+    "price_tier": 14,
     "weight": 2,
     "active_recharge": 600,
     "sprite_large": 210,
