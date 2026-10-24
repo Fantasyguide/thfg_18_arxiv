@@ -268,6 +268,41 @@ static void check_emit_slot_advance(void)
     free(nows);
 }
 
+/* ★★★★★ 2026-10-24（**修「`yk_run_save108()` 定义了但没人调」的闸**）：
+ *   P31a 的意图 = 换面时把 run 级字段（`piv` / `piv_base` / `orbs` / `gauge` / 各项计数）带回上一关。
+ *   实现必须是 **save（旧）→ 初始化/清零 → restore（新）**。原来的代码只写了 `keep108 = s_run_keep108`
+ *   （那个全局**从没被写过**，恒 0）⇒ 末尾 restore 把 0 写回 ⇒ NORMAL 的 `piv = 100000` 被抹成 0、
+ *   `piv − piv_base` 每关从 0 重算（上一关的「额外最大得点」丢掉）、HUD 夜点每关回 `000000`、人妖槽被清。
+ *   ⇒ 这条闸钉三件事：① `on_ctor` 里**确实**调了 `yk_run_save108(s)`；② 它的调用点在
+ *   `yk_piv_reset()`/难度初值**之前**；③ restore 在**最后**、且从栈上快照 `keep108` 读；
+ *   ④ 两条「新局」路径（`on_run_reset` / `on_delete`）都把快照清掉（不许复用上局）。*/
+static void check_run_keep_save_restore(void)
+{
+    char *nows = yk_card_code_nospace("cards/youkai.c");
+    const char *p_save, *p_piv, *p_restore;
+    int n_clear = 0;
+    const char *p = 0;
+
+    CHECK(nows != 0);
+    if (!nows) return;
+    p_save    = strstr(nows, "yk_run_save108(s)");
+    p_piv     = strstr(nows, "yk_piv_reset(&s->piv");
+    p_restore = strstr(nows, "yk_run_restore108(s,&keep108)");
+    CHECK(p_save != 0);                             /* ① 定义了就必须有人调 */
+    CHECK(p_piv != 0);
+    CHECK(p_restore != 0);
+    if (p_save && p_piv && p_restore) {
+        CHECK(p_save < p_piv);                      /* ② 顺序：save 在清零/难度初值之前 */
+        CHECK(p_piv < p_restore);                   /* ③ restore 在最后（清零之后）*/
+    }
+    CHECK(strstr(nows, "if(!was_fresh108&&s&&s->piv>0){yk_run_save108(s);keep108=s_run_keep108;have108=1;}") != 0);
+    CHECK(strstr(nows, "if(have108)yk_run_restore108(s,&keep108);") != 0);
+    /* ④ 两处「新局」清快照：`on_run_reset` 与 `on_delete` */
+    while ((p = strstr(p ? p + 1 : nows, "memset(&s_run_keep108,0,sizeofs_run_keep108);")) != 0) ++n_clear;
+    CHECK(n_clear == 2);
+    free(nows);
+}
+
 static yk_action_t s_acts[YK_FAM_MAX];
 
 /* ★★★ 2026-09-30（owner 实跑：「一面 3 只大蝴蝶生成了两次两个使魔」）：
@@ -3220,6 +3255,7 @@ int main(void)
     check_beam_spec_files();
     check_orbit_gift_ledger();              /* ★ 2026-09-30：绕转使魔「一只敌人只补一次」的判定 */
     check_emit_slot_advance();              /* ★ 2026-10-24：槽扫不许「`++i; continue;`」双增量（会误删使魔）*/
+    check_run_keep_save_restore();          /* ★ 2026-10-24：P31a 的 save/restore 顺序（换面不许清夜点/刻符）*/
 
     /* ── leveledit（第三方米斯蒂亚补丁）同开时的使魔归属 ────────────────────────────────
      * 口径见 `HANDOFF-108-LEVELEDIT-FAMILIARS.md` §1 ✓；判据与一手出处见 `youkai_core.h` 那段 ✓。

@@ -8195,14 +8195,17 @@ static void yk_run_save108(const yk_card_t *s)
     s_run_keep108.orb_taken = s->orb_taken;   s_run_keep108.orb_full = s->orb_full;
 }
 
-static void yk_run_restore108(yk_card_t *s)
+/* ★ 2026-10-24：restore 改成**从快照读**（`k` 由 `on_ctor` 在初始化前从保存点拷一份）。
+ *   为什么不让它直接读 `s_run_keep108`：ctor 中途会在同一个块里跑几十行清零，把「从哪读」钉在
+ *   一个**局部**快照上，语义是「进来那一瞬的值」，不会被这段代码将来的改动碰到 ✓。*/
+static void yk_run_restore108(yk_card_t *s, const yk_run_keep_t *k)
 {
-    s->piv = s_run_keep108.piv;               s->piv_base = s_run_keep108.piv_base;
-    s->orbs = s_run_keep108.orbs;             s->gauge = s_run_keep108.gauge;
-    s->gauge_focus_run = s_run_keep108.gauge_focus_run; s->gauge_hold = s_run_keep108.gauge_hold;
-    s->orb_peak = s_run_keep108.orb_peak;     s->gauge_ram = s_run_keep108.gauge_ram;
-    s->gauge_idle = s_run_keep108.gauge_idle; s->orb_silence = s_run_keep108.orb_silence;
-    s->orb_taken = s_run_keep108.orb_taken;   s->orb_full = s_run_keep108.orb_full;
+    s->piv = k->piv;               s->piv_base = k->piv_base;
+    s->orbs = k->orbs;             s->gauge = k->gauge;
+    s->gauge_focus_run = k->gauge_focus_run; s->gauge_hold = k->gauge_hold;
+    s->orb_peak = k->orb_peak;     s->gauge_ram = k->gauge_ram;
+    s->gauge_idle = k->gauge_idle; s->orb_silence = k->orb_silence;
+    s->orb_taken = k->orb_taken;   s->orb_full = k->orb_full;
 }
 
 static int on_ctor(ce_card_t *c)
@@ -8211,9 +8214,30 @@ static int on_ctor(ce_card_t *c)
     yk_card_t *s = ce_state(c, yk_card_t);
     {   /* ★ P31a：换面 ⇒ 出来时把 run 级字段写回上一关的值 ✓ */
         yk_run_keep_t keep108;
+        int have108 = 0;                        /* 1 = 手上这份 `keep108` 真是「上一关的旧状态」*/
         const int was_fresh108 = s_run_fresh;
         s_run_fresh = 0;
-        if (!was_fresh108) keep108 = s_run_keep108;
+        __builtin_memset(&keep108, 0, sizeof keep108);
+        /* ★★★★★ 2026-10-24（**修「`yk_run_save108()` 定义了但没人调」**）——
+         *   顺序必须 = **save（旧状态）→ 初始化/清零 → restore（新状态）**：
+         *   原来这里只 `keep108 = s_run_keep108`（= 一个**从没被写过**的文件级静态，恒全 0），
+         *   末尾 `yk_run_restore108(s)` 把那份 0 写回卡状态 ⇒ 换面时
+         *   `piv` / `piv_base` / `orbs` / `gauge` / `orb_taken` / `orb_peak` /
+         *   `gauge_ram` / `gauge_idle` / `orb_silence` **全被抹成 0** ✗：
+         *     · 刚在下面按难度写好的 `piv = yk_night_point_init(difficulty)`（NORMAL 100000）也被抹 ✗；
+         *     · `ce_score_declare_delta(108, piv − piv_base)` 每关从 0 重算 ⇒ **上一关攒的「额外
+         *       最大得点」丢掉** ✗；HUD 夜点每关回 `000000` ✗；人妖槽被清 ✗。
+         *   ⇒ 这正是 P31a（2026-10-14 owner 逐字：「总夜点计数和刻符**没有理由清空**」）的**反向执行**。
+         *   修法 = 在**任何初始化之前**保存旧状态（`s` 此刻还是上一关的值 ✓），并把这个局部快照
+         *   真正用起来（末尾 restore 从它读）✓。
+         *   ★ 判据「旧状态存在」= `s->piv > 0`：夜点在各难度下初值是 60000/100000/200000/300000/300000
+         *     （`yk_night_point_init` 一手表）⇒ 0 只可能来自「刚 `ce_state` 出来的新槽」= 局中买卡那一刻
+         *     ⇒ 那一路**不保存也不恢复** ⇒ 下面的难度初值照常生效 ✓。`was_fresh108`（新局）同理 ✓。*/
+        if (!was_fresh108 && s && s->piv > 0) {
+            yk_run_save108(s);              /* ① 保存旧状态（换面这一路）*/
+            keep108 = s_run_keep108;        /* ② 快照留在栈上，restore 从它读 */
+            have108 = 1;
+        }
     if (!s) return 0;
     /* ★ 先收跟随 VM 再复位静态表：本函数**在局中被重建时也会跑**（每关开始引擎对卡组每张卡
      * 再调一次 ctor）—— 那时 `yk_map_reset` 会把使魔一并忘掉，它们身上的 VM 若不复位就永久留下
@@ -8361,7 +8385,8 @@ static int on_ctor(ce_card_t *c)
         blk.side = CE_HUD_SIDE_PINNED;
         yk_hud_claim(c, s);
     }
-        if (!was_fresh108) yk_run_restore108(s);
+        /* ③ 换面这一路：把①保存的 run 级字段写回（= 上一关的值）；新局/局中买卡 ⇒ 跳过 ✓ */
+        if (have108) yk_run_restore108(s, &keep108);
     }
     if (s->hud_ready) yk_gauge_hud_spawn(c, s);
     return 0;
@@ -8830,6 +8855,9 @@ static int on_load(ce_card_t *c)
 static void on_run_reset(ce_card_t *c)
 {
     s_run_fresh = 1;   /* ★ P31a：新局 ✓ */
+    /* ★ 2026-10-24：**新局不复用上局的 run 级快照** ⇒ 把保存点也清干净（P31a 的两半要成对：
+     *   `s_run_fresh` 决定「保不保存/恢不恢复」，这份快照决定「恢复什么」）。*/
+    __builtin_memset(&s_run_keep108, 0, sizeof s_run_keep108);
     if (!YK_ENABLE_CARD || !YK_ENABLE_CB_LIFECYCLE) return;   /* ★ 总开关 + 回调族 ⑨ */
     yk_card_t *s = ce_state(c, yk_card_t);
     /* ★ 2026-10-01（owner：这次发版就为拿这个数）—— **emitkey 收尾汇总**：
@@ -8877,6 +8905,7 @@ static void on_run_reset(ce_card_t *c)
 static void on_delete(ce_card_t *c)
 {
     s_run_fresh = 1;   /* ★ P31a：删卡 ⇒ 下次拿到是新局 ✓ */
+    __builtin_memset(&s_run_keep108, 0, sizeof s_run_keep108);   /* ★ 2026-10-24：同上，快照一起清 */
     if (!YK_ENABLE_CARD || !YK_ENABLE_CB_LIFECYCLE) return;   /* ★ 总开关 + 回调族 ⑨ */
     yk_card_t *s = ce_state(c, yk_card_t);
     s_side_lock = -1;                     /* ★ owner ④：删卡 ⇒ 解锁（形态不再钉住）*/
