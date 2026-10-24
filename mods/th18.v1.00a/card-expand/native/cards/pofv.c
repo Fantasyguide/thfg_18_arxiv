@@ -11066,7 +11066,12 @@ static int on_tick_2(ce_card_t *c)
      *   `s_reiryoku`（**灵力** = 蓄力上限 ✓，owner 2026-10-10 口径 —— 见 `s_reiryoku` 声明处注释 ✓）。*/
     {
         int32_t got_pts = 0;
-        int got_n = pofv_power_tick(&s_power, ce_player_pos(), ce_poc_height_semantic(), &got_pts);
+        int got_n = pofv_power_tick(&s_power, ce_player_pos(),
+                                               /* ★★ 2026-10-24（owner：「读真 PoC 线高度」）：
+                                                *   回收线是**游戏判定**，必须用引擎字段真值（含 106 的「遮」）；
+                                                *   `_semantic()` 语义 = 「没有 106 时」⇒ 106 在场时线偏高、
+                                                *   道具在同一高度就会被提前吸走（与 108 永点同一个 bug）。*/
+                                               ce_poc_height(), &got_pts);
         /* ★★★ 2026-10-11 owner 口径（「灵力道具只有一种 = 那个透明小蓝点」✓）：
          *   ★ 灵力只认**卡侧那一类道具（kind == 1）**被拾到的颗数 ✓ ——
          *   core 已经把 `absorbed_rei` 记好了（`pofv_core.c` 的收取支 ✓）⇒ 这里取**增量** ✓。
