@@ -4868,6 +4868,7 @@ UI 列表尾插、组内后生成者后画（§2b.4）。
 | 2026-10-04 | **删除 109 卡全部代码**（含别人的文件：脚本编号前移 / sht 生成器）| 见下方小节「§BE-109 删除记录」|
 | 日期 | 别人的卡 | 文件 | 改了什么 | 为什么 | 验证 |
 | --- | --- | --- | --- | --- | --- |
+| 2026-10-24 | **80 股市** | `assets/ability/scripts/104_stock_rect.anm.txt`（+ 重建的 `build/ability.anm`）、`HUD-LAYOUT.md` 一段注 | **只改 layer：`layer(25)` → `layer(26)`**（其它行 / 贴图 / 脚本号一律未动）| owner 2026-10-24：「股市部分的 layer 被搬到靠下了，搬回**原来的** layer」⇒ 详见下方小节「§BE-STOCK-LAYER-2026-10-24」| `build_ability.py` + `--verify-only` rc=0；`anm_ids.h` 零变化；`make dll`(0/2) / `test-host` / `dllx87` rc=0 |
 | 2026-10-21 | **boss-bg-warp（非 109 的另一个 mod）** | `mods/th18.v1.00a/boss-bg-warp/ROUTE-B.md` | ★ **只加了一行 `> **版本**：TH18 v1.00a…` 声明**（**零行为改动**、一行未删） | `python3 tooling/check-docs.py` 报 `[version]`：该文件引用了 `0x487780`／`0x4ccfa0` 等地址，但开头 20 行没有版本声明 ⇒ 闸红（`check-docs` 是全仓共用的） | 补完 **`check-docs` EXIT=0（516 文件）**；`git diff` 只有那一行 ✓ |
 | 2026-10-20 | **109 花映塚**（+ **发布闸**） | `patch/th18/cards.js`（109 的 `desc`）、`native/tools/deploy.py`（校验闸） | 109 的 `desc` 第 7 行并进第 6 行 ⇒ 回到 6 行；`deploy.py` 的 ② 校验新增 `make cards-check` | owner 08:12 实跑「所有 mod 卡消失」：desc 7 行 ⇒ 整批新卡停用；详见 §BE-DEVBUILD-2026-10-20 | `make cards-check` rc=0（49 张全合规、109 desc 6 行）；`mkfiles.py` 重算 `files.js`；deploy 三道闸全绿；详见 §BE-DEVBUILD-2026-10-20 |
 | 2026-10-20 | **所有卡（共享件：Makefile / 构建闸）** | `native/tools/devbuild.py`（新）、`native/Makefile`（`dev:`）、`native/README.md`（新）、`patch/th18/cards.js`（201 三项置 0）、`patch/files.js` | 新增一条命令的构建闸：校验→构建→发布→回读→汇总；新增「调试卡不可见」闸；加 `make dev` 入口 | owner 今天连环翻车（109 desc / 201 进图册 / 旧 BGM / 冲突标记）⇒ 纪律变成闸；详见 §BE-DEVBUILD-2026-10-20 | 三个故意故障均被拦；全绿 PASS 表见 §BE-DEVBUILD-2026-10-20 |
@@ -4894,6 +4895,33 @@ UI 列表尾插、组内后生成者后画（§2b.4）。
 | 2026-09-13 | **所有卡（共享件，追加式）** | 见下方「§BE 详录 #11」 |
 | 2026-09-13 | **所有卡（共享件，追加式）** | 见下方「§BE 详录 #12」 |
 | 2026-10-25 | **所有卡（共享件 `sdk.c`）+ 109/111** | `native/sdk.c`、`native/cards/pofv.c`、`native/cards/signal.c` | 性能 C2：两处整池 2000 槽平扫降频（每 2 帧）、染色去重 O(n²)→O(1)、镜像压暗只在变化时写、卡链自检每 60 帧、8 MB 探针发布档编译掉 ⇒ 详见 §BE-PERF-C2-2026-10-25 | owner 诊断「二面弹数放大 / 全程固定付」 | `make dll` 0/1/2 rc=0、`dllx87` 0、`test-host` 全绿、`dllverify` 23 exports；md5 `2f20088b…` |
+
+#### §BE-STOCK-LAYER-2026-10-24（80 股市：面板 layer 25 → 26，owner 点名改回最早那一版）
+
+- **改了哪个文件**：`assets/ability/scripts/104_stock_rect.anm.txt` —— **只有 `layer()` 一格**。
+  脚本正文（`sprite(-1)` / `resolutionMode(2)` / `drawRect(1.0f,1.0f)` / `stop()` / `interruptLabel(1); delete()`）、
+  贴图、脚本号（104）、`anm_ids.h` 全部未动。`build/ability.anm` 已重建（生成物，不入库）。
+- **最早 = 26**：`0f852c7a`（2026-09-08，股市 id 80 的第一个实现：C 买 / Shift+C 卖、K 线面板、HUD 读数）。
+- **被改成 25**：`4fb3ae37`（2026-09-12，官方零售切图那批，同批把 `99_hud_digit` / `105_hud_number` 也改了）：
+
+  ```diff
+  --- a/mods/th18.v1.00a/card-expand/assets/ability/scripts/104_stock_rect.anm.txt
+  +++ b/mods/th18.v1.00a/card-expand/assets/ability/scripts/104_stock_rect.anm.txt
+  @@
+       sprite(-1);
+  -    layer(26);
+  +    layer(25);
+       resolutionMode(2);
+  ```
+
+- **为什么改回**：owner 2026-10-24 原话「股市这张卡的**股市部分的 layer** 在某次更新之后被搬到**靠下**了，
+  得搬回**原来的 layer**（参考**最最最前面的 git 记录**）」⇒ 最早那一版就是 **26**。
+- ⚠ **与 2026-09-12 那条规则相反**：那批改 25 的理由是「HUD 必须画在会被暂停模糊罩盖住的层上」
+  （layer 25 = 组 38 = 被罩；layer 26 = 组 39 = 罩子之后画 = 暂停时清晰，见 §BD 与 `HUD-LAYOUT.md` §4.1）。
+  **本次是 owner 点名要的例外、只针对股票面板**；`99_hud_digit` / `105_hud_number` **仍 25**。
+  影响面：凡是复用脚本 104（`ce_hud_rect` / HUD 调试框）的地方也会一起到 26（同一条脚本，无法只挑股市）。
+- **验证**：`python3 assets/build_ability.py` rc=0 + `--verify-only` rc=0；`git diff` 只有那一格 + 注释；
+  `make dll CE_DEV_DUMP=0/2` rc=0、`make test-host` rc=0、`make dllx87` = 0、`dllverify` 23 exports。
 
 #### §BE-DEVBUILD-2026-10-20（构建闸：一条命令，任何一步红就停）
 
