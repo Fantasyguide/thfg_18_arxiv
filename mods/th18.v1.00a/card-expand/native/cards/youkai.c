@@ -98,6 +98,16 @@
 #define YK_ENEMY_PARENT_ID 0x6834   /* zEnemy.parent_enemy_id（= spawn params +0x50 的去处）*/
 /* ★ 2026-10-24：判定圆半径（`lolk.c:71` 的同一个定义，本卡自己的副本 —— engine.h 没有）*/
 #define CE_PLAYER_HIT_RADIUS     0x4799c    /* float：原生 3.0 */
+/* ★★★ 2026-10-24（owner 订正口径）：**不是"在圈内的道具变慢"，而是"有弹幕在擦弹圈内 ⇒ 全屏道具都变慢/抖动/变黄"**。
+ *   ⇒ 判据改用 115 自己写进引擎的那个因子：`itemmgr+0xe6bb14`（`CE_ITEM_SLOWDOWN`，TH15 残骸）
+ *     —— 115 在"擦弹中"把它写成 < 1.0（`lolk.c:336` 的 `LOLK_SLOW_START/100`），恢复写 1.0。
+ *   这样 108 不需要自己判几何，也与 115 的时机**同帧一致**。*/
+static int yk_115_graze_slow(void)
+{
+    uint8_t *im = CE_ITEM_MANAGER();
+    if (!im) return 0;
+    return *(const float *)(im + CE_ITEM_SLOWDOWN) < 0.999f;
+}
 /* 使魔皮肤（review §6.5.4 说要 `anmSelect` 的等价物）—— ❓ **未证实，别照抄这两个偏移**。
  * 2026-09-12 对抗审计（一手反查 `local/_scratch/th18_full.asm`）：
  *   ① 全反汇编里 `+0x1490` / `+0x149c` 作为内存操作数**一条引用都没有**
@@ -7091,7 +7101,28 @@ static int yk_orbs_tick(yk_card_t *s)
         if (o->state == YK_ORB_STATE_SPAWN || o->state == YK_ORB_STATE_SPAWN5) {
             /* 出生上浮：`vy += 0.05`；`vy > 0` 那一刻转归航（一手 `th08:0x4406ac` / `:0x4406e4`）。
              * ⚠ 3 与 5 在这一支**逐指令同形**，差别只在下面那道「能不能收」的闸（§BE #111）。*/
+            /* ★ 2026-10-24（owner：**「无敌」= 刚刷出来的那个状态，也要受影响**）——
+             *   同一套 115 擦弹圈判据，作用在**出生上浮**这一支上（下落支已经有一份）。*/
+            {
+                int slow0 = 0;
+                if (ce_owned(115u)) {
+                    const float *pp4 = ce_player_pos();
+                    uint8_t *pl4 = CE_PLAYER();
+                    if (pp4 && pl4) {
+                        const float gr0 = *(const float *)(pl4 + CE_PLAYER_HIT_RADIUS) * 3.6f;
+                        const float ddx0 = o->x - pp4[0], ddy0 = o->y - pp4[1];
+                        if (ddx0 * ddx0 + ddy0 * ddy0 <= gr0 * gr0) slow0 = 1;
+                    }
+                }
+                if (slow0) {
+                    o->vx = ((ce_sdk_frame() >> 3) & 1u) ? 0.6f : -0.6f;
+                    if (o->anm_id) ce_anm_set_color(o->anm_id, 0xffffd040u);
+                    o->vy += YK_ORB_GRAVITY * 0.5f;
+                    goto yk_orb_grav_done;
+                }
+            }
             o->vy += YK_ORB_GRAVITY;
+            yk_orb_grav_done: ;
             if (o->vy > 0.0f) {
                 /* ★★★ 2026-09-27（第三十九批）：**逢魔档的刻符「下落一小段之后直接消失」** ——
                  *   owner：「人逢魔生成的永点应该没有吸收过程……我目前能看见自动吸收过程」＋更早的
