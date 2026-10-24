@@ -100,7 +100,7 @@ int plant_tick(ce_card_t *c, const plant_def_t *def, uint32_t elapsed)
         int k;
         wp[0] = s->x; wp[1] = s->y; wp[2] = s->z;
         for (k = 0; k < PLANT_SWEEP_MONEY; ++k) {
-            if (!ce_spawn_item(2u, wp, -1.5707964f, 1.7f)) ce_money_pocket(1);
+            if (!ce_spawn_item(0x12u, wp, -1.5707964f, 1.7f)) ce_money_pocket(1);   /* ★ 0x12 = **金钱卡**（不是金钱点 type 2）*/
         }
         ce_log_key("plant: 92 清扫 —— %s 的植物换成金钱（%d 枚）", def->tag, PLANT_SWEEP_MONEY);
         plant_clear(c, def, "gw sweep");

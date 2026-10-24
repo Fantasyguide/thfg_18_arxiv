@@ -125,7 +125,7 @@ static int on_active_tick(ce_card_t *c, uint32_t elapsed)
         int k;
         wp[0] = s->x; wp[1] = s->y; wp[2] = s->z;
         for (k = 0; k < FL_SWEEP_MONEY; ++k) {
-            if (!ce_spawn_item(2u, wp, -1.5707964f, 1.7f)) ce_money_pocket(1);
+            if (!ce_spawn_item(0x12u, wp, -1.5707964f, 1.7f)) ce_money_pocket(1);   /* ★ 0x12 = **金钱卡**（不是金钱点 type 2）*/
         }
         ce_log_key("firelord: 92 清扫 —— 炎魔换成金钱（%d 枚）", FL_SWEEP_MONEY);
         dismiss(c, "gw sweep");
