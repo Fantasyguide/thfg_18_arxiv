@@ -1074,6 +1074,17 @@ void     ce_sweep_reset(void);                      /* 进程初始化 / 单测�
 uint32_t ce_sweep_bump(void);                       /* 92 发动：++代数，返回新值 */
 uint32_t ce_sweep_gen(void);                        /* 生产者读 */
 int      ce_sweep_should_run(uint32_t *seen);        /* 生产者每帧调；1 = 清一批 */
+  
+  /* ★★ 2026-10-24（owner：「111 信号系统 / 灵梦特技的**全屏吸收**没和季节道具、永点这些自建道具联动」）：
+   *   **吸收闸** —— 与清扫闸同形，但生产者要做的不是"换成钱"，而是**把自己那批就地收给自机**
+   *   （= 走它自己的收取路径：季节道具 `point_collect`、108 刻符 `yk_orb_collect`、117 动物灵
+   *   `token_collect`、112 掉落 `ufo_drop_collect`、109 灵力道具加灵力…）。
+   *   根因：111 的全屏吸收只扫**原生道具池**（`ce_item_collect_all`）+ 信仰点（`faith_collect_all`），
+   *   而上面这些是各卡 static 池、不在引擎池里 ⇒ 只能由生产者自己看到"有人吸收了"再收。 */
+  void     ce_absorb_reset(void);
+  uint32_t ce_absorb_bump(void);                       /* 111 全屏吸收：++代数 */
+  uint32_t ce_absorb_gen(void);
+  int      ce_absorb_should_run(uint32_t *seen);        /* 生产者每帧调；1 = 把自己那批收给自机 */
 
 /* ---- ★ 出框免删的**位掩码**（纯逻辑，主机可测；引擎侧位语义的完整证据在 `engine.h`）----
  * 详见 `engine/enemy/th18/09-enemy-offscreen-removal.md`：`flags_lo` bit2|bit3 置位 ⇒ 引擎

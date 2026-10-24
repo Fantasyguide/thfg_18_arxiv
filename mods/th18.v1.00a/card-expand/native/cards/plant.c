@@ -59,6 +59,9 @@ void plant_clear(ce_card_t *c, const plant_def_t *def, const char *why)
 
 int plant_activate(ce_card_t *c, const plant_def_t *def)
 {
+    /* ★ 2026-10-24：发动时把清扫代数对齐（否则"卡没生效时 92 打过"会留一个旧代数，
+     *   本次刚召出来的东西会在下一次 tick 被当成 92 的对象清掉）。*/
+    (void)ce_sweep_should_run(&s_plant_sweep_seen);
     uint8_t *p = CE_PLAYER();
     if (!p) return ce_refuse(def->tag, "no player");
     int power = CE_CURRENT_POWER();
@@ -95,7 +98,12 @@ int plant_tick(ce_card_t *c, const plant_def_t *def, uint32_t elapsed)
     plant_state_t *s = ce_state(c, plant_state_t);
     if (!s) return 0;
     /* ★★ 2026-10-24（92 清扫）：种着的植物 → 换金钱 + 清 VM（植物本体是纯 VM，敌人扫描看不见它）*/
-    if (s->anm_id && ce_sweep_should_run(&s_plant_sweep_seen)) {
+    {   /* ★★★ 2026-10-24 修 bug（owner：紧跟着 92 之后放的召唤物直接变钱卡）——
+     *     原来 `if (s->anm_id && ce_sweep_should_run(&seen))` 是**短路**：92 那一刻场上没有召唤物
+     *     时代数根本没被消费 ⇒ 之后任何一次召唤都会看到"旧代数" ⇒ 刚放出来的那只立刻被清成钱。
+     *     ⇒ 代数每帧**无条件消费**，只有"当时真在场"的才清。*/
+        const int gw_sweep = ce_sweep_should_run(&s_plant_sweep_seen);
+        if (gw_sweep && s->anm_id) {
         float wp[3];
         int k;
         wp[0] = s->x; wp[1] = s->y; wp[2] = s->z;
@@ -106,6 +114,7 @@ int plant_tick(ce_card_t *c, const plant_def_t *def, uint32_t elapsed)
         plant_clear(c, def, "gw sweep");
         return 0;
     }
+        }
     if (!ce_anm_get_vm(s->anm_id)) {                       /* 引擎把 VM 收掉了（O29h 同款）：本体没了就结束 */
         ce_log("%s: body vm gone at frame %u", def->tag, s->frames);
         s->anm_id = 0;

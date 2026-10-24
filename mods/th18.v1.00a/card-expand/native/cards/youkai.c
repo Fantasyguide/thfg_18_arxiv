@@ -6454,6 +6454,24 @@ static void yk_orb_kill_all(void)
  *      —— 刻符在场上成批出现，量级比 token 大得多）—— 见 `TUNING.md` 的 108 段。*/
 #define YK_SWEEP_MONEY_PER_ORB 1
 static uint32_t s_sweep_seen;
+static uint32_t s_yk_absorb_seen;   /* ★ 111 全屏吸收闸 */
+
+/* ★★ 2026-10-24（owner）：111 全屏吸收 → 场上的刻符（自建池）也当场收给自机。*/
+static int yk_orb_collect(yk_card_t *s, float x, float y);   /* 前向声明（定义在下面）*/
+
+static void yk_absorb_all(yk_card_t *s)
+{
+    /* ★ 2026-10-24（owner）：**全屏吸收 = 刻符朝自机飞过来**（不是当场入账消失）。
+     *   切到归航态（一手 `ITEM_STATE_UNK1`：当帧满速朝自机）⇒ 由归航/触收那条路正常收。*/
+    unsigned i, n = 0;
+    for (i = 0; i < YK_ORB_MAX; ++i) {
+        yk_orb_t *o = &s_orb[i];
+        if (!o->used) continue;
+        if (o->state != YK_ORB_STATE_HOMING) { o->state = YK_ORB_STATE_HOMING; ++n; }
+    }
+    if (n) ce_log_key("youkai: 111 全屏吸收 —— %u 颗刻符转归航", n);
+    (void)s;
+}
 
 static void yk_sweep_to_money(yk_card_t *s)
 {
@@ -8246,7 +8264,11 @@ static void yk_gauge_hud_update(yk_card_t *s)
     if (s->hud_bar) {
         ce_anm_set_pos(s->hud_bar, h.bar_x, h.bar_y, 0.0f);
         ce_anm_set_scale(s->hud_bar, h.px, h.px);
-        ce_anm_set_color(s->hud_bar, 0xff000000u | col);   /* 一手：槽条用**同一个**颜色（AsciiManager.cpp:1060）*/
+        /* ★ 2026-10-24（审计 P1）：这里原来写 `0xff000000|col`，随后下面「共享带 alpha」那段又用
+         *   `(a<<24)|0x00ffffff` 覆盖一次 ⇒ **RGB 被洗成白**（条永远白、数字有色）。
+         *   ⇒ 只在这里写一次（带 alpha + 染色），并把 bar 从下面那个"只改 A"的循环里摘掉。*/
+        ce_anm_set_color(s->hud_bar,
+                         (((uint32_t)ce_hud_band_dim_alpha() & 0xffu) << 24) | (col & 0x00ffffffu));
     }
     if (s->hud_human) {
         ce_anm_set_pos(s->hud_human, h.human_x, h.human_y, 0.0f);
@@ -8284,10 +8306,10 @@ static void yk_gauge_hud_update(yk_card_t *s)
         const uint32_t a = (uint32_t)ce_hud_band_dim_alpha() & 0xffu;
         uint32_t *ids[4];
         int q;
-        ids[0] = &s->hud_bar;  ids[1] = &s->hud_human;
+        ids[0] = 0;  /* bar 已在上面按"带 alpha + 染色"写过，别再洗白 */  ids[1] = &s->hud_human;
         ids[2] = &s->hud_youkai; ids[3] = &s->hud_cursor;
         for (q = 0; q < 4; ++q)
-            if (*ids[q] && ce_anm_get_vm(*ids[q])) ce_anm_set_color(*ids[q], (a << 24) | 0x00ffffffu);
+            if (ids[q] && *ids[q]) ce_hud_dim_apply(*ids[q]);   /* ★ 统一接 sdk：A 走带 + 插值器 */
         /* ★ 2026-10-03z11（owner：「**108 人妖槽的数字部分也没有接入**」）——
          *   百分比/夜点的**字形 VM**（`s->hud_digit[]`）与上面四支同款处理。*/
         for (q = 0; q < YK_GAUGE_TEXT_MAX; ++q)
@@ -11255,6 +11277,7 @@ static int on_tick_2(ce_card_t *c)
         }
     }
     if (ce_sweep_should_run(&s_sweep_seen)) yk_sweep_to_money(s);   /* ★ 92 清扫：刻符 → 金钱 */
+      if (ce_absorb_should_run(&s_yk_absorb_seen)) yk_absorb_all(s);   /* ★ 111 全屏吸收 */
     yk_orbs_tick(s);
     {
         uint32_t graze = *(const uint32_t *)(uintptr_t)CE_ADDR_GRAZE;

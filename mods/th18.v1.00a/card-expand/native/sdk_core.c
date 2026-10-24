@@ -2169,6 +2169,36 @@ int ce_sweep_should_run(uint32_t *seen)
     return 1;
 }
 
+/* ---- 吸收闸（111 全屏吸收用；与清扫闸同形）---- */
+static uint32_t s_absorb_gen = 1;
+
+void ce_absorb_reset(void)
+{
+    s_absorb_gen = 1;
+}
+
+uint32_t ce_absorb_bump(void)
+{
+    ++s_absorb_gen;
+    if (!s_absorb_gen) s_absorb_gen = 1;
+    return s_absorb_gen;
+}
+
+uint32_t ce_absorb_gen(void)
+{
+    return s_absorb_gen;
+}
+
+int ce_absorb_should_run(uint32_t *seen)
+{
+    uint32_t g = s_absorb_gen;
+    if (!seen) return 0;
+    if (!*seen) { *seen = g; return 0; }     /* 第一次 tick：只登记 */
+    if (g == *seen) return 0;
+    *seen = g;
+    return 1;
+}
+
 int ce_dup_should_run(uint32_t *seen)
 {
     uint32_t g = s_dup_gen;
