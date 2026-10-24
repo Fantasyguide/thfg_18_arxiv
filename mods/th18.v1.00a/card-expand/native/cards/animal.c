@@ -2198,7 +2198,9 @@ static void hud_sync(animal_card_t *s)
             }
             if (s->hud_soul[i]) {
                 ce_anm_set_pos((uint32_t)s->hud_soul[i], x, y, 0.0f);   /* 每帧写 */
-                if (faded || s->hud_fade_touched) ce_anm_set_color((uint32_t)s->hud_soul[i], A | 0x00ffffffu);
+                /* ★ 2026-10-24（审计 P2）：不能在「回到 255」那一帧跳过 —— `hud_fade_touched` 已在
+                 *   `hud_fade_tick()` 里先清掉，跳过就停在本该淡回的斜坡倒数第二格（231）。*/
+                ce_anm_set_color((uint32_t)s->hud_soul[i], A | 0x00ffffffu);
             }
         }
     }
@@ -3953,7 +3955,7 @@ static int on_tick_2(ce_card_t *c)
     ce_dup_publish((uint32_t)ce_card_id(c), (int)s_n_tok);
     if (ce_dup_should_run(&s_dup_seen)) animal_dup_run();
     if (ce_sweep_should_run(&s_sweep_seen)) animal_sweep_to_money();   /* ★ 92 清扫：动物灵 token → 金钱 */
-    /* ★ 2026-10-01（跨卡只读标志；交接 = `HANDOFF-108-CROSSCARD-SHIFT.md`）：每帧按 `roaring(s)`
+          /* ★ 2026-10-01（跨卡只读标志；交接 = `HANDOFF-108-CROSSCARD-SHIFT.md`）：每帧按 `roaring(s)`
      *   重算「暴走咆哮中」——**零发明**（判据现成：`core.ready || core.hypering`），
      *   也正好绕开「还有没有别的入口把咆哮打开」这个未普查项（交接 §6.1）。粘性；删卡由
      *   `ce_layer_drop_card()` 收（`clear_card()` 里再显式撤一次，双保险）。

@@ -917,6 +917,45 @@ def verify_count_binhack(name, bh, text, text_va):
     return []
 
 
+def emit_native_tweaks_binhacks():
+    """原生卡的「常驻化」补丁（owner 2026-10-24：招财猫常驻 +3）。
+
+    一手：`CardShop__build_offers` `0x4171b0`（engine/card/th18/05-shop-and-money.md §4）：
+      三档各 pick 一次，然后 `if 卡组里有 id 0x26(38 MANEKI): pick(1, 0xe)` 再补一张
+      ⇒ 常态 3 张、带招财猫 6 张。
+    要的口径：**常驻 6 张**（= 这张原生卡拿了也没有额外效果）。
+    做法：三处「找到 0x26 才跳去加抽」的 `je rel8`（`74 09`）改成 `jmp rel8`（`eb 09`）
+      —— 同长度、目标不变、无条件跳 ⇒ 永远加抽。只在 alloc（255 行）下生效。
+    """
+    out = {}
+    for n, (addr, which) in enumerate((
+            (0x417336, "第一档（高价 300-500）"),
+            (0x4173a6, "第二档（中价 200-280）"),
+            (0x417416, "第三档（低价 50-180）")), 1):
+        out["maneki_always_pick%d" % n] = {
+            "addr": "0x%06x" % addr,
+            "expected": "7409",
+            "code": "eb09",
+            "title": "★ 招财猫常驻：第%d档 pick 后『卡组里有 0x26(MANEKI) 才加抽』"
+                     "改成无条件加抽（je → jmp）⇒ 商店随机位恒为 6（%s）" % (n, which),
+        }
+    # ★ 2026-10-24（owner：「注意还得有那个什么禁用手柄」）—— 原 th18_disable_controller_polling
+    #   那两条 binhack 并进本 patch：两个包都提供 `th18.v1.00a.js`，一起开会被后加载的那份整份盖掉。
+    out["disable_xinput_polling"] = {
+        "addr": "0x401860",
+        "expected": "558bec",
+        "code": "31c0c3",
+        "title": "禁用手柄：XInput 轮询直接 return 0",
+    }
+    out["disable_directinput_polling"] = {
+        "addr": "0x401650",
+        "expected": "558bec81ec20010000",
+        "code": "8b442404c204009090",
+        "title": "禁用手柄：DirectInput 轮询早退",
+    }
+    return out
+
+
 def emit_sht_binhacks(text, text_va):
     """pl0X.sht 组数扩容 —— **只有 1 条**：把解析器的数据区基址 `0x180` 换成 `0x4e0`。
 
@@ -2201,6 +2240,8 @@ def main():
         doc["codecaves"].update(emit_sound_codecaves())
         doc["binhacks"].update(emit_sound_binhacks(text, text_va))
         doc["breakpoints"].update(emit_sound_breakpoints(text, text_va))
+        # ---- 原生卡常驻化（owner 2026-10-24：招财猫常驻 +3 ⇒ 商店恒 6 张）----
+        doc["binhacks"].update(emit_native_tweaks_binhacks())
     txt = json.dumps(doc, indent=2, ensure_ascii=False)
     if a.out:
         out = a.out if os.path.isabs(a.out) else os.path.join(HERE, a.out)

@@ -313,6 +313,7 @@ typedef struct {
 
 /* ★ 池是 DLL 静态区：ce_state 只有 496 字节，装不下几十颗点（见 AUDIT AF12 的同款静态池）*/
 static season_point_t s_pt[SEASON_POINT_POOL];
+static uint32_t s_season_absorb_seen;   /* ★ 111 全屏吸收闸 */
 
 /* ★ 掉落统计（诊断用，静态区）：每 600 帧打一条汇总，方便对「哪些敌人没掉」对账 */
 static int32_t s_stat_mid, s_stat_boss, s_stat_skip, s_stat_points;
@@ -837,6 +838,22 @@ static void points_tick(ce_card_t *c, season_card_t *s)
                                                  : CE_PLAYER_ITEM_ATTRACT_RU));
         if (r > 0.0f) ring_r2 = r * r;
         poc = *(float *)(pl + CE_PLAYER_POC_HEIGHT);
+    }
+
+    /* ★★ 2026-10-24（owner）：**全屏吸收 = 道具朝自机飞过去**（不是当场入账消失）——
+     *   季节道具不在引擎池里，111 扫不到 ⇒ 本卡自己把它们切到"回收线"那一档（state 3 =
+     *   朝自机飞，速度为自机的道具吸引速度），之后照常由距离判定收下（记账/音效/升档都不变）。*/
+    if (ce_absorb_should_run(&s_season_absorb_seen)) {
+        int ai;
+        for (ai = 0; ai < (int)s->n_pt; ++ai) {
+            season_point_t *ap = &s_pt[ai];
+            if (ap->state == 0) { ap->delay = 0; continue; }   /* 还没发射的：立刻发射，下一帧起飞 */
+            ap->state = 3;
+            ap->mag20 = (uint8_t)(mag_speed * 20.0f);
+            if (ap->mag20 > 240) ap->mag20 = 240;
+            if (ap->mag20 == 0) ap->mag20 = 1;
+        }
+        ce_log_key("season: 111 全屏吸收 —— 季节道具切到朝自机飞");
     }
 
     while (i < s->n_pt) {
@@ -1946,7 +1963,24 @@ static int on_draw(ce_card_t *c)
         if (s->hud_grad)  { ce_anm_set_color((uint32_t)s->hud_grad,  A | c1);
                             ce_anm_set_color2((uint32_t)s->hud_grad, A | c2); }
         if (s->hud_solid) ce_anm_set_color((uint32_t)s->hud_solid, (lvl_up ? A : 0u) | lvl_c[level]);
-        for (fi = 0; fi < SEASON_FRAME_N; ++fi)
+        /* ★★★ 2026-10-24（owner：「116 HUD 的**季节**和 **releasable** 没接入 HUD 的透明度」）——
+         *   这两支（126 季节字 / 127 releaseable 条）的 alpha 本来只由脚本 label 4/5 管，
+         *   但引擎在**绘制前**会拿插值器覆盖 color 的 A（一手 `0x47c7f2` / `0x47c82f`）⇒
+         *   脚本那套 `alphaTime` 到不了画面 ⇒ 它们永远不跟着压暗。
+         *   ⇒ 与 108 浮字同法：把两组 alpha 插值器（初始/目标/当前）直接写成目标值。
+         *   ⚠ owner 特别交代：**releaseable 在 0 级 / 不可解放时必须 alpha(0)**（脚本 label 3 的隐藏态）
+         *     ⇒ 这一支只在 can_release 时写 hud alpha，否则显式写 0，绝不能被"统一透明度"点亮。*/
+        {
+            /* ★★ 2026-10-24（owner：“统一接 sdk” + “季节指示消失了”）——
+             *   上一版我**只写插值器三格、没写 color_1.A**：这两支脚本的初始态是 `alpha(0)`，
+             *   引擎绘制读的就是 color_1.A ⇒ 结果整支恒透明（季节指示消失）。
+             *   ⇒ 改用 SDK 的统一写法 `ce_hud_dim_apply_a()`：它**同时**写 color_1.A 与两组插值器三格。
+             *   ⚠ releaseable 在不可解放时必须 0（脚本 label 3 的隐藏态），不许被统一透明度点亮。*/
+            const int can_rel = (level >= 1) && (s->rel_frames <= 0);
+            const int32_t hud_a = (int32_t)(s->hud.alpha & 0xffu);
+            if (s->hud_glyph) ce_hud_dim_apply_a((uint32_t)s->hud_glyph, hud_a);
+            if (s->hud_strip) ce_hud_dim_apply_a((uint32_t)s->hud_strip, can_rel ? hud_a : 0);
+        }        for (fi = 0; fi < SEASON_FRAME_N; ++fi)
             if (s->hud_frame[fi]) ce_anm_set_color((uint32_t)s->hud_frame[fi], A | 0x00505050u);
         /* ★★ 2026-09-15i：**C 侧那层 `min(脚本 α, 32)` 兜底已撤**（脚本已统一，见下）。
          *   · 2026-09-15g 那一轮这里做过一段「上限钳制」：只对**由脚本管 alpha 的两支**

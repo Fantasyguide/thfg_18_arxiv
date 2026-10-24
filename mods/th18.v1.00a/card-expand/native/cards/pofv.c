@@ -509,6 +509,7 @@ static int   s_boss_prev;   /* ★ owner 2026-10-05：boss 表 0→1 的**边沿
  *     灵力道具成批出现）。*/
 #define POFV_SWEEP_MONEY_PER_ITEM 1
 static uint32_t s_sweep_seen_gw;
+static uint32_t s_absorb_seen;   /* ★ 111 全屏吸收闸（灵力道具/樱点）*/
 
 static void pofv_sweep_to_money(void)
 {
@@ -11099,6 +11100,20 @@ static int on_tick_2(ce_card_t *c)
      *   `s_reiryoku`（**灵力** = 蓄力上限 ✓，owner 2026-10-10 口径 —— 见 `s_reiryoku` 声明处注释 ✓）。*/
     {
         int32_t got_pts = 0;
+        /* ★★ 2026-10-24（owner）：**全屏吸收 = 灵力道具朝自机飞过去**，不是当场入账。
+         *   这几颗不在引擎池里 ⇒ 本卡自己把它们切到 TH16 季节道具的 **state 4（回收线）**：
+         *   速度 = `sht+8` = 6.0、朝自机 ⇒ 下一帧起看得见地飞过去，再由距离判定正常收下。*/
+        if (ce_absorb_should_run(&s_absorb_seen)) {
+            int abk, abn = 0;
+            for (abk = 0; abk < POFV_POWER_MAX; ++abk) {
+                pofv_power_t *abi = &s_power.s[abk];
+                if (!abi->active) continue;
+                abi->delay = 0;
+                if (abi->st != 4) { abi->st = 4; ++abn; }
+            }
+            if (abn) ce_log_key("pofv: 111 全屏吸收 —— %d 颗灵力道具转回收线", abn);
+        }
+
         int got_n = pofv_power_tick(&s_power, ce_player_pos(),
                                                /* ★★ 2026-10-24（owner：「读真 PoC 线高度」）：
                                                 *   回收线是**游戏判定**，必须用引擎字段真值（含 106 的「遮」）；

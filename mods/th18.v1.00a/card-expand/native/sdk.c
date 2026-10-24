@@ -1534,7 +1534,21 @@ void ce_hud_vm_text_set_font(ce_hud_vm_text_t *t, float x, float y, uint32_t bgr
              *   ⇒ 点**不可能**在自己的步进里居中（居中会让墨迹探进下一个数字 6 px，就是 owner 看到的"重合"）
              *   ⇒ 只能把它摆在「前一个数字右缘之后、下一个数字左缘之前」的 8 px 窗口里，左右各留 1 px：
              *     目标墨迹左缘 = pen − 6 ⇒ `pos = pen + 1` ⇒ 偏移 = `adv_dot×0.125×sx×dat`（此处 = 1 px）。*/
-            pos[0] = pen + ((*p == '.') ? f->adv_dot * 0.125f * sx * dat : 0.0f);   /* ★ 2026-10-24：1/8 格（左右各留 1 px）*/
+            pos[0] = pen + ((*p == '.') ? f->adv_dot * 0.125f * sx * dat : 0.0f);
+          /* ★ 2026-10-24 临时探针（owner：「115 chapter finish 的非数字部分往右偏」）——
+           *   把 lolk 这几行的逐字落点打出来（1 档可见、前 30 次）：x 是**表面 px**，
+           *   与 `pen`（含右对齐偏移）对照即可看出哪个字偏、偏多少。*/
+          {
+              static int s_lolk_logs;
+              if (tag && strcmp(tag, "lolk") == 0 && s_lolk_logs < 30) {
+                  ++s_lolk_logs;
+                  ce_log_key("lolk text[%d]: \"%s\" x=%.2f y=%.2f scale=%.2f total=%.2f pen=%.2f char='%c' "
+                             "spr=%u adv=%.2f posx=%.2f adv_dot=%.2f",
+                             s_lolk_logs, s, (double)x, (double)y, (double)scale, (double)total,
+                             (double)pen, *p, spr, (double)adv, (double)pos[0], (double)f->adv_dot);
+              }
+          }
+   /* ★ 2026-10-24：1/8 格（左右各留 1 px）*/
             pos[1] = ytop + f->vm_dy * sy * dat; pos[2] = 0.0f;
             if (*id && !ce_anm_get_vm(*id)) { *id = 0; t->shown[slot] = 0; }
             if (!*id) {

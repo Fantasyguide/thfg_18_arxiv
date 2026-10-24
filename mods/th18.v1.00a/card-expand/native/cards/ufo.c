@@ -5385,6 +5385,11 @@ static void ufo_hud_slots_tick(ufo_card_t *s, int ufo_on_field)
             if (s_flash_left[i]) {
                 --s_flash_left[i];
                 ufo_hud_place_at(i, s_flash_id[i]);
+                /* ★ 2026-10-24（审计 P0）：闪光 VM 原来一个 color 都不写（脚本 303 只有 alpha()）
+                 *   ⇒ 压暗时同排都 64、只有它恒 255。每帧只换 A、保 RGB。*/
+                if (s_flash_id[i])
+                    (void)ce_anm_set_color(s_flash_id[i],
+                            (((uint32_t)ce_hud_band_dim_alpha() & 0xffu) << 24) | 0x00ffffffu);
             } else {
                 s_flash_id[i] = 0;                    /* 一手：脚本 303 已自删 ⇒ 句柄作废 */
             }
@@ -6253,7 +6258,7 @@ static int on_tick_2(ce_card_t *c)
                    ufo_dup_bag_count() + ufo_dup_tok_count() + ufo_dup_bomb_count());
     if (ce_dup_should_run(&s_dup_seen)) { ufo_dup_run(s); ufo_dup_tokens(s); }
     if (ce_sweep_should_run(&s_sweep_seen)) ufo_sweep_to_money();   /* ★ 92 清扫：飞碟 token → 金钱 */
-    ce_dup_publish((uint32_t)ce_card_id(c), ufo_dup_bag_count());
+          ce_dup_publish((uint32_t)ce_card_id(c), ufo_dup_bag_count());
     if (ce_dup_should_run(&s_dup_seen)) ufo_dup_run(s);
 
     if (s->pending_break) {                            /* ② 击破（死亡栈里只记了位置）*/
