@@ -939,6 +939,20 @@ def emit_native_tweaks_binhacks():
             "title": "★ 招财猫常驻：第%d档 pick 后『卡组里有 0x26(MANEKI) 才加抽』"
                      "改成无条件加抽（je → jmp）⇒ 商店随机位恒为 6（%s）" % (n, which),
         }
+    # ★ 2026-10-24（owner：「注意还得有那个什么禁用手柄」）—— 原 th18_disable_controller_polling
+    #   那两条 binhack 并进本 patch：两个包都提供 `th18.v1.00a.js`，一起开会被后加载的那份整份盖掉。
+    out["disable_xinput_polling"] = {
+        "addr": "0x401860",
+        "expected": "558bec",
+        "code": "31c0c3",
+        "title": "禁用手柄：XInput 轮询直接 return 0",
+    }
+    out["disable_directinput_polling"] = {
+        "addr": "0x401650",
+        "expected": "558bec81ec20010000",
+        "code": "8b442404c204009090",
+        "title": "禁用手柄：DirectInput 轮询早退",
+    }
     return out
 
 
