@@ -8546,15 +8546,18 @@ static void yk_hud_claim(ce_card_t *c, yk_card_t *s)
     __builtin_memset(&blk, 0, sizeof blk);
     blk.w = YK_HUD_BLOCK_W;
     blk.h = YK_HUD_BLOCK_H;
-    blk.side = CE_HUD_SIDE_PINNED;                 /* 非 pinned 会被 pinned 入口拒掉 */
-    s->hud_ready = (uint8_t)(ce_hud_slot_claim_pinned_card(
-        ce_card_id(c), &blk, YK_HUD_PIN_X,
-              /* ★★★ 2026-10-24（owner：「货架系统的 108 怎么把 109 顶上去了？」）——
-               *   本卡 pinned 块占底边最左那一行（256×53），而 109 的蓄力槽是**优先级 100、
-               *   要占满底边整行**；pinned 又是"先摆且是障碍"（`sdk_core` z8）⇒ 108 一占，
-               *   109 只能被抬到上一行。⇒ 109 在场时把 108 整体上移 **46**（109 块高 42 + 4 间隙）；
-               *   109 不在场时位置逐像素不变。*/
-              (ce_owned(109u) ? YK_HUD_PIN_Y - 46.0f : YK_HUD_PIN_Y), &s->hud) ? 1 : 0);
+    /* ★★★ 2026-10-24（owner：「**你要对 2^系统卡次方 进行微调吗？！**」——这一条把 pairwise 打补丁的方式否掉了）
+     *   原来本卡用 **pinned（固定锚点）**：pinned 由锚点定位置、在分配器里是"先摆 + 障碍"
+     *   ⇒ 谁在底边都会被它挡开（108 把 109 顶上去就是这么来的）。
+     *   任何"看到某张卡就挪几 px"的写法都是**按卡两两配对** ✗（N 张系统卡 = 2^N 种组合，穷举不完）。
+     *   ⇒ 正解：**本卡做普通货架成员**，让同一个分配器排：
+     *     · `side = LEFT` ⇒ 走底边那一行；
+     *     · `priority = 90`（比 109 的 **100** 低）⇒ 109 先占底边、本卡在它右边/上一行；
+     *     · `own_row = 0` ⇒ 不独占一行。
+     *   ⇒ 与 109/110/111/112… 的任何组合都靠同一条规则收敛，无需逐对特判。*/
+    blk.side = CE_HUD_SIDE_LEFT;
+    s->hud_ready = (uint8_t)(ce_hud_slot_claim_card_ex(
+        ce_card_id(c), &blk, 90, 0, &s->hud) ? 1 : 0);
     /* ★ 2026-10-15（owner 报「108 + 77 + 71 同装 ⇒ 左下角**留出了主动卡的位置**」✗ 的**只读**诊断 ✓）：
      *   打一行「引擎判据 `mgr+0x38` vs 货架剩余宽」——有卡面 ⇒ 起点 124 ⇒ 宽 **700** ✓；
      *   没有 ⇒ 起点 68 ⇒ 宽 **756** ✓（底边右端 `CE_HUD_X_MAX` = 824 ✓，算式见 `sdk_core.h` 的让位段 ✓）。
