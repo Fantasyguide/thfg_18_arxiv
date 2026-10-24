@@ -840,14 +840,20 @@ static void points_tick(ce_card_t *c, season_card_t *s)
         poc = *(float *)(pl + CE_PLAYER_POC_HEIGHT);
     }
 
-    /* ★★ 2026-10-24（owner）：111 的全屏吸收要连**自建池**一起收 —— 季节道具不在引擎池里，
-     *   只能本卡自己做：收下（走 point_collect 的记账/音效/升档）+ 从池里摘掉。*/
+    /* ★★ 2026-10-24（owner）：**全屏吸收 = 道具朝自机飞过去**（不是当场入账消失）——
+     *   季节道具不在引擎池里，111 扫不到 ⇒ 本卡自己把它们切到"回收线"那一档（state 3 =
+     *   朝自机飞，速度为自机的道具吸引速度），之后照常由距离判定收下（记账/音效/升档都不变）。*/
     if (ce_absorb_should_run(&s_season_absorb_seen)) {
-        while (s->n_pt > 0) {
-            season_point_t *ap = &s_pt[0];
-            if (ap->id) point_collect(c, s, ap);
-            point_remove(s, 0);
+        int ai;
+        for (ai = 0; ai < (int)s->n_pt; ++ai) {
+            season_point_t *ap = &s_pt[ai];
+            if (ap->state == 0) { ap->delay = 0; continue; }   /* 还没发射的：立刻发射，下一帧起飞 */
+            ap->state = 3;
+            ap->mag20 = (uint8_t)(mag_speed * 20.0f);
+            if (ap->mag20 > 240) ap->mag20 = 240;
+            if (ap->mag20 == 0) ap->mag20 = 1;
         }
+        ce_log_key("season: 111 全屏吸收 —— 季节道具切到朝自机飞");
     }
 
     while (i < s->n_pt) {

@@ -6461,15 +6461,16 @@ static int yk_orb_collect(yk_card_t *s, float x, float y);   /* 前向声明（�
 
 static void yk_absorb_all(yk_card_t *s)
 {
-    unsigned i;
+    /* ★ 2026-10-24（owner）：**全屏吸收 = 刻符朝自机飞过来**（不是当场入账消失）。
+     *   切到归航态（一手 `ITEM_STATE_UNK1`：当帧满速朝自机）⇒ 由归航/触收那条路正常收。*/
+    unsigned i, n = 0;
     for (i = 0; i < YK_ORB_MAX; ++i) {
         yk_orb_t *o = &s_orb[i];
         if (!o->used) continue;
-        yk_orb_collect(s, o->x, o->y);   /* 走本卡自己的记账（灵界点/信仰）*/
-        yk_orb_kill(o);
+        if (o->state != YK_ORB_STATE_HOMING) { o->state = YK_ORB_STATE_HOMING; ++n; }
     }
-    s_orb_live = 0;
-    ce_log_key("youkai: 111 全屏吸收 —— 刻符全部收下");
+    if (n) ce_log_key("youkai: 111 全屏吸收 —— %u 颗刻符转归航", n);
+    (void)s;
 }
 
 static void yk_sweep_to_money(yk_card_t *s)
