@@ -508,6 +508,8 @@
 #define CE_PLAYER_INVULN_TIMER     0x47774    /* zTimer{prev,cur,float}；复活 0x45c35e 置 {0x117,0x118,280.0}，决死救回 60，炸弹各自置（SDK）*/
 #define CE_PLAYER_SPEED_MULT       0x477ec    /* float；Player tick 末尾 0x45c702 复位 1.0；移动 0x45b5b6 读。AbilityManager tick(0x16) 先于 Player(0x17) → on_tick_2 里写生效（SDK）*/
 #define CE_PLAYER_SPEED_BASE       0x477f0    /* float×2，每帧从 0x5217dc 复制（0x45c717）*/
+#define CE_PLAYER_STEP_STRAIGHT   0x477b4    /* i32：直线步长（1/128 px）。原生卡 29 疾风木屐 `0x40c82d` = (int)(sht[+0x10]*128)；不改它就没有引擎黄闪 */
+#define CE_PLAYER_STEP_DIAG       0x477bc    /* i32：斜向步长 `0x40c844` */
 #define CE_PLAYER_SHT_PTR          0x47940    /* zPlayer.sht_file*：GameThread 0x443d32 `mov eax,[ecx+0x47940]; mov eax,[eax+0x28]` 每帧复位伤害上限 */
 #define CE_SHT_MAX_DMG             0x28       /* sht 头 i32 max_dmg：Reimu 90 / Marisa 160 / Sakuya 60 / Sanae 120（engine/sht/th18/01 §5）；古锭刀终符抬到它的 2 倍 */
 /* ★ 2026-09-13（卡 113 灵界）：`pl0X.sht` 影像里**组指针数组**的偏移（40 项，解析时已被重定位成绝对指针）。
