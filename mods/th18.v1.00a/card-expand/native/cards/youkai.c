@@ -675,6 +675,9 @@ static uint32_t yk_vm_spawn(void *anm, int script, int layer)
     if (!YK_FX_VMS) { ++s_fx_skip; return 0; }
     ++s_fx_try; ++s_fx_try_win;
     id = ce_anm_spawn(anm, script, layer);
+    /* ★ 2026-10-24（owner：单装 108 就有"用判定点贴图的额外 VM"）：108 起 VM 的**唯一出口**，
+     *   每支都记一行 script/layer/id —— 这样不用扫任何指针就能看出多出来的是哪支。*/
+    ce_log_key("ykvm: script=%d layer=%d id=%08x", script, layer, (unsigned)id);
     if (!id) { ++s_fx_fail; ++s_fx_fail_win; }
     return id;
 }
@@ -3265,6 +3268,12 @@ static void yk_ring_kill_all(void)
  *   光环只在**妖侧**存在 ⇒ 每一条**离开妖侧**的路都要过 `yk_aura_kill()`，而它们**全都**经过
  *   `yk_drop_all()`（松 Shift / miss / 局末 / 删卡 / 换关 / 敌人管理器没了）⇒ 把它挂在 `yk_drop_all` 的
  *   最前面（与「发射口闸」同一个唯一复位口的思路）。kill = 发 `interrupt 1`（30 帧淡出后自删）+ 清句柄。*/
+/* ★★ 2026-10-24 owner：「直接把 312 这玩意删掉」——
+ *   312 = 本体 Shift 光环（TH08 etama.anm script54 的复刻，sprite218 = etama2.png 那张
+ *   64×64 火花云，**正中间自带一个深红空心环**）⇒ 叠在自机上看着就是「多了一个判定点」。
+ *   ⇒ 置 0 = 不再起这支 VM；`yk_aura_kill` 保留（老句柄一样能收）。
+ *   ⚠ 脚本 312 本体仍留在 ability.anm 里（没有 thtk 就无法重打包；不生成的 VM 不会被画）。*/
+#define YK_AURA_ENABLE 0
 #define YK_AURA_FLASH_MIN_AGE 4           /* 一手 `player+8 >= 4`（爆闪门；见上）*/
 
 static void yk_aura_kill(yk_card_t *s)
@@ -3284,6 +3293,7 @@ static uint32_t s_orb_log_pending;   /* ★ #42：下一帧要打的那颗 VM id
 static uint8_t s_aura_edge_spawn;   /* ★ #32/#29：光环「每个形态边沿只起一次」的许可位 */
 static void yk_aura_tick(yk_card_t *s, float x, float y)
 {
+    if (!YK_AURA_ENABLE) return;                  /* ★ 2026-10-24：312 已停用（owner 要求删掉）*/
     if (!s || !s->aura_on) return;
     if (s->aura_id && !ce_anm_get_vm(s->aura_id)) s->aura_id = 0;   /* 引擎清过 VM 列表 ⇒ 句柄作废 */
     /* ★★★ 2026-09-23（owner #32/#29：「th08 按 shift **光环动画持续触发**」，判据 = **切换那一下的边沿**）：
