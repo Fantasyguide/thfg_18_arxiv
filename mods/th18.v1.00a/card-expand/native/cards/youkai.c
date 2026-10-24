@@ -6655,7 +6655,7 @@ static void yk_popup_spawn_log(const char *tag, int32_t value, float x, float y)
     static unsigned s_popup_logged;
     if (s_popup_logged < 256u) {
         ++s_popup_logged;
-        ce_log("youkai/popup spawn: tag %s value %d at (%.0f,%.0f) frame %u",
+        ce_log_key("youkai/popup spawn: tag %s value %d at (%.0f,%.0f) frame %u",
                tag ? tag : "?", (int)value, (double)x, (double)y, (unsigned)ce_sdk_frame());
     } else if (s_popup_logged == 256u) {
         ++s_popup_logged;                                   /* 只打一次「收口」提示 */
@@ -6695,7 +6695,7 @@ static void yk_popup_spawn(float x, float y, int32_t value, int kind, uint32_t c
          *   在实跑里是「弹字被吃掉」的唯一可观测信号，据此决定要不要抬这个自定上限。*/
         ++s_popup_dropped;
         if (s_popup_dropped == 1 || (s_popup_dropped % 60) == 0)
-            ce_log("youkai: popup pool full, dropped %u popup(s) so far (YK_POPUP_MAX %d)",
+            ce_log_key("youkai: popup pool full, dropped %u popup(s) so far (YK_POPUP_MAX %d)",
                    s_popup_dropped, (int)YK_POPUP_MAX);
         return;
     }
@@ -6705,10 +6705,14 @@ static void yk_popup_spawn(float x, float y, int32_t value, int kind, uint32_t c
     if (kind == 1) p->g[p->n++] = YK_POPUP_GLYPH_PLUS;
     for (i = 0; i < n && p->n < (int)YK_POPUP_GLYPHS; ++i) p->g[p->n++] = dg[i];
     anm = yk_player_anm();
-    if (!anm) { p->n = 0; return; }
+    if (!anm) { p->n = 0; ce_log_key("popup: yk_player_anm() == NULL => popup dropped"); return; }
     for (i = 0; i < (int)p->n; ++i) {
         uint32_t id = yk_vm_spawn(anm, YK_GAUGE_SCRIPT_FONT[ch], YK_POPUP_ANM_LAYER);
-        if (!id) { yk_popup_kill(p); return; }
+        if (!id) {
+              ce_log_key("popup: VM spawn FAILED script=%d layer=%d glyph=%d => popup dropped",
+                         (int)YK_GAUGE_SCRIPT_FONT[ch], (int)YK_POPUP_ANM_LAYER, (int)p->g[i]);
+              yk_popup_kill(p); return;
+          }
         p->vm[i] = id;
         ce_anm_set_sprite(anm, id, YK_GAUGE_FONT_BASE[ch] + (int)p->g[i]);
     }
@@ -6742,8 +6746,25 @@ static void yk_popup_tick(void)
             /* ★ 2026-10-24：**身份**判据（不是活性）—— 见 `yk_vm_ours` 的长注：
              *   id 被引擎回收给别的 VM（典型 = 判定点指示 effect.anm script 0x1a）时，
              *   `ce_anm_get_vm(id)` 仍非 NULL ⇒ 我们每帧把 alpha/位置写到它头上。*/
-            if (!yk_vm_ours(id, (int)p->script)) { p->vm[i] = 0; continue; }
-            if (!ce_anm_set_pos(id, gx, p->y, 0.0f)) { p->vm[i] = 0; continue; }
+            if (!yk_vm_ours(id, (int)p->script)) {
+                  {   static unsigned s_pno;
+                      if (s_pno < 12u) { ++s_pno;
+                          ce_log_key("popup-tick: id NOT ours (id=%08x want_script=%d got_script=%d)",
+                                     (unsigned)id, (int)p->script,
+                                     (int)*(const int32_t *)(ce_anm_get_vm(id) ? (uint8_t *)ce_anm_get_vm(id) + CE_ANM_VM_SCRIPT_ID : 0)); } }
+                  p->vm[i] = 0; continue; }
+            /* ★★★ 2026-10-24（owner：+N 浮字老是不出现 · 实跑 `popup-tick: set_pos FAILED`）——
+               *   `ce_anm_set_pos()` 在这个相位被引擎拒（返回 0），旧代码把它当成"VM 没了"直接
+               *   `p->vm[i]=0` **静默丢字形** ⇒ 浮字永远不出现。
+               *   ⇒ 改成**直接写位置字段**（与下面写 layer / resolutionMode 同一条路）：
+               *     `vm+0x5f0` = x、`+0x5f4` = y、`+0x5f8` = z（一手 `0x405c7c movq [esi+0x5f0]`）。*/
+              {
+                  uint8_t *vm0 = (uint8_t *)ce_anm_get_vm(id);
+                  if (!vm0) { p->vm[i] = 0; continue; }
+                  *(volatile float *)(vm0 + 0x5f0) = gx;
+                  *(volatile float *)(vm0 + 0x5f4) = p->y;
+                  *(volatile float *)(vm0 + 0x5f8) = 0.0f;
+              }
             /* ★★★ 2026-09-30（**P0：浮字 UI「十分偏移」**，见 `AUDIT.md` §BE #162）：
              *   浮字 VM 用的 `YK_GAUGE_SCRIPT_FONT[]` 是**HUD 字形脚本**，它正文自带
              *   `layer(25); resolutionMode(2);` ⇒ 脚本一跑就**覆盖**我们创建时给的层，
@@ -6782,6 +6803,11 @@ static void yk_popup_tick(void)
             }
             (void)ce_anm_set_color(id, ((uint32_t)a << 24) | (p->color & 0x00ffffffu));
             (void)ce_anm_set_scale(id, p->scale, p->scale);
+              {   static unsigned s_pt;
+                  if (s_pt < 10u) { ++s_pt;
+                      ce_log_key("popup-tick: kind=%d id=%08x pos=(%.1f,%.1f) alpha=%02x scale=%.2f age=%u",
+                                 (int)p->kind, (unsigned)id, (double)gx, (double)p->y,
+                                 (unsigned)a, (double)p->scale, (unsigned)p->age); } }
         }
     }
 }
@@ -7724,7 +7750,7 @@ static void yk_on_enemy_killed(yk_card_t *s, const ce_enemy_death_t *ev)
          *   ⚠ 定额 64 行后收口（本卡有过 1.5 MB/min 日志洪水事故，`AUDIT.md` §BE #143）。*/
         if (s_kill_entry_logged < 64u) {
             ++s_kill_entry_logged;
-            ce_log("youkai/kill: enemy #%u kind %u side %d (1 = youkai/focused) live %u child part(s), "
+            ce_log_key("youkai/kill: enemy #%u kind %u side %d (1 = youkai/focused) live %u child part(s), "
                    "%u declared slot(s), %u remembered => n %u, burst %d%s",
                    (unsigned)ev->id, (unsigned)ev->kind, focused, n_child, n,
                    (unsigned)yk_orbit_gifted_count(ev->id), n_mem, n2,
