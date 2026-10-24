@@ -95,6 +95,9 @@ static int pick_random_enemy(float *tx, float *ty, uint32_t *out_n, uint32_t *ou
 
 static int on_activate(ce_card_t *c)
 {
+    /* ★ 2026-10-24：发动时把清扫代数对齐（否则"卡没生效时 92 打过"会留一个旧代数，
+     *   本次刚召出来的东西会在下一次 tick 被当成 92 的对象清掉）。*/
+    (void)ce_sweep_should_run(&s_fl_sweep_seen);
     uint8_t *p = CE_PLAYER();
     if (!p) return ce_refuse("firelord", "no player");
     int power = CE_CURRENT_POWER();
@@ -120,7 +123,12 @@ static int on_active_tick(ce_card_t *c, uint32_t elapsed)
     uint8_t *p = CE_PLAYER();
     if (!s || !p) return 0;
     /* ★★ 2026-10-24（92 清扫，owner：炎魔这类召唤实体也要清、换成 **3 张**金钱卡）*/
-    if (s->anm_id && ce_sweep_should_run(&s_fl_sweep_seen)) {
+    {   /* ★★★ 2026-10-24 修 bug（owner：紧跟着 92 之后放的召唤物直接变钱卡）——
+     *   原来 `if (s->anm_id && ce_sweep_should_run(&seen))` 是短路：92 那一刻场上没有召唤物
+     *   时代数没被消费 ⇒ 之后任何一次召唤都会看到"旧代数" ⇒ 刚放出来的立刻被清成钱。
+     *   ⇒ 代数每帧**无条件消费**，只有"当时真在场"的才清。*/
+        const int gw_sweep = ce_sweep_should_run(&s_fl_sweep_seen);
+        if (gw_sweep && s->anm_id) {
         float wp[3];
         int k;
         wp[0] = s->x; wp[1] = s->y; wp[2] = s->z;
@@ -130,6 +138,7 @@ static int on_active_tick(ce_card_t *c, uint32_t elapsed)
         ce_log_key("firelord: 92 清扫 —— 炎魔换成金钱（%d 枚）", FL_SWEEP_MONEY);
         dismiss(c, "gw sweep");
         return 0;
+    }
     }
     if (s->intro_left > 0) {                               /* 登场聚气：目标位置每帧几颗向中心汇聚的粒子；本体、判定、血条都还没有 */
         fl_step_t st = fl_step(s, 0);
