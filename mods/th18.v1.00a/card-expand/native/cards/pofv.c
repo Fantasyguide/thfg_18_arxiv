@@ -834,6 +834,11 @@ static int32_t s_hud_chg_hold;      /* 蓄力键（C ✓）连续按住的帧数
  *       到期前再跨档 ⇒ **重放**（重设 78 帧 ✓）；期间**没有** hide/interrupt 路径 ✓。
  *   ⚠ 上一版「无条件常显」✗ 已废（owner 订正 ✓）；A/B 的避让（A 显示 ⇒ B 上移 48）**与显隐条件无关** ✓ 不变。*/
 #define POFV_HUD_LV_POP_FRAMES 78   /* ★ 一手：3 淡入 + 60 闪 + 15 淡出 ✓ */
+/* ★★★ 2026-10-24 owner：「109 卡额外有一个老的绿色的释放 C 系列会出现的指示 lv 的数字，这个得摘掉」
+ *   ⇒ 到点提示那一组（gf/标签/数字三台 VM，`s_hud_lv_*_vm`）**整体停用**：不再触发、不再生成；
+ *   已经存在的那三台由 `s_hud_lv_left == 0` 那一支照旧收掉（幂等）。
+ *   ⚠ 只摘这一组；条上的 `Skill` / `Ex.Attack Lv` / `Boss Lv` / 常驻 `Lv` 都不动。*/
+#define POFV_HUD_LV_POP_ENABLE 0
 static int32_t s_hud_lv_gf_vm, s_hud_lv_label_vm, s_hud_lv_digit_vm;
 static int32_t s_hud_lv_last_tier;  /* ★ 上升沿判据：上次的**档位数值**（不是原始值 ✓）*/
 static int32_t s_hud_lv_left;       /* ★ 弹出剩余帧（>0 = 正在弹；到 0 ⇒ 收掉 3 台 VM ✓）*/
@@ -10270,7 +10275,7 @@ static int on_tick_2(ce_card_t *c)
          *   到期前再变 ⇒ **重放**（重设 78 帧 ✓，照一手"重设脚本/重建状态" ✓）。*/
         if (tier != s_hud_lv_last_tier) {
             s_hud_lv_last_tier = tier;
-            s_hud_lv_left = POFV_HUD_LV_POP_FRAMES;
+            if (POFV_HUD_LV_POP_ENABLE) s_hud_lv_left = POFV_HUD_LV_POP_FRAMES;
             ce_log("pofv: 【灵力】档位 %d/%d ⇒ 弹一次（%d 帧 ✓；灵力 %.0f/%.0f）",
                    (int)tier, POFV_HUD_CHG_MAX_TIER, POFV_HUD_LV_POP_FRAMES,
                    (double)s_reiryoku, (double)POFV_REI_MAX);
